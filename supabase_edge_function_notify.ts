@@ -14,6 +14,18 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
+
+  // Fail loudly if the API key is missing — surface the error to the client
+  // instead of silently returning 200 with no email sent.
+  if (!RESEND_API_KEY) {
+    const msg = 'RESEND_API_KEY secret is not set on this function';
+    console.error(msg);
+    return new Response(JSON.stringify({ ok: false, error: msg }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const payload = await req.json().catch(() => ({} as any));
   const rec = payload.record ?? payload ?? {};
 
@@ -43,6 +55,8 @@ Deno.serve(async (req) => {
        </div>`
     : '';
 
+  const results: any = {};
+
   // Email to candidate — with admins on CC so they see confirmation + slot too
   if (email) {
     const candidateHtml = `
@@ -54,7 +68,7 @@ Deno.serve(async (req) => {
       </div>
     `;
 
-    await sendMail({
+    results.candidate = await sendMail({
       to: email,
       cc: ADMIN_TO,
       subject: `✓ קיבלנו את הגשתך — ${courseName || 'פרקטיקום'}${slotDate ? ' · מועד ראיון ' + slotDate : ''}`,
@@ -64,19 +78,28 @@ Deno.serve(async (req) => {
 
   // Separate admin-only email with full details + download links (always sent, independent of candidate email)
   const adminHtml = buildAdminBody(rec, cvUrl, appUrl, slotBlock);
-  await sendMail({
+  results.admin = await sendMail({
     to: ADMIN_TO,
     subject: `📥 הגשה חדשה: ${name}${slotDate ? ' · ראיון ' + slotDate + ' ' + (slotTime||'') : ''}`,
     html: adminHtml,
   });
+
+  // If any send failed, return 500 with details so the client can surface the error
+  const allOk = Object.values(results).every((r: any) => r?.ok);
+  if (!allOk) {
+    return new Response(JSON.stringify({ ok: false, results }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   return new Response(JSON.stringify({ ok: true }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });
 
-async function sendMail(msg: { to: string | string[]; cc?: string[]; subject: string; html: string }) {
-  if (!RESEND_API_KEY) { console.warn('RESEND_API_KEY not set'); return; }
+async function sendMail(msg: { to: string | string[]; cc?: string[]; subject: string; html: string }): Promise<{ ok: boolean; error?: string }> {
+  if (!RESEND_API_KEY) return { ok: false, error: 'RESEND_API_KEY not set' };
   const r = await fetch(RESEND_URL, {
     method: 'POST',
     headers: {
@@ -91,7 +114,12 @@ async function sendMail(msg: { to: string | string[]; cc?: string[]; subject: st
       html: msg.html,
     }),
   });
-  if (!r.ok) console.warn('Resend error:', await r.text());
+  if (!r.ok) {
+    const body = await r.text();
+    console.error('Resend error:', r.status, body);
+    return { ok: false, error: `Resend ${r.status}: ${body.slice(0, 200)}` };
+  }
+  return { ok: true };
 }
 
 async function signedUrl(path: string, expiresIn: number): Promise<string> {
