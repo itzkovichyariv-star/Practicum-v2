@@ -10,9 +10,20 @@ const RESEND_URL = 'https://api.resend.com/emails';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+  'Access-Control-Max-Age': '86400',
+};
+
 Deno.serve(async (req) => {
+  // CORS preflight — the browser sends OPTIONS before every cross-origin POST.
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
   }
 
   // Fail loudly if the API key is missing — surface the error to the client
@@ -22,7 +33,7 @@ Deno.serve(async (req) => {
     console.error(msg);
     return new Response(JSON.stringify({ ok: false, error: msg }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
     });
   }
 
@@ -89,12 +100,12 @@ Deno.serve(async (req) => {
   if (!allOk) {
     return new Response(JSON.stringify({ ok: false, results }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
     });
   }
 
   return new Response(JSON.stringify({ ok: true }), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
   });
 });
 
