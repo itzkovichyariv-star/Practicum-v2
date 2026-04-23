@@ -38,6 +38,11 @@ CREATE POLICY "auth_update" ON candidate_submissions
   FOR UPDATE TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "auth_delete" ON candidate_submissions;
+CREATE POLICY "auth_delete" ON candidate_submissions
+  FOR DELETE TO authenticated
+  USING (true);
+
 -- 2. Storage bucket for CV/application uploads
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('candidate-uploads', 'candidate-uploads', false)
@@ -53,6 +58,12 @@ CREATE POLICY "public_can_upload" ON storage.objects
 DROP POLICY IF EXISTS "auth_can_download" ON storage.objects;
 CREATE POLICY "auth_can_download" ON storage.objects
   FOR SELECT TO authenticated
+  USING (bucket_id = 'candidate-uploads');
+
+-- Authenticated admins can delete uploaded files (when deleting submissions)
+DROP POLICY IF EXISTS "auth_can_delete_files" ON storage.objects;
+CREATE POLICY "auth_can_delete_files" ON storage.objects
+  FOR DELETE TO authenticated
   USING (bucket_id = 'candidate-uploads');
 
 -- Done. The public registration page can now:
