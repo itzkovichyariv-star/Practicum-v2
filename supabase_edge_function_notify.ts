@@ -36,18 +36,20 @@ Deno.serve(async (req) => {
   const slotDate = slotMatch?.[1];
   const slotTime = slotMatch?.[2];
 
-  // Email to candidate
+  const slotBlock = slotDate
+    ? `<div style="background:rgba(122,30,43,.06);border:1px solid #7a1e2b;padding:16px;border-radius:10px;margin:16px 0">
+         <div style="font-size:12px;color:#7a1e2b;letter-spacing:.1em;text-transform:uppercase">מועד ראיון שנבחר</div>
+         <div style="font-size:20px;margin-top:4px">${escapeHtml(slotDate)} · ${escapeHtml(slotTime || '')}</div>
+       </div>`
+    : '';
+
+  // Email to candidate — with admins on CC so they see confirmation + slot too
   if (email) {
     const candidateHtml = `
       <div dir="rtl" style="font-family:system-ui,sans-serif;max-width:560px;margin:auto;padding:24px">
         <h2 style="color:#7a1e2b">תודה, ${escapeHtml(name)}</h2>
         <p>המועמדות נקלטה במערכת הפרקטיקום של אוניברסיטת אריאל.</p>
-        ${slotDate ? `
-          <div style="background:rgba(122,30,43,.06);border:1px solid #7a1e2b;padding:16px;border-radius:10px;margin:16px 0">
-            <div style="font-size:12px;color:#7a1e2b;letter-spacing:.1em;text-transform:uppercase">מועד הראיון שנבחר</div>
-            <div style="font-size:20px;margin-top:4px">${escapeHtml(slotDate)} · ${escapeHtml(slotTime || '')}</div>
-          </div>
-        ` : `<p>הצוות ייצור איתך קשר תוך מספר ימים לתיאום מועד ראיון.</p>`}
+        ${slotDate ? slotBlock : `<p>הצוות ייצור איתך קשר תוך מספר ימים לתיאום מועד ראיון.</p>`}
         <p style="color:#666;font-size:13px;margin-top:24px">בברכה,<br>ד"ר יריב איצקוביץ<br>Ariel University · Management</p>
       </div>
     `;
@@ -55,20 +57,18 @@ Deno.serve(async (req) => {
     await sendMail({
       to: email,
       cc: ADMIN_TO,
-      subject: `✓ קיבלנו את הגשתך — ${courseName || 'פרקטיקום'}`,
+      subject: `✓ קיבלנו את הגשתך — ${courseName || 'פרקטיקום'}${slotDate ? ' · מועד ראיון ' + slotDate : ''}`,
       html: candidateHtml,
     });
   }
 
-  // Admin-only email (in case candidate had no email)
-  if (!email) {
-    const adminHtml = buildAdminBody(rec, cvUrl, appUrl);
-    await sendMail({
-      to: ADMIN_TO,
-      subject: `הגשה חדשה: ${name} — ${courseName}`,
-      html: adminHtml,
-    });
-  }
+  // Separate admin-only email with full details + download links (always sent, independent of candidate email)
+  const adminHtml = buildAdminBody(rec, cvUrl, appUrl, slotBlock);
+  await sendMail({
+    to: ADMIN_TO,
+    subject: `📥 הגשה חדשה: ${name}${slotDate ? ' · ראיון ' + slotDate + ' ' + (slotTime||'') : ''}`,
+    html: adminHtml,
+  });
 
   return new Response(JSON.stringify({ ok: true }), {
     headers: { 'Content-Type': 'application/json' },
@@ -109,21 +109,27 @@ async function signedUrl(path: string, expiresIn: number): Promise<string> {
   return `${SUPABASE_URL}/storage/v1${j.signedURL || j.signedUrl || ''}`;
 }
 
-function buildAdminBody(rec: any, cvUrl: string, appUrl: string): string {
+function buildAdminBody(rec: any, cvUrl: string, appUrl: string, slotBlock: string): string {
   return `
     <div dir="rtl" style="font-family:system-ui,sans-serif;max-width:600px;margin:auto;padding:24px">
       <h2 style="color:#7a1e2b">הגשה חדשה — ${escapeHtml(rec.name || '')}</h2>
+      ${slotBlock}
       <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <tr><td style="padding:6px 0;color:#666">טלפון</td><td>${escapeHtml(rec.phone || '')}</td></tr>
+        <tr><td style="padding:6px 0;color:#666;width:90px">טלפון</td><td>${escapeHtml(rec.phone || '')}</td></tr>
         <tr><td style="padding:6px 0;color:#666">מייל</td><td>${escapeHtml(rec.email || '')}</td></tr>
         <tr><td style="padding:6px 0;color:#666">עיר</td><td>${escapeHtml(rec.city || '')}</td></tr>
         <tr><td style="padding:6px 0;color:#666">קורס</td><td>${escapeHtml(rec.course_name || '')}</td></tr>
         <tr><td style="padding:6px 0;color:#666">שנה</td><td>${escapeHtml(rec.year || '')}</td></tr>
         <tr><td style="padding:6px 0;color:#666">הערות</td><td>${escapeHtml(rec.notes || '')}</td></tr>
       </table>
-      <p style="margin-top:20px">
-        ${cvUrl ? `<a href="${cvUrl}" style="color:#7a1e2b">📄 CV</a>` : ''}
-        ${appUrl ? ` · <a href="${appUrl}" style="color:#7a1e2b">📝 טופס מועמדות</a>` : ''}
+      <p style="margin-top:20px;font-size:14px">
+        ${cvUrl ? `<a href="${cvUrl}" style="color:#7a1e2b;font-weight:600">📄 הורד CV</a>` : '<span style="color:#999">אין CV</span>'}
+        &nbsp;·&nbsp;
+        ${appUrl ? `<a href="${appUrl}" style="color:#7a1e2b;font-weight:600">📝 הורד טופס מועמדות</a>` : '<span style="color:#999">אין טופס</span>'}
+      </p>
+      <p style="margin-top:24px;font-size:12px;color:#999">
+        הקישורים תקפים לשבוע. לגישה קבועה היכנס למערכת הניהול →
+        <a href="https://itzkovichyariv-star.github.io/Practicum-v2/" style="color:#7a1e2b">מועמדים → Inbox</a>
       </p>
     </div>
   `;
