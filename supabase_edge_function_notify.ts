@@ -4,7 +4,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 const ADMIN_TO = ['yarivi@ariel.ac.il', 'rachelshal@ariel.ac.il'];
-const FROM = 'Practicum <onboarding@resend.dev>'; // swap to verified domain later
+const FROM = 'Practicum <onboarding@resend.dev>';
 const RESEND_URL = 'https://api.resend.com/emails';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? 'https://vpqgmcmavnszcnakhiat.supabase.co';
@@ -18,7 +18,6 @@ const CORS_HEADERS = {
 };
 
 Deno.serve(async (req) => {
-  // CORS preflight — the browser sends OPTIONS before every cross-origin POST.
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -26,8 +25,6 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: CORS_HEADERS });
   }
 
-  // Fail loudly if the API key is missing — surface the error to the client
-  // instead of silently returning 200 with no email sent.
   if (!RESEND_API_KEY) {
     const msg = 'RESEND_API_KEY secret is not set on this function';
     console.error(msg);
@@ -42,19 +39,14 @@ Deno.serve(async (req) => {
 
   const name = rec.name ?? '';
   const email = rec.email ?? '';
-  const phone = rec.phone ?? '';
-  const city = rec.city ?? '';
   const courseName = rec.course_name ?? '';
-  const year = rec.year ?? '';
   const notes = rec.notes ?? '';
   const cvPath = rec.cv_file_path ?? '';
   const appPath = rec.application_file_path ?? '';
 
-  // Build signed URLs for the uploaded files (valid 7 days)
   const cvUrl = cvPath ? await signedUrl(cvPath, 60 * 60 * 24 * 7) : '';
   const appUrl = appPath ? await signedUrl(appPath, 60 * 60 * 24 * 7) : '';
 
-  // Extract slot info from notes if present
   const slotMatch = String(notes).match(/בחר מועד ראיון:\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?:–\d{1,2}:\d{2})?)/);
   const slotDate = slotMatch?.[1];
   const slotTime = slotMatch?.[2];
@@ -68,7 +60,6 @@ Deno.serve(async (req) => {
 
   const results: any = {};
 
-  // Email to candidate — with admins on CC so they see confirmation + slot too
   if (email) {
     const candidateHtml = `
       <div dir="rtl" style="font-family:system-ui,sans-serif;max-width:560px;margin:auto;padding:24px">
@@ -78,7 +69,6 @@ Deno.serve(async (req) => {
         <p style="color:#666;font-size:13px;margin-top:24px">בברכה,<br>ד"ר יריב איצקוביץ<br>Ariel University · Management</p>
       </div>
     `;
-
     results.candidate = await sendMail({
       to: email,
       cc: ADMIN_TO,
@@ -87,7 +77,6 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Separate admin-only email with full details + download links (always sent, independent of candidate email)
   const adminHtml = buildAdminBody(rec, cvUrl, appUrl, slotBlock);
   results.admin = await sendMail({
     to: ADMIN_TO,
@@ -95,7 +84,6 @@ Deno.serve(async (req) => {
     html: adminHtml,
   });
 
-  // If any send failed, return 500 with details so the client can surface the error
   const allOk = Object.values(results).every((r: any) => r?.ok);
   if (!allOk) {
     return new Response(JSON.stringify({ ok: false, results }), {
@@ -161,21 +149,4 @@ function buildAdminBody(rec: any, cvUrl: string, appUrl: string, slotBlock: stri
         <tr><td style="padding:6px 0;color:#666">שנה</td><td>${escapeHtml(rec.year || '')}</td></tr>
         <tr><td style="padding:6px 0;color:#666">הערות</td><td>${escapeHtml(rec.notes || '')}</td></tr>
       </table>
-      <p style="margin-top:20px;font-size:14px">
-        ${cvUrl ? `<a href="${cvUrl}" style="color:#7a1e2b;font-weight:600">📄 הורד CV</a>` : '<span style="color:#999">אין CV</span>'}
-        &nbsp;·&nbsp;
-        ${appUrl ? `<a href="${appUrl}" style="color:#7a1e2b;font-weight:600">📝 הורד טופס מועמדות</a>` : '<span style="color:#999">אין טופס</span>'}
-      </p>
-      <p style="margin-top:24px;font-size:12px;color:#999">
-        הקישורים תקפים לשבוע. לגישה קבועה היכנס למערכת הניהול →
-        <a href="https://itzkovichyariv-star.github.io/Practicum-v2/" style="color:#7a1e2b">מועמדים → Inbox</a>
-      </p>
-    </div>
-  `;
-}
-
-function escapeHtml(s: string): string {
-  return String(s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]!));
-}
+      <p style="margin-to
