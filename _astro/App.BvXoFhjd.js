@@ -118,7 +118,9 @@ CREATE POLICY "auth_delete" ON candidate_submissions FOR DELETE TO authenticated
   .crit-row { display: flex; align-items: center; gap: 10pt; padding: 5pt 0; border-bottom: 0.5pt solid #eee; font-size: 10.5pt; }
   .crit-label { flex: 1; }
   .crit-nums { display: flex; gap: 8pt; font-size: 10pt; color: #555; }
-  .open-box { width: 100%; border: 0.5pt solid #ccc; min-height: 50pt; margin: 4pt 0 10pt; padding: 4pt; font-size: 10pt; }
+  .write-block { margin: 4pt 0 12pt; }
+  .write-lbl { font-size: 9.5pt; font-weight: bold; color: #555; margin-bottom: 5pt; }
+  .write-line { border-bottom: 0.5pt solid #999; height: 20pt; width: 100%; margin-bottom: 2pt; }
   .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24pt; margin-top: 14pt; }
   .sig-lbl { font-size: 9pt; font-weight: bold; color: #555; margin-bottom: 3pt; }
   .sig-line { border-bottom: 0.5pt solid #333; height: 36pt; }
@@ -139,14 +141,14 @@ CREATE POLICY "auth_delete" ON candidate_submissions FOR DELETE TO authenticated
     .radio-opt{font-size:10.5pt}
     .crit-row{display:flex;align-items:center;gap:10pt;padding:5pt 0;border-bottom:0.5pt solid #eee;font-size:10.5pt}
     .crit-label{flex:1} .crit-nums{display:flex;gap:8pt;font-size:10pt;color:#555}
-    .open-box{width:100%;border:1pt solid #ccc;border-radius:4pt;min-height:50pt;margin:4pt 0 10pt;padding:4pt;font-size:10pt}
+    .write-block{margin:4pt 0 12pt} .write-lbl{font-size:9.5pt;font-weight:600;color:#555;margin-bottom:5pt} .write-line{border-bottom:0.5pt solid #999;height:20pt;width:100%;margin-bottom:2pt}
     .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:24pt;margin-top:14pt}
     .sig-lbl{font-size:9pt;font-weight:600;color:#555;margin-bottom:3pt}
     .sig-line{border-bottom:1pt solid #333;height:36pt}
     .sig-sub{display:flex;justify-content:space-between;font-size:9pt;color:#888;margin-top:3pt}
     .notice{background:rgba(122,30,43,0.06);border:1pt solid rgba(122,30,43,0.25);border-radius:4pt;padding:8pt;font-size:10pt;line-height:1.5;margin-bottom:10pt}
     table{width:100%;border-collapse:collapse;font-size:10pt} th,td{border:0.5pt solid #ccc;padding:5pt 7pt;text-align:right} th{background:#f5f0f0;font-weight:700}
-    @media print{body{background:white;margin:1.2cm}@page{size:A4;margin:1.2cm}}</style></head><body>${r}<script>window.onload=()=>window.print();<\/script></body></html>`,a=window.open("","_blank");a&&(a.document.write(n),a.document.close())}function Le(r,e=200){return`<div class="row"><div class="lbl">${r}</div><div class="val" style="min-width:${e}pt"></div></div>`}function Ot(r,e=50){return`<div class="lbl" style="margin-top:8pt;font-size:9.5pt;font-weight:bold;color:#555">${r}</div><div class="open-box" style="min-height:${e}pt"></div>`}function Es(r,e){return`<div class="radio-grid">${e.map(t=>`<div class="radio-opt">☐ ${t}</div>`).join("")}</div>`}function gi(r){return r.map(e=>`<div class="crit-row"><div class="crit-label">${e}</div>
+    @media print{body{background:white;margin:1.2cm}@page{size:A4;margin:1.2cm}}</style></head><body>${r}<script>window.onload=()=>window.print();<\/script></body></html>`,a=window.open("","_blank");a&&(a.document.write(n),a.document.close())}function Le(r,e=200){return`<div class="row"><div class="lbl">${r}</div><div class="val" style="min-width:${e}pt"></div></div>`}function Ot(r,e=50){const t=Math.max(2,Math.round(e/20)),n=Array(t).fill('<div class="write-line"></div>').join("");return`<div class="write-block"><div class="write-lbl">${r}</div>${n}</div>`}function Es(r,e){return`<div class="radio-grid">${e.map(t=>`<div class="radio-opt">☐ ${t}</div>`).join("")}</div>`}function gi(r){return r.map(e=>`<div class="crit-row"><div class="crit-label">${e}</div>
     <div class="crit-nums">${[1,2,3,4,5].map(t=>`<span>☐ ${t}</span>`).join("")} <span style="color:#aaa">☐ לא רלוונטי</span></div></div>`).join("")}function Ur(r){return`<div><div class="sig-lbl">${r}</div><div class="sig-line"></div><div class="sig-sub"><span>תאריך: _________</span><span>שם מלא: _________</span></div></div>`}function XI(){return`
 <h1>טופס הערכת סטודנט/ית בפרקטיקום</h1>
 <div class="subtitle">פרקטיקום במשאבי אנוש · אוניברסיטת אריאל · תאריך מילוי: ___________</div>
