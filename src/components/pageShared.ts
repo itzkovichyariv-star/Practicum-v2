@@ -30,6 +30,7 @@ export function outlookCalendarUrl(opts: {
   startDate: string;
   startTime?: string;
   endTime?: string;
+  location?: string;
   attendeeEmail?: string;
   body?: string;
 }): string {
@@ -45,5 +46,6 @@ export function outlookCalendarUrl(opts: {
     body: opts.body ?? '',
     to: opts.attendeeEmail ?? '',
   });
+  if (opts.location) params.set('location', opts.location);
   return `${base}?${params.toString()}`;
 }

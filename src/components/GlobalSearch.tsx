@@ -111,16 +111,19 @@ export default function GlobalSearch({ data, onNavigate }: Props) {
   }
 
   if (!open) return (
-    <button
-      onClick={() => setOpen(true)}
-      title="חיפוש גלובלי (⌘K)"
-      className="mono text-[11px] uppercase tracking-[0.15em] px-3 py-1.5 rounded-lg border flex items-center gap-2"
-      style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)', background: 'transparent', cursor: 'pointer' }}
-    >
-      <span style={{ fontSize: '13px' }}>🔍</span>
-      <span className="hidden md:inline">חיפוש</span>
-      <kbd className="hidden md:inline mono text-[9px] px-1.5 py-0.5 rounded border" style={{ borderColor: 'var(--divider)', opacity: 0.7 }}>⌘K</kbd>
-    </button>
+    // Fixed in the top-right corner so it sits visually inside the header regardless of DOM order
+    <div style={{ position: 'fixed', top: '14px', left: '180px', zIndex: 60 }}>
+      <button
+        onClick={() => setOpen(true)}
+        title="חיפוש גלובלי (⌘K)"
+        className="mono text-[11px] uppercase tracking-[0.15em] px-3 py-1.5 rounded-lg border flex items-center gap-2"
+        style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)', background: 'var(--nav-bg)', cursor: 'pointer', minHeight: 0 }}
+      >
+        <span style={{ fontSize: '13px' }}>🔍</span>
+        <span className="hidden md:inline">חיפוש</span>
+        <kbd className="hidden md:inline mono text-[9px] px-1.5 py-0.5 rounded border" style={{ borderColor: 'var(--divider)', opacity: 0.7 }}>⌘K</kbd>
+      </button>
+    </div>
   );
 
   // Group results by kind

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PageProps } from './pageShared';
 import type { Course } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { normalizeYear } from '../lib/session';
 import { saveSnapshot, randomId, loadSnapshots, restoreSnapshot, type SnapshotMeta } from '../lib/dataApi';
+import { CONTACT_PATCHES } from '../lib/contactPatches';
 import { showToast } from '../lib/toast';
 import * as fs from '../lib/folderCreation';
 
@@ -235,22 +236,7 @@ function SeedLecturesSection({ data, userName, onRefresh }: PageProps) {
   );
 }
 
-/* ── Known contact patches ── */
-const CONTACT_PATCHES: Record<string, { name?: string; phone?: string; email?: string }> = {
-  'אורית':                    { name: 'אורית שמש',          phone: '050-6694104',  email: 'orits@manpower.co.il'      },
-  'מרכז סימולציות':           {                              phone: '050-990-1858',  email: 'noashron@gmail.com'        },
-  'נועה שמיר':                {                              phone: '050-990-1858',  email: 'noashron@gmail.com'        },
-  'למלם':                     {                              phone: '053-8306228'                                       },
-  'פא״י':                    { name: 'יניב אלטראס (פא״י)',  phone: '052-6324476'                                       },
-  'יניב אלטראס (פא״י)':      {                              phone: '052-6324476'                                       },
-  'סימונה עמיר':              {                              phone: '050-7214426',  email: 'simonaami@telhai.ac.il'    },
-  'למא אבו אחמד (אינבידיה)':  {                              phone: '052-889-1960',  email: 'labuahmad@nvidia.com'      },
-  'חיה וגנר מישורי':          {                              phone: '054-7004049',  email: 'hayawagner@gmail.com'      },
-  'אופיר קרקו':               {                              phone: '050-4014350',  email: 'ofirk@nishapro.co.il'     },
-  'איילה ראובן ללונג':        {                              phone: '054-4805614',  email: 'Ayalla@eq-el.co.il'        },
-  'ענבל בנימין אלרן':         {                              phone: '054-7889607'                                       },
-  'שלה דיין':                 {                              phone: '054-811-1247',  email: 'shelladh@gmail.com'        },
-};
+/* ── Contact patches imported from src/lib/contactPatches.ts ── */
 
 /* ── Known lecturers seed (for Trainers page) ── */
 const KNOWN_LECTURERS = [
@@ -272,6 +258,7 @@ function PatchContactsSection({ data, userName, onRefresh }: PageProps) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const autoRunRef = useRef(false);
 
   const lectures: any[] = data.lectures || [];
   const needsPatch = lectures.filter(l => {
@@ -282,10 +269,14 @@ function PatchContactsSection({ data, userName, onRefresh }: PageProps) {
       || (patch.email && !l.lecturerEmail);
   });
 
-  // Auto-run once when there are patches needed
+  // Auto-run once when data is available and patches are needed (ref-guard prevents stale closure issue)
   useEffect(() => {
-    if (needsPatch.length > 0 && !busy && !done) doPatch(true);
-  }, []);
+    if (autoRunRef.current || busy || done) return;
+    if (needsPatch.length > 0) {
+      autoRunRef.current = true;
+      doPatch(true);
+    }
+  }, [needsPatch.length]);
 
   async function doPatch(silent = false) {
     if (!silent && !confirm(`לעדכן פרטי קשר ב-${needsPatch.length} הרצאות?`)) return;
@@ -354,13 +345,14 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const autoSeedRef = useRef(false);
 
-  // Auto-seed once on mount if trainers list is empty
+  // Auto-seed once if trainers list is empty — ref guard prevents re-runs if data changes
   useEffect(() => {
-    if (existing.length === 0 && !busy && !done) {
-      doSeedTrainers(true);
-    }
-  }, []);
+    if (autoSeedRef.current || busy || done || existing.length > 0) return;
+    autoSeedRef.current = true;
+    doSeedTrainers(true);
+  }, [existing.length]);
 
   async function doSeedTrainers(silent = false) {
     if (!silent && !confirm(`לייבא ${KNOWN_LECTURERS.length} מנחים/מרצים לדף המנחים?`)) return;
