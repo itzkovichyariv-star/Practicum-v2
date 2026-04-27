@@ -8,7 +8,8 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "deploy": "astro build && /Users/yarivitzkovich/Code/family-tasks/node_modules/.bin/wrangler pages deploy dist --project-name practicum-v2"
   },
   "dependencies": {
     "@astrojs/react": "^4.0.0",
