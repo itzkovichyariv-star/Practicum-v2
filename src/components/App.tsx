@@ -79,32 +79,19 @@ export default function App() {
     return (localStorage.getItem(PAGE_STORAGE) as Page) || 'dashboard';
   });
 
-  // Resume session + check cloud auth (including magic-link redirect)
+  // Resume session on page load
   useEffect(() => {
     const s = getSession();
-    if (s?.profile) setProfile(s.profile);
-    setCtx(getContext());
-
-    // getSession() picks up an existing session OR processes a magic-link hash token
-    supabase.auth.getSession().then(({ data: d }) => {
-      setCloudAuthed(!!d.session);
-      setCloudEmail(d.session?.user?.email || null);
-      setReady(true);
-    });
-
-    // Also listen for SIGNED_IN fired when magic link token is processed asynchronously
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
+    if (s?.profile) {
+      setProfile(s.profile);
+      // If email was stored in the profile, restore cloud auth state too
+      if (s.profile.email) {
+        setCloudEmail(s.profile.email);
         setCloudAuthed(true);
-        setCloudEmail(session.user?.email || null);
-        setReady(true);
       }
-      if (event === 'SIGNED_OUT') {
-        setCloudAuthed(false);
-        setCloudEmail(null);
-      }
-    });
-    return () => listener.subscription.unsubscribe();
+    }
+    setCtx(getContext());
+    setReady(true);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -123,8 +110,8 @@ export default function App() {
   }, []); // setters are stable; loadSnapshot is a module import — no deps needed
 
   useEffect(() => {
-    if (profile && cloudAuthed) refresh();
-  }, [profile, cloudAuthed, refresh]);
+    if (profile) refresh();
+  }, [profile, refresh]);
 
   // Silently patch contact details on first data load (fires for all users, not just Management page visitors)
   const contactPatchedRef = useRef(false);
@@ -177,7 +164,7 @@ export default function App() {
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, [profile, cloudAuthed]);
+  }, [profile]);
 
   function handleContextChange(next: Context) {
     setCtx(next);
@@ -226,11 +213,12 @@ export default function App() {
   }, [data]);
 
   if (!ready) return null;
-  if (!profile) return <PasswordGate onAuth={(p) => setProfile(p)} />;
-  if (!cloudAuthed) return <CloudSignIn onSuccess={async () => {
-    const { data: d } = await supabase.auth.getSession();
-    setCloudEmail(d.session?.user?.email || null);
-    setCloudAuthed(true);
+  if (!profile) return <PasswordGate onAuth={(p, email) => {
+    const profileWithEmail = { ...p, email };
+    setSession(profileWithEmail);   // persist email so it survives refresh
+    setProfile(profileWithEmail);
+    setCloudEmail(email);
+    setCloudAuthed(true); // email+passphrase is sufficient — no magic link needed
   }} />;
   if (loading && !data) return <Loader text="טוען נתונים מהענן..." />;
   if (loadError && !data) {
