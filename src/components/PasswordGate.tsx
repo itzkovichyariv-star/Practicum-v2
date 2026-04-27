@@ -3,65 +3,147 @@ import type { UserProfile } from '../lib/session';
 import { setSession } from '../lib/session';
 
 // Shared passphrase — simple first-line auth before Supabase cloud auth.
-const PASSPHRASE = 'practicum2025';
+const PASSPHRASE = 'ariel2026';
 
 export default function PasswordGate({ onAuth }: { onAuth: (p: UserProfile) => void }) {
   const [name, setName] = useState('');
   const [pass, setPass] = useState('');
   const [err,  setErr]  = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { setErr('נא להזין שם מלא'); return; }
-    if (pass.trim() !== PASSPHRASE) { setErr('סיסמה שגויה'); return; }
+    if (pass.trim() !== PASSPHRASE) { setErr('סיסמה שגויה — נסה שוב'); return; }
+    setSubmitting(true);
     const profile: UserProfile = { name: name.trim() };
     setSession(profile);
     onAuth(profile);
   }
 
   return (
-    <div className="fixed inset-0 grid place-items-center p-6" style={{ background: 'var(--bg)' }}>
-      <div style={{ maxWidth: 400, width: '100%' }}>
-        <div className="chapter-mark mb-6">פרקטיקום · ניהול</div>
-        <h1 className="serif text-[38px] leading-[1.1] mb-2" style={{ color: 'var(--ink)' }}>כניסה</h1>
-        <p className="text-[15px] mb-8 leading-relaxed" style={{ color: 'var(--text-soft)' }}>
-          אוניברסיטת אריאל · מערכת ניהול פרקטיקום
+    <div
+      className="fixed inset-0 flex items-center justify-center"
+      style={{ background: 'var(--bg)' }}
+    >
+      {/* Decorative background rings */}
+      <div style={{
+        position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none',
+      }}>
+        <div style={{
+          position: 'absolute', top: '-20%', right: '-10%',
+          width: 600, height: 600, borderRadius: '50%',
+          border: '1px solid var(--divider)', opacity: 0.5,
+        }} />
+        <div style={{
+          position: 'absolute', top: '-5%', right: '5%',
+          width: 380, height: 380, borderRadius: '50%',
+          border: '1px solid var(--divider)', opacity: 0.4,
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-15%', left: '-8%',
+          width: 500, height: 500, borderRadius: '50%',
+          border: '1px solid var(--divider)', opacity: 0.35,
+        }} />
+      </div>
+
+      {/* Card */}
+      <div
+        className="relative w-full mx-6"
+        style={{
+          maxWidth: 440,
+          background: 'var(--surface-1)',
+          border: '1px solid var(--divider)',
+          borderRadius: 24,
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          padding: '48px 44px 44px',
+          boxShadow: '0 32px 80px rgba(61,15,20,0.12), 0 2px 8px rgba(61,15,20,0.06)',
+        }}
+      >
+        {/* Logo mark */}
+        <div style={{
+          width: 52, height: 52, borderRadius: 14,
+          background: 'var(--accent)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          marginBottom: 28,
+          boxShadow: '0 8px 24px rgba(122,30,43,0.28)',
+        }}>
+          <span style={{ fontFamily: 'Instrument Serif, Georgia, serif', fontSize: 28, color: '#f4efe6', lineHeight: 1 }}>פ</span>
+        </div>
+
+        {/* Heading */}
+        <div className="chapter-mark mb-2" style={{ fontSize: '11px' }}>פרקטיקום · אריאל</div>
+        <h1 className="serif mb-1" style={{ fontSize: 36, color: 'var(--ink)', lineHeight: 1.1 }}>
+          ברוכים הבאים
+        </h1>
+        <p className="mb-8" style={{ fontSize: 14.5, color: 'var(--text-soft)', lineHeight: 1.6 }}>
+          מערכת ניהול פרקטיקום — אוניברסיטת אריאל
         </p>
 
-        <form onSubmit={submit} className="flex flex-col gap-4">
-          <div>
-            <label className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1.5 block" style={{ color: 'var(--text-soft)' }}>
+        <form onSubmit={submit} className="flex flex-col gap-5" noValidate>
+          {/* Name */}
+          <div className="flex flex-col gap-1.5">
+            <label
+              className="mono uppercase"
+              style={{ fontSize: 10.5, letterSpacing: '0.14em', color: 'var(--text-soft)' }}
+            >
               שם מלא
             </label>
             <input
               value={name}
               onChange={e => { setName(e.target.value); setErr(''); }}
-              className="input w-full"
-              placeholder="ד״ר יריב איצקוביץ"
+              className="input"
+              placeholder="יריב איצקוביץ"
               autoFocus
+              autoComplete="name"
             />
           </div>
-          <div>
-            <label className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1.5 block" style={{ color: 'var(--text-soft)' }}>
+
+          {/* Password */}
+          <div className="flex flex-col gap-1.5">
+            <label
+              className="mono uppercase"
+              style={{ fontSize: 10.5, letterSpacing: '0.14em', color: 'var(--text-soft)' }}
+            >
               סיסמה
             </label>
             <input
               type="password"
               value={pass}
               onChange={e => { setPass(e.target.value); setErr(''); }}
-              className="input w-full"
+              className="input"
               placeholder="••••••••"
+              autoComplete="current-password"
             />
           </div>
+
+          {/* Error */}
           {err && (
-            <div className="mono text-[12px] uppercase tracking-[0.12em]" style={{ color: '#dc2626' }}>
-              {err}
+            <div
+              className="flex items-center gap-2 px-4 py-3 rounded-xl mono"
+              style={{ fontSize: 12.5, background: 'rgba(220,38,38,0.08)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.18)' }}
+            >
+              <span style={{ fontSize: 15 }}>⚠</span> {err}
             </div>
           )}
-          <button type="submit" className="btn btn-primary mt-2">
-            כניסה <span className="serif text-[16px]">→</span>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="btn btn-primary mt-1"
+            style={{ fontSize: 13, letterSpacing: '0.14em', minHeight: 50, borderRadius: 14, justifyContent: 'center' }}
+          >
+            {submitting ? 'נכנס...' : 'כניסה'}
+            {!submitting && <span className="serif" style={{ fontSize: 18 }}>→</span>}
           </button>
         </form>
+
+        {/* Footer note */}
+        <p className="mono text-center mt-7" style={{ fontSize: 10.5, color: 'var(--text-soft)', letterSpacing: '0.1em', opacity: 0.7 }}>
+          ARIEL UNIVERSITY · HR PRACTICUM MANAGEMENT
+        </p>
       </div>
     </div>
   );
