@@ -23,6 +23,23 @@ const VERSION = 'v2026.04.26';
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="פרקטיקום" />
     <link rel="apple-touch-icon" href="/icon.svg" />
+    <!-- Theme bootstrap: runs synchronously before first paint to eliminate flash.
+         Must stay a plain (non-deferred) script so it blocks rendering briefly. -->
+    <script>
+      (function () {
+        var THEME_KEY = 'practicum_theme';
+        var saved = '';
+        try { saved = localStorage.getItem(THEME_KEY) || ''; } catch (_) {}
+        var mode = saved || 'auto';
+        var isDark =
+          mode === 'dark' ||
+          (mode === 'auto' && (function () {
+            var h = new Date().getHours();
+            return h >= 19 || h < 7;
+          })());
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+      })();
+    </script>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

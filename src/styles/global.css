@@ -197,7 +197,7 @@
 
   .context-select {
     font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -205,16 +205,10 @@
     background: transparent;
     border: none;
     cursor: pointer;
-    padding-left: 18px;
-    background-image:
-      linear-gradient(45deg, transparent 50%, var(--accent) 50%),
-      linear-gradient(135deg, var(--accent) 50%, transparent 50%);
-    background-position: calc(100% - 7px) center, calc(100% - 3px) center;
-    background-size: 5px 5px;
-    background-repeat: no-repeat;
+    padding: 0;
     -webkit-appearance: none;
     appearance: none;
-    min-height: 0;   /* override mobile 44px for inline selects */
+    min-height: 0;
   }
   .context-select:focus { outline: none; }
 
@@ -318,6 +312,43 @@
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* ── Light mode: explicit JS override ───────────────────────────────
+   Needed so data-theme="light" beats @media (prefers-color-scheme: dark).
+   Specificity 0-1-1 > media-query :root 0-1-0.                         */
+html[data-theme="light"] {
+  --bg:          #f4efe6;
+  --ink:         #3d0f14;
+  --accent:      #7a1e2b;
+  --accent-soft: rgba(122, 30, 43, 0.08);
+  --divider:     rgba(122, 30, 43, 0.18);
+  --text-soft:   rgba(61, 15, 20, 0.5);
+  --nav-bg:      rgba(244, 239, 230, 0.88);
+  --tl-gray:     #94a3b8;
+  --tl-amber:    #d97706;
+  --tl-green:    #16a34a;
+  --tl-red:      #dc2626;
+  --surface-1:   rgba(255,255,255,0.55);
+  --surface-2:   rgba(255,255,255,0.30);
+}
+html[data-theme="light"] .input {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: var(--divider);
+  color: var(--ink);
+}
+html[data-theme="light"] .input:focus {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(122, 30, 43, 0.12);
+}
+html[data-theme="light"] .input option { background: #f4efe6; }
+html[data-theme="light"] .btn { border-color: var(--accent); color: var(--accent); background: transparent; }
+html[data-theme="light"] .btn:hover { opacity: 0.7; background: transparent; }
+html[data-theme="light"] .btn-primary { background: var(--accent); color: var(--bg); border-color: transparent; }
+html[data-theme="light"] .pill { background: transparent; color: inherit; }
+html[data-theme="light"] section,
+html[data-theme="light"] li,
+html[data-theme="light"] .border-b { border-color: var(--divider) !important; }
 
 /* ── Dark mode: system preference OR JS-driven data-theme="dark" ────
    Both selectors are identical — keep in sync when editing.            */
