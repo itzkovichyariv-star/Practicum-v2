@@ -39,14 +39,15 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+
+  // Auto-load on mount so the list is always visible without a manual click
+  useEffect(() => { fetchSnapshots(); }, []);
 
   async function fetchSnapshots() {
     setLoading(true);
     const list = await loadSnapshots();
     setSnapshots(list);
     setLoading(false);
-    setLoaded(true);
   }
 
   async function handleRestore(snap: SnapshotMeta) {
@@ -60,7 +61,6 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
       setRestoring(null);
       return;
     }
-    // Save the restored data as the current snapshot (creates a new history entry)
     const saveRes = await saveSnapshot(
       res.data,
       { name: userName },
@@ -73,6 +73,20 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
     }
     showToast('✓ שוחזר בהצלחה', 'success');
     onRefresh();
+  }
+
+  /** Download current in-memory data as a timestamped JSON file. */
+  function handleDownloadBackup() {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `practicum-backup-${ts}.json`;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`✓ גיבוי הורד: ${filename}`, 'success');
   }
 
   function timeLabel(ts: string) {
@@ -88,24 +102,33 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
 
   return (
     <section className="mb-12 rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-      <div className="flex items-center justify-between gap-4 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>גיבוי · Snapshots</div>
           <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>גרסאות לשחזור</div>
           <div className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
-            כל שמירה יוצרת גרסה אוטומטית. ניתן לשחזר כל נקודה בזמן.
+            כל שמירה יוצרת גרסה אוטומטית (עד 50 גרסאות). גיבוי אוטומטי כל 12 שעות.
           </div>
         </div>
-        <button
-          onClick={fetchSnapshots}
-          disabled={loading}
-          className="btn whitespace-nowrap"
-        >
-          {loading ? 'טוען...' : loaded ? '↻ רענן' : '📋 הצג גרסאות'}
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={handleDownloadBackup}
+            className="btn whitespace-nowrap"
+            title="הורד קובץ JSON של כל הנתונים"
+          >
+            ⬇ הורד גיבוי
+          </button>
+          <button
+            onClick={fetchSnapshots}
+            disabled={loading}
+            className="btn whitespace-nowrap"
+          >
+            {loading ? 'טוען...' : '↻ רענן'}
+          </button>
+        </div>
       </div>
 
-      {loaded && snapshots.length === 0 && (
+      {!loading && snapshots.length === 0 && (
         <div className="mono text-[12px] uppercase tracking-[0.14em] py-4" style={{ color: 'var(--text-soft)' }}>
           אין גרסאות שמורות עדיין — הן נוצרות אוטומטית בכל שמירה.
           <br />
@@ -113,7 +136,13 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
         </div>
       )}
 
-      {loaded && snapshots.length > 0 && (
+      {loading && (
+        <div className="mono text-[12px] uppercase tracking-[0.14em] py-4" style={{ color: 'var(--text-soft)' }}>
+          טוען גרסאות...
+        </div>
+      )}
+
+      {!loading && snapshots.length > 0 && (
         <ul>
           {snapshots.map((snap, i) => (
             <li key={snap.id}
@@ -180,28 +209,15 @@ function SeedLecturesSection({ data, userName, onRefresh }: PageProps) {
   const [msg, setMsg] = useState<string | null>(null);
 
   if (lectureCount > 0 && !msg) {
-    // Already has lectures — show compact status only
+    // Already has lectures — show compact status only (no reset button to avoid accidental data loss)
     return (
-      <section className="mb-12 rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-        <div className="flex items-center justify-between gap-6">
-          <div>
-            <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>הרצאות · Seed Data</div>
-            <div className="serif text-[18px]" style={{ color: 'var(--ink)' }}>
-              ✓ יש {lectureCount} הרצאות במערכת
-            </div>
-          </div>
-          <button
-            onClick={async () => {
-              if (!confirm(`להחליף את ${lectureCount} ההרצאות הקיימות ב-23 ההרצאות הרשמיות מ-2025-2026?`)) return;
-              await doSeed(data, userName, onRefresh, setBusy, setMsg);
-            }}
-            disabled={busy}
-            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 py-2 rounded-full border hover:bg-[rgba(122,30,43,0.06)]"
-            style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}>
-            {busy ? 'טוען...' : '🔄 החלף בנתוני מקור'}
-          </button>
+      <section className="mb-10 rounded-xl border p-5 flex items-center gap-4"
+        style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
+        <span className="serif text-[28px]">📚</span>
+        <div>
+          <div className="chapter-mark mb-0.5" style={{ fontSize: '11px' }}>הרצאות · Seed Data</div>
+          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>✓ יש {lectureCount} הרצאות במערכת</div>
         </div>
-        {msg && <div className="mt-3 mono text-[11.5px]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
       </section>
     );
   }
@@ -269,14 +285,7 @@ function PatchContactsSection({ data, userName, onRefresh }: PageProps) {
       || (patch.email && !l.lecturerEmail);
   });
 
-  // Auto-run once when data is available and patches are needed (ref-guard prevents stale closure issue)
-  useEffect(() => {
-    if (autoRunRef.current || busy || done) return;
-    if (needsPatch.length > 0) {
-      autoRunRef.current = true;
-      doPatch(true);
-    }
-  }, [needsPatch.length]);
+  // Auto-patch removed — was causing data loss by saving partial state
 
   async function doPatch(silent = false) {
     if (!silent && !confirm(`לעדכן פרטי קשר ב-${needsPatch.length} הרצאות?`)) return;
@@ -345,14 +354,7 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const autoSeedRef = useRef(false);
-
-  // Auto-seed once if trainers list is empty — ref guard prevents re-runs if data changes
-  useEffect(() => {
-    if (autoSeedRef.current || busy || done || existing.length > 0) return;
-    autoSeedRef.current = true;
-    doSeedTrainers(true);
-  }, [existing.length]);
+  // Auto-seed removed — was causing data loss by saving partial state
 
   async function doSeedTrainers(silent = false) {
     if (!silent && !confirm(`לייבא ${KNOWN_LECTURERS.length} מנחים/מרצים לדף המנחים?`)) return;
@@ -394,28 +396,15 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
   }
 
   if (existing.length > 0 && !msg) {
-    // Already seeded — compact status
+    // Already seeded — compact status only (no reset button to avoid accidental data loss)
     return (
       <section className="mb-10 rounded-xl border p-5 flex items-center gap-4"
         style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
         <span className="serif text-[28px]">🧑‍🏫</span>
-        <div className="flex-1">
+        <div>
           <div className="chapter-mark mb-0.5" style={{ fontSize: '11px' }}>מנחים · Seed Data</div>
-          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>
-            ✓ יש {existing.length} מנחים במערכת
-          </div>
+          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>✓ יש {existing.length} מנחים במערכת</div>
         </div>
-        <button
-          onClick={async () => {
-            if (!confirm(`להחליף את ${existing.length} המנחים הקיימים ב-${KNOWN_LECTURERS.length} המנחים הידועים?`)) return;
-            await doSeedTrainers(true);
-          }}
-          disabled={busy}
-          className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 py-2 rounded-full border hover:bg-[rgba(122,30,43,0.06)]"
-          style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}>
-          {busy ? 'טוען...' : '🔄 אפס מנחים'}
-        </button>
-        {msg && <div className="mono text-[11.5px]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
       </section>
     );
   }

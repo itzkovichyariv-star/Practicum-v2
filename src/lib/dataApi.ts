@@ -2,6 +2,12 @@ import { supabase, type PracticumData } from './supabase';
 
 /* ── saveSnapshot ──────────────────────────────────────────────────────── */
 
+/** Critical arrays that must never silently drop to zero. */
+const GUARDED_KEYS = ['students', 'employers', 'courses', 'trainers', 'lectures', 'candidates'] as const;
+
+/** Minimum count that triggers the regression guard. */
+const REGRESSION_FLOOR = 3;
+
 export async function saveSnapshot(
   data: PracticumData,
   editor: { name: string },
@@ -9,33 +15,54 @@ export async function saveSnapshot(
 ): Promise<{ ok: boolean; updated_at?: string; error?: string }> {
   const now = new Date().toISOString();
 
+  // ── Safety merge: always read current cloud state first ──────────────────
+  // This prevents partial saves (e.g. { lectures } only) from wiping other
+  // fields (students, employers, courses…) that weren't included in `data`.
+  const { data: currentRow } = await supabase
+    .from('practicum_data')
+    .select('data, version')
+    .eq('org_id', 'default')
+    .single();
+
+  const cloudData: PracticumData = (currentRow as any)?.data || {};
+
+  // Merge: cloud state is the base, incoming data wins for any key it provides.
+  // Arrays/objects in `data` fully replace their cloud counterparts (no deep merge).
+  const merged: PracticumData = { ...cloudData, ...data };
+
+  // ── Regression guard ─────────────────────────────────────────────────────
+  // Block any save where a key that had ≥ REGRESSION_FLOOR records in the cloud
+  // would be reduced to 0. This catches accidental full-wipes.
+  for (const key of GUARDED_KEYS) {
+    const cloudCount = ((cloudData as any)[key] as any[] | undefined)?.length ?? 0;
+    const mergedCount = ((merged as any)[key] as any[] | undefined)?.length ?? 0;
+    if (cloudCount >= REGRESSION_FLOOR && mergedCount === 0) {
+      const msg = `[Regression guard] Blocked save: "${key}" would drop from ${cloudCount} → 0. Pass the full array or omit the key.`;
+      console.error(msg);
+      return { ok: false, error: msg };
+    }
+  }
+
   // Append history entry
   const historyEntry = activity
     ? { ts: now, who: editor.name, action: activity.action, entity: activity.entity, target: activity.target }
     : null;
 
-  const existingHistory: any[] = (data as any).history || [];
+  const existingHistory: any[] = (merged as any).history || [];
   const history = historyEntry
     ? [historyEntry, ...existingHistory].slice(0, 200)
     : existingHistory;
 
-  // Read current version
-  const { data: current } = await supabase
-    .from('practicum_data')
-    .select('version')
-    .eq('org_id', 'default')
-    .single();
-
-  const version = ((current as any)?.version || 0) + 1;
+  const version = ((currentRow as any)?.version || 0) + 1;
 
   const payload = {
-    data: { ...data, history },
+    data: { ...merged, history },
     updated_at: now,
     last_editor_name: editor.name,
     version,
   };
 
-  const dataWithHistory: PracticumData = { ...data, history };
+  const dataWithHistory: PracticumData = { ...merged, history };
 
   const { error } = await supabase
     .from('practicum_data')
@@ -72,7 +99,7 @@ export function randomId(prefix = 'id'): string {
      for all to authenticated using (true) with check (true);
    ──────────────────────────────────────────────────────────────────── */
 
-const MAX_SNAPSHOTS = 30;
+const MAX_SNAPSHOTS = 50;
 
 export type SnapshotMeta = {
   id: string;
@@ -126,6 +153,38 @@ export async function loadSnapshots(): Promise<SnapshotMeta[]> {
       .limit(MAX_SNAPSHOTS);
     return (data || []) as SnapshotMeta[];
   } catch { return []; }
+}
+
+/** Auto-snapshot heartbeat: called on app load. Creates a snapshot if none exists
+ *  within the last AUTO_SNAPSHOT_INTERVAL_MS, ensuring there is always a recent
+ *  recoverable backup even if the user makes no changes. Silent — never throws. */
+const AUTO_SNAPSHOT_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+export async function ensureAutoSnapshot(
+  data: PracticumData,
+  editor: { name: string },
+): Promise<void> {
+  try {
+    // Check timestamp of the most recent snapshot
+    const { data: latest } = await supabase
+      .from('practicum_snapshots')
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const lastTs = latest ? new Date((latest as any).created_at).getTime() : 0;
+    const age = Date.now() - lastTs;
+    if (age < AUTO_SNAPSHOT_INTERVAL_MS) return; // recent enough
+
+    // Write a heartbeat snapshot
+    await writeVersionedSnapshot(
+      data,
+      editor,
+      { action: 'גיבוי אוטומטי', entity: 'מערכת', target: 'heartbeat' },
+      0, // version 0 = heartbeat (doesn't bump main version)
+    );
+  } catch { /* silent */ }
 }
 
 /** Load full data from a specific snapshot (for restore). */

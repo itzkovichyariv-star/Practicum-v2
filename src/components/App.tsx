@@ -16,11 +16,11 @@ import ManagementPage from './ManagementPage';
 import SettingsPage from './SettingsPage';
 import GlobalSearch from './GlobalSearch';
 import {
-  getSession, getContext, setContext as persistContext, signOut, normalizeYear,
+  getSession, setSession, getContext, setContext as persistContext, signOut, normalizeYear,
   type UserProfile, type Context,
 } from '../lib/session';
 import { loadSnapshot, supabase, type PracticumData } from '../lib/supabase';
-import { saveSnapshot } from '../lib/dataApi';
+import { saveSnapshot, ensureAutoSnapshot } from '../lib/dataApi';
 import { filterByPermissions, permissionsFor, describePermissions, type UserPermissions } from '../lib/permissions';
 import { CONTACT_PATCHES } from '../lib/contactPatches';
 
@@ -94,11 +94,17 @@ export default function App() {
     setReady(true);
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (retryCount = 0) => {
     setLoading(true);
     setLoadError(null);
     const snap = await loadSnapshot();
     if (!snap) {
+      // Auto-retry up to 3 times with increasing delay before giving up
+      if (retryCount < 3) {
+        const delay = (retryCount + 1) * 3000; // 3s, 6s, 9s
+        setTimeout(() => refresh(retryCount + 1), delay);
+        return;
+      }
       setLoadError('לא הצלחנו לטעון מהענן. ודא חיבור אינטרנט.');
       setLoading(false);
       return;
@@ -107,6 +113,10 @@ export default function App() {
     setLastUpdated(snap.updated_at);
     setLastEditor(snap.last_editor_name);
     setLoading(false);
+    // Fire-and-forget heartbeat: writes a snapshot if >12h since the last one.
+    // Provides a guaranteed recent backup even without user activity.
+    const s = getSession();
+    if (s?.profile) ensureAutoSnapshot(snap.data, { name: s.profile.name });
   }, []); // setters are stable; loadSnapshot is a module import — no deps needed
 
   useEffect(() => {
@@ -220,8 +230,9 @@ export default function App() {
     setCloudEmail(email);
     setCloudAuthed(true); // email+passphrase is sufficient — no magic link needed
   }} />;
-  if (loading && !data) return <Loader text="טוען נתונים מהענן..." />;
-  if (loadError && !data) {
+  // Show loader whenever data hasn't arrived yet (catches both the brief pre-loading
+  // frame and the actual in-flight request). Error state takes priority.
+  if (!data && loadError) {
     return (
       <Loader
         text={loadError}
@@ -229,6 +240,7 @@ export default function App() {
       />
     );
   }
+  if (!data) return <Loader text="טוען נתונים מהענן..." />;
 
   const pageProps = {
     data: scopedForOptions || {},
