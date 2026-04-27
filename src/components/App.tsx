@@ -79,16 +79,32 @@ export default function App() {
     return (localStorage.getItem(PAGE_STORAGE) as Page) || 'dashboard';
   });
 
-  // Resume session + check cloud auth
+  // Resume session + check cloud auth (including magic-link redirect)
   useEffect(() => {
     const s = getSession();
     if (s?.profile) setProfile(s.profile);
     setCtx(getContext());
+
+    // getSession() picks up an existing session OR processes a magic-link hash token
     supabase.auth.getSession().then(({ data: d }) => {
       setCloudAuthed(!!d.session);
       setCloudEmail(d.session?.user?.email || null);
       setReady(true);
     });
+
+    // Also listen for SIGNED_IN fired when magic link token is processed asynchronously
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        setCloudAuthed(true);
+        setCloudEmail(session.user?.email || null);
+        setReady(true);
+      }
+      if (event === 'SIGNED_OUT') {
+        setCloudAuthed(false);
+        setCloudEmail(null);
+      }
+    });
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   const refresh = useCallback(async () => {
