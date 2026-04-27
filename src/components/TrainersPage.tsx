@@ -1,0 +1,278 @@
+import { useMemo, useState } from 'react';
+import type { Trainer } from '../lib/supabase';
+import type { PageProps } from './pageShared';
+import { sameContext, normalizeYear } from './pageShared';
+import { saveSnapshot } from '../lib/dataApi';
+import { showToast } from '../lib/toast';
+import { RowActions, Popover, NeedsUpdate, RefreshButton } from './StudentsPage';
+import TrainerEditor from './TrainerEditor';
+import ExcelImport from './ExcelImport';
+
+export default function TrainersPage({ data, context, userName, onRefresh }: PageProps) {
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Trainer | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
+
+  const all = data.trainers || [];
+  const courses = data.courses || [];
+
+  const years = useMemo(() => {
+    const set = new Set<string>();
+    courses.forEach(c => c.year && set.add(normalizeYear(c.year)));
+    all.forEach(t => t.year && set.add(normalizeYear(t.year)));
+    (data.academicYears || []).forEach(y => set.add(normalizeYear(y)));
+    return Array.from(set).sort().reverse();
+  }, [courses, all, data.academicYears]);
+
+  const scoped = useMemo(() => all.filter(t => sameContext(t, context)), [all, context]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return scoped.filter(t => {
+      if (!q) return true;
+      const hay = [t.name, t.organization, t.role, t.specialty, t.email, t.phone]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+  }, [scoped, search]);
+
+  async function persistAndRefresh(next: Trainer[], msg: string) {
+    setSaving(true); setSaveMsg(null);
+    const res = await saveSnapshot({ ...data, trainers: next }, { name: userName });
+    setSaving(false);
+    if (!res.ok) {
+      setSaveMsg('שגיאה: ' + (res.error || ''));
+      showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
+      return;
+    }
+    setSaveMsg(msg);
+    showToast(msg + ' · נשמר בענן ☁️', 'success');
+    (data.trainers as Trainer[]) = next;
+    onRefresh();
+    setTimeout(() => setSaveMsg(null), 2500);
+  }
+
+  async function handleSave(t: Trainer) {
+    const idx = all.findIndex(x => x.id === t.id);
+    const next = idx >= 0 ? [...all] : [...all, t];
+    if (idx >= 0) next[idx] = t;
+    setEditing(null); setCreating(false);
+    await persistAndRefresh(next, idx >= 0 ? '✓ עודכן' : '✓ נוסף');
+  }
+
+  async function handleDelete(id: string) {
+    setEditing(null);
+    await persistAndRefresh(all.filter(t => t.id !== id), '✓ נמחק');
+  }
+
+  return (
+    <main className="max-w-[1200px] mx-auto px-4 md:px-10 pt-14 pb-28">
+
+      {/* Hero */}
+      <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
+        <div className="chapter-mark mb-6">V · מנחים</div>
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-10">
+          <div>
+            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
+              מנחים
+            </h1>
+            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+              {scoped.length === 0
+                ? 'אין מנחים/מרצים בהקשר הנוכחי. הוסף מנחה ראשון/ה.'
+                : `${scoped.length} מנחים ומרצים`}
+            </p>
+          </div>
+          <div className="flex gap-2 self-start md:self-auto flex-wrap">
+            <button onClick={() => setCreating(true)} className="btn btn-primary whitespace-nowrap">
+              + מנחה חדש/ה <span className="serif text-[16px]">→</span>
+            </button>
+            <button onClick={() => setShowImport(i => !i)} className="btn whitespace-nowrap">
+              ⬆ ייבוא Excel
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Status bar */}
+      <div className="mono text-[12px] uppercase tracking-[0.16em] flex items-center gap-4 flex-wrap mb-10"
+        style={{ color: 'var(--text-soft)' }}>
+        <RefreshButton onRefresh={onRefresh} />
+        {saveMsg && <span style={{ color: 'var(--accent)' }}>· {saveMsg}</span>}
+        {saving && <span className="opacity-75">· שומר...</span>}
+      </div>
+
+      {/* Excel import panel */}
+      {showImport && (
+        <section className="mb-8">
+          <ExcelImport kind="trainers" data={data} userName={userName} onDone={() => { setShowImport(false); onRefresh(); }} />
+        </section>
+      )}
+
+      {/* Search */}
+      <section className="mb-10">
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="חפש לפי שם, ארגון, תפקיד, מייל..."
+          className="input w-full"
+          style={{ padding: '10px 16px', fontSize: '14px' }}
+        />
+      </section>
+
+      {/* List */}
+      <section>
+        {filtered.length === 0 ? (
+          <div className="py-24 text-center">
+            <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מנחים להצגה</div>
+            <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>
+              נסה להסיר סינון או הוסף מנחה חדש/ה.
+            </div>
+          </div>
+        ) : (
+          <ul>
+            {filtered.map(t => (
+              <TrainerRow
+                key={t.id}
+                trainer={t}
+                onEdit={() => setEditing(t)}
+                pinned={pinnedId === t.id}
+                onTogglePin={() => setPinnedId(pinnedId === t.id ? null : t.id)}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {(editing || creating) && (
+        <TrainerEditor
+          trainer={editing}
+          courses={courses}
+          years={years}
+          defaultCourseId={context.courseId}
+          defaultYear={context.year}
+          onSave={handleSave}
+          onDelete={editing ? handleDelete : undefined}
+          onClose={() => { setEditing(null); setCreating(false); }}
+        />
+      )}
+    </main>
+  );
+}
+
+function TrainerRow({ trainer: t, onEdit, pinned, onTogglePin }: {
+  trainer: Trainer;
+  onEdit: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
+}) {
+  return (
+    <li className="relative group" data-info-row>
+      <div
+        onClick={onTogglePin}
+        className="py-5 border-b grid grid-cols-[1fr_auto_auto] gap-5 items-center cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
+        style={{ borderColor: 'var(--divider)' }}
+      >
+        {/* Main info */}
+        <div>
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <div className="serif text-[22px] leading-[1.2] tracking-tight" style={{ color: 'var(--ink)' }}>
+              {t.name}
+            </div>
+            {t.specialty && (
+              <span className="mono text-[10px] uppercase tracking-[0.13em] font-semibold px-2.5 py-0.5 rounded-full"
+                style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                {t.specialty}
+              </span>
+            )}
+          </div>
+          <div className="text-[13.5px] flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5" style={{ color: 'var(--text-soft)' }}>
+            {t.organization && <span>{t.organization}</span>}
+            {t.role && <span>· {t.role}</span>}
+            {t.phone && <span dir="ltr">{t.phone}</span>}
+            {t.email && <span>{t.email}</span>}
+          </div>
+        </div>
+
+        {/* Missing contact badge */}
+        <div className="text-left flex flex-col items-end gap-1">
+          {(!t.phone || !t.email) && <NeedsUpdate />}
+        </div>
+
+        {/* Action buttons */}
+        <div onClick={e => e.stopPropagation()}>
+          <RowActions phone={t.phone} email={t.email} name={t.name} onEdit={onEdit} />
+        </div>
+      </div>
+
+      {/* Popover on click */}
+      <Popover pinned={pinned}>
+        <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
+          <div>
+            <div className="serif text-[22px] leading-[1.15]" style={{ color: 'var(--ink)' }}>{t.name}</div>
+            {t.organization && (
+              <div className="mono text-[10.5px] uppercase tracking-[0.14em] mt-1" style={{ color: 'var(--text-soft)' }}>
+                {t.organization}
+              </div>
+            )}
+          </div>
+          {pinned && (
+            <button onClick={onTogglePin}
+              className="mono text-[10px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">
+              ✕
+            </button>
+          )}
+        </div>
+        <div className="space-y-1.5 text-[13px]">
+          <DetailRow label="תפקיד" value={t.role} />
+          <DetailRow label="התמחות" value={t.specialty} />
+          <DetailRow label="טלפון" value={t.phone} />
+          <DetailRow label="מייל" value={t.email} />
+          <DetailRow label="הערות" value={t.notes} />
+        </div>
+        {/* Quick-contact buttons inside popover */}
+        <div className="flex gap-2 mt-4 pt-3 border-t" style={{ borderColor: 'var(--divider)' }}>
+          {t.phone && (
+            <>
+              <a href={`tel:${t.phone.replace(/[^\d+]/g, '')}`}
+                className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold px-3 py-1.5 rounded-full border hover:bg-[rgba(122,30,43,0.06)]"
+                style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>
+                📞 חייג
+              </a>
+              <a href={`https://wa.me/${t.phone.replace(/[^\d]/g, '').replace(/^0/, '972')}`}
+                target="_blank" rel="noreferrer"
+                className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold px-3 py-1.5 rounded-full border hover:bg-[rgba(122,30,43,0.06)]"
+                style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>
+                💬 WhatsApp
+              </a>
+            </>
+          )}
+          {t.email && (
+            <a href={`mailto:${encodeURIComponent(t.email)}?subject=${encodeURIComponent('פרקטיקום — ' + t.name)}`}
+              className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold px-3 py-1.5 rounded-full border hover:bg-[rgba(122,30,43,0.06)]"
+              style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>
+              ✉ מייל
+            </a>
+          )}
+        </div>
+      </Popover>
+    </li>
+  );
+}
+
+function DetailRow({ label, value, accent }: { label: string; value?: string | null; accent?: boolean }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-baseline gap-3">
+      <span className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold w-20 shrink-0"
+        style={{ color: 'var(--text-soft)' }}>
+        {label}
+      </span>
+      <span style={{ color: accent ? 'var(--accent)' : 'var(--ink)' }}>{value}</span>
+    </div>
+  );
+}

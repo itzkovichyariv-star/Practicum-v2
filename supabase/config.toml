@@ -1,0 +1,2 @@
+[functions.nightly-digest]
+schedule = "0 17 * * *"

@@ -1,0 +1,411 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Rubik:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: #f4efe6;
+    --ink: #3d0f14;
+    --accent: #7a1e2b;
+    --accent-soft: rgba(122, 30, 43, 0.08);
+    --divider: rgba(122, 30, 43, 0.18);
+    --text-soft: rgba(61, 15, 20, 0.5);
+    --nav-bg: rgba(244, 239, 230, 0.88);
+
+    /* Traffic-light semantic palette */
+    --tl-gray:  #94a3b8;
+    --tl-amber: #d97706;
+    --tl-green: #16a34a;
+    --tl-red:   #dc2626;
+
+    /* Surface elevations */
+    --surface-1: rgba(255,255,255,0.55);
+    --surface-2: rgba(255,255,255,0.30);
+  }
+
+  html, body {
+    font-family: 'Rubik', ui-sans-serif, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  * { box-sizing: border-box; }
+  a { color: inherit; text-decoration: none; }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--accent);
+  }
+
+  /* Print */
+  @media print {
+    @page { size: A4 landscape; margin: 1cm; }
+    body { background: white !important; }
+    header, footer, nav, aside,
+    .print\:hidden { display: none !important; }
+    main { max-width: 100% !important; padding: 0 !important; }
+    section { margin-bottom: 12px !important; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; page-break-inside: auto; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+    th, td { border: 0.5px solid #ccc !important; padding: 4px 6px !important; }
+    h1 { font-size: 20px !important; margin: 0 0 4px !important; }
+    h2 { font-size: 14px !important; }
+    .chapter-mark { font-size: 9px !important; }
+  }
+
+  /* ─── Tablet (≤ 768px) ─────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    /* Ensure all interactive elements are tappable */
+    button, a[role="button"], input, select, textarea {
+      min-height: 44px;
+    }
+
+    /* Page padding */
+    main {
+      padding-left: 16px !important;
+      padding-right: 16px !important;
+      padding-top: 24px !important;
+    }
+
+    /* Typography scale-down */
+    .serif { line-height: 1.15; }
+    h1 { font-size: 30px !important; }
+    h2 { font-size: 22px !important; }
+
+    /* Tables: horizontal scroll wrapper */
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { min-width: 560px; }
+
+    /* 2-column grids → 1 column */
+    .grid-cols-2 { grid-template-columns: 1fr !important; }
+
+    /* 4-column stats → 2 columns */
+    .stats-grid { grid-template-columns: 1fr 1fr !important; }
+
+    /* Lecture row in dashboard → flex-col */
+    .lecture-row-grid { display: flex !important; flex-direction: column !important; gap: 4px !important; }
+
+    /* Form card buttons — stack vertically */
+    .form-card-actions { flex-direction: column !important; align-items: stretch !important; }
+    .form-card-actions button { text-align: center !important; justify-content: center !important; }
+
+    /* Section headers — stack instead of side-by-side */
+    .section-head { flex-direction: column !important; align-items: flex-start !important; gap: 6px !important; }
+
+    /* Popover — full width on mobile */
+    .popover-panel { min-width: min(90vw, 340px) !important; max-width: 95vw !important; }
+
+    /* Footer — hide on mobile */
+    footer { display: none !important; }
+
+    /* Version stamp — smaller */
+    #version-stamp { font-size: 9px !important; }
+  }
+
+  /* ─── Phone (≤ 480px) ─────────────────────────────────────────── */
+  @media (max-width: 480px) {
+    main {
+      padding-left: 14px !important;
+      padding-right: 14px !important;
+    }
+    h1 { font-size: 26px !important; }
+    h2 { font-size: 20px !important; }
+
+    /* Stat numbers — scale down the huge 68px */
+    .stat-num { font-size: 44px !important; }
+
+    /* Lecture big date number */
+    .lecture-date-num { font-size: 32px !important; }
+
+    /* Section head title */
+    .section-head-title { font-size: 26px !important; }
+
+    /* Quick links: 2-col → 1-col */
+    .quick-links-grid { grid-template-columns: 1fr !important; }
+
+    /* Button pill text */
+    .btn { font-size: 11px !important; padding: 10px 16px !important; }
+
+    /* Input search full width */
+    input[type="search"], input[type="text"], input[type="email"] {
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+
+    /* Stage tabs — wrap tighter */
+    .stage-tabs { gap: 6px !important; }
+    .stage-tabs button { padding: 6px 10px !important; font-size: 11px !important; }
+  }
+}
+
+@layer components {
+  .serif { font-family: 'Instrument Serif', Georgia, serif; }
+  .mono { font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif; font-feature-settings: "tnum"; }
+
+  .small-caps {
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+  }
+
+  .chapter-mark {
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .chapter-mark.with-sigil::before { content: '§ '; opacity: 0.6; }
+
+  .stat-label {
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+  }
+
+  .nav-link {
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink);
+    transition: opacity 0.2s, color 0.2s;
+  }
+  .nav-link:hover { color: var(--accent); }
+  .nav-link.active { color: var(--accent); }
+
+  .bar-label {
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .context-select {
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding-left: 18px;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+      linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+    background-position: calc(100% - 7px) center, calc(100% - 3px) center;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 0;   /* override mobile 44px for inline selects */
+  }
+  .context-select:focus { outline: none; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 22px;
+    font-family: 'Instrument Sans', 'Rubik', ui-sans-serif, sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 44px;
+  }
+  .btn:hover { opacity: 0.7; }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .btn-primary:hover { opacity: 0.85; }
+
+  .pill {
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    padding: 4px 12px;
+    transition: opacity 0.2s;
+  }
+  .pill:hover { opacity: 0.6; }
+
+  .input {
+    width: 100%;
+    padding: 14px 18px;
+    font-size: 15px;
+    font-family: 'Rubik', sans-serif;
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--divider);
+    border-radius: 12px;
+    color: var(--ink);
+    transition: all 0.2s;
+    outline: none;
+    min-height: 44px;
+  }
+  .input:focus {
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 0 0 4px rgba(122, 30, 43, 0.12);
+  }
+  .input::placeholder { color: var(--text-soft); }
+
+  /* ─── Ramzor tab bar ──────────────────────────────────────────────── */
+  .ramzor-bar {
+    display: flex;
+    border-bottom: 1px solid var(--divider);
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ramzor-bar::-webkit-scrollbar { display: none; }
+
+  .ramzor-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px 11px;
+    border-bottom: 2.5px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: border-color 0.18s, color 0.18s;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text-soft);
+  }
+  .ramzor-tab:hover { color: var(--ink); }
+  .ramzor-tab.active { color: var(--ink); }
+
+  /* ─── Progress ring animation ─────────────────────────────────────── */
+  .ring-fill {
+    transition: stroke-dashoffset 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ─── Surface card (elevated panel) ──────────────────────────────── */
+  .surface {
+    background: var(--surface-1);
+    border: 1px solid var(--divider);
+    border-radius: 16px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}
+
+@keyframes practicum-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Dark mode: system preference OR JS-driven data-theme="dark" ────
+   Both selectors are identical — keep in sync when editing.            */
+
+/* Explicit JS-driven dark (time-based or user override) */
+html[data-theme="dark"] {
+  --bg:          #1c0b0e;
+  --ink:         #ede5d8;
+  --accent:      #e06a7a;
+  --accent-soft: rgba(224,106,122,0.14);
+  --divider:     rgba(255,255,255,0.09);
+  --text-soft:   rgba(237,229,216,0.52);
+  --nav-bg:      rgba(22,8,11,0.94);
+  --tl-gray:     #64748b;
+  --tl-amber:    #f59e0b;
+  --tl-green:    #4ade80;
+  --tl-red:      #f87171;
+  --surface-1:   rgba(255,255,255,0.06);
+  --surface-2:   rgba(255,255,255,0.03);
+}
+html[data-theme="dark"] .input {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.13);
+  color: var(--ink);
+}
+html[data-theme="dark"] .input:focus {
+  background: rgba(255,255,255,0.08);
+  border-color: var(--accent);
+}
+html[data-theme="dark"] .input option { background: #2a0e12; }
+html[data-theme="dark"] .btn { border-color: rgba(255,255,255,0.15); color: var(--ink); background: rgba(255,255,255,0.04); }
+html[data-theme="dark"] .btn:hover { background: rgba(255,255,255,0.08); }
+html[data-theme="dark"] .btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
+html[data-theme="dark"] .btn-primary:hover { opacity: 0.88; }
+html[data-theme="dark"] .pill { background: rgba(224,106,122,0.18); color: var(--accent); }
+html[data-theme="dark"] [data-popover],
+html[data-theme="dark"] [data-info-row] > [class*="rounded"] { background: #2a0e12; border-color: rgba(255,255,255,0.1); }
+html[data-theme="dark"] section,
+html[data-theme="dark"] li,
+html[data-theme="dark"] .border-b { border-color: rgba(255,255,255,0.09) !important; }
+
+/* ── System preference dark mode (identical vars — keep in sync) ──── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:          #1c0b0e;
+    --ink:         #ede5d8;
+    --accent:      #e06a7a;
+    --accent-soft: rgba(224,106,122,0.14);
+    --divider:     rgba(255,255,255,0.09);
+    --text-soft:   rgba(237,229,216,0.52);
+    --nav-bg:      rgba(22,8,11,0.94);
+
+    --tl-gray:  #64748b;
+    --tl-amber: #f59e0b;
+    --tl-green: #4ade80;
+    --tl-red:   #f87171;
+
+    --surface-1: rgba(255,255,255,0.06);
+    --surface-2: rgba(255,255,255,0.03);
+  }
+
+  /* Inputs */
+  .input {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.13);
+    color: var(--ink);
+  }
+  .input:focus {
+    background: rgba(255,255,255,0.08);
+    border-color: var(--accent);
+  }
+  .input option { background: #2a0e12; }
+
+  /* Buttons */
+  .btn { border-color: rgba(255,255,255,0.15); color: var(--ink); background: rgba(255,255,255,0.04); }
+  .btn:hover { background: rgba(255,255,255,0.08); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .btn-primary:hover { opacity: 0.88; }
+
+  /* Pill */
+  .pill { background: rgba(224,106,122,0.18); color: var(--accent); }
+
+  /* Popovers / cards */
+  [data-popover], [data-info-row] > [class*="rounded"] {
+    background: #2a0e12;
+    border-color: rgba(255,255,255,0.1);
+  }
+
+  /* Borders on section elements */
+  section, li, .border-b { border-color: rgba(255,255,255,0.09) !important; }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "פרקטיקום · ניהול",
+  "short_name": "פרקטיקום",
+  "description": "מערכת ניהול פרקטיקום — אוניברסיטת אריאל",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4efe6",
+  "theme_color": "#7a1e2b",
+  "lang": "he",
+  "dir": "rtl",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "סטודנטים",
+      "url": "/?page=students",
+      "description": "נהל סטודנטים"
+    },
+    {
+      "name": "מועמדים",
+      "url": "/?page=candidates",
+      "description": "נהל מועמדים"
+    }
+  ]
+}

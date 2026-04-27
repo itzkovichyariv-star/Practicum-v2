@@ -1,0 +1,41 @@
+---
+import '../styles/global.css';
+export interface Props {
+  title?: string;
+}
+const { title = 'פרקטיקום · Ariel University' } = Astro.props;
+const VERSION = 'v2026.04.26';
+---
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>{title} · {VERSION}</title>
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#7a1e2b" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c0b0e" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="פרקטיקום" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
+  </head>
+  <body class="min-h-screen">
+    <slot />
+    <!-- Version stamp for debugging -->
+    <div id="version-stamp" style="position:fixed;bottom:4px;left:8px;font-family:monospace;font-size:10px;color:rgba(122,30,43,0.35);pointer-events:none;z-index:1">
+      {VERSION}
+    </div>
+  </body>
+</html>
