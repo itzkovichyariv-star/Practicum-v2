@@ -269,6 +269,8 @@ export default function App() {
         themeMode={themeMode}
         onThemeChange={setThemeMode}
       />
+      {/* Spacer that matches the fixed header height exactly */}
+      <div style={{ height: 'var(--header-h, 108px)' }} />
 
       {page === 'dashboard'  && <Dashboard  {...pageProps} />}
       {page === 'lectures'   && <LecturesPage  {...pageProps} />}

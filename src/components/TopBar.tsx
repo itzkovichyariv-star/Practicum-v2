@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { Context } from '../lib/session';
 
 export type Page = 'dashboard' | 'lectures' | 'students' | 'employers' | 'trainers' | 'candidates' | 'calendar' | 'reports' | 'forms' | 'management' | 'settings';
@@ -25,7 +25,7 @@ const NAV: { label: string; page: Page; emoji: string }[] = [
   { label: 'הרצאות',    page: 'lectures',   emoji: '📚' },
   { label: 'סטודנטים',  page: 'students',   emoji: '👥' },
   { label: 'מעסיקים',   page: 'employers',  emoji: '🏢' },
-  { label: 'מנחים',     page: 'trainers',   emoji: '🧑‍🏫' },
+  { label: 'מנחים/מרצים', page: 'trainers', emoji: '🧑‍🏫' },
   { label: 'מועמדים',   page: 'candidates', emoji: '🎯' },
   { label: 'לוח שנה',   page: 'calendar',   emoji: '📅' },
   { label: 'דוחות',     page: 'reports',    emoji: '📊' },
@@ -39,6 +39,20 @@ export default function TopBar({
   themeMode = 'auto', onThemeChange,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+
+  // Keep a CSS custom property --header-h in sync with the real header height
+  // so the page content spacer below always matches exactly.
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () =>
+      document.documentElement.style.setProperty('--header-h', el.offsetHeight + 'px');
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   function navigate(p: Page) {
     onNavigate(p);
@@ -50,7 +64,8 @@ export default function TopBar({
   return (
     <>
       <header
-        className="sticky top-0 z-50 border-b"
+        ref={headerRef}
+        className="fixed top-0 left-0 right-0 z-50 border-b"
         style={{
           background: 'var(--nav-bg)',
           backdropFilter: 'blur(16px) saturate(180%)',
@@ -66,13 +81,10 @@ export default function TopBar({
             <span className="opacity-60">Est. 2025</span>
           </button>
 
-          <div className="flex items-center gap-4 px-4 py-1.5 rounded-full border"
-            style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.25)' }}>
-            <span style={{ color: 'var(--text-soft)' }}>קורס</span>
-            <ContextSelect value={context.courseId} onChange={v => onContext({ ...context, courseId: v })} options={courseOptions} />
-            <span className="w-px h-3 opacity-30" style={{ background: 'currentColor' }} />
-            <span style={{ color: 'var(--text-soft)' }}>שנה</span>
-            <ContextSelect value={context.year} onChange={v => onContext({ ...context, year: v })} options={yearOptions} />
+          <div className="flex items-center gap-2">
+            <ContextSelect label="קורס" value={context.courseId} onChange={v => onContext({ ...context, courseId: v })} options={courseOptions} />
+            <span className="opacity-20 text-[11px]">|</span>
+            <ContextSelect label="שנה" value={context.year} onChange={v => onContext({ ...context, year: v })} options={yearOptions} />
           </div>
 
           <div className="flex items-center gap-3">
@@ -117,6 +129,16 @@ export default function TopBar({
             {currentLabel}
           </span>
 
+          {/* Search icon (mobile) */}
+          <button
+            onClick={() => window.dispatchEvent(new Event('open-search'))}
+            className="flex items-center justify-center w-9 h-9 rounded-lg border"
+            style={{ borderColor: 'var(--divider)', background: 'transparent', minHeight: 0 }}
+            aria-label="חיפוש"
+          >
+            <span style={{ fontSize: '15px' }}>🔍</span>
+          </button>
+
           {/* Hamburger */}
           <button
             onClick={() => setMenuOpen(o => !o)}
@@ -131,6 +153,12 @@ export default function TopBar({
             <span className="block w-5 h-[2px] rounded-full transition-all"
               style={{ background: 'var(--ink)', transform: menuOpen ? 'rotate(-45deg) translate(5px, -5px)' : 'none' }} />
           </button>
+        </div>
+
+        {/* ── Mobile context row (always visible) ── */}
+        <div className="flex md:hidden items-center gap-2 px-4 pb-3">
+          <ContextSelect label="קורס" value={context.courseId} onChange={v => onContext({ ...context, courseId: v })} options={courseOptions} />
+          <ContextSelect label="שנה" value={context.year} onChange={v => onContext({ ...context, year: v })} options={yearOptions} />
         </div>
       </header>
 
@@ -203,11 +231,23 @@ export default function TopBar({
   );
 }
 
-function ContextSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: Option[] }) {
+function ContextSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: Option[] }) {
+  const current = options.find(o => o.value === value)?.label || value;
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} className="context-select">
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+    <div className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer transition-colors hover:border-[var(--accent)]"
+      style={{ borderColor: 'var(--divider)', background: 'var(--accent-soft)' }}>
+      <span className="mono text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>{label}</span>
+      <span className="mono text-[12px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--accent)' }}>{current}</span>
+      <span style={{ color: 'var(--accent)', fontSize: '9px', opacity: 0.7 }}>▾</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="context-select absolute inset-0 w-full h-full opacity-0"
+        style={{ cursor: 'pointer' }}
+      >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
   );
 }
 
