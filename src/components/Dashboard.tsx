@@ -322,7 +322,7 @@ export default function Dashboard({
                       <span style={{ color: '#ad4452', fontWeight: 600 }}>{activeCount}</span> מתוך {scopedStudents.length}
                     </div>
                     <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-                      {scopedStudents.filter(s => s.preparation?.passed && !s.acceptedOrg && !s.practicumCompleted).length} מוכנים · ממתינים לשיבוץ
+                      {scopedStudents.filter(s => s.acceptedOrg).length} שובצו בארגונים
                     </div>
                   </div>
                 </div>
