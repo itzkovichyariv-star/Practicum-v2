@@ -264,7 +264,7 @@ export default function Dashboard({
               style={{ gridTemplateColumns: '1fr repeat(4, 80px)', borderBottom: '1px solid var(--divider)', color: 'var(--text-soft)' }}>
               <span>קורס · שנה</span>
               <span className="text-center">סטודנטים</span>
-              <span className="text-center" style={{ color: '#c0506a' }}>בהתנסות</span>
+              <span className="text-center" style={{ color: '#ad4452' }}>בהתנסות</span>
               <span className="text-center" style={{ color: '#b45309' }}>סיימו</span>
               <span className="text-center" style={{ color: 'var(--accent)' }}>נקלטו</span>
             </div>
@@ -291,7 +291,7 @@ export default function Dashboard({
                 </div>
                 {/* בהתנסות */}
                 <div className="text-center">
-                  <span className="serif text-[22px] leading-none font-normal" style={{ color: '#c0506a' }}>{row.active}</span>
+                  <span className="serif text-[22px] leading-none font-normal" style={{ color: '#ad4452' }}>{row.active}</span>
                   <div className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>מתוך {row.total}</div>
                 </div>
                 {/* סיימו */}
@@ -315,11 +315,11 @@ export default function Dashboard({
             <div className="flex flex-wrap items-center gap-8 md:gap-14 pt-6 pb-8 border-t border-b" style={{ borderColor: 'var(--divider)' }}>
               {scopedStudents.length > 0 && (
                 <div className="flex items-center gap-5">
-                  <ProgressRing value={activeCount} max={scopedStudents.length} label="בהתנסות" color="#c0506a" />
+                  <ProgressRing value={activeCount} max={scopedStudents.length} label="בהתנסות" color="#ad4452" />
                   <div>
                     <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>בהתנסות</div>
                     <div className="text-[13.5px] leading-[1.6]" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: '#c0506a', fontWeight: 600 }}>{activeCount}</span> מתוך {scopedStudents.length}
+                      <span style={{ color: '#ad4452', fontWeight: 600 }}>{activeCount}</span> מתוך {scopedStudents.length}
                     </div>
                     <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
                       {scopedStudents.filter(s => s.preparation?.passed && !s.acceptedOrg && !s.practicumCompleted).length} מוכנים · ממתינים לשיבוץ
