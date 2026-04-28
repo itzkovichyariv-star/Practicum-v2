@@ -1,6 +1,7 @@
+import { useMemo } from 'react';
 import type { Lecture } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext } from './pageShared';
+import { sameContext, normalizeYear } from './pageShared';
 import { RefreshButton } from './StudentsPage';
 
 function hebDate(d: Date) {
@@ -26,7 +27,7 @@ function timeAgo(ts: string): string {
 }
 
 export default function Dashboard({
-  data, context, userName, lastUpdated, lastEditor, onRefresh, onNavigate,
+  data, context, onContext, userName, lastUpdated, lastEditor, onRefresh, onNavigate,
 }: PageProps) {
   const students = data.students || [];
   const employers = data.employers || [];
@@ -40,8 +41,10 @@ export default function Dashboard({
   const scopedLectures = lectures.filter(l => sameContext(l, context));
 
   // Stats
-  const hiredCount = scopedStudents.filter(s => s.acceptedOrg || s.hired).length;
-  const placementRate = scopedStudents.length
+  const completedCount = scopedStudents.filter(s => s.practicumCompleted).length;
+  const hiredCount     = scopedStudents.filter(s => s.hired).length;
+  const activeCount    = scopedStudents.filter(s => s.acceptedOrg && !s.practicumCompleted).length;
+  const placementRate  = scopedStudents.length
     ? Math.round((hiredCount / scopedStudents.length) * 100)
     : 0;
   const totalPositions = scopedEmployers.reduce((sum, e) => sum + (Number(e.positions) || 0), 0);
@@ -153,6 +156,41 @@ export default function Dashboard({
     });
   }
 
+  // Context label
+  const courses = data.courses || [];
+  const contextLabel = useMemo(() => {
+    const cLabel = context.courseId === '__all__' ? 'כל הקורסים' : (courses.find(c => c.id === context.courseId)?.name || context.courseId);
+    const yLabel = context.year === '__all__' ? 'כל השנים' : context.year;
+    return { course: cLabel, year: yLabel, isAll: context.courseId === '__all__' };
+  }, [context, courses]);
+
+  // Per-course breakdown (only when viewing all courses)
+  const courseBreakdown = useMemo(() => {
+    if (context.courseId !== '__all__') return [];
+    const courseMap = new Map(courses.map(c => [c.id, c]));
+    const map = new Map<string, { key: string; courseName: string; year: string; total: number; active: number; completed: number; hired: number }>();
+    for (const s of students) {
+      if (context.year !== '__all__' && normalizeYear(s.year) !== normalizeYear(context.year)) continue;
+      const key = `${s.courseId}||${normalizeYear(s.year)}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key, year: normalizeYear(s.year) || '—',
+          courseName: courseMap.get(s.courseId)?.name || s.courseId || '—',
+          total: 0, active: 0, completed: 0, hired: 0,
+        });
+      }
+      const row = map.get(key)!;
+      row.total++;
+      if (s.acceptedOrg && !s.practicumCompleted) row.active++;
+      if (s.practicumCompleted) row.completed++;
+      if (s.hired) row.hired++;
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.year !== b.year) return b.year.localeCompare(a.year, 'he');
+      return a.courseName.localeCompare(b.courseName, 'he');
+    });
+  }, [students, courses, context]);
+
   const today = new Date();
   const engMonths = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
   const engDays = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
@@ -164,7 +202,18 @@ export default function Dashboard({
         {/* Hero */}
         <section className="flex flex-col md:grid md:grid-cols-[1fr_auto] gap-6 md:gap-10 items-start md:items-end pt-4 pb-8 border-b mb-8" style={{ borderColor: 'var(--divider)' }}>
           <div>
-            <div className="chapter-mark with-sigil mb-4">I · דשבורד</div>
+            <div className="chapter-mark with-sigil mb-2">I · דשבורד</div>
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] px-2.5 py-1 rounded-full"
+                style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--divider)' }}>
+                {contextLabel.course}
+              </span>
+              <span className="mono text-[11px]" style={{ color: 'var(--text-soft)' }}>·</span>
+              <span className="mono text-[11px] uppercase tracking-[0.14em] px-2.5 py-1 rounded-full"
+                style={{ background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--divider)' }}>
+                {contextLabel.year}
+              </span>
+            </div>
             <h1 className="serif text-[40px] leading-[1.12] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
               שלום, <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>{userName}</em>.
             </h1>
@@ -197,16 +246,68 @@ export default function Dashboard({
         {/* Stats — no header, tight to hero */}
         <section className="mb-10">
           <div className="grid grid-cols-2 md:grid-cols-4 stats-grid">
-            <Stat label="סטודנטים" num={String(scopedStudents.length)} delta={`${hiredCount} התקבלו / נקלטו`} primary />
-            <Stat label="מעסיקים" num={String(scopedEmployers.length)} delta={`${totalPositions} משרות · ${openPositions} פתוחות`} />
+            <Stat label="סטודנטים" num={String(scopedStudents.length)} delta={`${activeCount} בהתנסות · ${hiredCount} נקלטו`} primary />
+            <Stat label="סיימו פרקטיקום" num={String(completedCount)}
+              delta={scopedStudents.length ? `${Math.round((completedCount/scopedStudents.length)*100)}% מהסטודנטים` : '—'}
+              color="#b45309" />
+            <Stat label="מעסיקים" num={String(scopedEmployers.length)} delta={`${totalPositions > 0 ? totalPositions + ' מקומות פרקטיקום' : '—'}`} />
             <Stat label="מועמדים" num={String(scopedCandidates.length)} delta={candsWaiting ? `${candsWaiting} ממתינים` : '—'} />
-            <Stat
-              label="הרצאות השבוע"
-              num={String(weekLectures)}
-              delta={upcoming[0] ? nextLectureHint(upcoming[0].date) : '—'}
-            />
           </div>
         </section>
+
+        {/* Per-course breakdown — shown only when viewing all courses */}
+        {contextLabel.isAll && courseBreakdown.length > 0 && (
+          <section className="mb-10">
+            <SectionHead title="סיכום לפי קורסים" />
+            {/* Column headers */}
+            <div className="mono text-[10px] uppercase tracking-[0.16em] pb-2 mb-1 grid gap-4"
+              style={{ gridTemplateColumns: '1fr repeat(4, 80px)', borderBottom: '1px solid var(--divider)', color: 'var(--text-soft)' }}>
+              <span>קורס · שנה</span>
+              <span className="text-center">סטודנטים</span>
+              <span className="text-center" style={{ color: '#c0506a' }}>בהתנסות</span>
+              <span className="text-center" style={{ color: '#b45309' }}>סיימו</span>
+              <span className="text-center" style={{ color: 'var(--accent)' }}>נקלטו</span>
+            </div>
+            {courseBreakdown.map(row => (
+              <div key={row.key}
+                role="button" tabIndex={0}
+                onClick={() => onContext?.({ courseId: row.courseId, year: row.year })}
+                onKeyDown={e => e.key === 'Enter' && onContext?.({ courseId: row.courseId, year: row.year })}
+                className="py-4 grid gap-4 items-center border-b cursor-pointer transition-colors"
+                style={{ gridTemplateColumns: '1fr repeat(4, 80px)', borderColor: 'var(--divider)', background: 'transparent' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(122,30,43,0.035)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                {/* Name + year */}
+                <div className="flex items-center gap-2 group">
+                  <div>
+                    <div className="serif text-[17px] leading-[1.2]" style={{ color: 'var(--ink)' }}>{row.courseName}</div>
+                    <div className="mono text-[10.5px] uppercase tracking-[0.12em] mt-0.5" style={{ color: 'var(--text-soft)' }}>{row.year}</div>
+                  </div>
+                  <span className="serif text-[16px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent)' }}>←</span>
+                </div>
+                {/* סטודנטים */}
+                <div className="text-center">
+                  <span className="serif text-[26px] leading-none" style={{ color: 'var(--ink)' }}>{row.total}</span>
+                </div>
+                {/* בהתנסות */}
+                <div className="text-center">
+                  <span className="serif text-[22px] leading-none font-normal" style={{ color: '#c0506a' }}>{row.active}</span>
+                  <div className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>מתוך {row.total}</div>
+                </div>
+                {/* סיימו */}
+                <div className="text-center">
+                  <span className="serif text-[22px] leading-none font-normal" style={{ color: '#b45309' }}>{row.completed}</span>
+                  <div className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>מתוך {row.total}</div>
+                </div>
+                {/* נקלטו */}
+                <div className="text-center">
+                  <span className="serif text-[22px] leading-none font-normal" style={{ color: 'var(--accent)' }}>{row.hired}</span>
+                  <div className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>מתוך {row.total}</div>
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
 
         {/* Progress rings — placement overview */}
         {(scopedStudents.length > 0 || scopedCandidates.length > 0) && (
@@ -214,15 +315,39 @@ export default function Dashboard({
             <div className="flex flex-wrap items-center gap-8 md:gap-14 pt-6 pb-8 border-t border-b" style={{ borderColor: 'var(--divider)' }}>
               {scopedStudents.length > 0 && (
                 <div className="flex items-center gap-5">
-                  <ProgressRing value={hiredCount + scopedStudents.filter(s => s.acceptedOrg && !s.hired).length} max={scopedStudents.length} label="שובצו" color="var(--tl-green)" />
+                  <ProgressRing value={activeCount} max={scopedStudents.length} label="בהתנסות" color="#c0506a" />
                   <div>
-                    <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>השמה</div>
+                    <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>בהתנסות</div>
                     <div className="text-[13.5px] leading-[1.6]" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: 'var(--tl-green)', fontWeight: 600 }}>{hiredCount + scopedStudents.filter(s => s.acceptedOrg && !s.hired).length}</span> מתוך {scopedStudents.length}
+                      <span style={{ color: '#c0506a', fontWeight: 600 }}>{activeCount}</span> מתוך {scopedStudents.length}
                     </div>
                     <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-                      {scopedStudents.filter(s => s.preparation?.passed && !s.acceptedOrg && !s.hired).length} מוכנים ▸ ממתינים
+                      {scopedStudents.filter(s => s.preparation?.passed && !s.acceptedOrg && !s.practicumCompleted).length} מוכנים · ממתינים לשיבוץ
                     </div>
+                  </div>
+                </div>
+              )}
+              {scopedStudents.length > 0 && (
+                <div className="flex items-center gap-5">
+                  <ProgressRing value={completedCount} max={scopedStudents.length} label="סיימו" color="#b45309" />
+                  <div>
+                    <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>סיום פרקטיקום</div>
+                    <div className="text-[13.5px] leading-[1.6]" style={{ color: 'var(--ink)' }}>
+                      <span style={{ color: '#b45309', fontWeight: 600 }}>{completedCount}</span> מתוך {scopedStudents.length}
+                    </div>
+                    <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>מילאו חובות שעות</div>
+                  </div>
+                </div>
+              )}
+              {scopedStudents.length > 0 && (
+                <div className="flex items-center gap-5">
+                  <ProgressRing value={hiredCount} max={scopedStudents.length} label="נקלטו" color="var(--accent)" />
+                  <div>
+                    <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>נקלטו לעבודה</div>
+                    <div className="text-[13.5px] leading-[1.6]" style={{ color: 'var(--ink)' }}>
+                      <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{hiredCount}</span> מתוך {scopedStudents.length}
+                    </div>
+                    <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>לאחר סיום הפרקטיקום</div>
                   </div>
                 </div>
               )}
@@ -232,20 +357,6 @@ export default function Dashboard({
                   <div>
                     <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>מועמדים</div>
                     <PipelineMini candidates={scopedCandidates} />
-                  </div>
-                </div>
-              )}
-              {totalPositions > 0 && (
-                <div className="flex items-center gap-5">
-                  <ProgressRing value={filledPositions} max={totalPositions} label="משרות מאוישות" color="var(--tl-amber)" />
-                  <div>
-                    <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--text-soft)' }}>מעסיקים</div>
-                    <div className="text-[13.5px]" style={{ color: 'var(--ink)' }}>
-                      <span style={{ color: 'var(--tl-amber)', fontWeight: 600 }}>{filledPositions}</span>/{totalPositions} משרות
-                    </div>
-                    <div className="text-[12px]" style={{ color: 'var(--tl-red)' }}>
-                      {openPositions > 0 ? `${openPositions} פתוחות` : '✓ כולן מאוישות'}
-                    </div>
                   </div>
                 </div>
               )}
@@ -359,20 +470,21 @@ function SectionHead({
    but no longer swamps the label. Delta is demoted to muted unless primary.
    Only the primary stat gets the accent delta — reduces color noise across 4 cards. */
 function Stat({
-  label, num, delta, primary,
-}: { label: string; num: string; delta: string; primary?: boolean }) {
+  label, num, delta, primary, color,
+}: { label: string; num: string; delta: string; primary?: boolean; color?: string }) {
   return (
     <div
       className="px-4 md:px-7 py-4 md:py-0 border-b md:border-b-0 border-l first:border-l-0 first:pr-0 last:pl-0"
       style={{ borderColor: 'var(--divider)' }}
     >
       <div className="stat-label mb-2 md:mb-3">{label}</div>
-      <div className="stat-num serif text-[52px] md:text-[68px] font-normal leading-[0.9] tracking-tight" style={{ color: 'var(--ink)' }}>
+      <div className="stat-num serif text-[52px] md:text-[68px] font-normal leading-[0.9] tracking-tight"
+        style={{ color: color || 'var(--ink)' }}>
         {num}
       </div>
       <div
         className="mt-4 text-[13.5px] leading-[1.5]"
-        style={{ color: primary ? 'var(--accent)' : 'var(--text-soft)' }}
+        style={{ color: primary ? 'var(--accent)' : color ? color : 'var(--text-soft)', opacity: color ? 0.8 : 1 }}
       >
         {delta}
       </div>

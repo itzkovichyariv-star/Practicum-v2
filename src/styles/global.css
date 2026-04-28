@@ -17,7 +17,7 @@
     /* Traffic-light semantic palette */
     --tl-gray:  #94a3b8;
     --tl-amber: #d97706;
-    --tl-green: #16a34a;
+    --tl-green: #c0506a;
     --tl-red:   #dc2626;
 
     /* Surface elevations */
@@ -326,7 +326,7 @@ html[data-theme="light"] {
   --nav-bg:      rgba(244, 239, 230, 0.88);
   --tl-gray:     #94a3b8;
   --tl-amber:    #d97706;
-  --tl-green:    #16a34a;
+  --tl-green:    #c0506a;
   --tl-red:      #dc2626;
   --surface-1:   rgba(255,255,255,0.55);
   --surface-2:   rgba(255,255,255,0.30);
@@ -364,7 +364,7 @@ html[data-theme="dark"] {
   --nav-bg:      rgba(22,8,11,0.94);
   --tl-gray:     #64748b;
   --tl-amber:    #f59e0b;
-  --tl-green:    #4ade80;
+  --tl-green:    #f0afc0;
   --tl-red:      #f87171;
   --surface-1:   rgba(255,255,255,0.06);
   --surface-2:   rgba(255,255,255,0.03);
