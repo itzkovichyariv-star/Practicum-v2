@@ -10,6 +10,9 @@ create table if not exists public.practicum_snapshots (
   data jsonb not null
 );
 alter table public.practicum_snapshots enable row level security;
-create policy "auth users can manage snapshots"
+
+-- Allow both anon and authenticated roles (app uses anon key with its own password gate)
+drop policy if exists "auth users can manage snapshots" on public.practicum_snapshots;
+create policy "allow all roles"
   on public.practicum_snapshots for all
-  to authenticated using (true) with check (true);
+  to anon, authenticated using (true) with check (true);
