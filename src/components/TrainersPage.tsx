@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { Trainer } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext, normalizeYear } from './pageShared';
+import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
-import { RowActions, Popover, NeedsUpdate, RefreshButton } from './StudentsPage';
+import { RowActions, Popover, NeedsUpdate, RefreshButton, GroupHeader } from './StudentsPage';
 import TrainerEditor from './TrainerEditor';
 import ExcelImport from './ExcelImport';
 
@@ -74,11 +74,11 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
 
       {/* Hero */}
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
-        <div className="chapter-mark mb-6">V · מנחים</div>
+        <div className="chapter-mark mb-6">V · מנחים/מרצים</div>
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-10">
           <div>
             <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
-              מנחים
+              מנחים/מרצים
             </h1>
             <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {scoped.length === 0
@@ -128,21 +128,28 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
       <section>
         {filtered.length === 0 ? (
           <div className="py-24 text-center">
-            <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מנחים להצגה</div>
+            <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מנחים/מרצים להצגה</div>
             <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>
-              נסה להסיר סינון או הוסף מנחה חדש/ה.
+              נסה להסיר סינון או הוסף מנחה/מרצה חדש/ה.
             </div>
           </div>
+        ) : context.courseId === '__all__' ? (
+          groupByYearCourse(filtered, courses, context).map(group => (
+            <div key={`${group.year}||${group.courseId}`}>
+              <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
+              <ul>
+                {group.items.map(t => (
+                  <TrainerRow key={t.id} trainer={t} onEdit={() => setEditing(t)}
+                    pinned={pinnedId === t.id} onTogglePin={() => setPinnedId(pinnedId === t.id ? null : t.id)} />
+                ))}
+              </ul>
+            </div>
+          ))
         ) : (
           <ul>
             {filtered.map(t => (
-              <TrainerRow
-                key={t.id}
-                trainer={t}
-                onEdit={() => setEditing(t)}
-                pinned={pinnedId === t.id}
-                onTogglePin={() => setPinnedId(pinnedId === t.id ? null : t.id)}
-              />
+              <TrainerRow key={t.id} trainer={t} onEdit={() => setEditing(t)}
+                pinned={pinnedId === t.id} onTogglePin={() => setPinnedId(pinnedId === t.id ? null : t.id)} />
             ))}
           </ul>
         )}

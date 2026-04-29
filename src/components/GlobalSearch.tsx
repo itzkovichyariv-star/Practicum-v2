@@ -92,8 +92,13 @@ export default function GlobalSearch({ data, onNavigate }: Props) {
         setSelected(0);
       }
     }
+    function onOpenEvent() { setOpen(true); setQ(''); setSelected(0); }
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('open-search', onOpenEvent);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('open-search', onOpenEvent);
+    };
   }, []);
 
   useEffect(() => {
@@ -112,7 +117,7 @@ export default function GlobalSearch({ data, onNavigate }: Props) {
 
   if (!open) return (
     // Fixed in the top-right corner so it sits visually inside the header regardless of DOM order
-    <div style={{ position: 'fixed', top: '14px', left: '180px', zIndex: 60 }}>
+    <div className="hidden md:block" style={{ position: 'fixed', top: '14px', left: '180px', zIndex: 60 }}>
       <button
         onClick={() => setOpen(true)}
         title="חיפוש גלובלי (⌘K)"

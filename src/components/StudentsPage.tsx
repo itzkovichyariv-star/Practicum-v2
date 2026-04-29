@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Student } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext, normalizeYear } from './pageShared';
+import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
@@ -9,7 +9,7 @@ import ExcelImport from './ExcelImport';
 
 type Filters = {
   search: string;
-  stage: 'all' | 'prep' | 'placed' | 'hired' | 'notplaced';
+  stage: 'all' | 'prep' | 'placed' | 'hired' | 'completed' | 'notplaced';
 };
 
 const emptyFilters: Filters = { search: '', stage: 'all' };
@@ -43,7 +43,8 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       if (filters.stage === 'prep' && !s.preparation?.passed) return false;
       if (filters.stage === 'placed' && !s.acceptedOrg) return false;
       if (filters.stage === 'hired' && !s.hired) return false;
-      if (filters.stage === 'notplaced' && (s.acceptedOrg || s.hired)) return false;
+      if (filters.stage === 'completed' && !s.practicumCompleted) return false;
+      if (filters.stage === 'notplaced' && (s.acceptedOrg || s.hired || s.practicumCompleted)) return false;
       if (q) {
         const hay = [s.name, s.phone, s.email, s.city, s.acceptedOrg, s.notes].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -57,7 +58,8 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     prep: scoped.filter(s => s.preparation?.passed).length,
     placed: scoped.filter(s => s.acceptedOrg).length,
     hired: scoped.filter(s => s.hired).length,
-    notplaced: scoped.filter(s => !s.acceptedOrg && !s.hired).length,
+    completed: scoped.filter(s => s.practicumCompleted).length,
+    notplaced: scoped.filter(s => !s.acceptedOrg && !s.hired && !s.practicumCompleted).length,
   }), [scoped]);
 
   async function persistAndRefresh(next: Student[], msg: string) {
@@ -99,7 +101,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {counts.total === 0
                 ? 'אין סטודנטים בהקשר הנוכחי. הוסף חדש או שנה את הסינון בבר העליון.'
-                : `${counts.total} סטודנטים · ${counts.placed} שובצו · ${counts.hired} נקלטו · ${counts.prep} עברו הכנה`}
+                : `${counts.total} סטודנטים · ${counts.placed} שובצו · ${counts.hired} נקלטו · ${counts.completed} סיימו פרקטיקום · ${counts.prep} עברו הכנה`}
             </p>
           </div>
           <div className="flex flex-row md:flex-col gap-2 items-start md:items-end flex-wrap">
@@ -143,11 +145,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       {/* Stage tabs — Ramzor style */}
       <div className="ramzor-bar mb-8">
         {([
-          ['all',       'הכל',        counts.total,      null    ],
-          ['prep',      'הכנה',       counts.prep,       'amber' ],
-          ['placed',    'שובצו',      counts.placed,     'green' ],
-          ['hired',     'נקלטו',      counts.hired,      'green' ],
-          ['notplaced', 'טרם שובצו', counts.notplaced,  'gray'  ],
+          ['all',       'הכל',           counts.total,      null    ],
+          ['prep',      'הכנה',          counts.prep,       'amber' ],
+          ['placed',    'שובצו',         counts.placed,     'green' ],
+          ['hired',     'נקלטו',         counts.hired,      'green' ],
+          ['completed', 'סיימו פרקטיקום', counts.completed, 'amber' ],
+          ['notplaced', 'טרם שובצו',    counts.notplaced,  'gray'  ],
         ] as const).map(([key, label, n, dot]) => {
           const active = filters.stage === key;
           const borderCol = dot
@@ -175,16 +178,23 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין סטודנטים להצגה</div>
             <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>נסה להסיר סינון או להוסיף חדש.</div>
           </div>
+        ) : context.courseId === '__all__' ? (
+          groupByYearCourse(filtered, courses, context).map(group => (
+            <div key={`${group.year}||${group.courseId}`}>
+              <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
+              <ul>
+                {group.items.map(s => (
+                  <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
+                    pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)} />
+                ))}
+              </ul>
+            </div>
+          ))
         ) : (
           <ul>
             {filtered.map(s => (
-              <StudentRow
-                key={s.id}
-                s={s}
-                onEdit={() => setEditing(s)}
-                pinned={pinnedId === s.id}
-                onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
-              />
+              <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
+                pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)} />
             ))}
           </ul>
         )}
@@ -207,19 +217,39 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   );
 }
 
+export function GroupHeader({ year, courseName, count, showYear }: { year: string; courseName: string; count: number; showYear: boolean }) {
+  return (
+    <div className="flex items-center gap-3 pt-8 pb-2 sticky top-[88px] z-10"
+      style={{ background: 'var(--bg)', borderBottom: '1px solid var(--divider)' }}>
+      {showYear && (
+        <>
+          <span className="chapter-mark">{year}</span>
+          <span style={{ color: 'var(--divider)', fontWeight: 300 }}>·</span>
+        </>
+      )}
+      <span className="serif text-[17px]" style={{ color: 'var(--ink)' }}>{courseName}</span>
+      <span className="mono text-[11px] px-2 py-0.5 rounded-full"
+        style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>{count}</span>
+    </div>
+  );
+}
+
 function StudentRow({ s, onEdit, pinned, onTogglePin }: {
   s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
 }) {
   const placed = !!s.acceptedOrg;
   const hired = !!s.hired;
+  const completed = !!s.practicumCompleted;
   const prepPassed = !!s.preparation?.passed;
 
   const dotStatus: DotStatus =
+    completed ? 'amber' :
     hired || placed ? 'green' :
     prepPassed ? 'amber' :
     'gray';
 
   const stage =
+    completed ? 'סיים/סיימה פרקטיקום' :
     hired ? 'נקלט/ה לעבודה' :
     placed ? 'בהתנסות' :
     prepPassed ? 'בחיפוש ארגון' :
@@ -250,10 +280,11 @@ function StudentRow({ s, onEdit, pinned, onTogglePin }: {
 
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {(!s.phone || !s.email) && <NeedsUpdate />}
-          {s.cvUrl && !prepPassed && !placed && !hired && <Tag label="📄 מסמכים" muted />}
-          {prepPassed && !placed && !hired && <Tag label="✓ הכנה" muted />}
-          {placed && !hired && <Tag label="שובץ/ה" />}
-          {hired && <Tag label="נקלט/ה" solid />}
+          {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄 מסמכים" muted />}
+          {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
+          {placed && !hired && !completed && <Tag label="שובץ/ה" />}
+          {hired && !completed && <Tag label="נקלט/ה" solid />}
+          {completed && <Tag label="✓ סיים פרקטיקום" color="#b45309" />}
         </div>
 
         <div onClick={e => e.stopPropagation()}>
@@ -434,13 +465,14 @@ export function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
 /* ── StatusDot ─────────────────────────────────────────────────────────
    Shared traffic-light dot used across Students, Candidates, Lectures.
    Import from here: import { StatusDot } from './StudentsPage'          */
-export type DotStatus = 'gray' | 'amber' | 'green' | 'red';
+export type DotStatus = 'gray' | 'amber' | 'green' | 'teal' | 'red';
 
 export function StatusDot({ status, size = 9 }: { status: DotStatus; size?: number }) {
   const bg: Record<DotStatus, string> = {
     gray:  'var(--tl-gray)',
     amber: 'var(--tl-amber)',
     green: 'var(--tl-green)',
+    teal:  '#0d9488',
     red:   'var(--tl-red)',
   };
   const c = bg[status];
@@ -459,11 +491,19 @@ export function StatusDot({ status, size = 9 }: { status: DotStatus; size?: numb
   );
 }
 
-function Tag({ label, solid, muted }: { label: string; solid?: boolean; muted?: boolean }) {
+function Tag({ label, solid, muted, color }: { label: string; solid?: boolean; muted?: boolean; color?: string }) {
   if (muted) {
     return (
       <span className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full"
         style={{ color: 'var(--text-soft)', background: 'transparent', border: '1px solid var(--divider)' }}>
+        {label}
+      </span>
+    );
+  }
+  if (color) {
+    return (
+      <span className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full"
+        style={{ color: '#fff', background: color }}>
         {label}
       </span>
     );

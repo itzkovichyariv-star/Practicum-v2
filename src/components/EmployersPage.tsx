@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { Employer } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext, normalizeYear } from './pageShared';
+import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
-import { RowActions, Popover, NeedsUpdate, RefreshButton } from './StudentsPage';
+import { RowActions, Popover, NeedsUpdate, RefreshButton, GroupHeader } from './StudentsPage';
 import ExcelImport from './ExcelImport';
 
 export default function EmployersPage({ data, context, userName, onRefresh }: PageProps) {
@@ -122,19 +122,27 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
             <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מעסיקים להצגה</div>
             <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>נסה להסיר סינון או להוסיף חדש.</div>
           </div>
+        ) : context.courseId === '__all__' ? (
+          groupByYearCourse(filtered, courses, context).map(group => (
+            <div key={`${group.year}||${group.courseId}`}>
+              <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
+              <ul>
+                {group.items.map(e => {
+                  const hiredHere = students.filter(s => s.acceptedOrg === e.name);
+                  return <EmployerRow key={e.id} emp={e} hiredCount={hiredHere.length}
+                    onEdit={() => setEditing(e)} hiredNames={hiredHere.map(s => s.name)}
+                    pinned={pinnedId === e.id} onTogglePin={() => setPinnedId(pinnedId === e.id ? null : e.id)} />;
+                })}
+              </ul>
+            </div>
+          ))
         ) : (
           <ul>
             {filtered.map(e => {
               const hiredHere = students.filter(s => s.acceptedOrg === e.name);
-              return <EmployerRow
-                key={e.id}
-                emp={e}
-                hiredCount={hiredHere.length}
-                onEdit={() => setEditing(e)}
-                hiredNames={hiredHere.map(s => s.name)}
-                pinned={pinnedId === e.id}
-                onTogglePin={() => setPinnedId(pinnedId === e.id ? null : e.id)}
-              />;
+              return <EmployerRow key={e.id} emp={e} hiredCount={hiredHere.length}
+                onEdit={() => setEditing(e)} hiredNames={hiredHere.map(s => s.name)}
+                pinned={pinnedId === e.id} onTogglePin={() => setPinnedId(pinnedId === e.id ? null : e.id)} />;
             })}
           </ul>
         )}

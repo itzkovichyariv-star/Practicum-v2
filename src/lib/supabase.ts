@@ -21,6 +21,7 @@ export type Student = {
   secondChoiceOrg?: string;
   secondChoiceResult?: 'pending' | 'passed' | 'failed';
   fromCandidateId?: string;
+  practicumCompleted?: boolean;  // מילא חובות שעות וסיים פרקטיקום
   notes?: string; fromCandidate?: boolean;
 };
 export type Employer = {
