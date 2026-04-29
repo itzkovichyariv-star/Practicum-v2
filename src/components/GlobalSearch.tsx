@@ -172,7 +172,7 @@ export default function GlobalSearch({ data, onNavigate }: Props) {
 
         {/* Results */}
         {q.trim() && (
-          <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+          <div style={{ maxHeight: '420px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as any}>
             {results.length === 0 ? (
               <div className="py-12 text-center mono text-[12px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
                 אין תוצאות עבור "{q}"

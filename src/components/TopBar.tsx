@@ -192,7 +192,7 @@ export default function TopBar({
           </div>
 
           {/* Nav links */}
-          <nav className="flex-1 overflow-y-auto px-4 py-3">
+          <nav className="flex-1 overflow-y-auto px-4 py-3" style={{ WebkitOverflowScrolling: 'touch' } as any}>
             {NAV.map(n => {
               const active = n.page === page;
               return (
