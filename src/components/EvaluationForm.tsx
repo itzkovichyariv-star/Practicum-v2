@@ -19,8 +19,12 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
   function handlePrint() { window.print(); }
 
   return (
-    <div className="fixed inset-0 z-[200] overflow-y-auto print:static"
-      style={{ background: 'rgba(26,22,18,0.55)', backdropFilter: 'blur(4px)' }}
+    <div className="fixed inset-0 z-[200] print:static"
+      style={{
+        background: 'rgba(26,22,18,0.55)', backdropFilter: 'blur(4px)',
+        /* iOS Safari: must be inline — see Modal.tsx for explanation */
+        overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+      } as any}
       onClick={onClose}>
 
       <div className="max-w-[820px] mx-auto my-6 px-6 print:my-0 print:max-w-full print:px-10"
