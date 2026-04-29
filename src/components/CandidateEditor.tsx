@@ -91,13 +91,13 @@ export default function CandidateEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-[200] overflow-y-auto"
-      style={{ background: 'rgba(26, 22, 18, 0.55)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}>
-      <div className="relative max-w-[720px] w-full my-6 mx-auto rounded-2xl"
+    <div className="fixed inset-0 z-[200]"
+      style={{ background: 'rgba(26, 22, 18, 0.55)', backdropFilter: 'blur(4px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as any}>
+      <div className="min-h-full py-6 px-4 flex items-start justify-center" onClick={onClose}>
+      <div className="relative w-full max-w-[720px] rounded-2xl"
         style={{ background: 'var(--bg)', boxShadow: '0 24px 80px rgba(26, 22, 18, 0.25)' }}
         onClick={e => e.stopPropagation()}>
-        <form onSubmit={handleSubmit} className="px-10 py-10">
+        <form onSubmit={handleSubmit} className="px-5 py-7 md:px-10 md:py-10">
 
           <div className="flex items-start justify-between gap-8 pb-6 border-b mb-8" style={{ borderColor: 'var(--divider)' }}>
             <div>
@@ -233,6 +233,7 @@ export default function CandidateEditor({
             <button type="button" onClick={onClose} className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">בטל</button>
           </div>
         </form>
+      </div>
       </div>
     </div>
   );
