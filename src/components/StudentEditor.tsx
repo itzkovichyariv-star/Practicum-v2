@@ -35,6 +35,7 @@ export default function StudentEditor({
     hoursApproved: student?.hoursApproved || 0,
     feedbackText: student?.feedbackText || '',
     notes: student?.notes || '',
+    practicumCompleted: student?.practicumCompleted || false,
     fromCandidate: student?.fromCandidate || false,
     fromCandidateId: student?.fromCandidateId,
     cvUrl: student?.cvUrl || '',
@@ -47,8 +48,6 @@ export default function StudentEditor({
   });
 
   const prepPassed = !!form.preparation?.passed;
-  const hasUpdatedCv = !!form.cvUpdatedUrl;
-  const canChooseOrg = prepPassed && hasUpdatedCv;
 
   function update<K extends keyof Student>(k: K, v: Student[K]) {
     setForm(f => ({ ...f, [k]: v }));
@@ -86,10 +85,10 @@ export default function StudentEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-[200] grid place-items-center p-6"
+    <div className="fixed inset-0 z-[200] overflow-y-auto"
       style={{ background: 'rgba(26, 22, 18, 0.55)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}>
-      <div className="relative max-w-[820px] w-full max-h-[90vh] overflow-y-auto rounded-2xl"
+      <div className="relative max-w-[820px] w-full my-6 mx-auto rounded-2xl"
         style={{ background: 'var(--bg)', boxShadow: '0 24px 80px rgba(26, 22, 18, 0.25)' }}
         onClick={e => e.stopPropagation()}>
         <form onSubmit={handleSubmit} className="px-10 py-10">
@@ -117,7 +116,7 @@ export default function StudentEditor({
                 options={courses.map(c=>({value:c.id,label:c.name}))} placeholder="בחר קורס"/>
             </Field>
             <Field label="שנה אקדמית">
-              <Select value={form.year||''} onChange={v=>update('year',v)} options={years} placeholder="בחר שנה"/>
+              <Select value={form.year||''} onChange={v=>update('year',v)} options={years.map(y=>({value:y,label:y}))} placeholder="בחר שנה"/>
             </Field>
           </SectionSub>
 
@@ -134,40 +133,35 @@ export default function StudentEditor({
             </div>
           </SectionSub>
 
-          <SectionSub title={`בחירת ארגון ${!canChooseOrg ? '— נעול (דורש הכנה + CV מעודכן)' : ''}`}>
+          <SectionSub title="בחירת ארגון">
             <Field label="בחירה ראשונה — ארגון">
-              <Select value={form.firstChoiceOrg||''} onChange={v=>canChooseOrg && update('firstChoiceOrg',v)}
-                options={[...employers.map(e=>({value:e.name,label:e.name}))]}
-                placeholder={canChooseOrg ? 'בחר ארגון' : 'נעול'}
+              <Select value={form.firstChoiceOrg||''} onChange={v=>update('firstChoiceOrg',v)}
+                options={employers.map(e=>({value:e.name,label:e.name}))}
+                placeholder="בחר ארגון"
                 freeText/>
             </Field>
             <Field label="תוצאת ראיון — בחירה ראשונה">
-              <Select value={form.firstChoiceResult||'pending'} onChange={v=>canChooseOrg && update('firstChoiceResult', v as any)}
+              <Select value={form.firstChoiceResult||'pending'} onChange={v=>update('firstChoiceResult', v as any)}
                 options={[
                   { value: 'pending', label: 'טרם רואיין' },
                   { value: 'passed', label: 'עבר — שובץ' },
                   { value: 'failed', label: 'לא עבר' },
                 ]}/>
             </Field>
-
-            {form.firstChoiceResult === 'failed' && (
-              <>
-                <Field label="בחירה שנייה — ארגון">
-                  <Select value={form.secondChoiceOrg||''} onChange={v=>update('secondChoiceOrg',v)}
-                    options={[...employers.map(e=>({value:e.name,label:e.name}))]}
-                    placeholder="בחר ארגון שני"
-                    freeText/>
-                </Field>
-                <Field label="תוצאת ראיון — בחירה שנייה">
-                  <Select value={form.secondChoiceResult||'pending'} onChange={v=>update('secondChoiceResult', v as any)}
-                    options={[
-                      { value: 'pending', label: 'טרם רואיין' },
-                      { value: 'passed', label: 'עבר — שובץ' },
-                      { value: 'failed', label: 'לא עבר' },
-                    ]}/>
-                </Field>
-              </>
-            )}
+            <Field label="בחירה שנייה — ארגון">
+              <Select value={form.secondChoiceOrg||''} onChange={v=>update('secondChoiceOrg',v)}
+                options={employers.map(e=>({value:e.name,label:e.name}))}
+                placeholder="בחר ארגון שני"
+                freeText/>
+            </Field>
+            <Field label="תוצאת ראיון — בחירה שנייה">
+              <Select value={form.secondChoiceResult||'pending'} onChange={v=>update('secondChoiceResult', v as any)}
+                options={[
+                  { value: 'pending', label: 'טרם רואיין' },
+                  { value: 'passed', label: 'עבר — שובץ' },
+                  { value: 'failed', label: 'לא עבר' },
+                ]}/>
+            </Field>
           </SectionSub>
 
           <SectionSub title="השמה סופית ושעות">
@@ -182,6 +176,9 @@ export default function StudentEditor({
             </Field>
             <Field label="שעות מדווחות"><Input type="number" value={String(form.hoursReported||0)} onChange={v=>update('hoursReported', Number(v)||0)}/></Field>
             <Field label="שעות מאושרות"><Input type="number" value={String(form.hoursApproved||0)} onChange={v=>update('hoursApproved', Number(v)||0)}/></Field>
+            <Field label="סיים/סיימה פרקטיקום">
+              <Checkbox checked={!!form.practicumCompleted} onChange={v=>update('practicumCompleted',v)} label="מילא/ה חובות שעות וסיים/סיימה פרקטיקום"/>
+            </Field>
           </SectionSub>
 
           <SectionSub title="מסמכים וחוו״ד (קישורי OneDrive / SharePoint)">

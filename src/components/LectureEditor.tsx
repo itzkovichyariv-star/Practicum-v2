@@ -133,12 +133,12 @@ ${form.notes ? '\nהערות: ' + form.notes : ''}`);
 
   return (
     <div
-      className="fixed inset-0 z-[200] grid place-items-center p-6"
+      className="fixed inset-0 z-[200] overflow-y-auto"
       style={{ background: 'rgba(26, 22, 18, 0.55)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
       <div
-        className="relative max-w-[800px] w-full max-h-[90vh] overflow-y-auto rounded-2xl"
+        className="relative max-w-[800px] w-full my-6 mx-auto rounded-2xl"
         style={{ background: 'var(--bg)', boxShadow: '0 24px 80px rgba(26, 22, 18, 0.25)' }}
         onClick={(e) => e.stopPropagation()}
       >
