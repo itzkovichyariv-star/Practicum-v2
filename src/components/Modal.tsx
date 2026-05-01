@@ -1,25 +1,29 @@
 /**
- * Modal — iOS-safe scroll wrapper used by ALL editor modals.
+ * Modal — iOS-safe scroll. Uses body-scroll-lock (BSL).
  *
- * THE iOS SAFARI RULE (tested on iOS 15+):
- *   overflow-y: auto on a position:fixed element does NOT scroll on iOS Safari.
- *   The scroll container MUST be position:absolute nested inside the fixed backdrop.
+ * WHY BSL:
+ *   Every other approach (position:absolute child, WebkitOverflowScrolling,
+ *   touch-action) is unreliable on iOS Safari because the engine refuses to
+ *   scroll overflow content inside fixed/absolute elements unless the body
+ *   itself is scroll-locked. This is a longstanding iOS WebKit bug.
  *
- * Correct three-layer structure:
- *   1. position:fixed  inset:0  overflow:hidden   ← backdrop (dims + clips, never scrolls)
- *   2. position:absolute inset:0 overflow-y:auto
- *      -webkit-overflow-scrolling:touch           ← SCROLL container (the only scrollable layer)
- *   3. min-h-full flex centering wrapper          ← carries onClick={onClose}
- *   4. the card div                               ← carries onClick={stopPropagation}
+ *   The only approach proven to work across iOS 13–18 is:
+ *     1. Save window.scrollY
+ *     2. body { position:fixed; top:-scrollY; overflow:hidden; width:100% }
+ *     3. With body locked, overflow-y:auto on a position:fixed modal works.
+ *     4. On close: restore body position and scroll.
  *
- * DO NOT change this structure without testing on a REAL iOS device.
- * DO NOT move overflow-y or WebkitOverflowScrolling to the fixed div.
+ *   This is exactly what Radix UI, Headless UI, and react-remove-scroll do.
+ *
+ * DO NOT remove the useEffect body lock without testing on a real iOS device.
  */
+
+import { useEffect } from 'react';
 
 type Props = {
   onClose: () => void;
-  maxWidth?: string;   // Tailwind class e.g. 'max-w-[820px]'
-  zIndex?: string;     // Tailwind class e.g. 'z-[200]'
+  maxWidth?: string;
+  zIndex?: string;
   children: React.ReactNode;
 };
 
@@ -29,44 +33,53 @@ export default function Modal({
   zIndex = 'z-[200]',
   children,
 }: Props) {
+
+  // Body-scroll-lock: the only reliable iOS Safari modal scroll technique
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = '';
+      body.style.top = '';
+      body.style.left = '';
+      body.style.right = '';
+      body.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
   return (
-    /* Layer 1 — Fixed backdrop: dims the page, clips overflow, never scrolls */
+    // With body locked, overflow-y:auto on position:fixed works on iOS
     <div
       className={`fixed inset-0 ${zIndex}`}
       style={{
         background: 'rgba(26, 22, 18, 0.55)',
         backdropFilter: 'blur(4px)',
-        overflow: 'hidden',   /* NOT overflow-y:auto — that's on the absolute child */
-      }}
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehavior: 'contain',
+      } as React.CSSProperties}
     >
-      {/* Layer 2 — Absolute scroll container: THIS is what scrolls on iOS */}
+      {/* Centering wrapper — click outside card to close */}
       <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',  /* momentum scroll on iOS */
-          overscrollBehavior: 'contain',      /* prevent scroll chaining to page behind */
-          touchAction: 'pan-y',              /* tells iOS: vertical swipe = scroll, always — no "activation tap" needed */
-        } as React.CSSProperties}
+        className="min-h-full py-6 px-4 flex items-start justify-center"
+        onClick={onClose}
       >
-        {/* Layer 3 — Centering wrapper: click-to-close on the dimmed area */}
+        {/* Card — stop click bubbling */}
         <div
-          className="min-h-full py-6 px-4 flex items-start justify-center"
-          onClick={onClose}
+          className={`relative w-full ${maxWidth} rounded-2xl`}
+          style={{
+            background: 'var(--bg)',
+            boxShadow: '0 24px 80px rgba(26, 22, 18, 0.25)',
+          }}
+          onClick={e => e.stopPropagation()}
         >
-          {/* Layer 4 — Card: stop clicks bubbling to close handler */}
-          <div
-            className={`relative w-full ${maxWidth} rounded-2xl`}
-            style={{
-              background: 'var(--bg)',
-              boxShadow: '0 24px 80px rgba(26, 22, 18, 0.25)',
-              touchAction: 'pan-y',  /* allow vertical scroll even when touch starts on an input/select */
-            } as React.CSSProperties}
-            onClick={e => e.stopPropagation()}
-          >
-            {children}
-          </div>
+          {children}
         </div>
       </div>
     </div>

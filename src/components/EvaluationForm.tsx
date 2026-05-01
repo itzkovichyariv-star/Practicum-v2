@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Student, Course, Employer } from '../lib/supabase';
 
 type Props = {
@@ -16,14 +16,31 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
   const [hours, setHours] = useState(String(student.hoursReported || 0));
   const [today] = useState(new Date().toLocaleDateString('he-IL'));
 
+  // Body-scroll-lock — same technique as Modal.tsx
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const body = document.body;
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.position = '';
+      body.style.top = '';
+      body.style.left = '';
+      body.style.right = '';
+      body.style.overflow = '';
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
   function handlePrint() { window.print(); }
 
   return (
-    <div className="fixed inset-0 z-[200] print:static" /* backdrop: clips, see Modal.tsx */
-      style={{ background: 'rgba(26,22,18,0.55)', backdropFilter: 'blur(4px)', overflow: 'hidden' }}>
-      {/* Absolute scroll container — THIS scrolls on iOS Safari */}
-      <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' } as any}
-        onClick={onClose}>
+    <div className="fixed inset-0 z-[200] print:static"
+      style={{ background: 'rgba(26,22,18,0.55)', backdropFilter: 'blur(4px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as any}
+      onClick={onClose}>
 
       <div className="max-w-[820px] mx-auto my-6 px-6 print:my-0 print:max-w-full print:px-10"
         onClick={e => e.stopPropagation()}>
@@ -177,7 +194,6 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
           input, textarea { border-color: rgba(0,0,0,0.25) !important; }
         }
       `}</style>
-      </div>
     </div>
   );
 }
