@@ -45,8 +45,9 @@ export default function Modal({
           position: 'absolute',
           inset: 0,
           overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',  /* required for iOS momentum scroll */
+          WebkitOverflowScrolling: 'touch',  /* momentum scroll on iOS */
           overscrollBehavior: 'contain',      /* prevent scroll chaining to page behind */
+          touchAction: 'pan-y',              /* tells iOS: vertical swipe = scroll, always — no "activation tap" needed */
         } as React.CSSProperties}
       >
         {/* Layer 3 — Centering wrapper: click-to-close on the dimmed area */}
@@ -60,7 +61,8 @@ export default function Modal({
             style={{
               background: 'var(--bg)',
               boxShadow: '0 24px 80px rgba(26, 22, 18, 0.25)',
-            }}
+              touchAction: 'pan-y',  /* allow vertical scroll even when touch starts on an input/select */
+            } as React.CSSProperties}
             onClick={e => e.stopPropagation()}
           >
             {children}

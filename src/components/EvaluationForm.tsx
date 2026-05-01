@@ -22,7 +22,7 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
     <div className="fixed inset-0 z-[200] print:static" /* backdrop: clips, see Modal.tsx */
       style={{ background: 'rgba(26,22,18,0.55)', backdropFilter: 'blur(4px)', overflow: 'hidden' }}>
       {/* Absolute scroll container — THIS scrolls on iOS Safari */}
-      <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' } as any}
+      <div style={{ position: 'absolute', inset: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' } as any}
         onClick={onClose}>
 
       <div className="max-w-[820px] mx-auto my-6 px-6 print:my-0 print:max-w-full print:px-10"
