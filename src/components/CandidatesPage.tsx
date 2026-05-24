@@ -385,6 +385,18 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
             <div className="mono text-[11px] uppercase tracking-[0.14em] mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', color: 'var(--ink)' }}>
               {Array.from(selectedIds).map(id => all.find(c => c.id === id)?.name).filter(Boolean).join(' · ')}
             </div>
+            {/* Warn about candidates without email */}
+            {(() => {
+              const noEmail = Array.from(selectedIds)
+                .map(id => all.find(c => c.id === id))
+                .filter(c => c && !c.email)
+                .map(c => c!.name);
+              return noEmail.length > 0 ? (
+                <div className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
+                  ⚠ ללא מייל (לא יישלח): {noEmail.join(', ')}
+                </div>
+              ) : null;
+            })()}
             <label className="block mb-3">
               <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
               <input value={msgSubject} onChange={e => setMsgSubject(e.target.value)} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} placeholder="נושא ההודעה..." />
@@ -397,14 +409,32 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
               <button onClick={() => setShowMsgModal(false)} className="btn">ביטול</button>
               <button
                 onClick={() => {
-                  showToast(`✓ הודעה הוכנה ל‑${selectedIds.size} נמענים`, 'success');
+                  const emails = Array.from(selectedIds)
+                    .map(id => all.find(c => c.id === id)?.email)
+                    .filter(Boolean) as string[];
+                  const missing = Array.from(selectedIds)
+                    .map(id => all.find(c => c.id === id))
+                    .filter(c => c && !c.email)
+                    .map(c => c!.name);
+                  if (emails.length === 0) {
+                    showToast('לאף אחד מהנבחרים אין מייל רשום', 'error');
+                    return;
+                  }
+                  const to = emails.join(',');
+                  const url = `mailto:${to}?subject=${encodeURIComponent(msgSubject)}&body=${encodeURIComponent(msgBody)}`;
+                  window.location.href = url;
+                  if (missing.length > 0) {
+                    showToast(`נפתח Outlook ל‑${emails.length} נמענים · ללא מייל: ${missing.join(', ')}`, 'success');
+                  } else {
+                    showToast(`✓ נפתח Outlook ל‑${emails.length} נמענים`, 'success');
+                  }
                   setShowMsgModal(false);
                   setMsgSubject(''); setMsgBody('');
                   setSelectedIds(new Set());
                 }}
                 className="btn btn-primary"
               >
-                📧 שלח הודעה
+                📧 פתח ב‑Outlook
               </button>
             </div>
           </div>

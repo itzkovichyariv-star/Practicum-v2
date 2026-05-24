@@ -23,6 +23,7 @@ export default function EmployerFeedback() {
   const [phase, setPhase] = useState<Phase>('loading');
   const [student, setStudent] = useState<Student | null>(null);
   const [allData, setAllData] = useState<PracticumData | null>(null);
+  const [coordEmail, setCoordEmail] = useState('');
   const [rating, setRating] = useState(0);
   const [feedbackText, setFeedbackText] = useState('');
   const [hired, setHired] = useState(false);
@@ -51,6 +52,7 @@ export default function EmployerFeedback() {
     if (found.feedbackSubmittedAt) { setPhase('already-done'); setStudent(found); return; }
     setStudent(found);
     setAllData(d);
+    setCoordEmail((d as any).coordinatorEmail || '');
     setPhase('form');
   }
 
@@ -80,21 +82,22 @@ export default function EmployerFeedback() {
       return;
     }
     // Try to send coordinator a copy via mailto (client-side only — no server needed)
-    const coordEmail = 'rachel@ariel.ac.il'; // fallback; could be configured
-    try {
-      const subj = encodeURIComponent(`משוב מעסיק — ${student.name}`);
-      const body = encodeURIComponent(
-        `שלום,\n\n` +
-        `המעסיק מילא משוב עבור: ${student.name}\n` +
-        `ארגון: ${student.acceptedOrg || ''}\n` +
-        `דירוג: ${'⭐'.repeat(rating)}\n` +
-        `נקלט/ה לעבודה: ${hired ? 'כן' : 'לא'}\n` +
-        (feedbackText ? `\nתוכן המשוב:\n${feedbackText}\n` : '') +
-        `\nתאריך: ${new Date(now).toLocaleString('he-IL')}`
-      );
-      // open silently — if blocked by browser, user still sees success
-      window.open(`mailto:${coordEmail}?subject=${subj}&body=${body}`, '_blank');
-    } catch (_) { /* silent */ }
+    if (coordEmail) {
+      try {
+        const subj = encodeURIComponent(`משוב מעסיק — ${student.name}`);
+        const body = encodeURIComponent(
+          `שלום,\n\n` +
+          `המעסיק מילא משוב עבור: ${student.name}\n` +
+          `ארגון: ${student.acceptedOrg || ''}\n` +
+          `דירוג: ${'⭐'.repeat(rating)}\n` +
+          `נקלט/ה לעבודה: ${hired ? 'כן' : 'לא'}\n` +
+          (feedbackText ? `\nתוכן המשוב:\n${feedbackText}\n` : '') +
+          `\nתאריך: ${new Date(now).toLocaleString('he-IL')}`
+        );
+        // open silently — if blocked by browser, user still sees success
+        window.open(`mailto:${coordEmail}?subject=${subj}&body=${body}`, '_blank');
+      } catch (_) { /* silent */ }
+    }
     setPhase('done');
   }
 

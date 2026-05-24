@@ -113,6 +113,8 @@ export type PracticumData = {
   currentYear?: string;
   interviewSlots?: InterviewSlot[];
   history?: { ts: string; who: string; action: string; entity: string; target: string }[];
+  // System settings
+  coordinatorEmail?: string;  // email that receives employer feedback copies & notifications
 };
 
 export type CloudSnapshot = {

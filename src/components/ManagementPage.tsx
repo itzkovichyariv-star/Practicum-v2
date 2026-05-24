@@ -20,6 +20,7 @@ export default function ManagementPage(props: PageProps) {
         </p>
       </section>
 
+      <SettingsSection {...props} />
       <SeedLecturesSection {...props} />
       <PatchContactsSection {...props} />
       <SeedTrainersSection {...props} />
@@ -170,6 +171,61 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+/* ====== System Settings ====== */
+
+function SettingsSection({ data, userName, onRefresh }: PageProps) {
+  const [email, setEmail] = useState((data as any).coordinatorEmail || '');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    const res = await saveSnapshot(
+      { ...data, coordinatorEmail: email.trim() },
+      { name: userName },
+      { action: 'עודכן', entity: 'הגדרות', target: 'מייל רכזת' }
+    );
+    setSaving(false);
+    if (!res.ok) { setMsg('שגיאה: ' + (res.error || '')); return; }
+    (data as any).coordinatorEmail = email.trim();
+    setMsg('✓ נשמר');
+    showToast('✓ הגדרות נשמרו', 'success');
+    onRefresh();
+    setTimeout(() => setMsg(null), 2500);
+  }
+
+  return (
+    <section className="mb-12 rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
+      <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>הגדרות מערכת</div>
+      <div className="serif text-[22px] mb-4" style={{ color: 'var(--ink)' }}>הגדרות</div>
+      <div className="max-w-[480px] space-y-4">
+        <label className="block">
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+            מייל הרכזת (מקבל עותק ממשובי מעסיקים)
+          </span>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="rachel@ariel.ac.il"
+              className="input flex-1"
+              style={{ padding: '10px 14px', fontSize: '14px' }}
+            />
+            <button onClick={save} disabled={saving} className="btn btn-primary disabled:opacity-50 whitespace-nowrap">
+              {saving ? 'שומר...' : 'שמור'}
+            </button>
+          </div>
+          <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>
+            כאשר מעסיק ממלא משוב דרך קישור ייעודי, עותק נשלח למייל זה אוטומטית.
+          </div>
+        </label>
+        {msg && <div className="mono text-[11.5px] uppercase tracking-[0.14em]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
+      </div>
     </section>
   );
 }

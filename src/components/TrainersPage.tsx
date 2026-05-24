@@ -85,6 +85,18 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
                 ? 'אין מנחים/מרצים בהקשר הנוכחי. הוסף מנחה ראשון/ה.'
                 : `${scoped.length} מנחים ומרצים`}
             </p>
+            <div className="mt-5 p-4 rounded-xl text-[13.5px] leading-[1.7] max-w-[620px]"
+              style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--divider)', color: 'var(--ink)' }}>
+              <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold block mb-2" style={{ color: 'var(--accent)' }}>מה מנחה/מרצה בהקשר הפרקטיקום?</span>
+              הדף כולל <strong>שני סוגים</strong> של אנשי מקצוע:
+              <ul className="mt-2 space-y-1 list-none">
+                <li>🎤 <strong>מרצים/מנחי סדנאות</strong> — אנשי מקצוע חיצוניים שמרצים לסטודנטים במסגרת קורס הפרקטיקום (למשל: מרצה בנושא גיוס, מנחת LinkedIn, מרכז סימולציות).</li>
+                <li>🏢 <strong>מנחים ארגוניים</strong> — איש קשר בארגון המאכסן שמלווה את הסטודנט/ית בשטח לאורך הפרקטיקום (mentor במקום העבודה).</li>
+              </ul>
+              <span className="block mt-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                ניתן להבדיל בין השניים בשדה "תפקיד" (מרצה / מנחה ארגוני) ו"ארגון".
+              </span>
+            </div>
           </div>
           <div className="flex gap-2 self-start md:self-auto flex-wrap">
             <button onClick={() => setCreating(true)} className="btn btn-primary whitespace-nowrap">
