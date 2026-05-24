@@ -782,6 +782,7 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
   const courses = data.courses || [];
   const years = data.academicYears || [];
   const institutions = data.institutions || [];
+  const newCourseRef = useRef<HTMLDivElement>(null);
 
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -940,24 +941,34 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
         </div>
       )}
 
-      {adding ? (
-        <div className="mt-5 rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
+      <button
+        onClick={() => { setAdding(true); setTimeout(() => newCourseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
+        className="btn mt-5"
+        style={{ display: adding ? 'none' : undefined }}>
+        + הוסף קורס
+      </button>
+
+      {adding && (
+        <div ref={newCourseRef} className="mt-5 rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
           <div className="chapter-mark mb-3" style={{ fontSize: '11px' }}>קורס חדש</div>
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
             <LabelledInput label="שם קורס" value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="למשל: פרקטיקום משאבי אנוש" />
-            <LabelledSelect label="שנה" value={form.year} onChange={v => setForm({ ...form, year: v })} options={years} />
-            <LabelledSelect label="מוסד" value={form.institution} onChange={v => setForm({ ...form, institution: v })} options={institutions} />
+            {/* Year — free text with datalist: user can type תשפ״ז or pick from list */}
+            <LabelledInputList label="שנה" value={form.year} onChange={v => setForm({ ...form, year: v })}
+              options={years} listId="new-course-years" placeholder="למשל: תשפ״ז" />
+            <LabelledInputList label="מוסד" value={form.institution} onChange={v => setForm({ ...form, institution: v })}
+              options={institutions} listId="new-course-inst" placeholder="שם המוסד" />
           </div>
           <div className="flex gap-2">
-            <button onClick={addCourse} disabled={saving} className="btn btn-primary disabled:opacity-50">הוסף {saving ? '...' : ''} <span className="serif text-[16px]">→</span></button>
+            <button onClick={addCourse} disabled={saving} className="btn btn-primary disabled:opacity-50">
+              הוסף {saving ? '...' : ''} <span className="serif text-[16px]">→</span>
+            </button>
             <button onClick={() => { setAdding(false); setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל' }); }}
               className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">
               בטל
             </button>
           </div>
         </div>
-      ) : (
-        <button onClick={() => setAdding(true)} className="btn mt-5">+ הוסף קורס</button>
       )}
       {msg && <div className="mono text-[11.5px] uppercase tracking-[0.14em] mt-3" style={{ color: 'var(--accent)' }}>{msg}</div>}
     </Section>
@@ -971,32 +982,44 @@ function CourseEditInline({ course, years, institutions, onSave, onCancel }: {
   onSave: (patch: Partial<Course>) => void;
   onCancel: () => void;
 }) {
+  const yearListId = `years-dl-${course.id}`;
+  const instListId = `inst-dl-${course.id}`;
   const [form, setForm] = useState({
     name: course.name,
-    year: course.year || years[0] || 'תשפ״ו',
+    year: normalizeYear(course.year || years[0] || 'תשפ״ו'),
     institution: course.institution || institutions[0] || '',
   });
   return (
-    <div className="flex-1 grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 items-center">
+    /* Two-row layout — name full width on top, fields + actions on bottom */
+    <div className="flex-1 space-y-2">
       <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-        className="input" style={{ padding: '6px 12px', fontSize: '14px' }} />
-      <select value={form.year} onChange={e => setForm({ ...form, year: e.target.value })}
-        className="input" style={{ padding: '6px 12px', fontSize: '13px' }}>
-        {years.map(y => <option key={y} value={y}>{y}</option>)}
-      </select>
-      <select value={form.institution} onChange={e => setForm({ ...form, institution: e.target.value })}
-        className="input" style={{ padding: '6px 12px', fontSize: '13px' }}>
-        {institutions.map(i => <option key={i} value={i}>{i}</option>)}
-      </select>
-      <button onClick={() => onSave(form)}
-        className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 py-1 rounded-full"
-        style={{ background: 'var(--accent)', color: 'var(--bg)' }}>
-        שמור
-      </button>
-      <button onClick={onCancel}
-        className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100">
-        בטל
-      </button>
+        className="input w-full" style={{ padding: '7px 12px', fontSize: '14px' }} />
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Year — free-text with datalist so Hebrew years can be typed */}
+        <input value={form.year} onChange={e => setForm({ ...form, year: e.target.value })}
+          list={yearListId} placeholder="שנה"
+          className="input" style={{ padding: '6px 12px', fontSize: '13px', width: 110 }} />
+        <datalist id={yearListId}>
+          {years.map(y => <option key={y} value={normalizeYear(y)} />)}
+        </datalist>
+        {/* Institution */}
+        <input value={form.institution} onChange={e => setForm({ ...form, institution: e.target.value })}
+          list={instListId} placeholder="מוסד"
+          className="input" style={{ padding: '6px 12px', fontSize: '13px', width: 180 }} />
+        <datalist id={instListId}>
+          {institutions.map(i => <option key={i} value={i} />)}
+        </datalist>
+        <button onClick={() => onSave(form)}
+          className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 py-1.5 rounded-full"
+          style={{ background: 'var(--accent)', color: 'var(--bg)', whiteSpace: 'nowrap' }}>
+          שמור
+        </button>
+        <button onClick={onCancel}
+          className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
+          style={{ whiteSpace: 'nowrap' }}>
+          בטל
+        </button>
+      </div>
     </div>
   );
 }
@@ -1148,6 +1171,21 @@ function LabelledSelect({ label, value, onChange, options }: any) {
           backgroundSize: '5px 5px', backgroundRepeat: 'no-repeat', paddingLeft: '28px' }}>
         {(options || []).map((o: string) => <option key={o} value={o}>{o}</option>)}
       </select>
+    </label>
+  );
+}
+
+/** Like LabelledInput but with a <datalist> for suggestions — user can type freely OR pick */
+function LabelledInputList({ label, value, onChange, options, listId, placeholder }: any) {
+  return (
+    <label className="block">
+      <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>{label}</span>
+      <input value={value} onChange={e => onChange(e.target.value)}
+        list={listId} placeholder={placeholder}
+        className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} />
+      <datalist id={listId}>
+        {(options || []).map((o: string) => <option key={o} value={o} />)}
+      </datalist>
     </label>
   );
 }

@@ -1,12 +1,19 @@
 import { useMemo, useState } from 'react';
 import type { Employer } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
+import { normalizeYear } from './pageShared';
 import { saveSnapshot } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
-import { RowActions, Popover, NeedsUpdate, RefreshButton, GroupHeader } from './StudentsPage';
+import { RowActions, Popover, NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
+
+/** Returns the courseIds of an employer, supporting both old and new format */
+function empCourseIds(e: Employer): string[] {
+  if (e.courseIds && e.courseIds.length > 0) return e.courseIds;
+  if (e.courseId) return [e.courseId];
+  return [];
+}
 
 export default function EmployersPage({ data, context, userName, onRefresh }: PageProps) {
   const [search, setSearch] = useState('');
@@ -24,12 +31,30 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const years = useMemo(() => {
     const set = new Set<string>();
     courses.forEach(c => c.year && set.add(normalizeYear(c.year)));
-    all.forEach(e => e.year && set.add(normalizeYear(e.year)));
     (data.academicYears || []).forEach(y => set.add(normalizeYear(y)));
     return Array.from(set).sort().reverse();
-  }, [courses, all, data.academicYears]);
+  }, [courses, data.academicYears]);
 
-  const scoped = useMemo(() => all.filter(e => sameContext(e, context)), [all, context]);
+  // Employers are filtered by courseIds (new) or courseId (legacy).
+  // Year filter: check if any linked course matches the selected year.
+  const scoped = useMemo(() => all.filter(e => {
+    const ids = empCourseIds(e);
+    if (context.courseId !== '__all__') {
+      // context.courseId may be a course name — expand to all matching IDs
+      const allowedIds = new Set(
+        courses.filter(c => c.name === context.courseId || c.id === context.courseId).map(c => c.id)
+      );
+      if (!ids.some(id => allowedIds.has(id))) return false;
+    }
+    if (context.year !== '__all__') {
+      const matches = ids.some(cid => {
+        const course = courses.find(c => c.id === cid);
+        return course && normalizeYear(course.year) === normalizeYear(context.year);
+      });
+      if (!matches) return false;
+    }
+    return true;
+  }), [all, context, courses]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -122,25 +147,13 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
             <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מעסיקים להצגה</div>
             <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>נסה להסיר סינון או להוסיף חדש.</div>
           </div>
-        ) : context.courseId === '__all__' ? (
-          groupByYearCourse(filtered, courses, context).map(group => (
-            <div key={`${group.year}||${group.courseId}`}>
-              <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
-              <ul>
-                {group.items.map(e => {
-                  const hiredHere = students.filter(s => s.acceptedOrg === e.name);
-                  return <EmployerRow key={e.id} emp={e} hiredCount={hiredHere.length}
-                    onEdit={() => setEditing(e)} hiredNames={hiredHere.map(s => s.name)}
-                    pinned={pinnedId === e.id} onTogglePin={() => setPinnedId(pinnedId === e.id ? null : e.id)} />;
-                })}
-              </ul>
-            </div>
-          ))
         ) : (
           <ul>
             {filtered.map(e => {
               const hiredHere = students.filter(s => s.acceptedOrg === e.name);
+              const linkedCourses = empCourseIds(e).map(cid => courses.find(c => c.id === cid)).filter(Boolean);
               return <EmployerRow key={e.id} emp={e} hiredCount={hiredHere.length}
+                linkedCourses={linkedCourses as any}
                 onEdit={() => setEditing(e)} hiredNames={hiredHere.map(s => s.name)}
                 pinned={pinnedId === e.id} onTogglePin={() => setPinnedId(pinnedId === e.id ? null : e.id)} />;
             })}
@@ -164,8 +177,9 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   );
 }
 
-function EmployerRow({ emp, hiredCount, hiredNames, onEdit, pinned, onTogglePin }: {
-  emp: Employer; hiredCount: number; hiredNames: string[]; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
+function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, onEdit, pinned, onTogglePin }: {
+  emp: Employer; hiredCount: number; hiredNames: string[]; linkedCourses: { name: string; year?: string }[];
+  onEdit: () => void; pinned: boolean; onTogglePin: () => void;
 }) {
   const total = Number(emp.positions) || 0;
   const filled = Number(emp.filledPositions) || 0;
@@ -185,6 +199,16 @@ function EmployerRow({ emp, hiredCount, hiredNames, onEdit, pinned, onTogglePin 
             {emp.contactPhone && <span dir="ltr">{emp.contactPhone}</span>}
             {emp.contactEmail && <span>{emp.contactEmail}</span>}
           </div>
+          {linkedCourses.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {linkedCourses.map(c => (
+                <span key={c.name} className="mono text-[10px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>
+                  {c.name} {c.year}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="text-left flex flex-col items-end gap-1">
           {(!emp.contactPhone || !emp.contactEmail) && <NeedsUpdate />}

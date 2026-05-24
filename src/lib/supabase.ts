@@ -23,11 +23,24 @@ export type Student = {
   fromCandidateId?: string;
   practicumCompleted?: boolean;  // מילא חובות שעות וסיים פרקטיקום
   notes?: string; fromCandidate?: boolean;
+  // Placement interview (Rachel's workflow — separate from admission interview)
+  placementInterviewDate?: string;  // YYYY-MM-DD
+  placementInterviewTime?: string;  // HH:MM
+  placementInterviewOrg?: string;   // employer visited (may differ from firstChoiceOrg during process)
+  // Employer feedback
+  feedbackToken?: string;        // opaque token sent to employer for the feedback form URL
+  feedbackSubmittedAt?: string;  // ISO timestamp when employer submitted feedback
 };
 export type Employer = {
   id: string; name: string; contactPerson?: string; contactPhone?: string; contactEmail?: string;
-  courseId: string; year?: string;
+  /** New: master record linked to multiple courses. Replaces courseId+year. */
+  courseIds?: string[];
+  /** @deprecated use courseIds */
+  courseId?: string;
+  /** @deprecated year is on the course record, not the employer */
+  year?: string;
   positions?: number; filledPositions?: number; location?: string;
+  notes?: string;
 };
 export type Candidate = {
   id: string; name: string; phone?: string; email?: string;
@@ -46,6 +59,7 @@ export type Candidate = {
   evalScore?: number;            // 0–100 overall
   interviewSummary?: string;     // free text notes
   rejectionReason?: string;      // required when failed
+  interviewTime?: string;        // HH:MM–HH:MM from booked slot (e.g. "10:00–10:45")
   notes?: string;
   cvUrl?: string;
   applicationUrl?: string;

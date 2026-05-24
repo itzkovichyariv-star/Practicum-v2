@@ -45,7 +45,7 @@ export default function LecturesPage({
     return Array.from(set).sort().reverse();
   }, [courses, all, data.academicYears]);
 
-  const scoped = useMemo(() => all.filter(l => sameContext(l, context)), [all, context]);
+  const scoped = useMemo(() => all.filter(l => sameContext(l, context, courses)), [all, context, courses]);
 
   const now = new Date();
   const today = new Date(now.toDateString());

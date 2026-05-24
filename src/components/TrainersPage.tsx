@@ -28,7 +28,7 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
     return Array.from(set).sort().reverse();
   }, [courses, all, data.academicYears]);
 
-  const scoped = useMemo(() => all.filter(t => sameContext(t, context)), [all, context]);
+  const scoped = useMemo(() => all.filter(t => sameContext(t, context, courses)), [all, context, courses]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

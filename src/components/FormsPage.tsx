@@ -38,17 +38,27 @@ function wordWrap(bodyHtml: string, title: string): string {
 </head><body dir="rtl" lang="he-IL">${bodyHtml}</body></html>`;
 }
 
+function openBlobUrl(content: string, mimeType: string, forceDownload = false, filename?: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  if (forceDownload && filename) {
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+  } else {
+    // Open in new tab \u2014 works reliably across browsers including mobile Safari
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 function downloadAsWord(bodyHtml: string, title: string, filename: string) {
   const full = wordWrap(bodyHtml, title);
-  const blob = new Blob(['\ufeff', full], { type: 'application/msword' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename + '.doc';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  openBlobUrl('\ufeff' + full, 'application/msword', true, filename + '.doc');
 }
 
 function openInBrowser(bodyHtml: string, title: string) {
@@ -63,7 +73,9 @@ function openInBrowser(bodyHtml: string, title: string) {
     .radio-opt{font-size:10.5pt}
     .crit-row{display:flex;align-items:center;gap:10pt;padding:5pt 0;border-bottom:0.5pt solid #eee;font-size:10.5pt}
     .crit-label{flex:1} .crit-nums{display:flex;gap:8pt;font-size:10pt;color:#555}
-    .write-block{margin:4pt 0 12pt} .write-lbl{font-size:9.5pt;font-weight:600;color:#555;margin-bottom:5pt} .write-line{border-bottom:0.5pt solid #999;height:20pt;width:100%;margin-bottom:2pt} .val.filled{color:#1a1a1a;font-weight:600;border-bottom-color:#7a1e2b}
+    .write-block{margin:4pt 0 12pt} .write-lbl{font-size:9.5pt;font-weight:600;color:#555;margin-bottom:5pt}
+    .write-line{border-bottom:0.5pt solid #999;height:20pt;width:100%;margin-bottom:2pt}
+    .val.filled{color:#1a1a1a;font-weight:600;border-bottom-color:#7a1e2b}
     .sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:24pt;margin-top:14pt}
     .sig-lbl{font-size:9pt;font-weight:600;color:#555;margin-bottom:3pt}
     .sig-line{border-bottom:1pt solid #333;height:36pt}
@@ -71,9 +83,10 @@ function openInBrowser(bodyHtml: string, title: string) {
     .notice{background:rgba(122,30,43,0.06);border:1pt solid rgba(122,30,43,0.25);border-radius:4pt;padding:8pt;font-size:10pt;line-height:1.5;margin-bottom:10pt}
     table{width:100%;border-collapse:collapse;font-size:10pt} th,td{border:0.5pt solid #ccc;padding:5pt 7pt;text-align:right} th{background:#f5f0f0;font-weight:700}
     @media print{body{background:white;margin:1.2cm}@page{size:A4;margin:1.2cm}}`;
-  const full = `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>${title}</title><style>${style}</style></head><body>${bodyHtml}<script>window.onload=()=>window.print();<\/script></body></html>`;
-  const w = window.open('', '_blank');
-  if (w) { w.document.write(full); w.document.close(); }
+  // Auto-print on open so user can save as PDF via browser print dialog
+  const full = `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>${title}</title><style>${style}</style></head><body>${bodyHtml}<script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script></body></html>`;
+  // Use blob URL \u2014 avoids popup-blocker issues with window.open('','_blank')+document.write
+  openBlobUrl(full, 'text/html;charset=utf-8');
 }
 
 /* ─── Form context (pre-filled student/candidate data) ──────────────── */
@@ -453,14 +466,16 @@ function RegistrationLinkCard() {
         </div>
         <span className="serif text-[34px] leading-none shrink-0">📝</span>
       </div>
-      <div className="flex flex-wrap gap-2 items-center">
-        <div id="reg-link-display" className="flex-1 min-w-[280px] mono text-[12.5px] px-4 py-2.5 rounded-lg select-all break-all"
-          style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--divider)' }}>{link}</div>
-        <button onClick={copy} className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg"
-          style={{ background: 'var(--accent)', color: 'var(--bg)' }}>{copied ? '✓ הועתק' : '📋 העתק'}</button>
-        <a href={link} target="_blank" rel="noopener"
-          className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg border"
-          style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>פתח ↗</a>
+      <div className="flex flex-col gap-2">
+        <div id="reg-link-display" className="w-full mono text-[12.5px] px-4 py-2.5 rounded-lg select-all"
+          style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--divider)', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{link}</div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={copy} className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg"
+            style={{ background: 'var(--accent)', color: 'var(--bg)' }}>{copied ? '✓ הועתק' : '📋 העתק'}</button>
+          <a href={link} target="_blank" rel="noopener"
+            className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg border"
+            style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>פתח ↗</a>
+        </div>
       </div>
       <div className="mono text-[11px] uppercase tracking-[0.14em] mt-4" style={{ color: 'var(--text-soft)' }}>
         שלח במייל · WhatsApp · הטמע באתר הפקולטה

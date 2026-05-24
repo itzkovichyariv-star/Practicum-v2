@@ -43,8 +43,15 @@ export function signOut() {
   } catch {}
 }
 
-/** Normalises academic-year strings so comparisons work regardless of spacing/dash variants. */
+/** Normalises academic-year strings so comparisons work regardless of spacing/dash variants.
+ *  Crucially, normalises all double-quote variants to Hebrew gershayim (U+05F4) so that
+ *  DB values stored with ASCII " (U+0022) match UI values stored with ״ (U+05F4).
+ *  Variants handled: U+0022 ASCII ", U+201C " left double, U+201D " right double, U+05F4 ״ gershayim.
+ */
 export function normalizeYear(y: string | undefined | null): string {
   if (!y) return '';
-  return String(y).trim().replace(/\s+/g, '-');
+  return String(y)
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/["“”״]/g, '״');   // all double-quote variants → ״ (U+05F4)
 }

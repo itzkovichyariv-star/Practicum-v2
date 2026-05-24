@@ -35,7 +35,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     return Array.from(set).sort().reverse();
   }, [courses, all, data.academicYears]);
 
-  const scoped = useMemo(() => all.filter(s => sameContext(s, context)), [all, context]);
+  const scoped = useMemo(() => all.filter(s => sameContext(s, context, courses)), [all, context, courses]);
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
@@ -78,9 +78,37 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
   async function handleSave(s: Student) {
     const idx = all.findIndex(x => x.id === s.id);
+    const previous = idx >= 0 ? all[idx] : null;
     const next = idx >= 0 ? [...all] : [...all, s];
     if (idx >= 0) next[idx] = s;
     setEditing(null); setCreating(false);
+
+    // Auto-increment filledPositions when acceptedOrg is newly set
+    const orgJustSet = s.acceptedOrg && !previous?.acceptedOrg;
+    if (orgJustSet) {
+      const empIdx = employers.findIndex(e => e.name === s.acceptedOrg);
+      if (empIdx >= 0) {
+        const updatedEmps = [...employers];
+        const emp = updatedEmps[empIdx];
+        updatedEmps[empIdx] = { ...emp, filledPositions: (emp.filledPositions || 0) + 1 };
+        setSaving(true); setSaveMsg(null);
+        const res = await saveSnapshot(
+          { ...data, students: next, employers: updatedEmps },
+          { name: userName },
+          { action: 'שובץ לארגון', entity: 'סטודנט', target: s.name }
+        );
+        setSaving(false);
+        if (!res.ok) { setSaveMsg('שגיאה: ' + (res.error || '')); showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
+        setSaveMsg('✓ שובץ/ה לארגון');
+        showToast('✓ שובץ/ה לארגון · נשמר בענן ☁️', 'success');
+        (data.students as Student[]) = next;
+        (data.employers as any) = updatedEmps;
+        onRefresh();
+        setTimeout(() => setSaveMsg(null), 2500);
+        return;
+      }
+    }
+
     await persistAndRefresh(next, idx >= 0 ? '✓ הסטודנט/ית עודכנו' : '✓ סטודנט/ית נוצר');
   }
 
@@ -282,6 +310,10 @@ function StudentRow({ s, onEdit, pinned, onTogglePin }: {
           {(!s.phone || !s.email) && <NeedsUpdate />}
           {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄 מסמכים" muted />}
           {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
+          {/* CV update indicator: Rachel needs to know who has submitted their updated CV */}
+          {s.cvUpdatedUrl
+            ? <Tag label="CV ✓" color="#15803d" />
+            : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
           {placed && !hired && !completed && <Tag label="שובץ/ה" />}
           {hired && !completed && <Tag label="נקלט/ה" solid />}
           {completed && <Tag label="✓ סיים פרקטיקום" color="#b45309" />}
@@ -319,6 +351,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin }: {
           <DetailRow label="שובץ ב" value={s.acceptedOrg} accent />
           <DetailRow label="שעות" value={s.hoursApproved ? `${s.hoursApproved} מאושרות / ${s.hoursReported || 0} דיווח` : undefined} />
           <DetailRow label="CV" value={s.cvUrl ? '✓ זמין' : undefined} />
+          <DetailRow label="CV מעודכן" value={s.cvUpdatedUrl ? '✓ הוגש' : prepPassed ? '⚠ נדרש' : undefined} accent={!!s.cvUpdatedUrl} />
           {s.notes && <DetailRow label="הערות" value={s.notes} />}
         </div>
       </Popover>

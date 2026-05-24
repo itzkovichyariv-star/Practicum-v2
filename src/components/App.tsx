@@ -198,16 +198,22 @@ export default function App() {
   const scopedForOptions = useMemo(() => data ? filterByPermissions(data, perms) : null, [data, perms]);
 
   // Compute context options from already-scoped data so forbidden courses don't appear
+  // NOTE: we show ALL courses regardless of selected year so the selector never falls back
+  // to displaying a raw course ID. Year + course together filter the data shown downstream.
   const courseOptions = useMemo(() => {
     const courses = (scopedForOptions?.courses || []);
-    const filtered = ctx.year === '__all__'
-      ? courses
-      : courses.filter(c => !c.year || normalizeYear(c.year) === normalizeYear(ctx.year));
+    // Show each unique course NAME once — year is the orthogonal selector.
+    const seen = new Set<string>();
+    const unique = courses.filter(c => {
+      if (!c.name || seen.has(c.name)) return false;
+      seen.add(c.name);
+      return true;
+    });
     return [
       { value: '__all__', label: 'כל הקורסים' },
-      ...filtered.map(c => ({ value: c.id, label: c.name })),
+      ...unique.map(c => ({ value: c.name, label: c.name })),
     ];
-  }, [scopedForOptions, ctx.year]);
+  }, [scopedForOptions]);
 
   const yearOptions = useMemo(() => {
     if (!scopedForOptions) return [{ value: '__all__', label: 'כל השנים' }];

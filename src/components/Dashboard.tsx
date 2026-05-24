@@ -33,12 +33,31 @@ export default function Dashboard({
   const employers = data.employers || [];
   const candidates = data.candidates || [];
   const lectures = data.lectures || [];
+  const allCourses = data.courses || [];
 
   // Scoped data
-  const scopedStudents = students.filter(s => sameContext(s, context));
-  const scopedEmployers = employers.filter(e => sameContext(e, context));
-  const scopedCandidates = candidates.filter(c => sameContext(c, context));
-  const scopedLectures = lectures.filter(l => sameContext(l, context));
+  const scopedStudents = students.filter(s => sameContext(s, context, allCourses));
+  // Employers use courseIds[] (new) or courseId (legacy) — sameContext only handles single courseId
+  const scopedEmployers = employers.filter(e => {
+    const ids: string[] = e.courseIds?.length ? e.courseIds : (e.courseId ? [e.courseId] : []);
+    if (context.courseId !== '__all__') {
+      // context.courseId may be a course name — expand to all matching IDs
+      const allowedIds = new Set(
+        allCourses.filter(c => c.name === context.courseId || c.id === context.courseId).map(c => c.id)
+      );
+      if (!ids.some(id => allowedIds.has(id))) return false;
+    }
+    if (context.year !== '__all__') {
+      const matches = ids.some(cid => {
+        const course = allCourses.find(c => c.id === cid);
+        return course && normalizeYear(course.year) === normalizeYear(context.year);
+      });
+      if (!matches) return false;
+    }
+    return true;
+  });
+  const scopedCandidates = candidates.filter(c => sameContext(c, context, allCourses));
+  const scopedLectures = lectures.filter(l => sameContext(l, context, allCourses));
 
   // Stats
   const completedCount = scopedStudents.filter(s => s.practicumCompleted).length;

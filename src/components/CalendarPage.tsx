@@ -62,7 +62,7 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
     (async () => {
       const [slotsRes, subsRes] = await Promise.all([
         supabase.from('public_interview_slots').select('*'),
-        supabase.from('candidate_submissions').select('id, name, email, notes').is('candidate_id', null),
+        supabase.from('candidate_submissions').select('id, name, email, notes').eq('processed', false),
       ]);
       setSlots((slotsRes.data as SlotRow[]) || []);
       // Extract slot info from each submission's notes field
@@ -97,7 +97,8 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
 
   const events = useMemo<CalEvent[]>(() => {
     const list: CalEvent[] = [];
-    lectures.filter(l => sameContext(l, context)).forEach(l => {
+    const courses = data.courses || [];
+    lectures.filter(l => sameContext(l, context, courses)).forEach(l => {
       if (!l.date) return;
       const d = new Date(l.date);
       if (isNaN(d.getTime())) return;
@@ -119,7 +120,7 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
         }),
       });
     });
-    candidates.filter(c => sameContext(c, context)).forEach(c => {
+    candidates.filter(c => sameContext(c, context, courses)).forEach(c => {
       if (!c.interviewDate) return;
       const d = new Date(c.interviewDate);
       if (isNaN(d.getTime())) return;
@@ -133,13 +134,13 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
         calendarUrl: outlookCalendarUrl({
           subject: `ראיון מועמד: ${c.name || ''}`,
           startDate: c.interviewDate.slice(0, 10),
-          startTime: '10:00',
-          endTime: '10:45',
+          startTime: c.interviewTime ? c.interviewTime.split(/[-–]/)[0] : '10:00',
+          endTime: c.interviewTime ? (c.interviewTime.split(/[-–]/)[1] || '10:45') : '10:45',
           attendeeEmail: c.email,
         }),
       });
     });
-    students.filter(s => sameContext(s, context)).forEach(s => {
+    students.filter(s => sameContext(s, context, courses)).forEach(s => {
       if (!s.preparation?.date) return;
       const d = new Date(s.preparation.date);
       if (isNaN(d.getTime())) return;

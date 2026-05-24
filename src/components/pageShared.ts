@@ -16,11 +16,36 @@ export type PageProps = {
   onNavigate: (page: Page) => void;
 };
 
+/**
+ * Checks whether an item belongs to the current context (course + year).
+ *
+ * context.courseId can be either:
+ *   - '__all__'            → no course filter
+ *   - a course ID string   → exact match (legacy / editor use)
+ *   - a course NAME string → matches all course records with that name (TopBar filter)
+ *
+ * Pass `courses` (from data.courses) so the function can expand a name to all matching IDs.
+ */
 export function sameContext(
   item: { courseId?: string; year?: string },
   context: Context,
+  courses?: { id: string; name?: string }[],
 ): boolean {
-  if (context.courseId !== '__all__' && item.courseId !== context.courseId) return false;
+  if (context.courseId !== '__all__') {
+    if (courses && courses.length > 0) {
+      // Resolve: if context.courseId is a known course name, expand to all matching IDs.
+      // If it's an exact ID, this still works (the set will contain just that ID).
+      const allowedIds = new Set(
+        courses
+          .filter(c => c.name === context.courseId || c.id === context.courseId)
+          .map(c => c.id)
+      );
+      if (!allowedIds.has(item.courseId || '')) return false;
+    } else {
+      // Fallback (no courses list): exact ID match
+      if (item.courseId !== context.courseId) return false;
+    }
+  }
   if (context.year !== '__all__' && normalizeYear(item.year) !== normalizeYear(context.year)) return false;
   return true;
 }

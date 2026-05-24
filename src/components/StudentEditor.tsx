@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import type { Student, Course, Employer } from '../lib/supabase';
-import { randomId } from '../lib/dataApi';
+import { randomId, generateFeedbackUrl } from '../lib/dataApi';
 import EvaluationForm from './EvaluationForm';
 import Modal from './Modal';
 
@@ -46,6 +46,11 @@ export default function StudentEditor({
     firstChoiceResult: student?.firstChoiceResult || 'pending',
     secondChoiceOrg: student?.secondChoiceOrg || '',
     secondChoiceResult: student?.secondChoiceResult || 'pending',
+    placementInterviewDate: student?.placementInterviewDate || '',
+    placementInterviewTime: student?.placementInterviewTime || '',
+    placementInterviewOrg: student?.placementInterviewOrg || '',
+    feedbackToken: student?.feedbackToken || '',
+    feedbackSubmittedAt: student?.feedbackSubmittedAt || '',
   });
 
   const prepPassed = !!form.preparation?.passed;
@@ -85,6 +90,17 @@ export default function StudentEditor({
     window.open(`https://wa.me/${n}`, '_blank');
   }
 
+  function handleGenerateFeedbackLink() {
+    const { token, url } = generateFeedbackUrl(form.id, window.location.origin);
+    update('feedbackToken', token);
+    // Copy to clipboard for easy sharing
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => alert(`קישור משוב הועתק ללוח:\n${url}\n\nשמור את השינויים כדי לשמור את ה‑token.`));
+    } else {
+      alert(`קישור משוב:\n${url}\n\nשמור את השינויים כדי לשמור את ה‑token.`);
+    }
+  }
+
   return (
     <Modal onClose={onClose} maxWidth="max-w-[820px]">
         <form onSubmit={handleSubmit} className="px-5 py-7 md:px-10 md:py-10">
@@ -109,7 +125,7 @@ export default function StudentEditor({
           <SectionSub title="הקשר — קורס ושנה">
             <Field label="קורס">
               <Select value={form.courseId||''} onChange={v=>update('courseId',v)}
-                options={courses.map(c=>({value:c.id,label:c.name}))} placeholder="בחר קורס"/>
+                options={courses.map(c=>({value:c.id,label:c.year?`${c.name} · ${c.year}`:c.name}))} placeholder="בחר קורס"/>
             </Field>
             <Field label="שנה אקדמית">
               <Select value={form.year||''} onChange={v=>update('year',v)} options={years.map(y=>({value:y,label:y}))} placeholder="בחר שנה"/>
@@ -160,6 +176,24 @@ export default function StudentEditor({
             </Field>
           </SectionSub>
 
+          <SectionSub title="ראיון שיבוץ (רחל — תיאום עם מעסיק)">
+            <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>
+            <Field label="שעת ראיון שיבוץ"><Input type="time" value={form.placementInterviewTime||''} onChange={v=>update('placementInterviewTime',v)}/></Field>
+            <div className="col-span-2">
+              <Field label="ארגון לראיון שיבוץ">
+                <Select value={form.placementInterviewOrg||''} onChange={v=>update('placementInterviewOrg',v)}
+                  options={employers.map(e=>({value:e.name,label:e.name}))}
+                  placeholder="בחר ארגון"
+                  freeText/>
+              </Field>
+            </div>
+            {form.feedbackSubmittedAt && (
+              <div className="col-span-2 p-3 rounded-lg text-[13px]" style={{ background: 'rgba(21,128,61,0.08)', color: '#15803d' }}>
+                ✓ המעסיק מילא משוב · {new Date(form.feedbackSubmittedAt).toLocaleDateString('he-IL')}
+              </div>
+            )}
+          </SectionSub>
+
           <SectionSub title="השמה סופית ושעות">
             <Field label="ארגון מאכסן בפועל">
               <Select value={form.acceptedOrg||''} onChange={v=>update('acceptedOrg',v)}
@@ -198,6 +232,11 @@ export default function StudentEditor({
             <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.phone}>WhatsApp</button>
             <button type="button" onClick={openOutlookCompose} className="btn" disabled={!form.email}>מייל (Outlook)</button>
             {!isNew && <button type="button" onClick={() => setShowEval(true)} className="btn">🖨 טופס הערכה</button>}
+            {!isNew && (
+              <button type="button" onClick={handleGenerateFeedbackLink} className="btn" title="צור קישור למשוב מעסיק ושמור ל-Clipboard">
+                🔗 קישור משוב מעסיק
+              </button>
+            )}
             {!isNew && onDelete && (
               <button type="button"
                 onClick={()=>{ if(confirm('למחוק סטודנט/ית זה/ו?')) onDelete(form.id); }}

@@ -18,6 +18,16 @@ export default function EmployerEditor({
   employer, courses, years, defaultCourseId, defaultYear, onSave, onDelete, onClose,
 }: Props) {
   const isNew = !employer;
+
+  // Resolve courseIds: prefer new field, fall back to legacy courseId
+  const initialCourseIds: string[] = employer?.courseIds
+    ? employer.courseIds
+    : employer?.courseId
+      ? [employer.courseId]
+      : defaultCourseId && defaultCourseId !== '__all__'
+        ? [defaultCourseId]
+        : [];
+
   const [form, setForm] = useState<Employer>({
     id: employer?.id || randomId('emp'),
     name: employer?.name || '',
@@ -27,8 +37,8 @@ export default function EmployerEditor({
     location: employer?.location || '',
     positions: employer?.positions || 0,
     filledPositions: employer?.filledPositions || 0,
-    courseId: employer?.courseId || (defaultCourseId !== '__all__' ? defaultCourseId : ''),
-    year: employer?.year || (defaultYear !== '__all__' ? defaultYear : ''),
+    notes: employer?.notes || '',
+    courseIds: initialCourseIds,
   });
 
   function update<K extends keyof Employer>(k: K, v: Employer[K]) {
@@ -85,16 +95,45 @@ export default function EmployerEditor({
             <Field label="טלפון איש קשר"><Input type="tel" value={form.contactPhone||''} onChange={v=>update('contactPhone',v)}/></Field>
             <Field label="מייל איש קשר"><Input type="email" value={form.contactEmail||''} onChange={v=>update('contactEmail',v)}/></Field>
 
-            <Field label="קורס">
-              <Select value={form.courseId||''} onChange={v=>update('courseId',v)}
-                options={courses.map(c=>({value:c.id,label:c.name}))} placeholder="בחר קורס"/>
-            </Field>
-            <Field label="שנה אקדמית">
-              <Select value={form.year||''} onChange={v=>update('year',v)} options={years.map(y=>({value:y,label:y}))} placeholder="בחר שנה"/>
-            </Field>
+            <div className="col-span-2">
+              <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>קורסים משויכים</span>
+              <div className="flex flex-wrap gap-3">
+                {courses.map(c => {
+                  const checked = (form.courseIds || []).includes(c.id);
+                  return (
+                    <label key={c.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-[13.5px] transition-colors"
+                      style={{
+                        borderColor: checked ? 'var(--accent)' : 'var(--divider)',
+                        background: checked ? 'rgba(122,30,43,0.06)' : 'transparent',
+                        color: 'var(--ink)',
+                      }}>
+                      <input type="checkbox" checked={checked}
+                        onChange={e => {
+                          const next = e.target.checked
+                            ? [...(form.courseIds || []), c.id]
+                            : (form.courseIds || []).filter(id => id !== c.id);
+                          update('courseIds', next);
+                        }}
+                        style={{ accentColor: 'var(--accent)' }}
+                      />
+                      <span>{c.name}</span>
+                      <span className="mono text-[11px] opacity-60">{c.year}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
 
             <Field label="סה״כ משרות"><Input type="number" value={String(form.positions||0)} onChange={v=>update('positions', Number(v)||0)}/></Field>
             <Field label="משרות מאוישות"><Input type="number" value={String(form.filledPositions||0)} onChange={v=>update('filledPositions', Number(v)||0)}/></Field>
+
+            <div className="col-span-2">
+              <Field label="הערות">
+                <textarea value={form.notes||''} onChange={e=>update('notes', e.target.value)}
+                  rows={2} className="input w-full" style={{ padding:'10px 14px', fontSize:'14px', resize:'vertical' }} />
+              </Field>
+            </div>
 
             <div className="col-span-2 py-3 border-t mt-3" style={{ borderColor: 'var(--divider)' }}>
               <div className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold" style={{ color: openPositions > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>

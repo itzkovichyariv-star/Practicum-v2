@@ -19,6 +19,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showMsgModal, setShowMsgModal] = useState(false);
+  const [msgSubject, setMsgSubject] = useState('');
+  const [msgBody, setMsgBody] = useState('');
 
   const all = data.candidates || [];
   const courses = data.courses || [];
@@ -31,7 +35,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     return Array.from(set).sort().reverse();
   }, [courses, all, data.academicYears]);
 
-  const scoped = useMemo(() => all.filter(c => sameContext(c, context)), [all, context]);
+  const scoped = useMemo(() => all.filter(c => sameContext(c, context, courses)), [all, context, courses]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -104,6 +108,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     }
 
     if (shouldAutoConvert) {
+      const conversionNotes = [
+        c.evalScore != null ? `ציון ראיון: ${c.evalScore}` : '',
+        c.preferredArea ? `תחום מבוקש: ${c.preferredArea}` : '',
+        c.interviewSummary ? `סיכום ראיון: ${c.interviewSummary}` : '',
+      ].filter(Boolean).join('\n');
       const newStudent: Student = {
         id: randomId('s'),
         name: c.name,
@@ -116,6 +125,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         preparation: { passed: false },
         fromCandidate: true,
         fromCandidateId: c.id,
+        notes: conversionNotes || undefined,
       };
       const updatedCand: Candidate = { ...c, convertedToStudentId: newStudent.id };
       const idx = all.findIndex(x => x.id === c.id);
@@ -153,45 +163,101 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   async function handleAcceptSubmissionIntoCandidates(sub: any) {
-    // Find course by name (falls back to first course if not found)
-    const course = courses.find(c =>
-      (c.name || '').replace(/\s+/g, '').toLowerCase() === (sub.course_name || '').replace(/\s+/g, '').toLowerCase()
-    );
-    // Parse booked slot out of the notes text (format: "בחר מועד ראיון: YYYY-MM-DD HH:MM–HH:MM")
-    const slotMatch = (sub.notes || '').match(/בחר מועד ראיון:\s*(\d{4}-\d{2}-\d{2})\s*(\d{1,2}:\d{2})/);
+    // Find course by name+year; fall back to name-only if year doesn't match
+    const subYear = sub.year || '';
+    const nameMatch = (c: typeof courses[0]) =>
+      (c.name || '').replace(/\s+/g, '').toLowerCase() === (sub.course_name || '').replace(/\s+/g, '').toLowerCase();
+    const course =
+      courses.find(c => nameMatch(c) && c.year === subYear) ||
+      courses.find(c => nameMatch(c));
+    // Parse booked slot out of notes (format: "בחר מועד ראיון: YYYY-MM-DD HH:MM–HH:MM")
+    const slotMatch = (sub.notes || '').match(/בחר מועד ראיון:\s*(\d{4}-\d{2}-\d{2})\s*(\d{1,2}:\d{2}(?:[–\-]\d{1,2}:\d{2})?)/);
     const interviewDate = slotMatch?.[1] || '';
-    const newCandidate: Candidate = {
-      id: randomId('cand'),
-      name: sub.name,
-      phone: sub.phone || '',
-      email: sub.email || '',
-      city: sub.city || '',
-      courseId: course?.id || (courses[0]?.id || ''),
-      year: sub.year || normalizeYear('תשפ״ו'),
-      applicationDate: sub.submitted_at?.slice(0, 10) || '',
-      cvUrl: sub.cv_file_path ? `storage://candidate-uploads/${sub.cv_file_path}` : '',
-      applicationUrl: sub.application_file_path ? `storage://candidate-uploads/${sub.application_file_path}` : '',
-      submittedAt: sub.submitted_at,
-      interviewDate,
-      interviewResult: 'pending',
-      notes: sub.notes || '',
-    };
-    const nextCandidates = [...all, newCandidate];
-    setSaving(true);
-    const res = await saveSnapshot(
-      { ...data, candidates: nextCandidates },
-      { name: userName },
-      { action: 'נקלט מטופס הרשמה', entity: 'מועמד', target: sub.name }
-    );
-    setSaving(false);
-    if (res.ok) {
-      (data.candidates as Candidate[]) = nextCandidates;
-      onRefresh();
+    const interviewTime = slotMatch?.[2] || '';
+
+    // ── Dedup logic ──────────────────────────────────────────────────────────
+    function normN(n: string) { return (n || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+    const byEmail = sub.email
+      ? all.find(c => c.email && c.email.toLowerCase() === sub.email!.toLowerCase())
+      : undefined;
+    const byExactName = !byEmail
+      ? all.find(c => normN(c.name) === normN(sub.name))
+      : undefined;
+    const subLastToken = normN(sub.name).split(' ').pop() || '';
+    const bySimilarName = !byEmail && !byExactName && subLastToken.length > 2
+      ? all.find(c => {
+          const t = normN(c.name).split(' ').pop() || '';
+          return t === subLastToken && normN(c.name) !== normN(sub.name);
+        })
+      : undefined;
+
+    let existingRecord: Candidate | undefined = byEmail || byExactName;
+    if (!existingRecord && bySimilarName) {
+      const merge = window.confirm(
+        `נמצא מועמד דומה: ${bySimilarName.name}\nהמועמד שהגיש: ${sub.name}\n\nלאחד עם הרשומה הקיימת? לחץ אישור לאיחוד, ביטול ליצירת רשומה חדשה.`
+      );
+      if (merge) existingRecord = bySimilarName;
+    }
+
+    if (existingRecord) {
+      // Update existing record
+      const updated: Candidate = {
+        ...existingRecord,
+        cvUrl: sub.cv_file_path ? `storage://candidate-uploads/${sub.cv_file_path}` : existingRecord.cvUrl,
+        applicationUrl: sub.application_file_path ? `storage://candidate-uploads/${sub.application_file_path}` : existingRecord.applicationUrl,
+        interviewDate: interviewDate || existingRecord.interviewDate,
+        interviewTime: interviewTime || existingRecord.interviewTime,
+        submittedAt: sub.submitted_at,
+        applicationDate: existingRecord.applicationDate || sub.submitted_at?.slice(0, 10) || '',
+      };
+      const nextCandidates = all.map(c => c.id === existingRecord!.id ? updated : c);
+      setSaving(true);
+      const res = await saveSnapshot(
+        { ...data, candidates: nextCandidates },
+        { name: userName },
+        { action: 'עודכן מטופס הרשמה', entity: 'מועמד', target: sub.name }
+      );
+      setSaving(false);
+      if (res.ok) { (data.candidates as Candidate[]) = nextCandidates; onRefresh(); }
+      showToast(`✓ עודכן מועמד קיים: ${existingRecord.name}`, 'success');
+    } else {
+      // Create new candidate
+      const newCandidate: Candidate = {
+        id: randomId('cand'),
+        name: sub.name,
+        phone: sub.phone || '',
+        email: sub.email || '',
+        city: sub.city || '',
+        courseId: course?.id || (courses[0]?.id || ''),
+        year: sub.year || normalizeYear('תשפ״ז'),
+        applicationDate: sub.submitted_at?.slice(0, 10) || '',
+        cvUrl: sub.cv_file_path ? `storage://candidate-uploads/${sub.cv_file_path}` : '',
+        applicationUrl: sub.application_file_path ? `storage://candidate-uploads/${sub.application_file_path}` : '',
+        submittedAt: sub.submitted_at,
+        interviewDate,
+        interviewTime,
+        interviewResult: 'pending',
+        notes: sub.notes || '',
+      };
+      const nextCandidates = [...all, newCandidate];
+      setSaving(true);
+      const res = await saveSnapshot(
+        { ...data, candidates: nextCandidates },
+        { name: userName },
+        { action: 'נקלט מטופס הרשמה', entity: 'מועמד', target: sub.name }
+      );
+      setSaving(false);
+      if (res.ok) { (data.candidates as Candidate[]) = nextCandidates; onRefresh(); }
     }
   }
 
   async function handleConvertToStudent(c: Candidate) {
     if (!confirm(`להעביר את ${c.name} לרשימת הסטודנטים? הפרטים והמסמכים יועתקו, והמועמד יסומן כמועבר.`)) return;
+    const conversionNotes = [
+      c.evalScore != null ? `ציון ראיון: ${c.evalScore}` : '',
+      c.preferredArea ? `תחום מבוקש: ${c.preferredArea}` : '',
+      c.interviewSummary ? `סיכום ראיון: ${c.interviewSummary}` : '',
+    ].filter(Boolean).join('\n');
     const newStudent: Student = {
       id: randomId('s'),
       name: c.name,
@@ -204,6 +270,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       preparation: { passed: false },
       fromCandidate: true,
       fromCandidateId: c.id,
+      notes: conversionNotes || undefined,
     };
     const nextStudents = [...(data.students || []), newStudent];
     const nextCandidates = all.map(x => x.id === c.id ? { ...x, convertedToStudentId: newStudent.id } : x);
@@ -283,12 +350,66 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
           );
         })}
       </div>
-      <div className="mb-8">
+      <div className="mb-4 flex gap-3 items-center">
         <input type="search" value={search} onChange={e=>setSearch(e.target.value)}
           placeholder="חפש לפי שם, טלפון, מייל..."
-          className="input w-full"
+          className="input flex-1"
           style={{ padding: '8px 14px', fontSize: '14px' }}/>
+        {selectedIds.size > 0 && (
+          <button
+            onClick={() => setShowMsgModal(true)}
+            className="btn btn-primary whitespace-nowrap"
+          >
+            📧 שלח הודעה ({selectedIds.size})
+          </button>
+        )}
+        {selectedIds.size > 0 && (
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+            style={{ color: 'var(--text-soft)' }}
+          >
+            נקה בחירה
+          </button>
+        )}
       </div>
+
+      {/* Group message modal */}
+      {showMsgModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.55)' }}>
+          <div className="rounded-2xl border p-8 max-w-[520px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)' }}>
+            <div className="flex items-baseline justify-between mb-5">
+              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>שלח הודעה לנבחרים</div>
+              <button onClick={() => setShowMsgModal(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
+            </div>
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', color: 'var(--ink)' }}>
+              {Array.from(selectedIds).map(id => all.find(c => c.id === id)?.name).filter(Boolean).join(' · ')}
+            </div>
+            <label className="block mb-3">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
+              <input value={msgSubject} onChange={e => setMsgSubject(e.target.value)} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} placeholder="נושא ההודעה..." />
+            </label>
+            <label className="block mb-5">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>תוכן</span>
+              <textarea value={msgBody} onChange={e => setMsgBody(e.target.value)} rows={5} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical' }} placeholder="תוכן ההודעה..."/>
+            </label>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowMsgModal(false)} className="btn">ביטול</button>
+              <button
+                onClick={() => {
+                  showToast(`✓ הודעה הוכנה ל‑${selectedIds.size} נמענים`, 'success');
+                  setShowMsgModal(false);
+                  setMsgSubject(''); setMsgBody('');
+                  setSelectedIds(new Set());
+                }}
+                className="btn btn-primary"
+              >
+                📧 שלח הודעה
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section>
         {filtered.length === 0 ? (
@@ -305,6 +426,12 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                 onEdit={() => setEditing(c)}
                 pinned={pinnedId === c.id}
                 onTogglePin={() => setPinnedId(pinnedId === c.id ? null : c.id)}
+                selected={selectedIds.has(c.id)}
+                onToggleSelect={() => {
+                  const next = new Set(selectedIds);
+                  next.has(c.id) ? next.delete(c.id) : next.add(c.id);
+                  setSelectedIds(next);
+                }}
               />
             ))}
           </ul>
@@ -328,8 +455,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin }: {
+function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect }: {
   c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
+  selected?: boolean; onToggleSelect?: () => void;
 }) {
   const r = c.interviewResult || 'pending';
   const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : 'ממתין';
@@ -351,7 +479,16 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin }: {
     <li className="relative group" data-info-row>
       <div onClick={onTogglePin}
         className="py-5 border-b grid gap-5 items-center cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
-        style={{ borderColor: 'var(--divider)', gridTemplateColumns: 'auto 1fr auto auto' }}>
+        style={{ borderColor: 'var(--divider)', gridTemplateColumns: 'auto auto 1fr auto auto' }}>
+        <div onClick={e => { e.stopPropagation(); onToggleSelect?.(); }} className="flex items-center pr-1">
+          <input
+            type="checkbox"
+            checked={!!selected}
+            onChange={() => {}}
+            className="w-4 h-4 rounded cursor-pointer"
+            style={{ accentColor: 'var(--accent)' }}
+          />
+        </div>
         <div className="flex items-center pl-1">
           <StatusDot status={dotStatus} size={10} />
         </div>
@@ -381,8 +518,8 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin }: {
             calendarUrl={c.interviewDate ? outlookCalendarUrl({
               subject: `ראיון מועמד: ${c.name || ''}`,
               startDate: c.interviewDate.slice(0, 10),
-              startTime: '10:00',
-              endTime: '10:45',
+              startTime: c.interviewTime ? c.interviewTime.split(/[-–]/)[0] : '10:00',
+              endTime: c.interviewTime ? (c.interviewTime.split(/[-–]/)[1] || '10:45') : '10:45',
               attendeeEmail: c.email,
               body: `ראיון מועמדות ל${c.name || 'מועמד/ת'}.`,
             }) : undefined}
@@ -408,6 +545,8 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin }: {
           <DetailRowC label="טופס" value={c.applicationUrl ? '✓ הוגש' : '—'} />
           <DetailRowC label="ראיון" value={c.interviewDate ? new Date(c.interviewDate).toLocaleDateString('he-IL') : 'לא נקבע'} />
           <DetailRowC label="תוצאה" value={label} accent={isPass || r === 'failed'} />
+          {c.evalScore != null && <DetailRowC label="ציון" value={String(c.evalScore)} accent={c.evalScore >= 85} />}
+          {c.interviewSummary && <DetailRowC label="סיכום" value={c.interviewSummary} />}
         </div>
       </Popover>
     </li>

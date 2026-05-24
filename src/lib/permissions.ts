@@ -35,7 +35,11 @@ export function filterByPermissions(data: PracticumData, perms: UserPermissions)
     students:   (data.students   || []).filter(s => allowedIds.has(s.courseId)),
     lectures:   (data.lectures   || []).filter(l => allowedIds.has(l.courseId ?? '')),
     candidates: (data.candidates || []).filter(c => allowedIds.has(c.courseId)),
-    employers:  (data.employers  || []).filter(e => allowedIds.has(e.courseId ?? '')),
+    employers:  (data.employers  || []).filter(e => {
+      // Support both new courseIds[] and legacy courseId
+      const ids = e.courseIds?.length ? e.courseIds : (e.courseId ? [e.courseId] : []);
+      return ids.some(id => allowedIds.has(id));
+    }),
     trainers:   (data.trainers   || []).filter(t => allowedIds.has(t.courseId)),
   };
 }

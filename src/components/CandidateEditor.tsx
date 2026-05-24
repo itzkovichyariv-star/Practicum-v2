@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Candidate, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
+import { supabase } from '../lib/supabase';
 import Modal from './Modal';
 
 const RESULTS: Array<{ value: string; label: string }> = [
@@ -115,7 +116,7 @@ export default function CandidateEditor({
             <Field label="מייל"><Input type="email" value={form.email||''} onChange={v=>update('email',v)}/></Field>
             <Field label="קורס">
               <Select value={form.courseId||''} onChange={v=>update('courseId',v)}
-                options={courses.map(c=>({value:c.id,label:c.name}))} placeholder="בחר"/>
+                options={courses.map(c=>({value:c.id,label:c.year?`${c.name} · ${c.year}`:c.name}))} placeholder="בחר"/>
             </Field>
             <Field label="שנה"><Select value={form.year||''} onChange={v=>update('year',v)} options={years} placeholder="בחר"/></Field>
 
@@ -235,6 +236,20 @@ export default function CandidateEditor({
 
 function FileField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const isUrl = /^https?:\/\//i.test(value);
+  // Files uploaded via the registration form are stored as storage://bucket/path
+  const storageMatch = value.match(/^storage:\/\/([^/]+)\/(.+)$/);
+  const canOpen = isUrl || !!storageMatch;
+
+  async function openFile() {
+    if (isUrl) { window.open(value, '_blank'); return; }
+    if (storageMatch) {
+      const [, bucket, path] = storageMatch;
+      const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 300);
+      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+      else alert('לא ניתן לפתוח — בדוק חיבור');
+    }
+  }
+
   return (
     <label className="block">
       <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>{label}</span>
@@ -247,8 +262,8 @@ function FileField({ label, value, onChange }: { label: string; value: string; o
           className="input flex-1"
           style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isUrl ? 'ui-monospace, monospace' : undefined }}
         />
-        {isUrl && (
-          <button type="button" onClick={() => window.open(value, '_blank')}
+        {canOpen && (
+          <button type="button" onClick={openFile}
             className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 rounded-lg shrink-0"
             style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
             פתח ↗

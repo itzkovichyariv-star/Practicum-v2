@@ -16,11 +16,28 @@ const REPORTS: { key: ReportKey; title: string; desc: string }[] = [
 export default function ReportsPage({ data, context }: PageProps) {
   const [active, setActive] = useState<ReportKey>('students');
 
-  const students = (data.students || []).filter(s => sameContext(s, context));
-  const employers = (data.employers || []).filter(e => sameContext(e, context));
-  const candidates = (data.candidates || []).filter(c => sameContext(c, context));
-  const lectures = (data.lectures || []).filter(l => sameContext(l, context));
   const courses = data.courses || [];
+  const students = (data.students || []).filter(s => sameContext(s, context, courses));
+  const candidates = (data.candidates || []).filter(c => sameContext(c, context, courses));
+  const lectures = (data.lectures || []).filter(l => sameContext(l, context, courses));
+  // Employers use courseIds[] — custom filter with name-aware matching
+  const employers = (data.employers || []).filter(e => {
+    const ids: string[] = e.courseIds?.length ? e.courseIds : (e.courseId ? [e.courseId] : []);
+    if (context.courseId !== '__all__') {
+      const allowedIds = new Set(
+        courses.filter(c => c.name === context.courseId || c.id === context.courseId).map(c => c.id)
+      );
+      if (!ids.some(id => allowedIds.has(id))) return false;
+    }
+    if (context.year !== '__all__') {
+      const matches = ids.some(cid => {
+        const course = courses.find(c => c.id === cid);
+        return course && normalizeYear(course.year) === normalizeYear(context.year);
+      });
+      if (!matches) return false;
+    }
+    return true;
+  });
 
   const allYears = useMemo(() => {
     const s = new Set<string>();

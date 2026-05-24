@@ -81,6 +81,22 @@ export function randomId(prefix = 'id'): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
 }
 
+/* ── generateFeedbackUrl ───────────────────────────────────────────────── */
+
+/**
+ * Generates a unique opaque token and returns the public feedback URL
+ * for an employer to fill out a feedback form for a given student.
+ * Usage:
+ *   const { token, url } = generateFeedbackUrl(student.id, window.location.origin);
+ *   // Store token on student: update({ feedbackToken: token })
+ *   // Share url with employer (email/WhatsApp)
+ */
+export function generateFeedbackUrl(studentId: string, baseUrl: string): { token: string; url: string } {
+  const token = `fb-${studentId}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+  const url = `${baseUrl}/feedback?token=${encodeURIComponent(token)}`;
+  return { token, url };
+}
+
 /* ── Versioned snapshots ────────────────────────────────────────────────
    Table SQL (run once in Supabase dashboard → SQL Editor):
 
@@ -158,7 +174,7 @@ export async function loadSnapshots(): Promise<SnapshotMeta[]> {
 /** Auto-snapshot heartbeat: called on app load. Creates a snapshot if none exists
  *  within the last AUTO_SNAPSHOT_INTERVAL_MS, ensuring there is always a recent
  *  recoverable backup even if the user makes no changes. Silent — never throws. */
-const AUTO_SNAPSHOT_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const AUTO_SNAPSHOT_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 export async function ensureAutoSnapshot(
   data: PracticumData,
@@ -177,11 +193,17 @@ export async function ensureAutoSnapshot(
     const age = Date.now() - lastTs;
     if (age < AUTO_SNAPSHOT_INTERVAL_MS) return; // recent enough
 
-    // Write a heartbeat snapshot
+    // Write a heartbeat snapshot with current date + record counts
+    const dateStr = new Date().toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+    const counts = [
+      data.students?.length ? `${data.students.length} סטודנטים` : '',
+      data.candidates?.length ? `${data.candidates.length} מועמדים` : '',
+      data.lectures?.length ? `${data.lectures.length} הרצאות` : '',
+    ].filter(Boolean).join(' · ');
     await writeVersionedSnapshot(
       data,
       editor,
-      { action: 'גיבוי אוטומטי', entity: 'מערכת', target: 'heartbeat' },
+      { action: 'גיבוי אוטומטי', entity: dateStr, target: counts || 'heartbeat' },
       0, // version 0 = heartbeat (doesn't bump main version)
     );
   } catch { /* silent */ }

@@ -32,7 +32,7 @@ export default function RegistrationForm() {
   const [form, setForm] = useState({
     name: '', phone: '', email: '', city: '',
     course: '',
-    year: 'תשפ״ו',
+    year: 'תשפ״ז',
     notes: '',
   });
   const [cv, setCv] = useState<File | null>(null);
@@ -45,21 +45,36 @@ export default function RegistrationForm() {
   const [courses, setCourses] = useState<{ name: string; year?: string }[]>([]);
   const [years, setYears] = useState<string[]>(['תשפ״ו', 'תשפ״ז']);
 
-  // Fetch course catalog on mount
+  // Fetch course catalog from practicum_data (practicum courses only, public readable)
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('public_courses')
-        .select('name, year').order('name');
-      const list = ((data || []) as any[]).map(c => ({ name: c.name as string, year: c.year as string | undefined }));
-      // De-dupe by name
+      const { data: rows } = await supabase
+        .from('practicum_data')
+        .select('data')
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      const allCourses: any[] = rows?.[0]?.data?.courses || [];
+      // Only show practicum courses (not internal lecture/skills courses)
+      const practicumCourses = allCourses.filter((c: any) =>
+        c.id && (c.id.includes('practicum') || c.name?.includes('פרקטיקום'))
+      );
+      const list = practicumCourses.map((c: any) => ({ name: c.name as string, year: c.year as string | undefined }));
+      // De-dupe by name+year
       const seen = new Set<string>();
-      const unique = list.filter(c => { if (seen.has(c.name)) return false; seen.add(c.name); return true; });
+      const unique = list.filter(c => {
+        const key = `${c.name}||${c.year||''}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      // Sort: newest year first
+      unique.sort((a, b) => (b.year || '').localeCompare(a.year || '', 'he'));
       setCourses(unique);
-      // Derive years from courses too
-      const yearsSet = new Set<string>(['תשפ״ו', 'תשפ״ז']);
+      // Derive years
+      const yearsSet = new Set<string>(['תשפ״ז', 'תשפ״ו']);
       list.forEach(c => c.year && yearsSet.add(c.year));
       setYears(Array.from(yearsSet).sort().reverse());
-      // Set sensible default course if empty
+      // Default to first course (newest year)
       if (!form.course && unique.length > 0) {
         setForm(f => ({ ...f, course: unique[0].name }));
       }
@@ -210,11 +225,7 @@ export default function RegistrationForm() {
           </p>
         )}
 
-        {notifyDiag && (
-          <div className="mt-6 rounded-lg p-3 text-[11.5px] text-right mono" style={{ background: '#fff4e6', border: '1px solid #e09b3d', color: '#7a4400' }}>
-            ⚠ אבחון מייל (רק למנהל): {notifyDiag}
-          </div>
-        )}
+        {/* Diagnostic hidden from candidates — written to console only */}
 
         <div className="mono text-[11px] uppercase tracking-[0.14em] mt-8" style={{ color: 'var(--text-soft)' }}>
           Ariel University · Management · Practicum

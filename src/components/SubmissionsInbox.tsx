@@ -203,7 +203,7 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
       ) : visible.length === 0 ? (
         <div className="p-8 text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
           אין הגשות חדשות. הפצת קישור הרשמה:
-          <div className="mono text-[12px] mt-3 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--ink)', userSelect: 'all' }}>
+          <div className="mono text-[12px] mt-3 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--ink)', userSelect: 'all', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
             {location.origin}/Practicum-v2/register/
           </div>
         </div>
