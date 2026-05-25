@@ -83,8 +83,8 @@ export default function TrainerEditor({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="col-span-1 sm:col-span-full">
               <Field label="שם מלא"><Input value={form.name} onChange={v => update('name', v)} required /></Field>
             </div>
             <Field label="ארגון מאכסן"><Input value={form.organization || ''} onChange={v => update('organization', v)} placeholder="שם הארגון" /></Field>
@@ -101,7 +101,7 @@ export default function TrainerEditor({
             <Field label="שנה אקדמית">
               <Select value={form.year || ''} onChange={v => update('year', v)} options={years.map(y=>({value:y,label:y}))} placeholder="בחר שנה" />
             </Field>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="הערות">
                 <textarea
                   value={form.notes || ''}
@@ -115,12 +115,29 @@ export default function TrainerEditor({
           </div>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
-            <button type="submit" className="btn btn-primary">
-              {isNew ? 'צור' : 'שמור'} <span className="serif text-[16px]">→</span>
-            </button>
-            <button type="button" onClick={openCall} className="btn" disabled={!form.phone}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.phone}>💬 WhatsApp</button>
-            <button type="button" onClick={openMail} className="btn" disabled={!form.email}>✉ מייל</button>
+            <button type="submit" style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>{isNew ? 'צור' : 'שמור'} →</button>
+            <button type="button" onClick={openCall} disabled={!form.phone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
+            }}>📞 התקשר</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
+            }}>💬 WhatsApp</button>
+            <button type="button" onClick={openMail} disabled={!form.email} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
+            }}>✉ מייל</button>
             {!isNew && onDelete && (
               <button type="button"
                 onClick={() => { if (confirm('למחוק מנחה זה/ה?')) onDelete(form.id); }}

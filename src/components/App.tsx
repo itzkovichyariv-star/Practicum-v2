@@ -242,7 +242,10 @@ export default function App() {
     return (
       <Loader
         text={loadError}
-        action={<button className="btn btn-primary mt-6" onClick={refresh}>נסה שוב</button>}
+        action={<button onClick={refresh} style={{
+          display: 'inline-block', marginTop: '24px', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+          background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer',
+        }}>נסה שוב</button>}
       />
     );
   }
@@ -290,7 +293,7 @@ export default function App() {
       {page === 'management' && <ManagementPage {...pageProps} />}
       {page === 'settings'   && <SettingsPage  {...pageProps} />}
 
-      <footer className="max-w-[1200px] mx-auto px-10 py-12 border-t flex justify-between items-center" style={{ borderColor: 'var(--divider)' }}>
+      <footer className="max-w-[1200px] mx-auto px-4 sm:px-10 py-12 border-t flex justify-between items-center" style={{ borderColor: 'var(--divider)' }}>
         <div className="small-caps" style={{ letterSpacing: '0.16em' }}>
           פרקטיקום · Ariel University · Management
         </div>

@@ -217,12 +217,12 @@ export default function ReportsPage({ data, context }: PageProps) {
   }
 
   return (
-    <main className="max-w-[1200px] mx-auto px-10 pt-14 pb-28">
+    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
 
       <section className="pt-4 pb-12 border-b mb-10 print:hidden" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">VIII · דוחות</div>
-        <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>דוחות</h1>
-        <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+        <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>דוחות</h1>
+        <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
           חמישה דוחות מוכנים להדפסה או ייצוא לאקסל. מסוננים לפי ההקשר שבחרת בבר העליון.
         </p>
       </section>
@@ -253,8 +253,16 @@ export default function ReportsPage({ data, context }: PageProps) {
           {REPORTS.find(r => r.key === active)?.desc}
         </p>
         <div className="flex gap-3 mt-5">
-          <button onClick={downloadCsv} className="btn">📊 הורד כאקסל (CSV)</button>
-          <button onClick={printReport} className="btn">🖨 הדפס / PDF</button>
+          <button onClick={downloadCsv} style={{
+            display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+            borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>📊 הורד כאקסל (CSV)</button>
+          <button onClick={printReport} style={{
+            display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+            borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>🖨 הדפס / PDF</button>
           <span className="mr-auto mono text-[12px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
             {compactReport.rows.length} שורות · {compactReport.headers.length} עמודות
           </span>

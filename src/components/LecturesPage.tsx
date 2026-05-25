@@ -174,19 +174,18 @@ export default function LecturesPage({
         <div className="chapter-mark mb-6">II · הרצאות</div>
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-10">
           <div>
-            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
               הרצאות
             </h1>
-            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {buildHeadline(upcomingCount, scoped.length, statusCounts)}
             </p>
           </div>
-          <button
-            onClick={() => setCreating(true)}
-            className="btn btn-primary whitespace-nowrap self-start md:self-auto"
-          >
-            + הרצאה חדשה <span className="serif text-[16px]">→</span>
-          </button>
+          <button onClick={() => setCreating(true)} style={{
+            display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, alignSelf: 'flex-start',
+          }}>+ הרצאה חדשה →</button>
         </div>
 
         {/* Status breakdown */}
@@ -300,112 +299,91 @@ function LectureItem({ lec, now, onEdit }: { lec: Lecture; now: Date; onEdit: ()
 
   const dayColor = isUrgent ? 'var(--accent)' : isPast ? 'var(--text-soft)' : 'var(--ink)';
 
+  const statusBadge = (
+    <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap"
+      style={{
+        color: isCancelled ? 'var(--text-soft)' : 'var(--accent)',
+        background: isCancelled ? 'transparent' : 'rgba(122,30,43,0.08)',
+        border: isCancelled ? '1px solid var(--divider)' : 'none',
+      }}>
+      {lec.status || '—'}
+    </span>
+  );
+
   return (
-    <li className="py-5 border-b" style={{ borderColor: 'var(--divider)', opacity: isCancelled ? 0.5 : 1 }}>
-      {/* Mobile: flex-col; Desktop: 4-col grid */}
-      <div className="flex gap-4 md:grid md:grid-cols-[16px_90px_1fr_auto_auto] md:gap-6 md:items-baseline">
+    <li className="py-4 border-b" style={{ borderColor: 'var(--divider)', opacity: isCancelled ? 0.5 : 1 }}>
+      <div className="flex gap-3 items-start">
 
-        {/* Traffic-light dot */}
-        <div className="hidden md:flex items-start pt-3">
-          <StatusDot status={
-            isCancelled ? 'red' :
-            isPast ? 'green' :
-            lec.status === 'מאושר' ? 'amber' :
-            'gray'
-          } size={9} />
-        </div>
-
-      <div className="shrink-0 w-12 md:w-auto">
-        {valid ? (
-          <>
-            <div className="mono text-[11px] uppercase tracking-[0.18em] font-semibold" style={{ color: 'var(--text-soft)' }}>
-              {hebMonth(date!)}
-            </div>
-            <div className="serif text-[32px] md:text-[38px] leading-none tracking-tight mt-1" style={{ color: dayColor }}>
-              {String(date!.getDate()).padStart(2, '0')}
-            </div>
-            {lec.startTime && (
-              <div className="mono text-[11px] tracking-[0.1em] mt-1" style={{ color: 'var(--text-soft)' }}>
-                {lec.startTime}
+        {/* Date column — fixed width */}
+        <div className="shrink-0 w-11 text-center">
+          {valid ? (
+            <>
+              <div className="mono text-[10px] uppercase tracking-[0.16em] font-semibold" style={{ color: 'var(--text-soft)' }}>
+                {hebMonth(date!)}
               </div>
+              <div className="serif text-[30px] leading-none tracking-tight" style={{ color: dayColor }}>
+                {String(date!.getDate()).padStart(2, '0')}
+              </div>
+              {lec.startTime && (
+                <div className="mono text-[10px] tracking-[0.08em] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  {lec.startTime}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="mono text-[10px] uppercase" style={{ color: 'var(--text-soft)' }}>—</div>
+          )}
+        </div>
+
+        {/* Content + actions */}
+        <div className="flex-1 min-w-0">
+          {/* Topic + type badge */}
+          <div className="flex items-baseline gap-2 flex-wrap mb-0.5">
+            <div className="serif text-[19px] leading-tight tracking-tight" style={{ color: 'var(--ink)' }}>
+              {lec.topic || 'ללא נושא'}
+            </div>
+            {lec.type && lec.type !== 'הרצאה' && (
+              <span className="mono text-[10px] uppercase tracking-[0.12em] px-2 py-0.5 rounded-full border shrink-0"
+                style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+                {lec.type}
+              </span>
             )}
-          </>
-        ) : (
-          <div className="mono text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-soft)' }}>ללא תאריך</div>
-        )}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start gap-2 flex-wrap">
-          <div className="serif text-[20px] md:text-[22px] leading-[1.2] tracking-tight mb-1" style={{ color: 'var(--ink)' }}>
-            {lec.topic || 'ללא נושא'}
           </div>
-          {lec.type && lec.type !== 'הרצאה' && (
-            <span className="mono text-[10px] uppercase tracking-[0.12em] px-2.5 py-0.5 rounded-full border self-center" style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
-              {lec.type}
-            </span>
+          {/* Details line */}
+          <div className="text-[12.5px] leading-snug" style={{ color: 'var(--text-soft)' }}>
+            {[lec.courseName, lec.lecturer, lec.institution || lec.location].filter(Boolean).join(' · ')}
+            {lec.semester && ` · סמ׳ ${lec.semester}`}
+          </div>
+          {(!lec.lecturer || !lec.lecturerPhone || !lec.lecturerEmail) && (
+            <div className="mt-1"><NeedsUpdate /></div>
           )}
+          {/* Bottom row: status + countdown + actions */}
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <div className="flex items-center gap-2">
+              {statusBadge}
+              {isUpcoming && !isCancelled && (
+                <span className="mono text-[10px] uppercase tracking-[0.1em]" style={{ color: isUrgent ? 'var(--accent)' : 'var(--text-soft)' }}>
+                  {days === 0 ? 'היום' : days === 1 ? 'מחר' : `${days}י׳`}
+                </span>
+              )}
+            </div>
+            <RowActions
+              phone={lec.lecturerPhone}
+              email={lec.lecturerEmail}
+              name={lec.lecturer}
+              onEdit={onEdit}
+              calendarUrl={lec.date ? outlookCalendarUrl({
+                subject: `${lec.type || 'הרצאה'}: ${lec.topic || lec.courseName || ''}`,
+                startDate: lec.date,
+                startTime: lec.startTime,
+                endTime: lec.endTime,
+                location: lec.link || lec.location || lec.institution,
+                body: [lec.topic, lec.courseName ? 'קורס: ' + lec.courseName : '', lec.lecturer ? 'מרצה: ' + lec.lecturer : '', lec.notes || ''].filter(Boolean).join('\n'),
+                attendeeEmail: lec.lecturerEmail,
+              }) : undefined}
+            />
+          </div>
         </div>
-        <div className="text-[13px] md:text-[13.5px]" style={{ color: 'var(--text-soft)' }}>
-          {[lec.courseName, lec.lecturer, lec.institution || lec.location].filter(Boolean).join(' · ')}
-          {lec.semester && ` · סמ׳ ${lec.semester}`}
-        </div>
-        {(!lec.lecturer || !lec.lecturerPhone || !lec.lecturerEmail) && (
-          <div className="mt-1"><NeedsUpdate /></div>
-        )}
-        {/* Status badge on mobile */}
-        <div className="flex items-center gap-2 mt-2 md:hidden">
-          <span
-            className="mono text-[10px] uppercase tracking-[0.15em] font-semibold px-2.5 py-0.5 rounded-full"
-            style={{
-              color: isCancelled ? 'var(--text-soft)' : 'var(--accent)',
-              background: isCancelled ? 'transparent' : 'rgba(122, 30, 43, 0.08)',
-              border: isCancelled ? '1px solid var(--divider)' : 'none',
-            }}
-          >
-            {lec.status || '—'}
-          </span>
-          {isUpcoming && !isCancelled && (
-            <span className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: isUrgent ? 'var(--accent)' : 'var(--text-soft)' }}>
-              {days === 0 ? 'היום' : days === 1 ? 'מחר' : `${days}י׳`}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="hidden md:flex text-left flex-col items-end gap-1.5">
-        <span
-          className="mono text-[11px] uppercase tracking-[0.15em] font-semibold whitespace-nowrap px-3 py-1 rounded-full"
-          style={{
-            color: isCancelled ? 'var(--text-soft)' : 'var(--accent)',
-            background: isCancelled ? 'transparent' : 'rgba(122, 30, 43, 0.08)',
-            border: isCancelled ? '1px solid var(--divider)' : 'none',
-          }}
-        >
-          {lec.status || '—'}
-        </span>
-        {isUpcoming && !isCancelled && (
-          <span className="mono text-[10.5px] uppercase tracking-[0.12em]" style={{ color: isUrgent ? 'var(--accent)' : 'var(--text-soft)' }}>
-            {days === 0 ? 'היום' : days === 1 ? 'מחר' : `בעוד ${days} ימים`}
-          </span>
-        )}
-      </div>
-
-      <RowActions
-        phone={lec.lecturerPhone}
-        email={lec.lecturerEmail}
-        name={lec.lecturer}
-        onEdit={onEdit}
-        calendarUrl={lec.date ? outlookCalendarUrl({
-          subject: `${lec.type || 'הרצאה'}: ${lec.topic || lec.courseName || ''}`,
-          startDate: lec.date,
-          startTime: lec.startTime,
-          endTime: lec.endTime,
-          location: lec.link || lec.location || lec.institution,
-          body: [lec.topic, lec.courseName ? 'קורס: ' + lec.courseName : '', lec.lecturer ? 'מרצה: ' + lec.lecturer : '', lec.notes || ''].filter(Boolean).join('\n'),
-          attendeeEmail: lec.lecturerEmail,
-        }) : undefined}
-      />
       </div>
     </li>
   );

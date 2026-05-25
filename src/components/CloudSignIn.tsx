@@ -102,10 +102,14 @@ export default function CloudSignIn({ onSuccess }: { onSuccess: () => void }) {
                 <span style={{ fontSize: 15 }}>⚠</span> {err}
               </div>
             )}
-            <button type="submit" disabled={loading} className="btn btn-primary mt-1 disabled:opacity-50"
-              style={{ fontSize: 13, letterSpacing: '0.14em', minHeight: 50, borderRadius: 14, justifyContent: 'center' }}>
-              {loading ? 'שולח...' : 'שלח קישור כניסה'}
-              {!loading && <span className="serif" style={{ fontSize: 18 }}>→</span>}
+            <button type="submit" disabled={loading} style={{
+              display: 'block', width: '100%', marginTop: '4px', padding: '14px',
+              fontSize: 13, fontWeight: 600, letterSpacing: '0.14em',
+              background: loading ? 'var(--divider)' : 'var(--accent)',
+              color: 'white', border: 'none', borderRadius: 14,
+              cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
+            }}>
+              {loading ? 'שולח...' : 'שלח קישור כניסה →'}
             </button>
           </form>
         )}

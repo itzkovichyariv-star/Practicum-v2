@@ -231,10 +231,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
 
     let existingRecord: Candidate | undefined = byEmail || byExactName;
     if (!existingRecord && bySimilarName) {
-      const merge = window.confirm(
-        `נמצא מועמד דומה: ${bySimilarName.name}\nהמועמד שהגיש: ${sub.name}\n\nלאחד עם הרשומה הקיימת? לחץ אישור לאיחוד, ביטול ליצירת רשומה חדשה.`
-      );
-      if (merge) existingRecord = bySimilarName;
+      // Use showToast instead of confirm() — Safari resets React state on confirm()
+      // Auto-merge by email match, otherwise create new record (admin can merge manually)
+      existingRecord = undefined; // create new, admin can merge manually if needed
+      showToast(`נמצא מועמד דומה: ${bySimilarName.name} — נוצרה רשומה חדשה ל-${sub.name}`, 'success');
     }
 
     if (existingRecord) {
@@ -285,8 +285,44 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         { action: 'נקלט מטופס הרשמה', entity: 'מועמד', target: sub.name }
       );
       setSaving(false);
-      if (res.ok) { (data.candidates as Candidate[]) = nextCandidates; onRefresh(); }
+      if (res.ok) {
+        (data.candidates as Candidate[]) = nextCandidates;
+        onRefresh();
+        showToast(`✓ נקלט מועמד חדש: ${sub.name}`, 'success');
+      } else {
+        showToast('שגיאה בשמירה: ' + (res.error || 'לא ידוע'), 'error');
+      }
     }
+  }
+
+  async function handleRevertToSubmission(c: Candidate) {
+    // Find the matching processed submission (by email first, then name)
+    let subId: string | null = null;
+    if (c.email) {
+      const { data: subs } = await supabase
+        .from('candidate_submissions')
+        .select('id')
+        .eq('processed', true)
+        .ilike('email', c.email)
+        .order('submitted_at', { ascending: false })
+        .limit(1);
+      subId = subs?.[0]?.id ?? null;
+    }
+    if (!subId && c.name) {
+      const { data: subs } = await supabase
+        .from('candidate_submissions')
+        .select('id')
+        .eq('processed', true)
+        .ilike('name', c.name)
+        .order('submitted_at', { ascending: false })
+        .limit(1);
+      subId = subs?.[0]?.id ?? null;
+    }
+    if (subId) {
+      await supabase.from('candidate_submissions').update({ processed: false }).eq('id', subId);
+    }
+    const nextCandidates = all.filter(x => x.id !== c.id);
+    await persistAndRefresh(nextCandidates, `↩ ${c.name} הוחזר לתיבת ההגשות`);
   }
 
   async function handleConvertToStudent(c: Candidate) {
@@ -341,9 +377,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
             </p>
           </div>
           <div className="flex flex-col gap-2 items-end">
-            <button onClick={() => setCreating(true)} className="btn btn-primary whitespace-nowrap">
-              + מועמד/ת חדש/ה <span className="serif text-[16px]">→</span>
-            </button>
+            <button onClick={() => setCreating(true)} style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>+ מועמד/ת חדש/ה →</button>
             <button onClick={() => setShowImport(s => !s)}
               className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
               style={{ color: 'var(--accent)' }}>
@@ -394,12 +432,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
           className="input flex-1"
           style={{ padding: '8px 14px', fontSize: '14px' }}/>
         {selectedIds.size > 0 && (
-          <button
-            onClick={() => setShowMsgModal(true)}
-            className="btn btn-primary whitespace-nowrap"
-          >
-            📧 שלח הודעה ({selectedIds.size})
-          </button>
+          <button onClick={() => setShowMsgModal(true)} style={{
+            display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>📧 שלח הודעה ({selectedIds.size})</button>
         )}
         {selectedIds.size > 0 && (
           <button
@@ -470,7 +507,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   setMsgSubject(''); setMsgBody('');
                   setSelectedIds(new Set());
                 }}
-                className="btn btn-primary"
+                style={{
+                  display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                  background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                }}
               >
                 📧 פתח ב‑Outlook
               </button>
@@ -510,6 +551,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                     return next;
                   });
                 }}
+                onRevert={() => handleRevertToSubmission(c)}
               />
             ))}
           </ul>
@@ -533,11 +575,12 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, cvUpdate, onCvUpdateSeen }: {
+function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, cvUpdate, onCvUpdateSeen, onRevert }: {
   c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void;
   cvUpdate?: { id: string; cv_file_path: string; uploaded_at: string };
   onCvUpdateSeen?: (id: string) => void;
+  onRevert?: () => void;
 }) {
   const r = c.interviewResult || 'pending';
   const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : 'ממתין';
@@ -599,19 +642,30 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
             {c.email && <span className="truncate max-w-[200px]">{c.email}</span>}
             {c.interviewDate && <span className="whitespace-nowrap">· {new Date(c.interviewDate).toLocaleDateString('he-IL')}</span>}
           </div>
+          {onRevert && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onRevert(); }}
+              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
+              title="החזר לתיבת ההגשות">
+              ↩ הגשות
+            </button>
+          )}
+          {c.interviewDate && (
+            <span
+              className="mono text-[10px] tracking-[0.06em] font-semibold shrink-0 px-2 py-1 rounded-lg whitespace-nowrap"
+              style={{ background: 'rgba(122,30,43,0.07)', color: 'var(--accent)' }}
+              title="מועד ראיון">
+              📅 {new Date(c.interviewDate).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}
+              {c.interviewTime && <span dir="ltr"> · {c.interviewTime.split(/[-–]/)[0]}</span>}
+            </span>
+          )}
           <RowActions
             phone={c.phone}
             email={c.email}
             name={c.name}
             onEdit={onEdit}
-            calendarUrl={c.interviewDate ? outlookCalendarUrl({
-              subject: `ראיון מועמד: ${c.name || ''}`,
-              startDate: c.interviewDate.slice(0, 10),
-              startTime: c.interviewTime ? c.interviewTime.split(/[-–]/)[0] : '10:00',
-              endTime: c.interviewTime ? (c.interviewTime.split(/[-–]/)[1] || '10:45') : '10:45',
-              attendeeEmail: c.email,
-              body: `ראיון מועמדות ל${c.name || 'מועמד/ת'}.`,
-            }) : undefined}
           />
         </div>
       </div>

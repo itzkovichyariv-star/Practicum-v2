@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
         <div style="margin-top:32px;padding-top:16px;border-top:1px solid #ddd;font-size:13.5px;color:#555;line-height:1.6">
           בברכה,<br>
           <strong>רחל שליו</strong><br>
-          רכזת פרקטיקום · המחלקה לניהול · אוניברסיטת אריאל
+          רכזת אקדמיה משלבת התנסות אמ״ה · אוניברסיטת אריאל
         </div>
 
         <div style="margin-top:20px;font-size:11px;color:#aaa;letter-spacing:.1em;text-transform:uppercase">

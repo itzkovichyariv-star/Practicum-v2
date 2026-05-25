@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import type { Student, Course, Employer } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
 import EvaluationForm from './EvaluationForm';
 import Modal from './Modal';
@@ -12,16 +13,18 @@ type Props = {
   defaultCourseId?: string;
   defaultYear?: string;
   onSave: (s: Student) => void;
+  onAutoSave?: (s: Student) => Promise<void>;
   onDelete?: (id: string) => void;
   onClose: () => void;
 };
 
 export default function StudentEditor({
-  student, courses, years, employers, defaultCourseId, defaultYear, onSave, onDelete, onClose,
+  student, courses, years, employers, defaultCourseId, defaultYear, onSave, onAutoSave, onDelete, onClose,
 }: Props) {
   const isNew = !student;
   const [showEval, setShowEval] = useState(false);
   const [shownFeedbackUrl, setShownFeedbackUrl] = useState('');
+  const [checkingFeedback, setCheckingFeedback] = useState(false);
   const [form, setForm] = useState<Student>({
     id: student?.id || randomId('s'),
     name: student?.name || '',
@@ -55,6 +58,153 @@ export default function StudentEditor({
   });
 
   const prepPassed = !!form.preparation?.passed;
+
+  // ── Pending CV update detection ──────────────────────────────────────
+  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string } | null>(null);
+  const [cvApplied, setCvApplied] = useState(false);
+
+  useEffect(() => {
+    const email = student?.email?.trim().toLowerCase();
+    if (!email || student?.cvUpdatedUrl) return; // skip if already has a CV
+    supabase.from('cv_updates')
+      .select('id, cv_file_path, uploaded_at')
+      .eq('email', email)
+      .is('seen_at', null)
+      .order('uploaded_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) setPendingCv(data[0]);
+      });
+  }, [student?.email]);
+
+  function openFeedbackView() {
+    if (!form.feedbackText) return;
+    const date = form.feedbackSubmittedAt ? new Date(form.feedbackSubmittedAt).toLocaleDateString('he-IL') : '';
+
+    // Parse structured JSON (v2) or fall back to plain text display
+    let d: any = null;
+    try { const p = JSON.parse(form.feedbackText); if (p.v === 2) d = p; } catch {}
+
+    const GROUPS = [
+      { label: 'יחסי אנוש ותקשורת', items: ['יחסי אנוש ועבודת צוות','כישורי תקשורת כתובים','כישורי תקשורת בעל‑פה'] },
+      { label: 'מקצועיות ואחריות',   items: ['אחריות ועמידה בזמנים','שליטה בתחום המקצועי','תרומה כללית לארגון'] },
+      { label: 'יכולת ולמידה',       items: ['יוזמה ועצמאות בעבודה','יכולת למידה והסתגלות','כישורי ניתוח וחשיבה','התמודדות עם לחץ'] },
+    ];
+
+    function esc(s: string) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function stars(n: number | 'na' | undefined) {
+      if (n == null) return '<span style="color:#bbb">לא מולא</span>';
+      if (n === 'na') return '<span style="color:#999">לא רלוונטי</span>';
+      return [1,2,3,4,5].map(i => `<span style="color:${i<=n?'#7a1e2b':'#ddd'};font-size:16px">●</span>`).join(' ') + ` <strong style="color:#7a1e2b">${n}</strong>`;
+    }
+
+    const criteriaHtml = d ? GROUPS.map(g => `
+      <div class="section-sub">${g.label}</div>
+      ${g.items.map(item => `
+        <div class="crit-row">
+          <div class="crit-label">${esc(item)}</div>
+          <div class="crit-val">${stars(d.ratings?.[item])}</div>
+        </div>`).join('')}
+      ${d.groupNotes?.[g.label] ? `<div class="note-box"><strong>הסבר:</strong> ${esc(d.groupNotes[g.label])}</div>` : ''}
+    `).join('') : `<pre style="white-space:pre-wrap;font-size:13px;line-height:1.8">${esc(form.feedbackText)}</pre>`;
+
+    const overallHtml = d ? `
+      <div style="display:flex;gap:32px;flex-wrap:wrap;margin-bottom:16px">
+        <div><div class="field-label">ציון שביעות רצון</div>
+          <div style="font-size:36px;font-weight:700;color:#7a1e2b">${esc(d.overallScore)}<span style="font-size:16px;font-weight:400;color:#888">/100</span></div>
+        </div>
+        <div><div class="field-label">המלצה כוללת</div>
+          <div style="font-size:16px;font-weight:600;color:#7a1e2b">${esc(d.recommendation)}</div>
+        </div>
+        <div><div class="field-label">נקלט/ה לעבודה</div>
+          <div style="font-size:16px;font-weight:600">${d.hired ? '✓ כן' : 'לא'}</div>
+        </div>
+      </div>
+      ${d.strengths ? `<div class="open-box"><div class="field-label">חוזקות בולטות</div><p>${esc(d.strengths)}</p></div>` : ''}
+      ${d.improvements ? `<div class="open-box"><div class="field-label">תחומים לשיפור</div><p>${esc(d.improvements)}</p></div>` : ''}
+      ${d.additionalNotes ? `<div class="open-box"><div class="field-label">הערות נוספות</div><p>${esc(d.additionalNotes)}</p></div>` : ''}
+    ` : '';
+
+    const placementHtml = d ? `
+      <div class="row"><span class="lbl">מנחה בארגון</span><span>${esc(d.mentor)}</span></div>
+      ${d.mentorRole ? `<div class="row"><span class="lbl">תפקיד המנחה</span><span>${esc(d.mentorRole)}</span></div>` : ''}
+      ${d.period ? `<div class="row"><span class="lbl">תקופת ההתנסות</span><span>${esc(d.period)}</span></div>` : ''}
+    ` : '';
+
+    const html = `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8">
+<title>משוב מעסיק — ${esc(form.name)}</title>
+<style>
+  body{font-family:Arial,sans-serif;direction:rtl;color:#1a1a1a;margin:0;background:#f4efe6}
+  .wrap{max-width:700px;margin:32px auto;background:#fff;border-radius:12px;padding:40px 48px;box-shadow:0 4px 24px rgba(0,0,0,0.1)}
+  .print-btn{display:inline-block;margin-bottom:20px;padding:10px 22px;background:#7a1e2b;color:#fff;border:none;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.04em}
+  h1{font-family:Georgia,serif;font-size:24px;margin:0 0 3px;color:#3d0f14}
+  .sub{font-size:13px;color:#888;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #e8e0d5}
+  h2{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#7a1e2b;border-bottom:1px solid #e8e0d5;padding-bottom:6px;margin:28px 0 12px}
+  .row{display:flex;gap:12px;padding:5px 0;border-bottom:1px solid #f0ebe3;font-size:14px}
+  .lbl{color:#888;width:130px;flex-shrink:0;font-size:12px;font-weight:600;padding-top:2px}
+  .section-sub{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#888;margin:14px 0 6px}
+  .crit-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid #f5f0ee}
+  .crit-label{flex:1;font-size:14px}
+  .crit-val{display:flex;align-items:center;gap:4px}
+  .note-box{background:#faf7f4;border-radius:6px;padding:8px 12px;font-size:13px;color:#555;margin:6px 0 10px;border:1px solid #ede8e0}
+  .open-box{margin:10px 0;padding:10px 14px;background:#faf7f4;border-radius:8px;border:1px solid #ede8e0}
+  .open-box p{margin:4px 0 0;font-size:14px;line-height:1.7;white-space:pre-wrap}
+  .field-label{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#888;margin-bottom:3px}
+  @media print{.print-btn{display:none}body{background:#fff}.wrap{box-shadow:none;margin:0;border-radius:0;padding:1.5cm}@page{size:A4;margin:1.2cm}}
+</style></head><body>
+<div class="wrap">
+  <button class="print-btn" onclick="window.print()">🖨 הדפס / PDF</button>
+  <h1>טופס הערכת סטודנט/ית — ${esc(form.name)}</h1>
+  <div class="sub">${esc(form.acceptedOrg||'')}${date?' · תאריך מילוי: '+date:''} · פרקטיקום · אוניברסיטת אריאל</div>
+
+  <h2>א — פרטי הסטודנט/ית</h2>
+  <div class="row"><span class="lbl">שם מלא</span><span>${esc(form.name)}</span></div>
+  <div class="row"><span class="lbl">ארגון מאכסן</span><span>${esc(form.acceptedOrg||'')}</span></div>
+
+  ${placementHtml ? `<h2>ב — פרטי ההשמה</h2>${placementHtml}` : ''}
+
+  <h2>ג — הערכת תפקוד</h2>
+  ${criteriaHtml}
+
+  ${d ? `<h2>ד — שביעות רצון כללית</h2>${overallHtml}` : ''}
+</div>
+</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  async function checkFeedbackStatus() {
+    if (!form.id) return;
+    setCheckingFeedback(true);
+    const { data: row } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
+    if (row) {
+      const d = (row as any).data;
+      const fresh = (d.students || []).find((s: any) => s.id === form.id);
+      if (fresh) {
+        setForm(f => ({
+          ...f,
+          feedbackSubmittedAt: fresh.feedbackSubmittedAt || f.feedbackSubmittedAt,
+          feedbackText: fresh.feedbackText || f.feedbackText,
+        }));
+      }
+    }
+    setCheckingFeedback(false);
+  }
+
+  async function applyPendingCv() {
+    if (!pendingCv) return;
+    const storageUrl = `storage://candidate-uploads/${pendingCv.cv_file_path}`;
+    setForm(f => ({ ...f, cvUpdatedUrl: storageUrl }));
+    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+    setPendingCv(null);
+    setCvApplied(true);
+  }
 
   function update<K extends keyof Student>(k: K, v: Student[K]) {
     setForm(f => ({ ...f, [k]: v }));
@@ -91,19 +241,22 @@ export default function StudentEditor({
     window.open(`https://wa.me/${n}`, '_blank');
   }
 
-  /** Returns the feedback URL, generating a new token if needed and updating form state. */
-  function ensureFeedbackUrl(): string {
+  /** Returns the feedback URL, generating and auto-saving a new token if needed. */
+  async function ensureFeedbackUrl(): Promise<string> {
     if (form.feedbackToken) {
       return `${window.location.origin}/feedback?token=${encodeURIComponent(form.feedbackToken)}`;
     }
     const { token, url } = generateFeedbackUrl(form.id, window.location.origin);
-    update('feedbackToken', token);
+    const updated = { ...form, feedbackToken: token };
+    setForm(updated);
+    // Auto-save immediately so the token is persisted before the email is sent
+    if (onAutoSave) await onAutoSave(updated);
     return url;
   }
 
-  function handleSendFeedbackEmail() {
+  async function handleSendFeedbackEmail() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר — מלא/י קודם את שדה "ארגון מאכסן בפועל".'); return; }
-    const url = ensureFeedbackUrl();
+    const url = await ensureFeedbackUrl();
     const emp = employers.find(e => e.name === form.acceptedOrg);
     const empEmail = emp?.contactEmail || '';
     const greeting = emp?.contactPerson ? `${emp.contactPerson} שלום,` : 'שלום,';
@@ -122,9 +275,9 @@ export default function StudentEditor({
     window.open(`mailto:${empEmail}?subject=${subject}&body=${body}`, '_blank');
   }
 
-  function handleSendFeedbackWhatsApp() {
+  async function handleSendFeedbackWhatsApp() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר.'); return; }
-    const url = ensureFeedbackUrl();
+    const url = await ensureFeedbackUrl();
     const emp = employers.find(e => e.name === form.acceptedOrg);
     const empPhone = emp?.contactPhone || '';
     const msg = encodeURIComponent(
@@ -141,8 +294,8 @@ export default function StudentEditor({
     window.open(`https://wa.me/${n}?text=${msg}`, '_blank');
   }
 
-  function handleCopyFeedbackLink() {
-    const url = ensureFeedbackUrl();
+  async function handleCopyFeedbackLink() {
+    const url = await ensureFeedbackUrl();
     setShownFeedbackUrl(url);
     if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
   }
@@ -186,6 +339,42 @@ export default function StudentEditor({
           </SectionSub>
 
           <SectionSub title="CV מעודכן (חובה לפני בחירת ארגון)">
+            {pendingCv && (
+              <div className="col-span-full flex items-center justify-between gap-3 p-3 rounded-xl"
+                style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.35)' }}>
+                <div>
+                  <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: '#b45309' }}>
+                    ✦ CV מעודכן ממתין — הועלה {new Date(pendingCv.uploaded_at).toLocaleDateString('he-IL')}
+                  </div>
+                  <div className="text-[12px] mt-0.5" style={{ color: '#92400e' }}>
+                    {pendingCv.cv_file_path.split('/').pop()}
+                  </div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button type="button" onClick={() => {
+                    const { data } = supabase.storage.from('candidate-uploads').getPublicUrl(pendingCv.cv_file_path);
+                    const url = data.publicUrl;
+                    const isWord = /\.(docx?|doc)$/i.test(url.split('?')[0]);
+                    window.open(isWord ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}` : url, '_blank');
+                  }} style={{
+                    display: 'inline-block', padding: '7px 14px', fontSize: '12px', fontWeight: 600,
+                    background: 'transparent', color: '#b45309', border: '1px solid #b45309',
+                    borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>פתח ↗</button>
+                  <button type="button" onClick={applyPendingCv} style={{
+                    display: 'inline-block', padding: '7px 14px', fontSize: '12px', fontWeight: 600,
+                    background: '#b45309', color: 'white', border: 'none',
+                    borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>✓ אמץ כ‑CV מעודכן</button>
+                </div>
+              </div>
+            )}
+            {cvApplied && (
+              <div className="col-span-full mono text-[11px] uppercase tracking-[0.14em] font-semibold py-1"
+                style={{ color: '#15803d' }}>
+                ✓ CV מעודכן נוסף — לחץ שמור כדי לשמור
+              </div>
+            )}
             <div className="col-span-full">
               <FileField label="קורות חיים מעודכן — אחרי הכנה" value={form.cvUpdatedUrl||''} onChange={v=>update('cvUpdatedUrl',v)}/>
             </div>
@@ -233,9 +422,32 @@ export default function StudentEditor({
                   freeText/>
               </Field>
             </div>
-            {form.feedbackSubmittedAt && (
-              <div className="col-span-full p-3 rounded-lg text-[13px]" style={{ background: 'rgba(21,128,61,0.08)', color: '#15803d' }}>
-                ✓ המעסיק מילא משוב · {new Date(form.feedbackSubmittedAt).toLocaleDateString('he-IL')}
+            {form.feedbackSubmittedAt ? (
+              <div className="col-span-full p-3 rounded-lg flex flex-wrap items-center justify-between gap-2"
+                style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid rgba(122,30,43,0.2)' }}>
+                <span className="text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>
+                  ✓ המעסיק מילא משוב · {new Date(form.feedbackSubmittedAt).toLocaleDateString('he-IL')}
+                </span>
+                <button type="button"
+                  onClick={async () => {
+                    if (!confirm('לאפס את המשוב? קישור חדש ייוצר בלחיצה הבאה על "שלח משוב".')) return;
+                    const updated = { ...form, feedbackSubmittedAt: '', feedbackText: '', feedbackToken: '' };
+                    setForm(updated);
+                    if (onAutoSave) { await onAutoSave(updated); setShownFeedbackUrl(''); }
+                  }}
+                  className="mono text-[10px] uppercase tracking-[0.13em] font-semibold px-2.5 py-1 rounded-full border shrink-0"
+                  style={{ color: 'var(--accent)', borderColor: 'var(--accent)', background: 'transparent', cursor: 'pointer' }}>
+                  ↺ אפס
+                </button>
+              </div>
+            ) : (
+              <div className="col-span-full flex items-center gap-2">
+                <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>ממתין למשוב מהמעסיק</span>
+                <button type="button" onClick={checkFeedbackStatus} disabled={checkingFeedback}
+                  className="mono text-[10px] uppercase tracking-[0.13em] font-semibold px-2.5 py-1 rounded-full border"
+                  style={{ color: 'var(--text-soft)', borderColor: 'var(--divider)', background: 'transparent', cursor: 'pointer', opacity: checkingFeedback ? 0.5 : 1 }}>
+                  {checkingFeedback ? '...' : '↻ בדוק'}
+                </button>
               </div>
             )}
           </SectionSub>
@@ -261,7 +473,41 @@ export default function StudentEditor({
             <FileField label="CV — קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
             <FileField label="טופס הגשת מועמדות" value={form.formUrl||''} onChange={v=>update('formUrl',v)}/>
             <div className="col-span-full">
-              <Field label="חוות דעת מהארגון (טקסט חופשי)"><Textarea rows={3} value={form.feedbackText||''} onChange={v=>update('feedbackText',v)}/></Field>
+              <div className="col-span-full">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="small-caps" style={{ letterSpacing: '0.12em' }}>חוות דעת מהארגון</span>
+                  {form.feedbackText && (
+                    <button type="button" onClick={() => openFeedbackView()} style={{
+                      display: 'inline-block', padding: '4px 12px', fontSize: '12px', fontWeight: 600,
+                      background: 'var(--accent)', color: 'white', border: 'none',
+                      borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}>👁 צפה במשוב</button>
+                  )}
+                </div>
+                {form.feedbackText ? (() => {
+                  let d: any = null;
+                  try { const p = JSON.parse(form.feedbackText); if (p.v === 2) d = p; } catch {}
+                  return (
+                    <div className="rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid rgba(122,30,43,0.18)' }}>
+                      {d ? (
+                        <div className="space-y-1.5 text-[13px]" style={{ color: 'var(--ink)' }}>
+                          {d.mentor && <div><span style={{ color: 'var(--text-soft)', fontSize: '11px' }}>מנחה: </span>{d.mentor}{d.mentorRole ? ` · ${d.mentorRole}` : ''}</div>}
+                          {d.overallScore && <div><span style={{ color: 'var(--text-soft)', fontSize: '11px' }}>ציון: </span><strong style={{ color: 'var(--accent)' }}>{d.overallScore}/100</strong>{d.recommendation ? ` · ${d.recommendation}` : ''}</div>}
+                          {d.strengths && <div><span style={{ color: 'var(--text-soft)', fontSize: '11px' }}>חוזקות: </span>{d.strengths}</div>}
+                          {d.improvements && <div><span style={{ color: 'var(--text-soft)', fontSize: '11px' }}>שיפור: </span>{d.improvements}</div>}
+                          <div className="mono text-[10px] uppercase tracking-[0.13em] pt-1" style={{ color: 'var(--text-soft)' }}>
+                            לחץ "צפה במשוב" לתצוגה מלאה
+                          </div>
+                        </div>
+                      ) : (
+                        <pre className="text-[13px] leading-[1.7] whitespace-pre-wrap font-sans" style={{ color: 'var(--ink)' }}>{form.feedbackText}</pre>
+                      )}
+                    </div>
+                  );
+                })() : (
+                  <Textarea rows={3} value={''} onChange={v=>update('feedbackText',v)}/>
+                )}
+              </div>
             </div>
             <div className="col-span-full text-[12px]" style={{ color: 'var(--text-soft)' }}>
               💡 הדבק קישור מ‑OneDrive או SharePoint. לחיצה על "פתח" תפתח את הקובץ בחלון חדש.
@@ -273,25 +519,59 @@ export default function StudentEditor({
           </SectionSub>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
-            <button type="submit" className="btn btn-primary">{isNew?'צור':'שמור'} <span className="serif text-[16px]">→</span></button>
-            <button type="button" onClick={openCall} className="btn" disabled={!form.phone}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.phone}>WhatsApp</button>
-            <button type="button" onClick={openOutlookCompose} className="btn" disabled={!form.email}>מייל (Outlook)</button>
-            {!isNew && <button type="button" onClick={() => setShowEval(true)} className="btn">🖨 טופס הערכה</button>}
-            {!isNew && !form.feedbackSubmittedAt && (
-              <button type="button" onClick={handleSendFeedbackEmail} className="btn btn-primary" title="שלח למעסיק קישור למילוי משוב — פותח Outlook">
-                📧 שלח משוב למעסיק
-              </button>
+            <button type="submit" style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>{isNew ? 'צור' : 'שמור'} →</button>
+            <button type="button" onClick={openCall} disabled={!form.phone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
+            }}>📞 התקשר</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
+            }}>WhatsApp</button>
+            <button type="button" onClick={openOutlookCompose} disabled={!form.email} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
+            }}>מייל (Outlook)</button>
+            {!isNew && (
+              <button type="button" onClick={() => setShowEval(true)} style={{
+                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              }}>🖨 טופס הערכה</button>
             )}
             {!isNew && !form.feedbackSubmittedAt && (
-              <button type="button" onClick={handleSendFeedbackWhatsApp} className="btn" title="שלח קישור משוב ב‑WhatsApp">
-                💬 WhatsApp למעסיק
-              </button>
+              <button type="button" onClick={handleSendFeedbackEmail}
+                title="שלח למעסיק קישור למילוי משוב — פותח Outlook" style={{
+                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                background: 'var(--accent)', color: 'white', border: 'none',
+                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              }}>📧 שלח משוב למעסיק</button>
+            )}
+            {!isNew && !form.feedbackSubmittedAt && (
+              <button type="button" onClick={handleSendFeedbackWhatsApp}
+                title="שלח קישור משוב ב‑WhatsApp" style={{
+                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              }}>💬 WhatsApp למעסיק</button>
             )}
             {!isNew && (
-              <button type="button" onClick={handleCopyFeedbackLink} className="btn" title="העתק קישור משוב ללוח">
-                🔗 העתק קישור
-              </button>
+              <button type="button" onClick={handleCopyFeedbackLink}
+                title="העתק קישור משוב ללוח" style={{
+                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              }}>🔗 העתק קישור</button>
             )}
             {shownFeedbackUrl && (
               <div className="w-full mt-1 p-3 rounded-lg flex items-center gap-2 flex-wrap"
@@ -311,19 +591,24 @@ export default function StudentEditor({
                 <button
                   type="button"
                   onClick={() => { if (navigator.clipboard) navigator.clipboard.writeText(shownFeedbackUrl).catch(() => {}); }}
-                  className="btn shrink-0"
-                  style={{ padding: '6px 12px', fontSize: '12px' }}>
+                  style={{
+                    display: 'inline-block', padding: '6px 14px', fontSize: '12px', fontWeight: 600,
+                    background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                    borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
                   העתק
                 </button>
               </div>
             )}
             {!isNew && onDelete && (
               <button type="button"
-                onClick={()=>{ if(confirm('למחוק סטודנט/ית זה/ו?')) onDelete(form.id); }}
+                onClick={() => { if (confirm('למחוק סטודנט/ית זה/ו?')) onDelete(form.id); }}
                 className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold mr-auto hover:opacity-70"
-                style={{ color: 'var(--accent)' }}>🗑 מחק</button>
+                style={{ color: 'var(--accent)', flexShrink: 0 }}>🗑 מחק</button>
             )}
-            <button type="button" onClick={onClose} className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">בטל</button>
+            <button type="button" onClick={onClose}
+              className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100"
+              style={{ flexShrink: 0 }}>בטל</button>
           </div>
         </form>
 
@@ -335,6 +620,7 @@ export default function StudentEditor({
           onClose={() => setShowEval(false)}
         />
       )}
+
     </Modal>
   );
 }
@@ -349,7 +635,30 @@ function SectionSub({ title, children }: { title: string; children: any }) {
 }
 
 function FileField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const isUrl = /^https?:\/\//i.test(value);
+  const isHttpUrl = /^https?:\/\//i.test(value);
+  const storageMatch = value.match(/^storage:\/\/([^/]+)\/(.+)$/);
+  // Plain path (no prefix) — legacy records saved before the storage:// convention
+  const isPlainPath = !isHttpUrl && !storageMatch && /\.(pdf|docx?|doc)$/i.test(value) && value.includes('/');
+  const canOpen = isHttpUrl || !!storageMatch || isPlainPath;
+
+  function openFileUrl(rawUrl: string) {
+    const isWord = /\.(docx?|doc)$/i.test(rawUrl.split('?')[0]);
+    if (isWord) {
+      // Microsoft Office Online viewer — displays Word files in-browser without download
+      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(rawUrl)}`, '_blank');
+    } else {
+      window.open(rawUrl, '_blank');
+    }
+  }
+
+  function openFile() {
+    if (isHttpUrl) { openFileUrl(value); return; }
+    const bucket = storageMatch ? storageMatch[1] : 'candidate-uploads';
+    const path = storageMatch ? storageMatch[2] : value;
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    openFileUrl(data.publicUrl);
+  }
+
   return (
     <label className="block">
       <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>{label}</span>
@@ -358,12 +667,12 @@ function FileField({ label, value, onChange }: { label: string; value: string; o
           type="text"
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder="הדבק קישור OneDrive..."
+          placeholder="הדבק קישור OneDrive / SharePoint"
           className="input flex-1"
-          style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isUrl ? 'ui-monospace, monospace' : undefined }}
+          style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isHttpUrl ? 'ui-monospace, monospace' : undefined }}
         />
-        {isUrl && (
-          <button type="button" onClick={() => window.open(value, '_blank')}
+        {canOpen && (
+          <button type="button" onClick={openFile}
             className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 rounded-lg shrink-0"
             style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
             פתח ↗

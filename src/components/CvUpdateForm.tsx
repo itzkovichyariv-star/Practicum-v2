@@ -163,10 +163,15 @@ export default function CvUpdateForm() {
         <button
           type="submit"
           disabled={busy || !file}
-          className="btn btn-primary w-full disabled:opacity-50"
-          style={{ padding: '16px' }}
+          style={{
+            display: 'block', width: '100%', padding: '16px', fontSize: '15px', fontWeight: 600,
+            background: (busy || !file) ? 'var(--divider)' : 'var(--accent)',
+            color: 'white', border: 'none', borderRadius: '12px',
+            cursor: (busy || !file) ? 'not-allowed' : 'pointer',
+            opacity: (busy || !file) ? 0.6 : 1,
+          }}
         >
-          {busy ? 'מעלה...' : 'שלח CV מעודכן'} <span className="serif text-[16px]">→</span>
+          {busy ? 'מעלה...' : 'שלח CV מעודכן ←'}
         </button>
       </form>
     </div>

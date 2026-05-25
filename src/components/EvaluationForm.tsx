@@ -35,7 +35,20 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
     };
   }, []);
 
-  function handlePrint() { window.print(); }
+  function handlePrint() {
+    const content = document.getElementById('evaluation-print-body');
+    if (!content) { window.print(); return; }
+    const w = window.open('', '_blank');
+    if (!w) { window.print(); return; }
+    w.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>טופס הערכה — ${student.name}</title>
+      <style>
+        body{font-family:Arial,sans-serif;direction:rtl;color:#1a1a1a;margin:1.5cm;font-size:11pt}
+        input,textarea,select{font-family:inherit;font-size:inherit}
+        @media print{@page{size:A4;margin:1.2cm}}
+      </style></head>
+      <body>${content.innerHTML}<script>setTimeout(()=>window.print(),400)<\/script></body></html>`);
+    w.document.close();
+  }
 
   return (
     <div className="fixed inset-0 z-[200] print:static"
@@ -63,7 +76,7 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
         </div>
 
         {/* Form — print layout */}
-        <div className="rounded-2xl p-10 print:rounded-none print:p-6" style={{ background: 'var(--bg)' }}>
+        <div id="evaluation-print-body" className="rounded-2xl p-10 print:rounded-none print:p-6" style={{ background: 'var(--bg)' }}>
 
           {/* Header */}
           <header className="border-b pb-5 mb-6" style={{ borderColor: 'var(--divider)' }}>

@@ -659,7 +659,11 @@ export default function FormsPage(props: PageProps) {
                 <input value={newDesc} onChange={e=>setNewDesc(e.target.value)} className="input w-full" placeholder="אופציונלי" style={{ padding: '10px 14px', fontSize: '14px' }}/>
               </div>
               <div className="flex gap-2">
-                <button onClick={addCustomForm} className="btn btn-primary">הוסף <span className="serif text-[16px]">→</span></button>
+                <button onClick={addCustomForm} style={{
+                  display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+                  background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                }}>הוסף →</button>
                 <button onClick={() => { setAdding(false); setNewTitle(''); setNewDesc(''); }}
                   className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">בטל</button>
               </div>

@@ -237,27 +237,56 @@ export default function CandidateEditor({
           </div>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
-            <button type="submit" className="btn btn-primary">{isNew?'צור':'שמור'} <span className="serif text-[16px]">→</span></button>
-            <button type="button" onClick={openCall} className="btn" disabled={!form.phone}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.phone}>WhatsApp</button>
-            <button type="button" onClick={openMail} className="btn" disabled={!form.email}>מייל</button>
+            <button type="submit" style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>{isNew ? 'צור' : 'שמור'} →</button>
+            <button type="button" onClick={openCall} disabled={!form.phone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
+            }}>📞 התקשר</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
+            }}>WhatsApp</button>
+            <button type="button" onClick={openMail} disabled={!form.email} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
+            }}>✉ מייל</button>
             {!isNew && (
-              <button type="button" onClick={sendCvLinkWhatsApp} className="btn" disabled={!form.phone || !form.email} title="שלח לסטודנט קישור עדכון CV בוואטסאפ">
-                📎 קישור CV (WhatsApp)
-              </button>
+              <button type="button" onClick={sendCvLinkWhatsApp} disabled={!form.phone || !form.email}
+                title="שלח לסטודנט קישור עדכון CV בוואטסאפ" style={{
+                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                borderRadius: '999px', cursor: (form.phone && form.email) ? 'pointer' : 'not-allowed',
+                whiteSpace: 'nowrap', flexShrink: 0, opacity: (form.phone && form.email) ? 1 : 0.4,
+              }}>📎 קישור CV (WhatsApp)</button>
             )}
             {!isNew && (
-              <button type="button" onClick={copyCvUpdateLink} className="btn" disabled={!form.email} title="העתק קישור עדכון CV">
-                🔗 העתק קישור
-              </button>
+              <button type="button" onClick={copyCvUpdateLink} disabled={!form.email}
+                title="העתק קישור עדכון CV" style={{
+                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
+                whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
+              }}>🔗 העתק קישור</button>
             )}
             {!isNew && onDelete && (
               <button type="button"
-                onClick={()=>{ if(confirm('למחוק?')) onDelete(form.id); }}
+                onClick={() => { if (confirm('למחוק?')) onDelete(form.id); }}
                 className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold mr-auto hover:opacity-70"
-                style={{ color: 'var(--accent)' }}>🗑 מחק</button>
+                style={{ color: 'var(--accent)', flexShrink: 0 }}>🗑 מחק</button>
             )}
-            <button type="button" onClick={onClose} className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">בטל</button>
+            <button type="button" onClick={onClose}
+              className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100"
+              style={{ flexShrink: 0 }}>בטל</button>
           </div>
         </form>
     </Modal>
@@ -265,19 +294,27 @@ export default function CandidateEditor({
 }
 
 function FileField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const isUrl = /^https?:\/\//i.test(value);
-  // Files uploaded via the registration form are stored as storage://bucket/path
+  const isHttpUrl = /^https?:\/\//i.test(value);
   const storageMatch = value.match(/^storage:\/\/([^/]+)\/(.+)$/);
-  const canOpen = isUrl || !!storageMatch;
+  // Plain path — legacy records saved before the storage:// convention
+  const isPlainPath = !isHttpUrl && !storageMatch && /\.(pdf|docx?|doc)$/i.test(value) && value.includes('/');
+  const canOpen = isHttpUrl || !!storageMatch || isPlainPath;
 
-  async function openFile() {
-    if (isUrl) { window.open(value, '_blank'); return; }
-    if (storageMatch) {
-      const [, bucket, path] = storageMatch;
-      const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 300);
-      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
-      else alert('לא ניתן לפתוח — בדוק חיבור');
+  function openFileUrl(rawUrl: string) {
+    const isWord = /\.(docx?|doc)$/i.test(rawUrl.split('?')[0]);
+    if (isWord) {
+      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(rawUrl)}`, '_blank');
+    } else {
+      window.open(rawUrl, '_blank');
     }
+  }
+
+  function openFile() {
+    if (isHttpUrl) { openFileUrl(value); return; }
+    const bucket = storageMatch ? storageMatch[1] : 'candidate-uploads';
+    const path = storageMatch ? storageMatch[2] : value;
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    openFileUrl(data.publicUrl);
   }
 
   return (
@@ -290,7 +327,7 @@ function FileField({ label, value, onChange }: { label: string; value: string; o
           onChange={e => onChange(e.target.value)}
           placeholder="קישור OneDrive / SharePoint"
           className="input flex-1"
-          style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isUrl ? 'ui-monospace, monospace' : undefined }}
+          style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isHttpUrl ? 'ui-monospace, monospace' : undefined }}
         />
         {canOpen && (
           <button type="button" onClick={openFile}

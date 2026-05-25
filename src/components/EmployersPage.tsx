@@ -95,25 +95,29 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   }
 
   return (
-    <main className="max-w-[1200px] mx-auto px-10 pt-14 pb-28">
+    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">IV · מעסיקים</div>
-        <div className="flex items-end justify-between gap-10">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>מעסיקים</h1>
-            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>מעסיקים</h1>
+            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {scoped.length === 0
                 ? 'אין מעסיקים בהקשר הנוכחי.'
                 : `${scoped.length} ארגונים · ${totalPositions} משרות · ${openPositions} פתוחות · ${filledPositions} מאוישות`}
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setCreating(true)} className="btn btn-primary whitespace-nowrap">
-              + מעסיק חדש <span className="serif text-[16px]">→</span>
-            </button>
-            <button onClick={() => setShowImport(i => !i)} className="btn whitespace-nowrap">
-              ⬆ ייבוא Excel
-            </button>
+            <button onClick={() => setCreating(true)} style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>+ מעסיק חדש →</button>
+            <button onClick={() => setShowImport(i => !i)} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>⬆ ייבוא Excel</button>
           </div>
         </div>
       </section>
@@ -187,47 +191,50 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, onEdit, pinne
   return (
     <li className="relative group" data-info-row>
       <div onClick={onTogglePin}
-        className="py-5 border-b grid grid-cols-[1fr_auto_auto] gap-5 items-baseline cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
+        className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
         style={{ borderColor: 'var(--divider)' }}>
-        <div>
-          <div className="serif text-[22px] leading-[1.2] tracking-tight mb-1" style={{ color: 'var(--ink)' }}>
+
+        {/* Line 1: name · location · positions badge */}
+        <div className="flex items-center gap-2 min-w-0 mb-1.5">
+          <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
             {emp.name}
-            {emp.location && <span className="text-[14px] mr-3" style={{ color: 'var(--text-soft)' }}>· {emp.location}</span>}
+            {emp.location && <span className="text-[13px] mr-2 font-sans" style={{ color: 'var(--text-soft)' }}>· {emp.location}</span>}
           </div>
-          <div className="text-[13.5px] flex flex-wrap gap-x-4 gap-y-1" style={{ color: 'var(--text-soft)' }}>
-            {emp.contactPerson && <span>{emp.contactPerson}</span>}
-            {emp.contactPhone && <span dir="ltr">{emp.contactPhone}</span>}
-            {emp.contactEmail && <span>{emp.contactEmail}</span>}
-          </div>
-          {linkedCourses.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {linkedCourses.map(c => (
-                <span key={c.name} className="mono text-[10px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>
-                  {c.name} {c.year}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="text-left flex flex-col items-end gap-1">
-          {(!emp.contactPhone || !emp.contactEmail) && <NeedsUpdate />}
-          {total > 0 ? (
-            <>
-              <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: open > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
-                {filled}/{total} משרות
-              </span>
-              {open > 0 && <span className="mono text-[10.5px] tracking-[0.12em]" style={{ color: 'var(--accent)' }}>· {open} פתוחות</span>}
-            </>
-          ) : (
-            <span className="mono text-[10.5px] tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>
-              {hiredCount > 0 ? `${hiredCount} סטודנטים` : 'לא סומן'}
+          {total > 0 && (
+            <span className="mono text-[10px] uppercase tracking-[0.1em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap"
+              style={{ background: 'rgba(122,30,43,0.08)', color: open > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
+              {filled}/{total}{open > 0 ? ` · ${open} פתוחות` : ''}
             </span>
           )}
+          {total === 0 && hiredCount > 0 && (
+            <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-soft)' }}>{hiredCount} סטודנטים</span>
+          )}
         </div>
-        <div onClick={e => e.stopPropagation()}>
-          <RowActions phone={emp.contactPhone} email={emp.contactEmail} name={emp.contactPerson || emp.name} onEdit={onEdit} />
+
+        {/* Line 2: contact details · actions */}
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
+            {emp.contactPerson && <span>{emp.contactPerson}</span>}
+            {emp.contactPhone && <span dir="ltr">{emp.contactPhone}</span>}
+            {emp.contactEmail && <span className="truncate max-w-[200px]">{emp.contactEmail}</span>}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {(!emp.contactPhone || !emp.contactEmail) && <NeedsUpdate />}
+            <RowActions phone={emp.contactPhone} email={emp.contactEmail} name={emp.contactPerson || emp.name} onEdit={onEdit} />
+          </div>
         </div>
+
+        {/* Line 3: course tags */}
+        {linkedCourses.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {linkedCourses.map(c => (
+              <span key={c.name + c.year} className="mono text-[10px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>
+                {c.name} {c.year}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <Popover pinned={pinned}>

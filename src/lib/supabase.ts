@@ -114,7 +114,8 @@ export type PracticumData = {
   interviewSlots?: InterviewSlot[];
   history?: { ts: string; who: string; action: string; entity: string; target: string }[];
   // System settings
-  coordinatorEmail?: string;  // email that receives employer feedback copies & notifications
+  coordinatorEmail?: string;  // coordinator (Rachel) — receives employer feedback + candidate submissions
+  supervisorEmail?: string;   // academic supervisor (Yariv) — also receives copies of all notifications
 };
 
 export type CloudSnapshot = {

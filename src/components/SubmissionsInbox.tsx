@@ -231,16 +231,30 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
             </span>
             {selectedIds.size > 0 && (
               <div className="flex flex-wrap gap-2 mr-auto">
-                <button onClick={() => bulkDownload('cv')} disabled={downloading} className="btn disabled:opacity-50">
-                  📄 הורד CV נבחרים
-                </button>
-                <button onClick={() => bulkDownload('application')} disabled={downloading} className="btn disabled:opacity-50">
-                  📝 הורד טפסי מועמדות
-                </button>
-                <button onClick={() => bulkDownload('both')} disabled={downloading} className="btn disabled:opacity-50">
-                  📦 הכל (ZIP עם תיקיות)
-                </button>
-                <button onClick={acceptSelected} disabled={downloading} className="btn btn-primary disabled:opacity-50">
+                <button onClick={() => bulkDownload('cv')} disabled={downloading} style={{
+                  display: 'inline-block', padding: '10px 16px', fontSize: '12px', fontWeight: 600,
+                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                  borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap', flexShrink: 0, opacity: downloading ? 0.5 : 1,
+                }}>📄 הורד CV נבחרים</button>
+                <button onClick={() => bulkDownload('application')} disabled={downloading} style={{
+                  display: 'inline-block', padding: '10px 16px', fontSize: '12px', fontWeight: 600,
+                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                  borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap', flexShrink: 0, opacity: downloading ? 0.5 : 1,
+                }}>📝 הורד טפסי מועמדות</button>
+                <button onClick={() => bulkDownload('both')} disabled={downloading} style={{
+                  display: 'inline-block', padding: '10px 16px', fontSize: '12px', fontWeight: 600,
+                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                  borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap', flexShrink: 0, opacity: downloading ? 0.5 : 1,
+                }}>📦 הכל (ZIP עם תיקיות)</button>
+                <button onClick={acceptSelected} disabled={downloading} style={{
+                  display: 'inline-block', padding: '10px 18px', fontSize: '12px', fontWeight: 600,
+                  background: downloading ? 'var(--divider)' : 'var(--accent)', color: 'white',
+                  border: 'none', borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
+                  opacity: downloading ? 0.6 : 1, whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
                   ✓ קלוט למערכת
                 </button>
                 <button onClick={deleteSelected} disabled={downloading}

@@ -194,15 +194,35 @@ ${form.notes ? '\nהערות: ' + form.notes : ''}`);
           </div>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
-            <button type="submit" className="btn btn-primary">
-              {isNew ? 'צור הרצאה' : 'שמור שינויים'} <span className="serif text-[16px]">→</span>
-            </button>
-            <button type="button" onClick={addToOutlookCalendar} className="btn" disabled={!form.date || !form.startTime}>📅 הוסף ליומן Outlook</button>
-            <button type="button" onClick={openCall} className="btn" disabled={!form.lecturerPhone}>📞 התקשר למרצה</button>
-            <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.lecturerPhone}>WhatsApp</button>
-            <button type="button" onClick={openOutlookCompose} className="btn" disabled={!form.lecturerEmail}>
-              מייל למרצה (Outlook)
-            </button>
+            <button type="submit" style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>{isNew ? 'צור הרצאה' : 'שמור שינויים'} →</button>
+            <button type="button" onClick={addToOutlookCalendar} disabled={!form.date || !form.startTime} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: (form.date && form.startTime) ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: (form.date && form.startTime) ? 1 : 0.4,
+            }}>📅 הוסף ליומן Outlook</button>
+            <button type="button" onClick={openCall} disabled={!form.lecturerPhone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.lecturerPhone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.lecturerPhone ? 1 : 0.4,
+            }}>📞 התקשר למרצה</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.lecturerPhone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.lecturerPhone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.lecturerPhone ? 1 : 0.4,
+            }}>WhatsApp</button>
+            <button type="button" onClick={openOutlookCompose} disabled={!form.lecturerEmail} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.lecturerEmail ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.lecturerEmail ? 1 : 0.4,
+            }}>מייל למרצה (Outlook)</button>
             {!isNew && onDelete && (
               <button
                 type="button"

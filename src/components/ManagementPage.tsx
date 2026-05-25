@@ -112,18 +112,17 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button
-            onClick={handleDownloadBackup}
-            className="btn whitespace-nowrap"
-            title="הורד קובץ JSON של כל הנתונים"
-          >
-            ⬇ הורד גיבוי
-          </button>
-          <button
-            onClick={fetchSnapshots}
-            disabled={loading}
-            className="btn whitespace-nowrap"
-          >
+          <button onClick={handleDownloadBackup} title="הורד קובץ JSON של כל הנתונים" style={{
+            display: 'inline-block', padding: '10px 18px', fontSize: '12px', fontWeight: 600,
+            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+            borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>⬇ הורד גיבוי</button>
+          <button onClick={fetchSnapshots} disabled={loading} style={{
+            display: 'inline-block', padding: '10px 18px', fontSize: '12px', fontWeight: 600,
+            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+            borderRadius: '999px', cursor: loading ? 'not-allowed' : 'pointer',
+            whiteSpace: 'nowrap', flexShrink: 0, opacity: loading ? 0.6 : 1,
+          }}>
             {loading ? 'טוען...' : '↻ רענן'}
           </button>
         </div>
@@ -234,9 +233,12 @@ function SettingsSection({ data, userName, onRefresh }: PageProps) {
         <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
           כאשר מעסיק ממלא משוב, ומועמד מגיש טופס — שניהם מקבלים עותק אוטומטית.
         </div>
-        <button onClick={save} disabled={saving} className="btn btn-primary disabled:opacity-50">
-          {saving ? 'שומר...' : 'שמור הגדרות'}
-        </button>
+        <button onClick={save} disabled={saving} style={{
+          display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+          background: saving ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+          borderRadius: '999px', cursor: saving ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap', flexShrink: 0, opacity: saving ? 0.7 : 1,
+        }}>{saving ? 'שומר...' : 'שמור הגדרות'}</button>
         {msg && <div className="mono text-[11.5px] uppercase tracking-[0.14em]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
       </div>
     </section>
@@ -305,12 +307,12 @@ function SeedLecturesSection({ data, userName, onRefresh }: PageProps) {
           </p>
         </div>
       </div>
-      <button
-        onClick={() => doSeed(data, userName, onRefresh, setBusy, setMsg)}
-        disabled={busy}
-        className="btn btn-primary disabled:opacity-50">
-        {busy ? 'שומר לענן...' : '🌱 ייבא 23 הרצאות לענן'} <span className="serif text-[16px]">→</span>
-      </button>
+      <button onClick={() => doSeed(data, userName, onRefresh, setBusy, setMsg)} disabled={busy} style={{
+        display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+        background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+        borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
+        whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
+      }}>{busy ? 'שומר לענן...' : '🌱 ייבא 23 הרצאות לענן →'}</button>
       {msg && (
         <div className="mt-4 mono text-[12px] uppercase tracking-[0.12em]"
           style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>
@@ -406,10 +408,12 @@ function PatchContactsSection({ data, userName, onRefresh }: PageProps) {
             {needsPatch.map(l => l.lecturer || 'ללא שם').join(' · ')}
           </div>
         </div>
-        <button onClick={() => doPatch(false)} disabled={busy}
-          className="btn btn-primary shrink-0 disabled:opacity-50">
-          {busy ? 'מעדכן...' : '📋 עדכן פרטים'} <span className="serif text-[16px]">→</span>
-        </button>
+        <button onClick={() => doPatch(false)} disabled={busy} style={{
+          display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+          background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+          borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
+        }}>{busy ? 'מעדכן...' : '📋 עדכן פרטים →'}</button>
       </div>
       {msg && <div className="mt-3 mono text-[11.5px]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
     </section>
@@ -505,12 +509,12 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
           </p>
         </div>
       </div>
-      <button
-        onClick={() => doSeedTrainers(false)}
-        disabled={busy}
-        className="btn btn-primary disabled:opacity-50">
-        {busy ? 'שומר לענן...' : `🧑‍🏫 ייבא ${KNOWN_LECTURERS.length} מנחים`} <span className="serif text-[16px]">→</span>
-      </button>
+      <button onClick={() => doSeedTrainers(false)} disabled={busy} style={{
+        display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+        background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+        borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
+        whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
+      }}>{busy ? 'שומר לענן...' : `🧑‍🏫 ייבא ${KNOWN_LECTURERS.length} מנחים →`}</button>
       {msg && (
         <div className="mt-4 mono text-[12px] uppercase tracking-[0.12em]"
           style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>
@@ -644,7 +648,7 @@ async function doSeed(
 
 /* ====== Interview slots (live from public_interview_slots table) ====== */
 
-type SlotRow = { id: string; date: string; start_time: string; end_time: string; capacity: number; booked_count: number; course_name?: string; note?: string };
+type SlotRow = { id: string; date: string; start_time: string; end_time: string; capacity: number; booked_count: number; course_name?: string; note?: string; booked_by?: string };
 type DayConfig = { uid: string; date: string; startTime: string; endTime: string; minutesEach: number; note: string };
 
 function newDayConfig(): DayConfig {
@@ -674,6 +678,8 @@ function SlotsSection({ data }: PageProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ start_time: '', end_time: '', note: '' });
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [view, setView] = useState<'all' | 'booked'>('all');
+  const sectionRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     const { data: rows, error: err } = await supabase
@@ -722,9 +728,16 @@ function SlotsSection({ data }: PageProps) {
         });
       }
     }
+    // Dedup: skip slots that already exist for the same date+start_time
+    const existingKeys = new Set(slots.map(s => `${s.date}|${s.start_time}`));
+    const newRows = rows.filter(r => !existingKeys.has(`${r.date}|${r.start_time}`));
+    if (newRows.length === 0) {
+      showToast('כל המועדים שהגדרת כבר קיימים', 'error');
+      return;
+    }
     setSaving(true);
-    for (let i = 0; i < rows.length; i += 20) {
-      const { error: err } = await supabase.from('public_interview_slots').insert(rows.slice(i, i + 20));
+    for (let i = 0; i < newRows.length; i += 20) {
+      const { error: err } = await supabase.from('public_interview_slots').insert(newRows.slice(i, i + 20));
       if (err) {
         setSaving(false);
         showToast('שגיאה: ' + (err.message || err.details || err.code || JSON.stringify(err)), 'error');
@@ -732,9 +745,43 @@ function SlotsSection({ data }: PageProps) {
       }
     }
     setSaving(false);
+    setPlannerOpen(false);
     setDays([newDayConfig()]);
     load();
-    showToast(`✓ נוצרו ${rows.length} מועדי ראיון`, 'success');
+    showToast(`✓ נוצרו ${newRows.length} מועדי ראיון`, 'success');
+    setTimeout(() => sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  }
+
+  function downloadIcs() {
+    function fmtDt(date: string, time: string) {
+      return date.replace(/-/g, '') + 'T' + time.replace(':', '') + '00';
+    }
+    const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+    const lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0',
+      'PRODID:-//Practicum//Interview Slots//HE',
+      'X-WR-CALNAME:מועדי ראיון — פרקטיקום',
+      'X-WR-TIMEZONE:Asia/Jerusalem', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    ];
+    for (const s of slots) {
+      const noteStr = s.note ? ` — ${s.note}` : '';
+      const summary = s.booked_by ? `ראיון: ${s.booked_by}${noteStr}` : `ראיון פרקטיקום${noteStr}`;
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:slot-${s.id}@practicum.yarivitzkovich.org`);
+      lines.push(`DTSTAMP:${now}`);
+      lines.push(`DTSTART;TZID=Asia/Jerusalem:${fmtDt(s.date, s.start_time)}`);
+      lines.push(`DTEND;TZID=Asia/Jerusalem:${fmtDt(s.date, s.end_time)}`);
+      lines.push(`SUMMARY:${summary.replace(/[\\;,\n]/g, c => '\\' + c)}`);
+      lines.push(`STATUS:${s.booked_count >= s.capacity ? 'CONFIRMED' : 'TENTATIVE'}`);
+      lines.push('END:VEVENT');
+    }
+    lines.push('END:VCALENDAR');
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'practicum-interviews.ics';
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   async function deleteSlot(id: string) {
@@ -771,6 +818,7 @@ function SlotsSection({ data }: PageProps) {
   for (const s of slots) { (byDate[s.date] = byDate[s.date] || []).push(s); }
 
   return (
+    <div ref={sectionRef}>
     <Section title="מועדי ראיון" count={slots.length}>
       <p className="text-[13.5px] leading-[1.55] mb-5" style={{ color: 'var(--text-soft)' }}>
         הגדר ימי ראיון — כל מועמד שמגיש טופס יבחר שעה פנויה. כל ראיון מקבל מקום אחד (קיבולת 1).
@@ -778,9 +826,20 @@ function SlotsSection({ data }: PageProps) {
 
       {/* Main action button */}
       <button
+        type="button"
         onClick={() => { setPlannerOpen(v => !v); }}
-        className="btn btn-primary mb-6"
-        style={{ fontSize: '14px', padding: '12px 20px' }}
+        style={{
+          display: 'inline-block',
+          padding: '12px 20px',
+          marginBottom: '24px',
+          fontSize: '14px',
+          fontWeight: 600,
+          background: 'var(--accent)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '12px',
+          cursor: 'pointer',
+        }}
       >
         📅 {plannerOpen ? 'סגור תכנון' : 'תכנן מועדי ראיון'}
       </button>
@@ -863,30 +922,48 @@ function SlotsSection({ data }: PageProps) {
           </button>
 
           {/* Summary + generate */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-4"
-            style={{ borderTop: '1px solid var(--divider)' }}>
-            <div className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--divider)' }}>
+            <div className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
               {totalPreview > 0
                 ? <><strong style={{ color: 'var(--ink)' }}>{totalPreview} מועדים</strong> ב‑{validDays.length} ימים</>
                 : 'הגדר תאריך ושעות כדי לראות תצוגה מקדימה'}
             </div>
-            <div className="flex gap-2 items-center">
-              <button
-                type="button"
-                onClick={() => { setPlannerOpen(false); setDays([newDayConfig()]); }}
-                className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100 px-3"
-                style={{ color: 'var(--ink)' }}
-              >בטל</button>
-              <button
-                type="button"
-                onClick={generateAll}
-                disabled={saving}
-                className="btn btn-primary disabled:opacity-50"
-                style={{ fontSize: '13px', padding: '10px 18px' }}
-              >
-                {saving ? 'יוצר...' : totalPreview > 0 ? `צור ${totalPreview} מועדים →` : 'צור מועדים →'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={generateAll}
+              disabled={saving}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '12px 20px',
+                fontSize: '14px',
+                fontWeight: 600,
+                background: saving ? 'var(--divider)' : 'var(--accent)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                cursor: saving ? 'not-allowed' : 'pointer',
+                opacity: saving ? 0.7 : 1,
+              }}
+            >
+              {saving ? 'יוצר...' : totalPreview > 0 ? `צור ${totalPreview} מועדים ←` : 'צור מועדים ←'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPlannerOpen(false); setDays([newDayConfig()]); }}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '8px',
+                marginTop: '8px',
+                fontSize: '12px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-soft)',
+                cursor: 'pointer',
+                textAlign: 'center',
+              }}
+            >בטל</button>
           </div>
         </div>
       )}
@@ -900,9 +977,56 @@ function SlotsSection({ data }: PageProps) {
         </div>
       ) : (
         <>
+          {/* View tabs */}
+          <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.05)', display: 'inline-flex' }}>
+            {(['all', 'booked'] as const).map(v => (
+              <button key={v} type="button" onClick={() => setView(v)} style={{
+                padding: '6px 14px', fontSize: '12px', fontWeight: 600, border: 'none', borderRadius: '9px', cursor: 'pointer',
+                background: view === v ? 'var(--accent)' : 'transparent',
+                color: view === v ? 'white' : 'var(--text-soft)',
+              }}>
+                {v === 'all' ? `כל המועדים (${slots.length})` : `נקבעו (${slots.filter(s => s.booked_count > 0).length})`}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center justify-between mb-2">
-            <span className="mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
-              {slots.length} מועדים מוגדרים
+            <span className="flex items-center gap-3">
+              <span className="mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
+                {view === 'all' ? `${slots.length} מועדים מוגדרים` : `${slots.filter(s => s.booked_count > 0).length} פגישות קבועות`}
+              </span>
+              <button type="button" onClick={downloadIcs}
+                className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
+                style={{ color: 'var(--ink)' }}>
+                📥 רענן לוח שנה
+              </button>
+              <button type="button" onClick={() => {
+                const booked = slots.filter(s => s.booked_count > 0);
+                const rows = (view === 'booked' ? booked : slots).map(s =>
+                  `<tr><td>${s.date}</td><td dir="ltr">${s.start_time}–${s.end_time}</td><td>${s.booked_by || '—'}</td><td>${s.note || ''}</td></tr>`
+                ).join('');
+                const title = view === 'booked' ? 'פגישות קבועות — מועדי ראיון' : 'כל מועדי הראיון';
+                const html = `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>${title}</title>
+<style>body{font-family:Arial,sans-serif;direction:rtl;margin:1.5cm;color:#1a1a1a}
+h1{font-size:16pt;margin-bottom:4pt}
+.sub{font-size:10pt;color:#888;margin-bottom:16pt}
+table{width:100%;border-collapse:collapse;font-size:11pt}
+th,td{border:0.5pt solid #ccc;padding:6pt 8pt;text-align:right}
+th{background:#f5f0f0;font-weight:bold}
+@media print{@page{size:A4;margin:1.2cm}}</style></head>
+<body><h1>${title}</h1><div class="sub">פרקטיקום · אוניברסיטת אריאל · ${new Date().toLocaleDateString('he-IL')}</div>
+<table><thead><tr><th>תאריך</th><th>שעה</th><th>שם המועמד/ת</th><th>הערה</th></tr></thead><tbody>${rows}</tbody></table>
+<script>setTimeout(()=>window.print(),400)<\/script></body></html>`;
+                const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener';
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
+              }}
+                className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
+                style={{ color: 'var(--ink)' }}>
+                🖨 הדפס רשימה
+              </button>
             </span>
             {confirmDeleteAll ? (
               <span className="flex items-center gap-2">
@@ -920,7 +1044,24 @@ function SlotsSection({ data }: PageProps) {
               </button>
             )}
           </div>
-          {Object.entries(byDate).map(([date, daySlots]) => (
+          {view === 'booked' ? (
+            <div className="space-y-2">
+              {slots.filter(s => s.booked_count > 0).length === 0 ? (
+                <div className="py-4 text-[14px]" style={{ color: 'var(--text-soft)' }}>עדיין לא נקבעו פגישות.</div>
+              ) : slots.filter(s => s.booked_count > 0).map(s => (
+                <div key={s.id} className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--accent)' }}>
+                  <span className="mono text-[13px] font-semibold" dir="ltr" style={{ color: 'var(--accent)', minWidth: '120px' }}>
+                    {s.date} {s.start_time}–{s.end_time}
+                  </span>
+                  <span className="text-[14px] font-semibold flex-1" style={{ color: 'var(--ink)' }}>
+                    {s.booked_by || '—'}
+                  </span>
+                  {s.note && <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>{s.note}</span>}
+                </div>
+              ))}
+            </div>
+          ) : Object.entries(byDate).map(([date, daySlots]) => (
             <div key={date} className="mb-4">
               <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold py-2 mb-1"
                 style={{ color: 'var(--text-soft)', borderBottom: '1px solid var(--divider)' }}>
@@ -944,7 +1085,11 @@ function SlotsSection({ data }: PageProps) {
                         <input type="text" value={editForm.note} placeholder="הערה"
                           onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
                           className="input flex-1 min-w-[80px]" style={{ fontSize: '13px', padding: '5px 8px' }} />
-                        <button onClick={() => saveEdit(s.id)} className="btn btn-primary" style={{ fontSize: '12px', padding: '5px 12px' }}>שמור</button>
+                        <button onClick={() => saveEdit(s.id)} style={{
+                          display: 'inline-block', padding: '5px 12px', fontSize: '12px', fontWeight: 600,
+                          background: 'var(--accent)', color: 'white', border: 'none',
+                          borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap',
+                        }}>שמור</button>
                         <button onClick={() => setEditingId(null)} className="mono text-[11px] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>בטל</button>
                       </div>
                     );
@@ -957,7 +1102,7 @@ function SlotsSection({ data }: PageProps) {
                         border: '1px solid',
                         borderColor: full ? 'var(--accent)' : 'var(--divider)',
                       }}>
-                      <span className="mono text-[12px] tracking-[0.06em]"
+                      <span className="mono text-[12px] tracking-[0.06em]" dir="ltr"
                         style={{ color: full ? 'var(--bg)' : 'var(--ink)' }}>
                         {s.start_time}–{s.end_time}
                       </span>
@@ -989,8 +1134,10 @@ function SlotsSection({ data }: PageProps) {
         </>
       )}
     </Section>
+    </div>
   );
 }
+
 
 
 /* ====== Courses ====== */
@@ -1149,8 +1296,11 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
               </div>
             )}
           </div>
-          <button onClick={createFoldersForJustAdded} className="btn btn-primary whitespace-nowrap">
-            🗂 צור תיקיות <span className="serif text-[16px]">→</span>
+          <button onClick={createFoldersForJustAdded} style={{
+            display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>🗂 צור תיקיות →
           </button>
           <button onClick={() => setJustAdded(null)}
             className="mono text-[11.5px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100">
@@ -1161,10 +1311,12 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
 
       <button
         onClick={() => { setAdding(true); setTimeout(() => newCourseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
-        className="btn mt-5"
-        style={{ display: adding ? 'none' : undefined }}>
-        + הוסף קורס
-      </button>
+        style={{
+          display: adding ? 'none' : 'inline-block', marginTop: '20px',
+          padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+          background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+          borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+        }}>+ הוסף קורס</button>
 
       {adding && (
         <div ref={newCourseRef} className="mt-5 rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
@@ -1178,9 +1330,12 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
               options={institutions} listId="new-course-inst" placeholder="שם המוסד" />
           </div>
           <div className="flex gap-2">
-            <button onClick={addCourse} disabled={saving} className="btn btn-primary disabled:opacity-50">
-              הוסף {saving ? '...' : ''} <span className="serif text-[16px]">→</span>
-            </button>
+            <button onClick={addCourse} disabled={saving} style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: saving ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+              borderRadius: '999px', cursor: saving ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: saving ? 0.7 : 1,
+            }}>{saving ? 'שומר...' : 'הוסף →'}</button>
             <button onClick={() => { setAdding(false); setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל' }); }}
               className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">
               בטל
@@ -1288,8 +1443,13 @@ function YearsSection({ data, userName, onRefresh }: PageProps) {
         <input value={newYear} onChange={e => setNewYear(e.target.value)} placeholder="למשל: תשפ״ז"
           className="input" style={{ padding: '8px 14px', fontSize: '14px', width: 200 }}
           onKeyDown={e => { if (e.key === 'Enter') addYear(); }} />
-        <button onClick={addYear} disabled={saving || !newYear.trim()}
-          className="btn btn-primary disabled:opacity-50">+ הוסף שנה</button>
+        <button onClick={addYear} disabled={saving || !newYear.trim()} style={{
+          display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+          background: (saving || !newYear.trim()) ? 'var(--divider)' : 'var(--accent)',
+          color: 'white', border: 'none', borderRadius: '999px',
+          cursor: (saving || !newYear.trim()) ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap', flexShrink: 0, opacity: (saving || !newYear.trim()) ? 0.6 : 1,
+        }}>+ הוסף שנה</button>
       </div>
     </Section>
   );
@@ -1342,8 +1502,13 @@ function InstitutionsSection({ data, userName, onRefresh }: PageProps) {
         <input value={newInst} onChange={e => setNewInst(e.target.value)} placeholder="למשל: המכללה האקדמית עמק יזרעאל"
           className="input" style={{ padding: '8px 14px', fontSize: '14px', width: 300 }}
           onKeyDown={e => { if (e.key === 'Enter') addInst(); }} />
-        <button onClick={addInst} disabled={saving || !newInst.trim()}
-          className="btn btn-primary disabled:opacity-50">+ הוסף מוסד</button>
+        <button onClick={addInst} disabled={saving || !newInst.trim()} style={{
+          display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+          background: (saving || !newInst.trim()) ? 'var(--divider)' : 'var(--accent)',
+          color: 'white', border: 'none', borderRadius: '999px',
+          cursor: (saving || !newInst.trim()) ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap', flexShrink: 0, opacity: (saving || !newInst.trim()) ? 0.6 : 1,
+        }}>+ הוסף מוסד</button>
       </div>
     </Section>
   );

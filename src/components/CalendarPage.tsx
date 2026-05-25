@@ -224,16 +224,16 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
   function goToday() { setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); }
 
   return (
-    <main className="max-w-[1200px] mx-auto px-10 pt-14 pb-28">
+    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
 
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">VI · לוח שנה</div>
         <div className="flex items-end justify-between gap-10 flex-wrap">
           <div>
-            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
               {HEB_MONTHS[month]} <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>{year}</em>
             </h1>
-            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {monthUpcoming.length === 0
                 ? 'אין אירועים מתוכננים לחודש זה בהקשר הנוכחי.'
                 : `${monthUpcoming.length} אירועים השבוע/חודש · הרצאות, ראיונות, והכנות`}

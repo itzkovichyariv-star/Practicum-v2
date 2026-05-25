@@ -159,7 +159,7 @@ export default function RegistrationForm() {
     // Bump slot booking count. Check the return value — the RLS policy might reject the update silently.
     if (slot) {
       const { data: updated, error: updErr } = await supabase.from('public_interview_slots')
-        .update({ booked_count: slot.booked_count + 1 })
+        .update({ booked_count: slot.booked_count + 1, booked_by: form.name })
         .eq('id', slot.id)
         .select();
       if (updErr) {
@@ -333,9 +333,14 @@ export default function RegistrationForm() {
           </div>
         )}
 
-        <button type="submit" disabled={busy}
-          className="btn btn-primary w-full mt-4 disabled:opacity-50" style={{ padding: '16px' }}>
-          {status === 'uploading' ? 'מעלה קבצים...' : status === 'saving' ? 'שומר...' : 'שלח הגשת מועמדות'} <span className="serif text-[16px]">→</span>
+        <button type="submit" disabled={busy} style={{
+          display: 'block', width: '100%', marginTop: '16px', padding: '16px',
+          fontSize: '15px', fontWeight: 600,
+          background: busy ? 'var(--divider)' : 'var(--accent)',
+          color: 'white', border: 'none', borderRadius: '12px',
+          cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1,
+        }}>
+          {status === 'uploading' ? 'מעלה קבצים...' : status === 'saving' ? 'שומר...' : 'שלח הגשת מועמדות ←'}
         </button>
 
         <p className="mono text-[10.5px] uppercase tracking-[0.14em] text-center pt-2" style={{ color: 'var(--text-soft)' }}>

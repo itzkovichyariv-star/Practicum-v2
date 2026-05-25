@@ -77,10 +77,10 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
         <div className="chapter-mark mb-6">V · מנחים/מרצים</div>
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-10">
           <div>
-            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
               מנחים/מרצים
             </h1>
-            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {scoped.length === 0
                 ? 'אין מנחים/מרצים בהקשר הנוכחי. הוסף מנחה ראשון/ה.'
                 : `${scoped.length} מנחים ומרצים`}
@@ -99,12 +99,16 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
             </div>
           </div>
           <div className="flex gap-2 self-start md:self-auto flex-wrap">
-            <button onClick={() => setCreating(true)} className="btn btn-primary whitespace-nowrap">
-              + מנחה חדש/ה <span className="serif text-[16px]">→</span>
-            </button>
-            <button onClick={() => setShowImport(i => !i)} className="btn whitespace-nowrap">
-              ⬆ ייבוא Excel
-            </button>
+            <button onClick={() => setCreating(true)} style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>+ מנחה חדש/ה →</button>
+            <button onClick={() => setShowImport(i => !i)} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>⬆ ייבוא Excel</button>
           </div>
         </div>
       </section>
@@ -193,38 +197,33 @@ function TrainerRow({ trainer: t, onEdit, pinned, onTogglePin }: {
     <li className="relative group" data-info-row>
       <div
         onClick={onTogglePin}
-        className="py-5 border-b grid grid-cols-[1fr_auto_auto] gap-5 items-center cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
+        className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
         style={{ borderColor: 'var(--divider)' }}
       >
-        {/* Main info */}
-        <div>
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <div className="serif text-[22px] leading-[1.2] tracking-tight" style={{ color: 'var(--ink)' }}>
-              {t.name}
-            </div>
-            {t.specialty && (
-              <span className="mono text-[10px] uppercase tracking-[0.13em] font-semibold px-2.5 py-0.5 rounded-full"
-                style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
-                {t.specialty}
-              </span>
-            )}
+        {/* Line 1: name + specialty badge */}
+        <div className="flex items-center gap-2 min-w-0 mb-1.5">
+          <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
+            {t.name}
           </div>
-          <div className="text-[13.5px] flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5" style={{ color: 'var(--text-soft)' }}>
-            {t.organization && <span>{t.organization}</span>}
+          {t.specialty && (
+            <span className="mono text-[10px] uppercase tracking-[0.13em] font-semibold px-2.5 py-1 rounded-full shrink-0 whitespace-nowrap"
+              style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>
+              {t.specialty}
+            </span>
+          )}
+        </div>
+        {/* Line 2: contact + actions */}
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
+            {t.organization && <span className="truncate max-w-[140px]">{t.organization}</span>}
             {t.role && <span>· {t.role}</span>}
             {t.phone && <span dir="ltr">{t.phone}</span>}
-            {t.email && <span>{t.email}</span>}
+            {t.email && <span className="truncate max-w-[180px]">{t.email}</span>}
           </div>
-        </div>
-
-        {/* Missing contact badge */}
-        <div className="text-left flex flex-col items-end gap-1">
-          {(!t.phone || !t.email) && <NeedsUpdate />}
-        </div>
-
-        {/* Action buttons */}
-        <div onClick={e => e.stopPropagation()}>
-          <RowActions phone={t.phone} email={t.email} name={t.name} onEdit={onEdit} />
+          <div className="flex items-center gap-1 shrink-0">
+            {(!t.phone || !t.email) && <NeedsUpdate />}
+            <RowActions phone={t.phone} email={t.email} name={t.name} onEdit={onEdit} />
+          </div>
         </div>
       </div>
 

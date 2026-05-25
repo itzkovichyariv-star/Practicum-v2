@@ -86,8 +86,8 @@ export default function EmployerEditor({
             <button type="button" onClick={onClose} className="mono text-[11px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">סגור ✕</button>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="col-span-full">
               <Field label="שם הארגון"><Input value={form.name} onChange={v=>update('name',v)} required/></Field>
             </div>
             <Field label="איש קשר"><Input value={form.contactPerson||''} onChange={v=>update('contactPerson',v)}/></Field>
@@ -95,7 +95,7 @@ export default function EmployerEditor({
             <Field label="טלפון איש קשר"><Input type="tel" value={form.contactPhone||''} onChange={v=>update('contactPhone',v)}/></Field>
             <Field label="מייל איש קשר"><Input type="email" value={form.contactEmail||''} onChange={v=>update('contactEmail',v)}/></Field>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>קורסים משויכים</span>
               <div className="flex flex-wrap gap-3">
                 {courses.map(c => {
@@ -128,14 +128,14 @@ export default function EmployerEditor({
             <Field label="סה״כ משרות"><Input type="number" value={String(form.positions||0)} onChange={v=>update('positions', Number(v)||0)}/></Field>
             <Field label="משרות מאוישות"><Input type="number" value={String(form.filledPositions||0)} onChange={v=>update('filledPositions', Number(v)||0)}/></Field>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="הערות">
                 <textarea value={form.notes||''} onChange={e=>update('notes', e.target.value)}
                   rows={2} className="input w-full" style={{ padding:'10px 14px', fontSize:'14px', resize:'vertical' }} />
               </Field>
             </div>
 
-            <div className="col-span-2 py-3 border-t mt-3" style={{ borderColor: 'var(--divider)' }}>
+            <div className="col-span-full py-3 border-t mt-3" style={{ borderColor: 'var(--divider)' }}>
               <div className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold" style={{ color: openPositions > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
                 {openPositions > 0 ? `${openPositions} משרות פתוחות` : 'אין משרות פתוחות'}
               </div>
@@ -143,17 +143,38 @@ export default function EmployerEditor({
           </div>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
-            <button type="submit" className="btn btn-primary">{isNew?'צור':'שמור'} <span className="serif text-[16px]">→</span></button>
-            <button type="button" onClick={openCall} className="btn" disabled={!form.contactPhone}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.contactPhone}>WhatsApp</button>
-            <button type="button" onClick={openOutlook} className="btn" disabled={!form.contactEmail}>מייל (Outlook)</button>
+            <button type="submit" style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>{isNew ? 'צור' : 'שמור'} →</button>
+            <button type="button" onClick={openCall} disabled={!form.contactPhone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.contactPhone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.contactPhone ? 1 : 0.4,
+            }}>📞 התקשר</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.contactPhone} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.contactPhone ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.contactPhone ? 1 : 0.4,
+            }}>WhatsApp</button>
+            <button type="button" onClick={openOutlook} disabled={!form.contactEmail} style={{
+              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+              borderRadius: '999px', cursor: form.contactEmail ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.contactEmail ? 1 : 0.4,
+            }}>מייל (Outlook)</button>
             {!isNew && onDelete && (
               <button type="button"
-                onClick={()=>{ if(confirm('למחוק מעסיק זה?')) onDelete(form.id); }}
+                onClick={() => { if (confirm('למחוק מעסיק זה?')) onDelete(form.id); }}
                 className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold mr-auto hover:opacity-70"
-                style={{ color: 'var(--accent)' }}>🗑 מחק</button>
+                style={{ color: 'var(--accent)', flexShrink: 0 }}>🗑 מחק</button>
             )}
-            <button type="button" onClick={onClose} className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">בטל</button>
+            <button type="button" onClick={onClose}
+              className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100"
+              style={{ flexShrink: 0 }}>בטל</button>
           </div>
         </form>
     </Modal>

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "practicum-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/yarivitzkovich/Code/practicum-v2",
+      "port": 4321
+    }
+  ]
+}

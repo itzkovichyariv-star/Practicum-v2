@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Student } from '../lib/supabase';
+import type { Student, Candidate } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
-import { saveSnapshot } from '../lib/dataApi';
+import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
 import ExcelImport from './ExcelImport';
@@ -22,6 +23,24 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [cvUpdates, setCvUpdates] = useState<Record<string, { id: string; cv_file_path: string; uploaded_at: string }>>({});
+
+  useEffect(() => {
+    supabase.from('cv_updates')
+      .select('id, email, cv_file_path, uploaded_at')
+      .is('seen_at', null)
+      .then(({ data: rows }) => {
+        if (!rows) return;
+        const map: Record<string, { id: string; cv_file_path: string; uploaded_at: string }> = {};
+        for (const row of rows) {
+          const key = (row.email || '').toLowerCase();
+          if (!map[key] || row.uploaded_at > map[key].uploaded_at) {
+            map[key] = { id: row.id, cv_file_path: row.cv_file_path, uploaded_at: row.uploaded_at };
+          }
+        }
+        setCvUpdates(map);
+      });
+  }, []);
 
   const all = data.students || [];
   const courses = data.courses || [];
@@ -112,30 +131,79 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     await persistAndRefresh(next, idx >= 0 ? '✓ הסטודנט/ית עודכנו' : '✓ סטודנט/ית נוצר');
   }
 
+  async function handleAutoSave(s: Student) {
+    const idx = all.findIndex(x => x.id === s.id);
+    if (idx < 0) return;
+    const next = [...all];
+    next[idx] = s;
+    await persistAndRefresh(next, '✓ נשמר אוטומטית');
+    // Do NOT close the editor
+  }
+
   async function handleDelete(id: string) {
     setEditing(null);
     await persistAndRefresh(all.filter(s => s.id !== id), '✓ הסטודנט/ית נמחקו');
   }
 
+  async function handleRevertToCandidate(s: Student) {
+    const newCandidate: Candidate = {
+      id: randomId('cand'),
+      name: s.name,
+      phone: s.phone || '',
+      email: s.email || '',
+      city: s.city || '',
+      courseId: s.courseId || '',
+      year: s.year || '',
+      applicationDate: '',
+      cvUrl: s.cvUrl || '',
+      applicationUrl: '',
+      submittedAt: undefined,
+      interviewDate: '',
+      interviewTime: '',
+      interviewResult: 'pending',
+      notes: `הוחזר ממצב סטודנט`,
+    };
+    const nextStudents = all.filter(x => x.id !== s.id);
+    const nextCandidates = [...(data.candidates as Candidate[] || []), newCandidate];
+    setSaving(true);
+    const res = await saveSnapshot(
+      { ...data, students: nextStudents, candidates: nextCandidates },
+      { name: userName },
+      { action: 'הוחזר למועמד', entity: 'סטודנט', target: s.name }
+    );
+    setSaving(false);
+    if (res.ok) {
+      (data.students as Student[]) = nextStudents;
+      (data.candidates as Candidate[]) = nextCandidates;
+      setEditing(null);
+      onRefresh();
+      showToast(`✓ ${s.name} הועבר/ה בחזרה לרשימת המועמדים`, 'success');
+    } else {
+      showToast('שגיאה: ' + (res.error || ''), 'error');
+    }
+  }
+
   return (
-    <main className="max-w-[1200px] mx-auto px-10 pt-14 pb-28">
+    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">III · סטודנטים</div>
-        <div className="flex items-end justify-between gap-10">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
               סטודנטים
             </h1>
-            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {counts.total === 0
                 ? 'אין סטודנטים בהקשר הנוכחי. הוסף חדש או שנה את הסינון בבר העליון.'
                 : `${counts.total} סטודנטים · ${counts.placed} שובצו · ${counts.hired} נקלטו · ${counts.completed} סיימו פרקטיקום · ${counts.prep} עברו הכנה`}
             </p>
           </div>
           <div className="flex flex-row md:flex-col gap-2 items-start md:items-end flex-wrap">
-            <button onClick={() => setCreating(true)} className="btn btn-primary whitespace-nowrap">
-              + חדש/ה <span className="serif text-[16px]">→</span>
-            </button>
+            <button onClick={() => setCreating(true)} style={{
+              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}>+ חדש/ה →</button>
             <button onClick={() => setShowImport(s => !s)}
               className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
               style={{ color: 'var(--accent)' }}>
@@ -213,7 +281,19 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <ul>
                 {group.items.map(s => (
                   <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
-                    pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)} />
+                    pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
+                    onRevert={() => handleRevertToCandidate(s)}
+                    cvUpdate={s.email ? cvUpdates[(s.email || '').toLowerCase()] : undefined}
+                    onCvUpdateSeen={async (updateId, filePath) => {
+                      await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', updateId);
+                      const idx = all.findIndex(x => x.id === s.id);
+                      if (idx >= 0) {
+                        const next = [...all];
+                        next[idx] = { ...next[idx], cvUpdatedUrl: `storage://candidate-uploads/${filePath}` };
+                        await persistAndRefresh(next, `✓ CV מעודכן נשמר עבור ${s.name}`);
+                      }
+                      setCvUpdates(prev => { const n = { ...prev }; delete n[(s.email || '').toLowerCase()]; return n; });
+                    }} />
                 ))}
               </ul>
             </div>
@@ -222,7 +302,19 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           <ul>
             {filtered.map(s => (
               <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
-                pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)} />
+                pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
+                onRevert={() => handleRevertToCandidate(s)}
+                cvUpdate={s.email ? cvUpdates[(s.email || '').toLowerCase()] : undefined}
+                onCvUpdateSeen={async (updateId, filePath) => {
+                  await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', updateId);
+                  const idx = all.findIndex(x => x.id === s.id);
+                  if (idx >= 0) {
+                    const next = [...all];
+                    next[idx] = { ...next[idx], cvUpdatedUrl: `storage://candidate-uploads/${filePath}` };
+                    await persistAndRefresh(next, `✓ CV מעודכן נשמר עבור ${s.name}`);
+                  }
+                  setCvUpdates(prev => { const n = { ...prev }; delete n[(s.email || '').toLowerCase()]; return n; });
+                }} />
             ))}
           </ul>
         )}
@@ -237,6 +329,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           defaultCourseId={context.courseId}
           defaultYear={context.year}
           onSave={handleSave}
+          onAutoSave={editing ? handleAutoSave : undefined}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
         />
@@ -262,8 +355,10 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
-function StudentRow({ s, onEdit, pinned, onTogglePin }: {
-  s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
+function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, cvUpdate, onCvUpdateSeen }: {
+  s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void; onRevert?: () => void;
+  cvUpdate?: { id: string; cv_file_path: string; uploaded_at: string };
+  onCvUpdateSeen?: (id: string, filePath: string) => void;
 }) {
   const placed = !!s.acceptedOrg;
   const hired = !!s.hired;
@@ -288,39 +383,57 @@ function StudentRow({ s, onEdit, pinned, onTogglePin }: {
     <li className="relative group" data-info-row>
       <div
         onClick={onTogglePin}
-        className="py-5 border-b grid gap-5 items-center cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
-        style={{ borderColor: 'var(--divider)', gridTemplateColumns: 'auto 1fr auto auto' }}
+        className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
+        style={{ borderColor: 'var(--divider)' }}
       >
-        <div className="flex items-center pl-1">
-          <StatusDot status={dotStatus} size={10} />
-        </div>
-        <div>
-          <div className="serif text-[22px] leading-[1.2] tracking-tight mb-1" style={{ color: 'var(--ink)' }}>
+        {/* Line 1: dot · name · tags */}
+        <div className="flex items-center gap-2 min-w-0 mb-1.5">
+          <StatusDot status={dotStatus} size={9} />
+          <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
             {s.name || 'ללא שם'}
           </div>
-          <div className="text-[13.5px] flex flex-wrap gap-x-4 gap-y-1" style={{ color: 'var(--text-soft)' }}>
+          <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+            {(!s.phone || !s.email) && <NeedsUpdate />}
+            {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
+            {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
+            {s.cvUpdatedUrl ? <Tag label="CV ✓" color="#15803d" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
+            {placed && !hired && !completed && <Tag label="שובץ/ה" />}
+            {hired && !completed && <Tag label="נקלט/ה" solid />}
+            {completed && <Tag label="✓ סיים" color="#b45309" />}
+            {cvUpdate && (
+              <button
+                type="button"
+                onClick={async e => {
+                  e.stopPropagation();
+                  const { data: urlData } = await supabase.storage.from('candidate-uploads').getPublicUrl(cvUpdate.cv_file_path);
+                  window.open(urlData.publicUrl, '_blank');
+                  onCvUpdateSeen?.(cvUpdate.id, cvUpdate.cv_file_path);
+                }}
+                title={`CV מעודכן הועלה — ${new Date(cvUpdate.uploaded_at).toLocaleDateString('he-IL')}`}
+                className="mono text-[10px] uppercase tracking-[0.13em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap animate-pulse"
+                style={{ color: '#fff', background: '#d97706', border: 'none' }}>
+                CV ✦ חדש
+              </button>
+            )}
+          </div>
+        </div>
+        {/* Line 2: contact info · actions */}
+        <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
             {s.phone && <span dir="ltr">{s.phone}</span>}
-            {s.email && <span>{s.email}</span>}
+            {s.email && <span className="truncate max-w-[200px]">{s.email}</span>}
             {s.city && <span>· {s.city}</span>}
             {placed && <span style={{ color: 'var(--accent)' }}>· {s.acceptedOrg}</span>}
           </div>
-        </div>
-
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {(!s.phone || !s.email) && <NeedsUpdate />}
-          {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄 מסמכים" muted />}
-          {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
-          {/* CV update indicator: Rachel needs to know who has submitted their updated CV */}
-          {s.cvUpdatedUrl
-            ? <Tag label="CV ✓" color="#15803d" />
-            : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
-          {placed && !hired && !completed && <Tag label="שובץ/ה" />}
-          {hired && !completed && <Tag label="נקלט/ה" solid />}
-          {completed && <Tag label="✓ סיים פרקטיקום" color="#b45309" />}
-        </div>
-
-        <div onClick={e => e.stopPropagation()}>
-          <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={e => { e.stopPropagation(); onRevert(); }}
+              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
+              title="החזר למועמד">
+              ↩ מועמד
+            </button>
+            <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
+          </div>
         </div>
       </div>
 
@@ -427,7 +540,7 @@ export function RowActions({
   function cal() {
     if (calendarUrl) window.open(calendarUrl, '_blank');
   }
-  const btn = "w-8 h-8 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)]";
+  const btn = "w-7 h-7 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)]";
   const style = { borderColor: 'var(--divider)', color: 'var(--ink)' };
   return (
     <div className="flex items-center gap-1.5">
@@ -438,9 +551,11 @@ export function RowActions({
       {phone && <button type="button" onClick={wa} title="WhatsApp" className={btn} style={style}>💬</button>}
       {email && <button type="button" onClick={mail} title="מייל" className={btn} style={style}>✉</button>}
       <button type="button" onClick={onEdit} title="ערוך"
-        className="mr-1.5 mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-3.5 py-1.5 rounded-full border hover:bg-[rgba(122,30,43,0.08)]"
-        style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-        ערוך
+        className={btn} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
       </button>
     </div>
   );

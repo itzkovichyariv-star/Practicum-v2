@@ -64,12 +64,12 @@ export default function SettingsPage(props: PageProps) {
   }
 
   return (
-    <main className="max-w-[900px] mx-auto px-10 pt-14 pb-28">
+    <main className="max-w-[900px] mx-auto px-4 sm:px-10 pt-14 pb-28">
 
       <section className="pt-4 pb-12 border-b mb-12" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">VII · הגדרות</div>
-        <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>הגדרות</h1>
-        <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+        <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>הגדרות</h1>
+        <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
           אינטגרציה עם יומן Outlook, הרשאות, והגדרות מערכת.
         </p>
       </section>
@@ -103,13 +103,19 @@ export default function SettingsPage(props: PageProps) {
 
             <div className="flex flex-wrap gap-3 pt-6">
               {!signedIn ? (
-                <button onClick={handleConnect} disabled={busy} className="btn btn-primary">
-                  {busy ? 'מתחבר...' : 'התחבר ל‑Outlook'} <span className="serif text-[16px]">→</span>
-                </button>
+                <button onClick={handleConnect} disabled={busy} style={{
+                  display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+                  background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+                  borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
+                }}>{busy ? 'מתחבר...' : 'התחבר ל‑Outlook →'}</button>
               ) : (
-                <button onClick={handleDisconnect} disabled={busy} className="btn">
-                  {busy ? 'מתנתק...' : 'התנתק'}
-                </button>
+                <button onClick={handleDisconnect} disabled={busy} style={{
+                  display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+                  borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
+                }}>{busy ? 'מתנתק...' : 'התנתק'}</button>
               )}
               <button onClick={handleClear}
                 className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold mr-auto hover:opacity-70"
@@ -208,15 +214,19 @@ function FolderCreationCard({ data }: { data: any }) {
       )}
 
       <div className="flex flex-wrap gap-3">
-        <button onClick={handleCreateAll} disabled={!supported || busy}
-          className="btn btn-primary disabled:opacity-50">
-          {busy ? 'יוצר...' : '🗂 צור תיקיות לכל הקורסים'} <span className="serif text-[16px]">→</span>
-        </button>
+        <button onClick={handleCreateAll} disabled={!supported || busy} style={{
+          display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+          background: (!supported || busy) ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
+          borderRadius: '999px', cursor: (!supported || busy) ? 'not-allowed' : 'pointer',
+          whiteSpace: 'nowrap', flexShrink: 0, opacity: (!supported || busy) ? 0.6 : 1,
+        }}>{busy ? 'יוצר...' : '🗂 צור תיקיות לכל הקורסים →'}</button>
         {supported && (
-          <button onClick={handleRepick} disabled={busy}
-            className="btn">
-          החלף תיקיית יעד
-          </button>
+          <button onClick={handleRepick} disabled={busy} style={{
+            display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
+            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
+            borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
+            whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
+          }}>החלף תיקיית יעד</button>
         )}
       </div>
 
@@ -301,12 +311,11 @@ function JsonBackupCard({ data }: { data: any }) {
         </div>
       </div>
 
-      <button onClick={download}
-        className="btn btn-primary"
-        style={done ? { background: '#17a34a' } : {}}>
-        {done ? '✓ הקובץ הורד!' : '⬇ הורד גיבוי JSON'}
-        {!done && <span className="serif text-[16px]"> →</span>}
-      </button>
+      <button onClick={download} style={{
+        display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+        background: done ? '#17a34a' : 'var(--accent)', color: 'white', border: 'none',
+        borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+      }}>{done ? '✓ הקובץ הורד!' : '⬇ הורד גיבוי JSON →'}</button>
     </section>
   );
 }
@@ -473,9 +482,11 @@ function SetupInstructions({
               אם Ariel IT נתנו tenant ID ספציפי, הזן אותו. אחרת השאר "common".
             </span>
           </label>
-          <button onClick={onSave} className="btn btn-primary mt-3">
-            שמור <span className="serif text-[16px]">→</span>
-          </button>
+          <button onClick={onSave} style={{
+            display: 'inline-block', marginTop: '12px', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
+            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+          }}>שמור →</button>
         </div>
       </div>
     </div>

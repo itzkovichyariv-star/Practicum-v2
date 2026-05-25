@@ -241,6 +241,9 @@
     cursor: pointer;
     transition: all 0.2s;
     min-height: 44px;
+    direction: ltr;
+    min-width: max-content;
+    flex-shrink: 0;
   }
   .btn:hover { opacity: 0.7; }
   .btn-primary {
