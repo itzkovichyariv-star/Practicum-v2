@@ -442,7 +442,14 @@ function RegistrationLinkCard() {
     if (typeof window !== 'undefined')
       setBase(window.location.origin + window.location.pathname.replace(/\/?(?:[a-z]+\/?)?$/i, '/'));
   }, []);
-  const link = base ? base.replace(/\/$/, '') + '/register/' : 'https://itzkovichyariv-star.github.io/Practicum-v2/register/';
+  const COURSE_PARAM = encodeURIComponent('פרקטיקום משאבי אנוש');
+  const YEAR_PARAM   = encodeURIComponent('תשפ״ז');
+  const link = base
+    ? `${base.replace(/\/$/, '')}/register/?course=${COURSE_PARAM}&year=${YEAR_PARAM}`
+    : `https://practicum-v2.pages.dev/register/?course=${COURSE_PARAM}&year=${YEAR_PARAM}`;
+  const displayLink = base
+    ? `${base.replace(/\/$/, '')}/register/?course=פרקטיקום משאבי אנוש&year=תשפ״ז`
+    : `https://practicum-v2.pages.dev/register/?course=פרקטיקום משאבי אנוש&year=תשפ״ז`;
   async function copy() {
     if (navigator.clipboard && window.isSecureContext) {
       try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); return; } catch {}
@@ -468,7 +475,7 @@ function RegistrationLinkCard() {
       </div>
       <div className="flex flex-col gap-2">
         <div id="reg-link-display" className="w-full mono text-[12.5px] px-4 py-2.5 rounded-lg select-all"
-          style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--divider)', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{link}</div>
+          style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--divider)', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{displayLink}</div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={copy} className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg"
             style={{ background: 'var(--accent)', color: 'var(--bg)' }}>{copied ? '✓ הועתק' : '📋 העתק'}</button>
@@ -532,8 +539,8 @@ export default function FormsPage(props: PageProps) {
 
       <section className="pt-4 pb-10 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-4">IX · טפסים</div>
-        <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>טפסים</h1>
-        <p className="text-[17.5px] max-w-[620px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+        <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>טפסים</h1>
+        <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
           ספרייה של טפסים מוכנים — הדפסה/PDF בדפדפן, או הורדה כקובץ Word לעריכה.
         </p>
       </section>

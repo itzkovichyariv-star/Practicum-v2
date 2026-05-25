@@ -87,9 +87,29 @@ export default function CandidateEditor({
     if (n.startsWith('0')) n = '972' + n.slice(1);
     window.open(`https://wa.me/${n}`, '_blank');
   }
+
+  function sendCvLinkWhatsApp() {
+    if (!form.phone) { alert('אין טלפון'); return; }
+    if (!form.email) { alert('אין מייל — הקישור דורש מייל'); return; }
+    const firstName = (form.name || '').split(' ')[0] || 'שלום';
+    const link = `${window.location.origin}/cv-update/?email=${encodeURIComponent(form.email)}&name=${encodeURIComponent(form.name || '')}`;
+    const msg = `שלום ${firstName}, ברכות על קבלתך לפרקטיקום!\nלאחר סדנת קורות החיים, אנא עדכן/י את קורות החיים שלך דרך הקישור הבא:\n${link}`;
+    let n = form.phone.replace(/[^\d]/g, '');
+    if (n.startsWith('0')) n = '972' + n.slice(1);
+    window.open(`https://wa.me/${n}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
   function openMail() {
     if (!form.email) { alert('אין מייל'); return; }
     window.location.href = `mailto:${encodeURIComponent(form.email)}?subject=${encodeURIComponent('פרקטיקום — ראיון')}`;
+  }
+
+  function copyCvUpdateLink() {
+    if (!form.email) { alert('אין מייל — לא ניתן ליצור קישור'); return; }
+    const base = window.location.origin;
+    const link = `${base}/cv-update/?email=${encodeURIComponent(form.email)}&name=${encodeURIComponent(form.name || '')}`;
+    navigator.clipboard?.writeText(link).then(() => alert('קישור הועתק ✓')).catch(() => {
+      prompt('העתק קישור:', link);
+    });
   }
 
   return (
@@ -110,8 +130,8 @@ export default function CandidateEditor({
             <button type="button" onClick={onClose} className="mono text-[11px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">סגור ✕</button>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
-            <div className="col-span-2"><Field label="שם מלא"><Input value={form.name} onChange={v=>update('name',v)} required/></Field></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div className="col-span-full"><Field label="שם מלא"><Input value={form.name} onChange={v=>update('name',v)} required/></Field></div>
             <Field label="טלפון"><Input type="tel" value={form.phone||''} onChange={v=>update('phone',v)}/></Field>
             <Field label="מייל"><Input type="email" value={form.email||''} onChange={v=>update('email',v)}/></Field>
             <Field label="קורס">
@@ -120,13 +140,13 @@ export default function CandidateEditor({
             </Field>
             <Field label="שנה"><Select value={form.year||''} onChange={v=>update('year',v)} options={years} placeholder="בחר"/></Field>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px' }}>שלב 1 — מסמכים</div>
             </div>
             <FileField label="קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
             <FileField label="טופס הגשת מועמדות" value={form.applicationUrl||''} onChange={v=>update('applicationUrl',v)}/>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px', color: hasDocs ? 'var(--accent)' : 'var(--text-soft)' }}>
                 שלב 2 — ראיון {!hasDocs && ' (נדרשים קודם CV + טופס מועמדות)'}
               </div>
@@ -138,13 +158,13 @@ export default function CandidateEditor({
               <Input type="date" value={form.interviewDate||''} onChange={v=>update('interviewDate',v)}/>
             </Field>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px', color: hasInterview ? 'var(--accent)' : 'var(--text-soft)' }}>
                 הערכת ראיון
               </div>
             </div>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="תחום מבוקש"><Input value={form.preferredArea||''} onChange={v=>update('preferredArea',v)} placeholder="למשל: גיוס · רווחה · פיתוח ארגוני"/></Field>
             </div>
 
@@ -174,7 +194,7 @@ export default function CandidateEditor({
                 placeholder="למשל: 87"/>
             </Field>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="סיכום ראיון">
                 <textarea
                   value={form.interviewSummary||''}
@@ -193,7 +213,7 @@ export default function CandidateEditor({
             <div />
 
             {form.interviewResult === 'failed' && (
-              <div className="col-span-2 rounded-xl p-4 mt-1"
+              <div className="col-span-full rounded-xl p-4 mt-1"
                 style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
                 <Field label="סיבת דחייה (חובה)">
                   <Input value={form.rejectionReason||''} onChange={v=>update('rejectionReason',v)}
@@ -203,14 +223,14 @@ export default function CandidateEditor({
             )}
 
             {passed && !alreadyConverted && (
-              <div className="col-span-2 mt-4 rounded-xl p-4 text-[13.5px]"
+              <div className="col-span-full mt-4 rounded-xl p-4 text-[13.5px]"
                 style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--accent)', color: 'var(--ink)' }}>
                 ✓ עבר ראיון. <strong>בעת שמירה</strong>, המועמד/ת יועבר/תועבר אוטומטית לרשימת הסטודנטים
                 עם כל המסמכים. השלבים הבאים: הכנה + CV מעודכן, ואז בחירת ארגון.
               </div>
             )}
             {alreadyConverted && (
-              <div className="col-span-2 mt-4 text-[13.5px]" style={{ color: 'var(--accent)' }}>
+              <div className="col-span-full mt-4 text-[13.5px]" style={{ color: 'var(--accent)' }}>
                 ✓ כבר הועבר לרשימת הסטודנטים. רשומת המועמד נשמרת לארכיון.
               </div>
             )}
@@ -221,6 +241,16 @@ export default function CandidateEditor({
             <button type="button" onClick={openCall} className="btn" disabled={!form.phone}>📞 התקשר</button>
             <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.phone}>WhatsApp</button>
             <button type="button" onClick={openMail} className="btn" disabled={!form.email}>מייל</button>
+            {!isNew && (
+              <button type="button" onClick={sendCvLinkWhatsApp} className="btn" disabled={!form.phone || !form.email} title="שלח לסטודנט קישור עדכון CV בוואטסאפ">
+                📎 קישור CV (WhatsApp)
+              </button>
+            )}
+            {!isNew && (
+              <button type="button" onClick={copyCvUpdateLink} className="btn" disabled={!form.email} title="העתק קישור עדכון CV">
+                🔗 העתק קישור
+              </button>
+            )}
             {!isNew && onDelete && (
               <button type="button"
                 onClick={()=>{ if(confirm('למחוק?')) onDelete(form.id); }}

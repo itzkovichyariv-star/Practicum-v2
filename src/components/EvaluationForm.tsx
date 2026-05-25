@@ -174,7 +174,7 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
 
           {/* Signatures */}
           <Section letter="ה" title="חתימות">
-            <div className="grid grid-cols-2 gap-8 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mt-3">
               <SigBox label="חתימת המנחה בארגון" />
               <SigBox label="חתימת הסטודנט/ית" />
             </div>

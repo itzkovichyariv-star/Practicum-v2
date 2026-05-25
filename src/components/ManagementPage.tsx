@@ -10,12 +10,12 @@ import * as fs from '../lib/folderCreation';
 
 export default function ManagementPage(props: PageProps) {
   return (
-    <main className="max-w-[1200px] mx-auto px-10 pt-10 pb-28">
+    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-10 pb-28">
 
       <section className="pt-4 pb-10 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-4">X · ניהול</div>
-        <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>ניהול</h1>
-        <p className="text-[17.5px] max-w-[620px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+        <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>ניהול</h1>
+        <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
           הוסף ונהל קורסים, שנים אקדמיות, ומוסדות. יצירת קורס חדש מאפשרת גם יצירת תיקיות ב‑OneDrive בלחיצה אחת.
         </p>
       </section>
@@ -178,20 +178,22 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
 /* ====== System Settings ====== */
 
 function SettingsSection({ data, userName, onRefresh }: PageProps) {
-  const [email, setEmail] = useState((data as any).coordinatorEmail || '');
+  const [coordEmail, setCoordEmail] = useState((data as any).coordinatorEmail || '');
+  const [supEmail, setSupEmail] = useState((data as any).supervisorEmail || '');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   async function save() {
     setSaving(true); setMsg(null);
     const res = await saveSnapshot(
-      { ...data, coordinatorEmail: email.trim() },
+      { ...data, coordinatorEmail: coordEmail.trim(), supervisorEmail: supEmail.trim() },
       { name: userName },
-      { action: 'עודכן', entity: 'הגדרות', target: 'מייל רכזת' }
+      { action: 'עודכן', entity: 'הגדרות', target: 'מיילים' }
     );
     setSaving(false);
     if (!res.ok) { setMsg('שגיאה: ' + (res.error || '')); return; }
-    (data as any).coordinatorEmail = email.trim();
+    (data as any).coordinatorEmail = coordEmail.trim();
+    (data as any).supervisorEmail = supEmail.trim();
     setMsg('✓ נשמר');
     showToast('✓ הגדרות נשמרו', 'success');
     onRefresh();
@@ -202,28 +204,39 @@ function SettingsSection({ data, userName, onRefresh }: PageProps) {
     <section className="mb-12 rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
       <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>הגדרות מערכת</div>
       <div className="serif text-[22px] mb-4" style={{ color: 'var(--ink)' }}>הגדרות</div>
-      <div className="max-w-[480px] space-y-4">
+      <div className="max-w-[520px] space-y-4">
         <label className="block">
           <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
-            מייל הרכזת (מקבל עותק ממשובי מעסיקים)
+            מייל הרכזת (רחל) — מקבל עותקים ממשובים והגשות
           </span>
-          <div className="flex gap-2">
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="rachel@ariel.ac.il"
-              className="input flex-1"
-              style={{ padding: '10px 14px', fontSize: '14px' }}
-            />
-            <button onClick={save} disabled={saving} className="btn btn-primary disabled:opacity-50 whitespace-nowrap">
-              {saving ? 'שומר...' : 'שמור'}
-            </button>
-          </div>
-          <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>
-            כאשר מעסיק ממלא משוב דרך קישור ייעודי, עותק נשלח למייל זה אוטומטית.
-          </div>
+          <input
+            type="email"
+            value={coordEmail}
+            onChange={e => setCoordEmail(e.target.value)}
+            placeholder="rachel@ariel.ac.il"
+            className="input w-full"
+            style={{ padding: '10px 14px', fontSize: '14px' }}
+          />
         </label>
+        <label className="block">
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+            מייל המפקח האקדמי (יריב) — מקבל עותקים גם כן
+          </span>
+          <input
+            type="email"
+            value={supEmail}
+            onChange={e => setSupEmail(e.target.value)}
+            placeholder="itzkovichyariv@gmail.com"
+            className="input w-full"
+            style={{ padding: '10px 14px', fontSize: '14px' }}
+          />
+        </label>
+        <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+          כאשר מעסיק ממלא משוב, ומועמד מגיש טופס — שניהם מקבלים עותק אוטומטית.
+        </div>
+        <button onClick={save} disabled={saving} className="btn btn-primary disabled:opacity-50">
+          {saving ? 'שומר...' : 'שמור הגדרות'}
+        </button>
         {msg && <div className="mono text-[11.5px] uppercase tracking-[0.14em]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
       </div>
     </section>
@@ -632,117 +645,253 @@ async function doSeed(
 /* ====== Interview slots (live from public_interview_slots table) ====== */
 
 type SlotRow = { id: string; date: string; start_time: string; end_time: string; capacity: number; booked_count: number; course_name?: string; note?: string };
+type DayConfig = { uid: string; date: string; startTime: string; endTime: string; minutesEach: number; note: string };
+
+function newDayConfig(): DayConfig {
+  const today = new Date().toISOString().slice(0, 10);
+  return { uid: Math.random().toString(36).slice(2), date: today, startTime: '09:00', endTime: '13:00', minutesEach: 15, note: '' };
+}
+
+function fmtMin(m: number) {
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+function countSlots(d: DayConfig): number {
+  if (!d.date || !d.startTime || !d.endTime) return 0;
+  const [sh, sm] = d.startTime.split(':').map(Number);
+  const [eh, em] = d.endTime.split(':').map(Number);
+  const step = Math.max(5, d.minutesEach);
+  const diff = (eh * 60 + em) - (sh * 60 + sm);
+  return diff > 0 ? Math.floor(diff / step) : 0;
+}
 
 function SlotsSection({ data }: PageProps) {
-  const courses = data.courses || [];
   const [slots, setSlots] = useState<SlotRow[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [form, setForm] = useState({ date: '', startTime: '10:00', endTime: '10:30', capacity: 1, courseName: '', note: '' });
-  const [bulkForm, setBulkForm] = useState({ date: '', startTime: '10:00', endTime: '13:00', minutesEach: 30, courseName: '', note: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [plannerOpen, setPlannerOpen] = useState(false);
+  const [days, setDays] = useState<DayConfig[]>([newDayConfig()]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ start_time: '', end_time: '', note: '' });
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
   async function load() {
-    const { data, error } = await supabase.from('public_interview_slots')
-      .select('*').order('date', { ascending: true }).order('start_time', { ascending: true });
-    if (error) {
-      setError(
-        error.code === '42P01' || /does not exist/i.test(error.message)
-          ? 'טבלת מועדי הראיון לא קיימת. הרץ את supabase_slots.sql ב‑Supabase כדי להפעיל.'
-          : error.message
-      );
+    const { data: rows, error: err } = await supabase
+      .from('public_interview_slots')
+      .select('*')
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true });
+    if (err) {
+      setError(/does not exist|42P01/i.test(err.message)
+        ? 'טבלת מועדי הראיון לא קיימת. הרץ את supabase_slots.sql ב‑Supabase.'
+        : err.message);
       return;
     }
-    setSlots((data as SlotRow[]) || []);
+    setSlots((rows as SlotRow[]) || []);
     setError(null);
   }
 
   useEffect(() => { load(); }, []);
 
-  async function addSlot() {
-    if (!form.date || !form.startTime || !form.endTime) { alert('חסרים תאריך / שעות'); return; }
+  function updateDay(uid: string, patch: Partial<DayConfig>) {
+    setDays(ds => ds.map(d => d.uid === uid ? { ...d, ...patch } : d));
+  }
+
+  const totalPreview = days.reduce((s, d) => s + countSlots(d), 0);
+  const validDays = days.filter(d => d.date && d.startTime && d.endTime && countSlots(d) > 0);
+
+  async function generateAll() {
+    if (validDays.length === 0) {
+      showToast('הגדר לפחות יום אחד עם תאריך ושעות תקינות', 'error');
+      return;
+    }
+    const rows: any[] = [];
+    for (const d of validDays) {
+      const [sh, sm] = d.startTime.split(':').map(Number);
+      const step = Math.max(5, d.minutesEach);
+      const endMin = d.endTime.split(':').map(Number).reduce((h, m, i) => i === 0 ? h + m * 60 : h + m, 0);
+      for (let t = sh * 60 + sm; t + step <= endMin; t += step) {
+        rows.push({
+          date: d.date,
+          start_time: fmtMin(t),
+          end_time: fmtMin(t + step),
+          capacity: 1,
+          booked_count: 0,
+          note: d.note || null,
+          course_name: null,
+        });
+      }
+    }
     setSaving(true);
-    const { error } = await supabase.from('public_interview_slots').insert({
-      id: randomId('slot'),
-      date: form.date,
-      start_time: form.startTime,
-      end_time: form.endTime,
-      capacity: Math.max(1, form.capacity),
-      booked_count: 0,
-      course_name: form.courseName || null,
-      note: form.note || null,
-    });
+    for (let i = 0; i < rows.length; i += 20) {
+      const { error: err } = await supabase.from('public_interview_slots').insert(rows.slice(i, i + 20));
+      if (err) {
+        setSaving(false);
+        showToast('שגיאה: ' + (err.message || err.details || err.code || JSON.stringify(err)), 'error');
+        return;
+      }
+    }
     setSaving(false);
-    if (error) { alert('שגיאה: ' + error.message); return; }
-    setForm({ ...form, date: '', note: '' });
-    setAdding(false);
+    setDays([newDayConfig()]);
     load();
+    showToast(`✓ נוצרו ${rows.length} מועדי ראיון`, 'success');
   }
 
   async function deleteSlot(id: string) {
-    if (!confirm('למחוק מועד ראיון? אם מועמדים כבר בחרו בו, ההגשות שלהם יישמרו אך ללא מועד משויך.')) return;
     await supabase.from('public_interview_slots').delete().eq('id', id);
     load();
   }
 
-  async function addSequentialSlots() {
-    if (!bulkForm.date || !bulkForm.startTime || !bulkForm.endTime) { alert('חסרים תאריך / שעות'); return; }
-    const [sh, sm] = bulkForm.startTime.split(':').map(Number);
-    const [eh, em] = bulkForm.endTime.split(':').map(Number);
-    const startMin = sh * 60 + sm;
-    const endMin = eh * 60 + em;
-    const step = Math.max(5, bulkForm.minutesEach);
-    if (endMin <= startMin) { alert('שעת הסיום חייבת להיות אחרי שעת ההתחלה'); return; }
-    const rows: any[] = [];
-    for (let t = startMin; t + step <= endMin; t += step) {
-      const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-      rows.push({
-        id: randomId('slot'),
-        date: bulkForm.date,
-        start_time: fmt(t),
-        end_time: fmt(t + step),
-        capacity: 1,
-        booked_count: 0,
-        course_name: bulkForm.courseName || null,
-        note: bulkForm.note || null,
-      });
+  async function deleteAll() {
+    const ids = slots.map(s => s.id);
+    for (let i = 0; i < ids.length; i += 20) {
+      await supabase.from('public_interview_slots').delete().in('id', ids.slice(i, i + 20));
     }
-    if (rows.length === 0) { alert('טווח השעות קצר מדי ליצירת מועד'); return; }
-    if (!confirm(`יווצרו ${rows.length} מועדים של ${step} דקות כל אחד, קיבולת 1. להמשיך?`)) return;
-    setSaving(true);
-    const { error } = await supabase.from('public_interview_slots').insert(rows);
-    setSaving(false);
-    if (error) { alert('שגיאה: ' + error.message); return; }
-    setBulkOpen(false);
+    setConfirmDeleteAll(false);
+    load();
+    showToast(`✓ נמחקו ${ids.length} מועדים`, 'success');
+  }
+
+  function startEdit(s: SlotRow) {
+    setEditingId(s.id);
+    setEditForm({ start_time: s.start_time, end_time: s.end_time, note: s.note || '' });
+  }
+
+  async function saveEdit(id: string) {
+    const { error: err } = await supabase.from('public_interview_slots')
+      .update({ start_time: editForm.start_time, end_time: editForm.end_time, note: editForm.note || null })
+      .eq('id', id);
+    if (err) { alert('שגיאה: ' + err.message); return; }
+    setEditingId(null);
     load();
   }
 
+  // Group existing slots by date for display
+  const byDate: Record<string, SlotRow[]> = {};
+  for (const s of slots) { (byDate[s.date] = byDate[s.date] || []).push(s); }
+
   return (
     <Section title="מועדי ראיון" count={slots.length}>
-      <div className="mb-3 inline-block mono text-[10px] uppercase tracking-[0.14em] px-2 py-1 rounded"
-        style={{ background: 'var(--accent)', color: 'var(--bg)' }}>
-        v2.0 · 23/4 15:30
-      </div>
-      <p className="text-[13.5px] leading-[1.55] mb-4" style={{ color: 'var(--text-soft)' }}>
-        הוסף מועדי ראיון קבועים. מועמדים שמגישים טופס הרשמה יראו את המועדים הזמינים (שעדיין לא מולאו) ויבחרו אחד.
+      <p className="text-[13.5px] leading-[1.55] mb-5" style={{ color: 'var(--text-soft)' }}>
+        הגדר ימי ראיון — כל מועמד שמגיש טופס יבחר שעה פנויה. כל ראיון מקבל מקום אחד (קיבולת 1).
       </p>
 
-      <div className="mb-5 flex gap-2 flex-wrap items-center rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.08)', border: '2px solid var(--accent)' }}>
-        <button onClick={() => setBulkOpen(true)} className="btn btn-primary" style={{ fontSize: '15px', padding: '14px 20px' }}>
-          📅 צור רצף מועדים (מומלץ) <span className="serif text-[16px]">→</span>
-        </button>
-        <button onClick={() => setAdding(true)} className="btn">
-          + מועד בודד
-        </button>
-      </div>
+      {/* Main action button */}
+      <button
+        onClick={() => { setPlannerOpen(v => !v); }}
+        className="btn btn-primary mb-6"
+        style={{ fontSize: '14px', padding: '12px 20px' }}
+      >
+        📅 {plannerOpen ? 'סגור תכנון' : 'תכנן מועדי ראיון'}
+      </button>
 
-      <p className="text-[12px] leading-[1.5] mb-5" style={{ color: 'var(--text-soft)' }}>
-        <strong style={{ color: 'var(--ink)' }}>רצף מועדים</strong> יוצר סלוטים נפרדים של 30 דקות (או לכל משך שתבחר) — כל מועמד בוחר שעה אחרת.
-        <br />
-        <strong style={{ color: 'var(--ink)' }}>מועד בודד</strong> יוצר סלוט אחד; אם הקיבולת שלו גדולה מ‑1, כל המועמדים יקבלו את אותה שעה (למשל ראיון קבוצתי).
-      </p>
+      {/* ── Multi-day planner ── */}
+      {plannerOpen && (
+        <div className="mb-8 rounded-2xl p-5" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--accent)' }}>
+          <div className="mono text-[11px] uppercase tracking-[0.18em] font-semibold mb-4" style={{ color: 'var(--accent)' }}>
+            תכנון מועדי ראיון
+          </div>
 
+          <div className="space-y-3">
+            {days.map((d, i) => (
+              <div key={d.uid} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid var(--divider)' }}>
+                {/* Row header */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-soft)' }}>
+                    יום {i + 1}
+                    {countSlots(d) > 0 && (
+                      <span style={{ color: 'var(--accent)', marginRight: '8px' }}>· {countSlots(d)} מועדים</span>
+                    )}
+                  </span>
+                  {days.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setDays(ds => ds.filter(x => x.uid !== d.uid))}
+                      className="mono text-[11px] opacity-50 hover:opacity-100"
+                      style={{ color: 'var(--accent)' }}
+                    >✕ הסר</button>
+                  )}
+                </div>
+
+                {/* Fields — stack on mobile, row on wider screens */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-2">
+                  <div className="flex flex-col gap-1 sm:w-36">
+                    <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>תאריך</label>
+                    <input type="date" value={d.date} dir="ltr"
+                      onChange={e => updateDay(d.uid, { date: e.target.value })}
+                      className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                  </div>
+                  <div className="flex gap-2 flex-1">
+                    <div className="flex flex-col gap-1 flex-1 min-w-[80px]">
+                      <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>התחלה</label>
+                      <input type="time" value={d.startTime} dir="ltr"
+                        onChange={e => updateDay(d.uid, { startTime: e.target.value })}
+                        className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 flex-1 min-w-[80px]">
+                      <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>סיום</label>
+                      <input type="time" value={d.endTime} dir="ltr"
+                        onChange={e => updateDay(d.uid, { endTime: e.target.value })}
+                        className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                    </div>
+                    <div className="flex flex-col gap-1 w-20 shrink-0">
+                      <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>דק׳ לראיון</label>
+                      <input type="number" min={5} max={120} value={d.minutesEach}
+                        onChange={e => updateDay(d.uid, { minutesEach: Number(e.target.value) || 15 })}
+                        className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 sm:flex-1 sm:min-w-[120px]">
+                    <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>הערה (אופציונלי)</label>
+                    <input type="text" value={d.note} placeholder="למשל: זום / קמפוס"
+                      onChange={e => updateDay(d.uid, { note: e.target.value })}
+                      className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Add day */}
+          <button
+            type="button"
+            onClick={() => setDays(ds => [...ds, newDayConfig()])}
+            className="mt-3 mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2 rounded-full border w-full"
+            style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}
+          >
+            + הוסף יום נוסף
+          </button>
+
+          {/* Summary + generate */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 pt-4"
+            style={{ borderTop: '1px solid var(--divider)' }}>
+            <div className="text-[13px]" style={{ color: 'var(--text-soft)' }}>
+              {totalPreview > 0
+                ? <><strong style={{ color: 'var(--ink)' }}>{totalPreview} מועדים</strong> ב‑{validDays.length} ימים</>
+                : 'הגדר תאריך ושעות כדי לראות תצוגה מקדימה'}
+            </div>
+            <div className="flex gap-2 items-center">
+              <button
+                type="button"
+                onClick={() => { setPlannerOpen(false); setDays([newDayConfig()]); }}
+                className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100 px-3"
+                style={{ color: 'var(--ink)' }}
+              >בטל</button>
+              <button
+                type="button"
+                onClick={generateAll}
+                disabled={saving}
+                className="btn btn-primary disabled:opacity-50"
+                style={{ fontSize: '13px', padding: '10px 18px' }}
+              >
+                {saving ? 'יוצר...' : totalPreview > 0 ? `צור ${totalPreview} מועדים →` : 'צור מועדים →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Existing slots ── */}
       {error ? (
         <div className="py-4 text-[14px]" style={{ color: 'var(--accent)' }}>⚠ {error}</div>
       ) : slots.length === 0 ? (
@@ -750,82 +899,94 @@ function SlotsSection({ data }: PageProps) {
           אין מועדי ראיון מוגדרים. מועמדים שמגישים כרגע לא רואים אפשרות בחירת מועד.
         </div>
       ) : (
-        <ul>
-          {slots.map(s => {
-            const full = s.booked_count >= s.capacity;
-            return (
-              <li key={s.id} className="flex items-baseline gap-4 py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
-                <div className="serif text-[22px] leading-none w-14 shrink-0" style={{ color: 'var(--ink)' }}>
-                  {new Date(s.date).toLocaleDateString('he-IL', { day: '2-digit', month: 'short' })}
-                </div>
-                <div className="flex-1">
-                  <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>
-                    {s.start_time}–{s.end_time}
-                    {s.course_name && <span className="mono text-[11px] uppercase tracking-[0.14em] mr-3" style={{ color: 'var(--text-soft)' }}>· {s.course_name}</span>}
-                  </div>
-                  {s.note && <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{s.note}</div>}
-                </div>
-                <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 py-1 rounded-full"
-                  style={{
-                    color: full ? 'var(--bg)' : 'var(--accent)',
-                    background: full ? 'var(--accent)' : 'rgba(122,30,43,0.08)',
-                  }}>
-                  {s.booked_count}/{s.capacity} {full ? 'מלא' : 'פנוי'}
-                </span>
-                <button onClick={() => deleteSlot(s.id)}
-                  className="mono text-[12px] uppercase tracking-[0.14em] opacity-70 hover:opacity-100"
-                  style={{ color: 'var(--accent)' }}>🗑</button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {adding ? (
-        <div className="mt-5 rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
-          <div className="chapter-mark mb-3" style={{ fontSize: '11px' }}>מועד חדש</div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <LabelledInput label="תאריך" type="date" value={form.date} onChange={(v: string) => setForm({ ...form, date: v })} />
-            <LabelledInput label="שעת התחלה" type="time" value={form.startTime} onChange={(v: string) => setForm({ ...form, startTime: v })} />
-            <LabelledInput label="שעת סיום" type="time" value={form.endTime} onChange={(v: string) => setForm({ ...form, endTime: v })} />
-            <LabelledInput label="קיבולת (מועמדים)" type="number" value={String(form.capacity)} onChange={(v: string) => setForm({ ...form, capacity: Number(v) || 1 })} />
-            <LabelledSelect label="קורס (אופציונלי — כל הקורסים אם ריק)"
-              value={form.courseName}
-              onChange={(v: string) => setForm({ ...form, courseName: v })}
-              options={['', ...courses.map(c => c.name)]} />
-            <LabelledInput label="הערה" value={form.note} onChange={(v: string) => setForm({ ...form, note: v })} placeholder="למשל: ראיון זום" />
+        <>
+          <div className="flex items-center justify-between mb-2">
+            <span className="mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
+              {slots.length} מועדים מוגדרים
+            </span>
+            {confirmDeleteAll ? (
+              <span className="flex items-center gap-2">
+                <button onClick={deleteAll} className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--accent)' }}>
+                  אשר מחיקה
+                </button>
+                <button onClick={() => setConfirmDeleteAll(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>
+                  ביטול
+                </button>
+              </span>
+            ) : (
+              <button onClick={() => setConfirmDeleteAll(true)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
+                style={{ color: 'var(--accent)' }}>
+                🗑 מחק הכל
+              </button>
+            )}
           </div>
-          <div className="flex gap-2">
-            <button onClick={addSlot} disabled={saving} className="btn btn-primary disabled:opacity-50">הוסף {saving ? '...' : ''} <span className="serif text-[16px]">→</span></button>
-            <button onClick={() => setAdding(false)}
-              className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">בטל</button>
-          </div>
-        </div>
-      ) : null}
-
-      {bulkOpen && (
-        <div className="mt-5 rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
-          <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>רצף מועדים</div>
-          <p className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
-            יווצרו מועדים רציפים בתאריך הזה, קיבולת 1 לכל אחד — כל מועמד יבחר שעה נפרדת.
-          </p>
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <LabelledInput label="תאריך" type="date" value={bulkForm.date} onChange={(v: string) => setBulkForm({ ...bulkForm, date: v })} />
-            <LabelledInput label="שעת התחלה" type="time" value={bulkForm.startTime} onChange={(v: string) => setBulkForm({ ...bulkForm, startTime: v })} />
-            <LabelledInput label="שעת סיום" type="time" value={bulkForm.endTime} onChange={(v: string) => setBulkForm({ ...bulkForm, endTime: v })} />
-            <LabelledInput label="דקות לכל ראיון" type="number" value={String(bulkForm.minutesEach)} onChange={(v: string) => setBulkForm({ ...bulkForm, minutesEach: Number(v) || 30 })} />
-            <LabelledSelect label="קורס (אופציונלי)"
-              value={bulkForm.courseName}
-              onChange={(v: string) => setBulkForm({ ...bulkForm, courseName: v })}
-              options={['', ...courses.map(c => c.name)]} />
-            <LabelledInput label="הערה" value={bulkForm.note} onChange={(v: string) => setBulkForm({ ...bulkForm, note: v })} placeholder="למשל: ראיון זום" />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={addSequentialSlots} disabled={saving} className="btn btn-primary disabled:opacity-50">צור {saving ? '...' : ''} <span className="serif text-[16px]">→</span></button>
-            <button onClick={() => setBulkOpen(false)}
-              className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">בטל</button>
-          </div>
-        </div>
+          {Object.entries(byDate).map(([date, daySlots]) => (
+            <div key={date} className="mb-4">
+              <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold py-2 mb-1"
+                style={{ color: 'var(--text-soft)', borderBottom: '1px solid var(--divider)' }}>
+                {new Date(date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}
+                <span className="mr-2 opacity-60">· {daySlots.length} מועדים</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {daySlots.map(s => {
+                  const full = s.booked_count >= s.capacity;
+                  if (editingId === s.id) {
+                    return (
+                      <div key={s.id} className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl w-full"
+                        style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--accent)' }}>
+                        <input type="time" value={editForm.start_time} dir="ltr"
+                          onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))}
+                          className="input" style={{ fontSize: '13px', padding: '5px 8px', width: '100px' }} />
+                        <span className="mono text-[12px]" style={{ color: 'var(--text-soft)' }}>–</span>
+                        <input type="time" value={editForm.end_time} dir="ltr"
+                          onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))}
+                          className="input" style={{ fontSize: '13px', padding: '5px 8px', width: '100px' }} />
+                        <input type="text" value={editForm.note} placeholder="הערה"
+                          onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
+                          className="input flex-1 min-w-[80px]" style={{ fontSize: '13px', padding: '5px 8px' }} />
+                        <button onClick={() => saveEdit(s.id)} className="btn btn-primary" style={{ fontSize: '12px', padding: '5px 12px' }}>שמור</button>
+                        <button onClick={() => setEditingId(null)} className="mono text-[11px] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>בטל</button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={s.id}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+                      style={{
+                        background: full ? 'var(--accent)' : 'rgba(122,30,43,0.07)',
+                        border: '1px solid',
+                        borderColor: full ? 'var(--accent)' : 'var(--divider)',
+                      }}>
+                      <span className="mono text-[12px] tracking-[0.06em]"
+                        style={{ color: full ? 'var(--bg)' : 'var(--ink)' }}>
+                        {s.start_time}–{s.end_time}
+                      </span>
+                      {s.note && (
+                        <span className="text-[11px]" style={{ color: full ? 'rgba(255,255,255,0.7)' : 'var(--text-soft)' }}>
+                          · {s.note}
+                        </span>
+                      )}
+                      {s.booked_count > 0 && (
+                        <span className="mono text-[9px] uppercase tracking-[0.1em]"
+                          style={{ color: full ? 'rgba(255,255,255,0.8)' : 'var(--accent)' }}>
+                          {s.booked_count}/{s.capacity}
+                        </span>
+                      )}
+                      {!full && (
+                        <button onClick={() => startEdit(s)}
+                          className="opacity-40 hover:opacity-100 text-[11px] leading-none"
+                          style={{ color: 'var(--ink)' }}>✎</button>
+                      )}
+                      <button onClick={() => deleteSlot(s.id)}
+                        className="opacity-40 hover:opacity-100 text-[11px] leading-none"
+                        style={{ color: full ? 'var(--bg)' : 'var(--accent)' }}>✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </>
       )}
     </Section>
   );
@@ -957,9 +1118,10 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
                   🗂 תיקיות
                 </button>
                 <button onClick={() => setEditing(c.id)}
-                  className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-3 py-1 rounded-full border"
-                  style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>
-                  ערוך
+                  className="w-7 h-7 rounded-full grid place-items-center hover:bg-[rgba(122,30,43,0.08)]"
+                  style={{ color: 'var(--ink)' }}
+                  title="ערוך קורס">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
                 <button onClick={() => deleteCourse(c)}
                   className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-70 hover:opacity-100"

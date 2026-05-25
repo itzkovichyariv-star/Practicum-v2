@@ -145,7 +145,7 @@ ${form.notes ? '\nהערות: ' + form.notes : ''}`);
             <button type="button" onClick={onClose} className="mono text-[11px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">סגור ✕</button>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="סוג (בחר או הקלד חדש)">
               <Combobox value={form.type||''} onChange={v=>update('type',v)} options={types} placeholder="הרצאה / סדנה / סמינר..."/>
             </Field>
@@ -167,12 +167,12 @@ ${form.notes ? '\nהערות: ' + form.notes : ''}`);
             <Field label="מוסד"><Input value={form.institution||''} onChange={v=>update('institution',v)} placeholder="אוניברסיטת אריאל"/></Field>
 
             <Field label="תאריך"><Input type="date" value={form.date||''} onChange={v=>update('date',v)}/></Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="שעת התחלה"><Input type="time" value={form.startTime||''} onChange={v=>update('startTime',v)}/></Field>
               <Field label="שעת סיום"><Input type="time" value={form.endTime||''} onChange={v=>update('endTime',v)}/></Field>
             </div>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="נושא / כותרת"><Input value={form.topic||''} onChange={v=>update('topic',v)} placeholder="למשל: בניית תכנית התערבות"/></Field>
             </div>
 
@@ -181,14 +181,14 @@ ${form.notes ? '\nהערות: ' + form.notes : ''}`);
             <Field label="טלפון המרצה *" required><Input value={form.lecturerPhone||''} onChange={v=>update('lecturerPhone',v)} placeholder="05X-XXXXXXX" highlight={!form.lecturerPhone?.trim()}/></Field>
             <Field label="אופן העברה"><Select value={form.location||''} onChange={v=>update('location',v)} options={DELIVERY_MODES} placeholder="בחר..."/></Field>
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="קישור / כיתה (זום או מיקום פיזי)"><Input value={form.link||''} onChange={v=>update('link',v)} placeholder="https://... או בניין 100 כיתה 301"/></Field>
             </div>
 
             <Field label="עלות (₪)"><Input value={String(form.cost ?? '')} onChange={v=>update('cost', v)} placeholder="0"/></Field>
             <div />
 
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="הערות"><Textarea value={form.notes||''} onChange={v=>update('notes',v)} rows={3}/></Field>
             </div>
           </div>

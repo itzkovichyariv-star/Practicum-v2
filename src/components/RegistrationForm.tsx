@@ -23,18 +23,27 @@ async function uploadFile(file: File, prefix: string): Promise<string | null> {
   const { error } = await supabase.storage.from('candidate-uploads').upload(path, file, {
     cacheControl: '3600',
     upsert: false,
+    contentType: file.type || 'application/octet-stream',
   });
   if (error) { console.error('upload failed:', error); return null; }
   return path;
 }
 
 export default function RegistrationForm() {
+  // Read URL query params for pre-filled course + year
+  const urlParams = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search)
+    : new URLSearchParams();
+  const urlCourse = urlParams.get('course') || '';
+  const urlYear   = urlParams.get('year')   || '';
+
   const [form, setForm] = useState({
     name: '', phone: '', email: '', city: '',
-    course: '',
-    year: 'תשפ״ז',
+    course: urlCourse,
+    year:   urlYear || 'תשפ״ז',
     notes: '',
   });
+  const locked = !!(urlCourse && urlYear);
   const [cv, setCv] = useState<File | null>(null);
   const [app, setApp] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>('idle');
@@ -74,9 +83,9 @@ export default function RegistrationForm() {
       const yearsSet = new Set<string>(['תשפ״ז', 'תשפ״ו']);
       list.forEach(c => c.year && yearsSet.add(c.year));
       setYears(Array.from(yearsSet).sort().reverse());
-      // Default to first course (newest year)
-      if (!form.course && unique.length > 0) {
-        setForm(f => ({ ...f, course: unique[0].name }));
+      // Default to first course (newest year) — only if not pre-filled via URL
+      if (!urlCourse && unique.length > 0) {
+        setForm(f => f.course ? f : { ...f, course: unique[0].name });
       }
     })();
   }, []);
@@ -250,20 +259,31 @@ export default function RegistrationForm() {
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="שם מלא *"><Input value={form.name} onChange={v => setForm({ ...form, name: v })} required /></Field>
         <Field label="מייל *"><Input type="email" value={form.email} onChange={v => setForm({ ...form, email: v })} required /></Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="טלפון"><Input type="tel" value={form.phone} onChange={v => setForm({ ...form, phone: v })} /></Field>
           <Field label="עיר מגורים"><Input value={form.city} onChange={v => setForm({ ...form, city: v })} /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="קורס">
-            <Select value={form.course} onChange={v => setForm({ ...form, course: v })}
-              options={courses.length > 0 ? courses.map(c => c.name) : ['פרקטיקום משאבי אנוש', 'אחר']} />
-          </Field>
-          <Field label="שנה אקדמית">
-            <Select value={form.year} onChange={v => setForm({ ...form, year: v })}
-              options={years} />
-          </Field>
-        </div>
+        {locked ? (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--divider)' }}>
+            <span className="text-[18px]">🎓</span>
+            <div>
+              <div className="text-[14.5px] font-semibold" style={{ color: 'var(--ink)' }}>{form.course}</div>
+              <div className="mono text-[11px] uppercase tracking-[0.13em]" style={{ color: 'var(--text-soft)' }}>{form.year}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="קורס">
+              <Select value={form.course} onChange={v => setForm({ ...form, course: v })}
+                options={courses.length > 0 ? courses.map(c => c.name) : ['פרקטיקום משאבי אנוש', 'אחר']} />
+            </Field>
+            <Field label="שנה אקדמית">
+              <Select value={form.year} onChange={v => setForm({ ...form, year: v })}
+                options={years} />
+            </Field>
+          </div>
+        )}
 
         <div className="pt-2">
           <FileInput label="קורות חיים (PDF / Word) *" file={cv} onChange={setCv} />

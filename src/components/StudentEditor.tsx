@@ -21,6 +21,7 @@ export default function StudentEditor({
 }: Props) {
   const isNew = !student;
   const [showEval, setShowEval] = useState(false);
+  const [shownFeedbackUrl, setShownFeedbackUrl] = useState('');
   const [form, setForm] = useState<Student>({
     id: student?.id || randomId('s'),
     name: student?.name || '',
@@ -90,15 +91,60 @@ export default function StudentEditor({
     window.open(`https://wa.me/${n}`, '_blank');
   }
 
-  function handleGenerateFeedbackLink() {
+  /** Returns the feedback URL, generating a new token if needed and updating form state. */
+  function ensureFeedbackUrl(): string {
+    if (form.feedbackToken) {
+      return `${window.location.origin}/feedback?token=${encodeURIComponent(form.feedbackToken)}`;
+    }
     const { token, url } = generateFeedbackUrl(form.id, window.location.origin);
     update('feedbackToken', token);
-    // Copy to clipboard for easy sharing
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(() => alert(`קישור משוב הועתק ללוח:\n${url}\n\nשמור את השינויים כדי לשמור את ה‑token.`));
-    } else {
-      alert(`קישור משוב:\n${url}\n\nשמור את השינויים כדי לשמור את ה‑token.`);
+    return url;
+  }
+
+  function handleSendFeedbackEmail() {
+    if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר — מלא/י קודם את שדה "ארגון מאכסן בפועל".'); return; }
+    const url = ensureFeedbackUrl();
+    const emp = employers.find(e => e.name === form.acceptedOrg);
+    const empEmail = emp?.contactEmail || '';
+    const greeting = emp?.contactPerson ? `${emp.contactPerson} שלום,` : 'שלום,';
+    const subject = encodeURIComponent(`בקשה למשוב — ${form.name}`);
+    const body = encodeURIComponent(
+      `${greeting}\n\n` +
+      `בהמשך לפרקטיקום של ${form.name} בארגונכם, נשמח לקבל את משובכם.\n\n` +
+      `לחצו על הקישור הבא למילוי טופס קצר (כ‑2 דקות):\n${url}\n\n` +
+      `בתודה,\nצוות הפרקטיקום · אוניברסיטת אריאל`
+    );
+    setShownFeedbackUrl(url);
+    if (!empEmail) {
+      if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      return;
     }
+    window.open(`mailto:${empEmail}?subject=${subject}&body=${body}`, '_blank');
+  }
+
+  function handleSendFeedbackWhatsApp() {
+    if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר.'); return; }
+    const url = ensureFeedbackUrl();
+    const emp = employers.find(e => e.name === form.acceptedOrg);
+    const empPhone = emp?.contactPhone || '';
+    const msg = encodeURIComponent(
+      `שלום,\nבהמשך לפרקטיקום של ${form.name} בארגונכם,\n` +
+      `נשמח לקבל משוב קצר בקישור הבא:\n${url}`
+    );
+    setShownFeedbackUrl(url);
+    if (!empPhone) {
+      if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      return;
+    }
+    let n = empPhone.replace(/[^\d]/g, '');
+    if (n.startsWith('0')) n = '972' + n.slice(1);
+    window.open(`https://wa.me/${n}?text=${msg}`, '_blank');
+  }
+
+  function handleCopyFeedbackLink() {
+    const url = ensureFeedbackUrl();
+    setShownFeedbackUrl(url);
+    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
   }
 
   return (
@@ -140,7 +186,7 @@ export default function StudentEditor({
           </SectionSub>
 
           <SectionSub title="CV מעודכן (חובה לפני בחירת ארגון)">
-            <div className="col-span-2">
+            <div className="col-span-full">
               <FileField label="קורות חיים מעודכן — אחרי הכנה" value={form.cvUpdatedUrl||''} onChange={v=>update('cvUpdatedUrl',v)}/>
             </div>
           </SectionSub>
@@ -179,7 +225,7 @@ export default function StudentEditor({
           <SectionSub title="ראיון שיבוץ (רחל — תיאום עם מעסיק)">
             <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>
             <Field label="שעת ראיון שיבוץ"><Input type="time" value={form.placementInterviewTime||''} onChange={v=>update('placementInterviewTime',v)}/></Field>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="ארגון לראיון שיבוץ">
                 <Select value={form.placementInterviewOrg||''} onChange={v=>update('placementInterviewOrg',v)}
                   options={employers.map(e=>({value:e.name,label:e.name}))}
@@ -188,7 +234,7 @@ export default function StudentEditor({
               </Field>
             </div>
             {form.feedbackSubmittedAt && (
-              <div className="col-span-2 p-3 rounded-lg text-[13px]" style={{ background: 'rgba(21,128,61,0.08)', color: '#15803d' }}>
+              <div className="col-span-full p-3 rounded-lg text-[13px]" style={{ background: 'rgba(21,128,61,0.08)', color: '#15803d' }}>
                 ✓ המעסיק מילא משוב · {new Date(form.feedbackSubmittedAt).toLocaleDateString('he-IL')}
               </div>
             )}
@@ -214,16 +260,16 @@ export default function StudentEditor({
           <SectionSub title="מסמכים וחוו״ד (קישורי OneDrive / SharePoint)">
             <FileField label="CV — קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
             <FileField label="טופס הגשת מועמדות" value={form.formUrl||''} onChange={v=>update('formUrl',v)}/>
-            <div className="col-span-2">
+            <div className="col-span-full">
               <Field label="חוות דעת מהארגון (טקסט חופשי)"><Textarea rows={3} value={form.feedbackText||''} onChange={v=>update('feedbackText',v)}/></Field>
             </div>
-            <div className="col-span-2 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+            <div className="col-span-full text-[12px]" style={{ color: 'var(--text-soft)' }}>
               💡 הדבק קישור מ‑OneDrive או SharePoint. לחיצה על "פתח" תפתח את הקובץ בחלון חדש.
             </div>
           </SectionSub>
 
           <SectionSub title="הערות">
-            <div className="col-span-2"><Field label="הערות פנימיות"><Textarea rows={3} value={form.notes||''} onChange={v=>update('notes',v)}/></Field></div>
+            <div className="col-span-full"><Field label="הערות פנימיות"><Textarea rows={3} value={form.notes||''} onChange={v=>update('notes',v)}/></Field></div>
           </SectionSub>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
@@ -232,10 +278,44 @@ export default function StudentEditor({
             <button type="button" onClick={openWhatsApp} className="btn" disabled={!form.phone}>WhatsApp</button>
             <button type="button" onClick={openOutlookCompose} className="btn" disabled={!form.email}>מייל (Outlook)</button>
             {!isNew && <button type="button" onClick={() => setShowEval(true)} className="btn">🖨 טופס הערכה</button>}
-            {!isNew && (
-              <button type="button" onClick={handleGenerateFeedbackLink} className="btn" title="צור קישור למשוב מעסיק ושמור ל-Clipboard">
-                🔗 קישור משוב מעסיק
+            {!isNew && !form.feedbackSubmittedAt && (
+              <button type="button" onClick={handleSendFeedbackEmail} className="btn btn-primary" title="שלח למעסיק קישור למילוי משוב — פותח Outlook">
+                📧 שלח משוב למעסיק
               </button>
+            )}
+            {!isNew && !form.feedbackSubmittedAt && (
+              <button type="button" onClick={handleSendFeedbackWhatsApp} className="btn" title="שלח קישור משוב ב‑WhatsApp">
+                💬 WhatsApp למעסיק
+              </button>
+            )}
+            {!isNew && (
+              <button type="button" onClick={handleCopyFeedbackLink} className="btn" title="העתק קישור משוב ללוח">
+                🔗 העתק קישור
+              </button>
+            )}
+            {shownFeedbackUrl && (
+              <div className="w-full mt-1 p-3 rounded-lg flex items-center gap-2 flex-wrap"
+                style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--divider)' }}>
+                <span className="mono text-[10px] uppercase tracking-[0.13em] shrink-0" style={{ color: 'var(--text-soft)' }}>
+                  {form.acceptedOrg && employers.find(e => e.name === form.acceptedOrg)?.contactEmail
+                    ? '✓ הודעה נשלחה — העתק ידנית אם לא נפתח:'
+                    : '⚠ אין מייל לארגון — שלחי ידנית:'}
+                </span>
+                <input
+                  readOnly
+                  value={shownFeedbackUrl}
+                  className="input flex-1 text-[12px] font-mono"
+                  style={{ padding: '6px 10px', minWidth: '200px', direction: 'ltr' }}
+                  onFocus={e => e.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => { if (navigator.clipboard) navigator.clipboard.writeText(shownFeedbackUrl).catch(() => {}); }}
+                  className="btn shrink-0"
+                  style={{ padding: '6px 12px', fontSize: '12px' }}>
+                  העתק
+                </button>
+              </div>
             )}
             {!isNew && onDelete && (
               <button type="button"
@@ -263,7 +343,7 @@ function SectionSub({ title, children }: { title: string; children: any }) {
   return (
     <div className="mb-7">
       <div className="chapter-mark mb-4" style={{ fontSize: '11px' }}>{title}</div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">{children}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">{children}</div>
     </div>
   );
 }

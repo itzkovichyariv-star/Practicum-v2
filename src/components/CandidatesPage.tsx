@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import type { Candidate } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, outlookCalendarUrl } from './pageShared';
@@ -23,6 +24,27 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const [showMsgModal, setShowMsgModal] = useState(false);
   const [msgSubject, setMsgSubject] = useState('');
   const [msgBody, setMsgBody] = useState('');
+
+  // CV updates (unseen uploads from candidates)
+  const [cvUpdates, setCvUpdates] = useState<Record<string, { id: string; cv_file_path: string; uploaded_at: string }>>({});
+
+  useEffect(() => {
+    supabase.from('cv_updates')
+      .select('id, email, cv_file_path, uploaded_at')
+      .is('seen_at', null)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { id: string; cv_file_path: string; uploaded_at: string }> = {};
+        for (const row of data) {
+          const key = (row.email || '').toLowerCase();
+          // Keep most recent per email
+          if (!map[key] || row.uploaded_at > map[key].uploaded_at) {
+            map[key] = { id: row.id, cv_file_path: row.cv_file_path, uploaded_at: row.uploaded_at };
+          }
+        }
+        setCvUpdates(map);
+      });
+  }, []);
 
   const all = data.candidates || [];
   const courses = data.courses || [];
@@ -147,6 +169,22 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       onRefresh();
       setSaveMsg('✓ עבר ראיון והועבר לסטודנטים');
       setTimeout(() => setSaveMsg(null), 3500);
+
+      // Send acceptance email with CV-update link (fire-and-forget)
+      if (c.email) {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess.session?.access_token || 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+        fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-acceptance', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'apikey': 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt',
+          },
+          body: JSON.stringify({ candidate: c }),
+        }).catch(err => console.warn('notify-acceptance failed:', err));
+      }
+
       return;
     }
 
@@ -290,13 +328,13 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   return (
-    <main className="max-w-[1200px] mx-auto px-10 pt-14 pb-28">
+    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">V · מועמדים</div>
-        <div className="flex items-end justify-between gap-10">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="serif text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>מועמדים</h1>
-            <p className="text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>מועמדים</h1>
+            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
               {counts.total === 0
                 ? 'אין מועמדים בהקשר הנוכחי.'
                 : `${counts.total} מועמדים · ${counts.pending} ממתינים · ${counts.passed} עברו · ${counts.failed} לא עברו`}
@@ -462,6 +500,16 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   next.has(c.id) ? next.delete(c.id) : next.add(c.id);
                   setSelectedIds(next);
                 }}
+                cvUpdate={c.email ? cvUpdates[(c.email || '').toLowerCase()] : undefined}
+                onCvUpdateSeen={async (updateId) => {
+                  await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', updateId);
+                  setCvUpdates(prev => {
+                    const next = { ...prev };
+                    const key = (c.email || '').toLowerCase();
+                    delete next[key];
+                    return next;
+                  });
+                }}
               />
             ))}
           </ul>
@@ -485,9 +533,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect }: {
+function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, cvUpdate, onCvUpdateSeen }: {
   c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void;
+  cvUpdate?: { id: string; cv_file_path: string; uploaded_at: string };
+  onCvUpdateSeen?: (id: string) => void;
 }) {
   const r = c.interviewResult || 'pending';
   const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : 'ממתין';
@@ -508,38 +558,47 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
   return (
     <li className="relative group" data-info-row>
       <div onClick={onTogglePin}
-        className="py-5 border-b grid gap-5 items-center cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
-        style={{ borderColor: 'var(--divider)', gridTemplateColumns: 'auto auto 1fr auto auto' }}>
-        <div onClick={e => { e.stopPropagation(); onToggleSelect?.(); }} className="flex items-center pr-1">
-          <input
-            type="checkbox"
-            checked={!!selected}
-            onChange={() => {}}
-            className="w-4 h-4 rounded cursor-pointer"
-            style={{ accentColor: 'var(--accent)' }}
-          />
-        </div>
-        <div className="flex items-center pl-1">
-          <StatusDot status={dotStatus} size={10} />
-        </div>
-        <div>
-          <div className="serif text-[22px] leading-[1.2] tracking-tight mb-1" style={{ color: 'var(--ink)' }}>{c.name || 'ללא שם'}</div>
-          <div className="text-[13.5px] flex flex-wrap gap-x-4 gap-y-1" style={{ color: 'var(--text-soft)' }}>
-            {c.phone && <span dir="ltr">{c.phone}</span>}
-            {c.email && <span>{c.email}</span>}
-            {c.interviewDate && <span>· ראיון: {new Date(c.interviewDate).toLocaleDateString('he-IL')}</span>}
+        className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
+        style={{ borderColor: 'var(--divider)' }}>
+
+        {/* Line 1: checkbox · dot · name · status badge */}
+        <div className="flex items-center gap-2 min-w-0 mb-1.5">
+          <div onClick={e => { e.stopPropagation(); onToggleSelect?.(); }} className="shrink-0">
+            <input type="checkbox" checked={!!selected} onChange={() => {}}
+              className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: 'var(--accent)' }} />
           </div>
-        </div>
-        <div>
-          <span className="mono text-[11px] uppercase tracking-[0.15em] font-semibold whitespace-nowrap px-3 py-1 rounded-full"
-            style={{
-              color: isPass ? 'var(--bg)' : 'var(--accent)',
-              background: isPass ? 'var(--accent)' : 'rgba(122, 30, 43, 0.08)',
-            }}>
+          <StatusDot status={dotStatus} size={9} />
+          <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
+            {c.name || 'ללא שם'}
+          </div>
+          <span className="mono text-[10px] uppercase tracking-[0.13em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap"
+            style={{ color: isPass ? 'var(--bg)' : 'var(--accent)', background: isPass ? 'var(--accent)' : 'rgba(122,30,43,0.08)' }}>
             {label}
           </span>
+          {cvUpdate && (
+            <button
+              type="button"
+              onClick={async e => {
+                e.stopPropagation();
+                const { data } = await supabase.storage.from('candidate-uploads').getPublicUrl(cvUpdate.cv_file_path);
+                window.open(data.publicUrl, '_blank');
+                onCvUpdateSeen?.(cvUpdate.id);
+              }}
+              title={`CV מעודכן הועלה — ${new Date(cvUpdate.uploaded_at).toLocaleDateString('he-IL')}`}
+              className="mono text-[10px] uppercase tracking-[0.13em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap animate-pulse"
+              style={{ color: '#fff', background: '#d97706', border: 'none' }}>
+              CV ✦ חדש
+            </button>
+          )}
         </div>
-        <div onClick={e => e.stopPropagation()}>
+
+        {/* Line 2: contact info · action icons */}
+        <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
+          <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
+            {c.phone && <span dir="ltr">{c.phone}</span>}
+            {c.email && <span className="truncate max-w-[200px]">{c.email}</span>}
+            {c.interviewDate && <span className="whitespace-nowrap">· {new Date(c.interviewDate).toLocaleDateString('he-IL')}</span>}
+          </div>
           <RowActions
             phone={c.phone}
             email={c.email}

@@ -129,11 +129,17 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
   }
 
   async function deleteOne(sub: Submission) {
-    if (!confirm(`למחוק את ההגשה של "${sub.name}"? הפעולה גם מוחקת את קבצי ה‑CV והטופס שהועלו.`)) return;
-    // Remove uploaded files from storage
-    const paths = [sub.cv_file_path, sub.application_file_path].filter(Boolean) as string[];
-    if (paths.length > 0) {
-      await supabase.storage.from('candidate-uploads').remove(paths);
+    const filesWillBeKept = sub.processed;
+    const msg = sub.processed
+      ? `למחוק את רשומת ההגשה של "${sub.name}"?\nהמועמד/ת כבר נקלט/ה — הקבצים יישמרו בכרטיס המועמד.`
+      : `למחוק את ההגשה של "${sub.name}"? הפעולה גם מוחקת את קבצי ה‑CV והטופס שהועלו.`;
+    if (!confirm(msg)) return;
+    // Only remove files from storage if submission was NOT processed (files not yet linked to a candidate)
+    if (!filesWillBeKept) {
+      const paths = [sub.cv_file_path, sub.application_file_path].filter(Boolean) as string[];
+      if (paths.length > 0) {
+        await supabase.storage.from('candidate-uploads').remove(paths);
+      }
     }
     // Remove submission row
     await supabase.from('candidate_submissions').delete().eq('id', sub.id);
@@ -147,9 +153,15 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
   async function deleteSelected() {
     const selected = submissions.filter(s => selectedIds.has(s.id));
     if (selected.length === 0) return;
-    if (!confirm(`למחוק ${selected.length} הגשות וגם את כל הקבצים שלהן?\nפעולה זו לא ניתנת לשחזור.`)) return;
+    const unprocessed = selected.filter(s => !s.processed);
+    const processed   = selected.filter(s =>  s.processed);
+    const msg = processed.length > 0
+      ? `למחוק ${selected.length} הגשות?\n${unprocessed.length} שלא נקלטו — הקבצים שלהן יימחקו.\n${processed.length} שנקלטו — הקבצים יישמרו בכרטיסי המועמדים.\nפעולה זו לא ניתנת לשחזור.`
+      : `למחוק ${selected.length} הגשות וגם את כל הקבצים שלהן?\nפעולה זו לא ניתנת לשחזור.`;
+    if (!confirm(msg)) return;
+    // Only delete files for unprocessed submissions
     const paths: string[] = [];
-    for (const s of selected) {
+    for (const s of unprocessed) {
       if (s.cv_file_path) paths.push(s.cv_file_path);
       if (s.application_file_path) paths.push(s.application_file_path);
     }
@@ -204,7 +216,7 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
         <div className="p-8 text-center text-[14px]" style={{ color: 'var(--text-soft)' }}>
           אין הגשות חדשות. הפצת קישור הרשמה:
           <div className="mono text-[12px] mt-3 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--ink)', userSelect: 'all', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>
-            {location.origin}/Practicum-v2/register/
+            {location.origin}/register/?course=פרקטיקום+משאבי+אנוש&year=תשפ״ז
           </div>
         </div>
       ) : (
@@ -290,15 +302,45 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
 }
 
 function FilePill({ label, path }: { label: string; path: string }) {
+  const [loading, setLoading] = useState(false);
+
   async function open() {
-    const { data } = await supabase.storage.from('candidate-uploads').createSignedUrl(path, 60);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+    const ext = path.split('.').pop()?.toLowerCase() || '';
+    const isWord = ext === 'docx' || ext === 'doc';
+
+    const { data } = supabase.storage.from('candidate-uploads').getPublicUrl(path);
+    const publicUrl = data.publicUrl;
+
+    if (isWord) {
+      // Word: Office Online viewer — synchronous, no popup blocker issue
+      const target = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(publicUrl)}`;
+      window.open(target, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // PDF: fetch via public URL, force application/pdf so browser shows inline (not download)
+    setLoading(true);
+    const win = window.open('about:blank', '_blank'); // open before await
+    try {
+      const resp = await fetch(publicUrl);
+      const buf = await resp.arrayBuffer();
+      const blob = new Blob([buf], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(blob);
+      if (win) win.location.href = blobUrl;
+      else window.open(blobUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
+    } catch {
+      if (win) win.location.href = publicUrl;
+      else window.open(publicUrl, '_blank');
+    }
+    setLoading(false);
   }
+
   return (
-    <button onClick={open}
-      className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-1 rounded-full border hover:bg-[rgba(122,30,43,0.08)]"
+    <button onClick={open} disabled={loading}
+      className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-1 rounded-full border hover:bg-[rgba(122,30,43,0.08)] disabled:opacity-50"
       style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-      {label} ↗
+      {loading ? '...' : `${label} ↗`}
     </button>
   );
 }
