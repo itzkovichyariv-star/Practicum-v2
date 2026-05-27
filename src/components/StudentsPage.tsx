@@ -1,21 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Student, Candidate } from '../lib/supabase';
+import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
+import type { Student, Candidate, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
+import PlacementPanel from './PlacementPanel';
 import ExcelImport from './ExcelImport';
+// email sending is via Outlook (mailto:) — no direct API imports needed
+import { openMailto } from '../lib/openMailto';
 
 type Filters = {
   search: string;
   stage: 'all' | 'prep' | 'placed' | 'hired' | 'completed' | 'notplaced';
+  dotFilter: 'all' | 'green' | 'amber' | 'gray';
 };
 
-const emptyFilters: Filters = { search: '', stage: 'all' };
+const emptyFilters: Filters = { search: '', stage: 'all', dotFilter: 'all' };
 
-export default function StudentsPage({ data, context, userName, onRefresh }: PageProps) {
+export default function StudentsPage({ data, context, userName, onRefresh }: PageProps & { data: any }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [editing, setEditing] = useState<Student | null>(null);
   const [creating, setCreating] = useState(false);
@@ -23,24 +28,116 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
-  const [cvUpdates, setCvUpdates] = useState<Record<string, { id: string; cv_file_path: string; uploaded_at: string }>>({});
+  const [deleteDialog, setDeleteDialog] = useState<Student | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const [showMailModal, setShowMailModal] = useState(false);
+  const [mailSubject, setMailSubject] = useState('');
+  const [mailBody, setMailBody] = useState('');
 
+  // Email confirmation state — mandatory before any API send
+  type EmailConfirm = {
+    type: 'acceptance' | 'rejection';
+    recipients: Array<{ id: string; name: string; email: string }>;
+    subject: string;
+    body: string;
+  };
+  const [emailConfirm, setEmailConfirm] = useState<EmailConfirm | null>(null);
+
+  const EMAIL_TEMPLATES = {
+    acceptance: {
+      subject: 'אישור שיבוץ לפרקטיקום',
+      body: `שלום {{שם}},
+
+אנו שמחים לאשר כי שובצת בהצלחה למסגרת הפרקטיקום.
+
+להמשך התהליך:
+• יצירת קשר עם הארגון המאכסן לתיאום יום הפגישה הראשון
+• דיווח שעות שבועי בהתאם לדרישות התכנית
+• פנייה לצוות הפרקטיקום בכל שאלה
+
+נשמח לתמוך בך לאורך כל התהליך.
+
+בהצלחה,
+צוות הפרקטיקום · אוניברסיטת אריאל`,
+    },
+    rejection: {
+      subject: 'עדכון סטטוס פרקטיקום',
+      body: `שלום {{שם}},
+
+בהמשך לתהליך השיבוץ לפרקטיקום, ברצוננו ליידעך כי חלו שינויים בסטטוס הבקשה שלך.
+
+צוות הפרקטיקום יצור עמך קשר בהקדם לדיון בשלבים הבאים.
+
+בברכה,
+צוות הפרקטיקום · אוניברסיטת אריאל`,
+    },
+  } as const;
+
+  function openEmailConfirm(type: 'acceptance' | 'rejection', recipients: Array<{ id: string; name: string; email: string }>) {
+    if (!recipients.length) { showToast('לאף אחד מהנבחרים אין מייל', 'error'); return; }
+    setEmailConfirm({ type, recipients, subject: EMAIL_TEMPLATES[type].subject, body: EMAIL_TEMPLATES[type].body });
+  }
+
+  function sendConfirmedEmail() {
+    if (!emailConfirm) return;
+    const { type, recipients, subject, body } = emailConfirm;
+
+    if (recipients.length === 1) {
+      const r = recipients[0];
+      const personalBody = body.replace(/\{\{שם\}\}/g, r.name);
+      openMailto(`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`);
+    } else {
+      const bcc = recipients.map(r => r.email).filter(Boolean).join(',');
+      const groupBody = body.replace(/\{\{שם\}\}/g, '[שם הנמען]');
+      openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(groupBody)}`);
+    }
+
+    // Optimistically mark as sent
+    const next = [...all];
+    const field = type === 'acceptance' ? 'acceptanceEmailSent' : 'rejectionEmailSent';
+    for (const rec of recipients) {
+      const i = next.findIndex(s => s.id === rec.id);
+      if (i >= 0) next[i] = { ...next[i], [field]: true };
+    }
+    persistAndRefresh(next, `✉ Outlook נפתח ל‑${recipients.length} נמענים`);
+    setEmailConfirm(null);
+    setSelectedIds(new Set()); setSelectMode(false);
+    showToast(`✓ נפתח Outlook ל‑${recipients.length} נמענים`, 'success');
+  }
+
+  // Auto-process new CV uploads on mount — mark seen + save cvUpdatedUrl silently
   useEffect(() => {
-    supabase.from('cv_updates')
-      .select('id, email, cv_file_path, uploaded_at')
-      .is('seen_at', null)
-      .then(({ data: rows }) => {
-        if (!rows) return;
-        const map: Record<string, { id: string; cv_file_path: string; uploaded_at: string }> = {};
-        for (const row of rows) {
-          const key = (row.email || '').toLowerCase();
-          if (!map[key] || row.uploaded_at > map[key].uploaded_at) {
-            map[key] = { id: row.id, cv_file_path: row.cv_file_path, uploaded_at: row.uploaded_at };
-          }
-        }
-        setCvUpdates(map);
+    (async () => {
+      const { data: rows } = await supabase.from('cv_updates')
+        .select('id, email, cv_file_path, uploaded_at')
+        .is('seen_at', null);
+      if (!rows || rows.length === 0) return;
+
+      // Pick latest upload per email
+      const byEmail: Record<string, { id: string; email: string; cv_file_path: string; uploaded_at: string }> = {};
+      for (const row of rows) {
+        const key = (row.email || '').toLowerCase();
+        if (!byEmail[key] || row.uploaded_at > byEmail[key].uploaded_at) byEmail[key] = { ...row, email: key };
+      }
+
+      // Only process students who don't yet have cvUpdatedUrl set
+      const currentAll = data.students || [];
+      const toProcess = Object.values(byEmail).filter(r => {
+        const s = currentAll.find(st => (st.email || '').toLowerCase() === r.email);
+        return s && !s.cvUpdatedUrl;
       });
-  }, []);
+      if (toProcess.length === 0) return;
+
+      const next = [...currentAll];
+      for (const item of toProcess) {
+        await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', item.id);
+        const idx = next.findIndex(s => (s.email || '').toLowerCase() === item.email);
+        if (idx >= 0) next[idx] = { ...next[idx], cvUpdatedUrl: `storage://candidate-uploads/${item.cv_file_path}` };
+      }
+      await persistAndRefresh(next, `✓ CV מעודכן נשמר אוטומטית`);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const all = data.students || [];
   const courses = data.courses || [];
@@ -64,6 +161,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       if (filters.stage === 'hired' && !s.hired) return false;
       if (filters.stage === 'completed' && !s.practicumCompleted) return false;
       if (filters.stage === 'notplaced' && (s.acceptedOrg || s.hired || s.practicumCompleted)) return false;
+      if (filters.dotFilter !== 'all') {
+        const dot: DotStatus = s.practicumCompleted ? 'amber'
+          : (s.hired || s.acceptedOrg ? 'green'
+          : (s.preparation?.passed ? 'amber' : 'gray'));
+        if (dot !== filters.dotFilter) return false;
+      }
       if (q) {
         const hay = [s.name, s.phone, s.email, s.city, s.acceptedOrg, s.notes].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
@@ -140,9 +243,41 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     // Do NOT close the editor
   }
 
-  async function handleDelete(id: string) {
+  function handleDelete(id: string) {
+    const student = all.find(s => s.id === id);
+    if (!student) return;
     setEditing(null);
-    await persistAndRefresh(all.filter(s => s.id !== id), '✓ הסטודנט/ית נמחקו');
+    setDeleteDialog(student);
+  }
+
+  async function confirmDeleteAll(student: Student) {
+    setDeleteDialog(null);
+    const candidates = (data.candidates as Candidate[]) || [];
+    const linked = student.fromCandidateId
+      ? candidates.find(c => c.id === student.fromCandidateId)
+      : candidates.find(c => (c.email || '').toLowerCase() === (student.email || '').toLowerCase());
+    const nextStudents = all.filter(s => s.id !== student.id);
+    const nextCandidates = linked ? candidates.filter(c => c.id !== linked.id) : candidates;
+    setSaving(true);
+    const res = await saveSnapshot(
+      { ...data, students: nextStudents, candidates: nextCandidates },
+      { name: userName },
+      { action: 'נמחק לחלוטין', entity: 'סטודנט', target: student.name }
+    );
+    setSaving(false);
+    if (res.ok) {
+      (data.students as Student[]) = nextStudents;
+      (data.candidates as Candidate[]) = nextCandidates;
+      onRefresh();
+      showToast(`✓ ${student.name} נמחק/ה לחלוטין (כולל מועמדות)`, 'success');
+    } else {
+      showToast('שגיאה: ' + (res.error || ''), 'error');
+    }
+  }
+
+  async function confirmKeepAsCandidate(student: Student) {
+    setDeleteDialog(null);
+    await persistAndRefresh(all.filter(s => s.id !== student.id), `✓ ${student.name} הוסר/ה כסטודנט, נשמר/ה כמועמד`);
   }
 
   async function handleRevertToCandidate(s: Student) {
@@ -199,16 +334,31 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             </p>
           </div>
           <div className="flex flex-row md:flex-col gap-2 items-start md:items-end flex-wrap">
-            <button onClick={() => setCreating(true)} style={{
-              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>+ חדש/ה →</button>
-            <button onClick={() => setShowImport(s => !s)}
-              className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
-              style={{ color: 'var(--accent)' }}>
-              📊 {showImport ? 'סגור' : 'Excel'}
-            </button>
+            <button onClick={() => setCreating(true)} style={btnPrimary()}>+ חדש/ה →</button>
+            <div className="flex gap-2 flex-wrap justify-end">
+              <button
+                onClick={() => { setSelectMode(s => !s); if (selectMode) setSelectedIds(new Set()); }}
+                className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+                style={{ color: selectMode ? 'var(--accent)' : 'var(--text-soft)' }}>
+                {selectMode ? '✕ בטל מצב בחירה' : '☑ בחר מספר'}
+              </button>
+              {selectMode && (
+                <button
+                  onClick={() => {
+                    const allSelected = filtered.every(s => selectedIds.has(s.id));
+                    setSelectedIds(allSelected ? new Set() : new Set(filtered.map(s => s.id)));
+                  }}
+                  className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+                  style={{ color: filtered.every(s => selectedIds.has(s.id)) && filtered.length > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
+                  {filtered.every(s => selectedIds.has(s.id)) && filtered.length > 0 ? '✕ בטל הכל' : '☑ בחר הכל'}
+                </button>
+              )}
+              <button onClick={() => setShowImport(s => !s)}
+                className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+                style={{ color: 'var(--accent)' }}>
+                📊 {showImport ? 'סגור' : 'Excel'}
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -267,6 +417,35 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         })}
       </div>
 
+      {/* Dot-color filter chips (item 9) */}
+      <div className="flex flex-wrap gap-2 mb-6 items-center">
+        <span className="mono text-[10px] uppercase tracking-[0.14em] shrink-0" style={{ color: 'var(--text-soft)' }}>סטטוס:</span>
+        {([
+          ['all',   'הכל',            null   ],
+          ['green', 'שובצו / נקלטו',  'green'],
+          ['amber', 'הכנה / סיימו',   'amber'],
+          ['gray',  'ממתינים',         'gray' ],
+        ] as const).map(([key, label, dot]) => {
+          const active = filters.dotFilter === key;
+          const dotBg: Record<string, string> = { green: 'rgba(16,185,129,0.08)', amber: 'rgba(217,119,6,0.08)', gray: 'rgba(0,0,0,0.05)' };
+          return (
+            <button
+              key={key}
+              onClick={() => setFilters(f => ({ ...f, dotFilter: key }))}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full border mono text-[10px] uppercase tracking-[0.12em] font-semibold transition-colors"
+              style={{
+                borderColor: active ? (dot ? `var(--tl-${dot})` : 'var(--accent)') : 'var(--divider)',
+                color: active ? (dot ? `var(--tl-${dot})` : 'var(--accent)') : 'var(--text-soft)',
+                background: active ? (dot ? dotBg[dot] : 'rgba(122,30,43,0.06)') : 'transparent',
+              }}
+            >
+              {dot && <StatusDot status={dot} size={6} />}
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* List */}
       <section>
         {filtered.length === 0 ? (
@@ -283,16 +462,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                   <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
                     pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                     onRevert={() => handleRevertToCandidate(s)}
-                    cvUpdate={s.email ? cvUpdates[(s.email || '').toLowerCase()] : undefined}
-                    onCvUpdateSeen={async (updateId, filePath) => {
-                      await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', updateId);
-                      const idx = all.findIndex(x => x.id === s.id);
-                      if (idx >= 0) {
-                        const next = [...all];
-                        next[idx] = { ...next[idx], cvUpdatedUrl: `storage://candidate-uploads/${filePath}` };
-                        await persistAndRefresh(next, `✓ CV מעודכן נשמר עבור ${s.name}`);
-                      }
-                      setCvUpdates(prev => { const n = { ...prev }; delete n[(s.email || '').toLowerCase()]; return n; });
+                    selectMode={selectMode}
+                    selected={selectedIds.has(s.id)}
+                    onToggleSelect={() => {
+                      const next = new Set(selectedIds);
+                      next.has(s.id) ? next.delete(s.id) : next.add(s.id);
+                      setSelectedIds(next);
                     }} />
                 ))}
               </ul>
@@ -304,21 +479,207 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
                 pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                 onRevert={() => handleRevertToCandidate(s)}
-                cvUpdate={s.email ? cvUpdates[(s.email || '').toLowerCase()] : undefined}
-                onCvUpdateSeen={async (updateId, filePath) => {
-                  await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', updateId);
-                  const idx = all.findIndex(x => x.id === s.id);
-                  if (idx >= 0) {
-                    const next = [...all];
-                    next[idx] = { ...next[idx], cvUpdatedUrl: `storage://candidate-uploads/${filePath}` };
-                    await persistAndRefresh(next, `✓ CV מעודכן נשמר עבור ${s.name}`);
-                  }
-                  setCvUpdates(prev => { const n = { ...prev }; delete n[(s.email || '').toLowerCase()]; return n; });
+                selectMode={selectMode}
+                selected={selectedIds.has(s.id)}
+                onToggleSelect={() => {
+                  const next = new Set(selectedIds);
+                  next.has(s.id) ? next.delete(s.id) : next.add(s.id);
+                  setSelectedIds(next);
                 }} />
             ))}
           </ul>
         )}
       </section>
+
+      {/* Floating bulk-email action bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div
+          className="fixed bottom-6 left-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl"
+          style={{
+            transform: 'translateX(-50%)',
+            background: 'var(--ink)',
+            color: 'white',
+            minWidth: 360,
+          }}
+        >
+          <span className="mono text-[12px] uppercase tracking-[0.14em] font-semibold opacity-70 shrink-0">
+            {selectedIds.size} נבחרו
+          </span>
+          <span style={{ opacity: 0.3 }}>·</span>
+          <button
+            style={{ ...btnSmall(), background: 'white', color: 'var(--ink)', border: 'none', fontSize: '11.5px' }}
+            onClick={() => {
+              const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
+              openEmailConfirm('acceptance', people.filter(s => s.email).map(s => ({ id: s.id, name: s.name, email: s.email! })));
+            }}
+          >✓ הודעת קבלה</button>
+          <button
+            style={{ ...btnSmall(), background: 'transparent', color: 'rgba(255,255,255,0.8)', borderColor: 'rgba(255,255,255,0.35)', fontSize: '11.5px' }}
+            onClick={() => {
+              const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
+              openEmailConfirm('rejection', people.filter(s => s.email).map(s => ({ id: s.id, name: s.name, email: s.email! })));
+            }}
+          >✗ הודעת דחייה</button>
+          <button
+            style={{ ...btnSmall(), background: 'transparent', color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.35)', fontSize: '11.5px' }}
+            onClick={() => setShowMailModal(true)}
+          >📧 מייל Outlook</button>
+          <button
+            onClick={() => { setSelectedIds(new Set()); setSelectMode(false); }}
+            className="mono text-[10.5px] uppercase tracking-[0.14em] opacity-50 hover:opacity-100"
+            style={{ color: 'white' }}>
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Outlook group email modal */}
+      {showMailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.55)' }}>
+          <div className="rounded-2xl border p-8 max-w-[520px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)' }}>
+            <div className="flex items-baseline justify-between mb-5">
+              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>מייל קבוצתי ב‑Outlook</div>
+              <button onClick={() => setShowMailModal(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
+            </div>
+            {/* Selected names */}
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', color: 'var(--ink)' }}>
+              {Array.from(selectedIds).map(id => all.find(s => s.id === id)?.name).filter(Boolean).join(' · ')}
+            </div>
+            {/* Warn about missing emails */}
+            {(() => {
+              const noEmail = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(s => s && !s.email).map(s => s!.name);
+              return noEmail.length > 0 ? (
+                <div className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
+                  ⚠ ללא מייל (לא ייכלל/ו): {noEmail.join(', ')}
+                </div>
+              ) : null;
+            })()}
+            <label className="block mb-3">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
+              <input value={mailSubject} onChange={e => setMailSubject(e.target.value)} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} placeholder="נושא ההודעה..." />
+            </label>
+            <label className="block mb-5">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>תוכן</span>
+              <textarea value={mailBody} onChange={e => setMailBody(e.target.value)} rows={5} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical' }} placeholder="תוכן ההודעה..." />
+            </label>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowMailModal(false)} className="btn">ביטול</button>
+              <button
+                onClick={() => {
+                  const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
+                  const emails = people.map(s => s.email).filter(Boolean) as string[];
+                  if (emails.length === 0) { showToast('לאף אחד מהנבחרים אין מייל רשום', 'error'); return; }
+                  const bcc = emails.join(',');
+                  openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`);
+                  showToast(`✓ נפתח Outlook ל‑${emails.length} נמענים`, 'success');
+                  setShowMailModal(false);
+                  setMailSubject(''); setMailBody('');
+                  setSelectedIds(new Set()); setSelectMode(false);
+                }}
+                style={btnPrimary()}
+              >📧 פתח ב‑Outlook →</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Email confirmation modal ── */}
+      {emailConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.6)' }}>
+          <div className="rounded-2xl border p-8 max-w-[560px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+            <div className="flex items-baseline justify-between mb-1">
+              <div className="serif text-[24px]" style={{ color: 'var(--ink)' }}>
+                {emailConfirm.type === 'acceptance' ? '✉ הודעת קבלה' : '✉ הודעת דחייה'}
+              </div>
+              <button onClick={() => setEmailConfirm(null)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
+            </div>
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-5" style={{ color: 'var(--text-soft)' }}>
+              בדוק/י לפני שליחה — המייל ייצא רק לאחר אישורך
+            </div>
+            <div className="mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--divider)' }}>
+              <div className="mono text-[10px] uppercase tracking-[0.15em] mb-2 font-semibold" style={{ color: 'var(--text-soft)' }}>
+                שולחים ל‑{emailConfirm.recipients.length} נמענים
+              </div>
+              <div className="text-[13px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
+                {emailConfirm.recipients.map(r => r.name).join(' · ')}
+              </div>
+              {emailConfirm.recipients.length > 1 && (
+                <div className="mono text-[10.5px] mt-2" style={{ color: 'var(--text-soft)' }}>
+                  {'ⓘ שליחה קבוצתית — כולם ב‑BCC, ללא שם אישי ({{שם}} יוחלף ב‑[שם הנמען])'}
+                </div>
+              )}
+            </div>
+            <label className="block mb-3">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
+              <input value={emailConfirm.subject} onChange={e => setEmailConfirm(p => p ? { ...p, subject: e.target.value } : null)} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} />
+            </label>
+            <label className="block mb-2">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>תוכן</span>
+              <textarea value={emailConfirm.body} onChange={e => setEmailConfirm(p => p ? { ...p, body: e.target.value } : null)} rows={7} className="input w-full" style={{ padding: '10px 14px', fontSize: '13.5px', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }} />
+            </label>
+            <div className="mono text-[10.5px] mb-5" style={{ color: 'var(--text-soft)' }}>
+              {'ⓘ ניתן לערוך נושא ותוכן. לנמען יחיד — {{שם}} יוחלף בשמו האישי.'}
+            </div>
+            <div className="flex gap-3 justify-between items-center">
+              <button onClick={() => setEmailConfirm(null)} style={{ ...btnSecondary(), fontSize: '12px' }}>ביטול — אל תשלח</button>
+              <button onClick={sendConfirmedEmail} style={{ ...btnPrimary(), fontSize: '13px' }}>
+                📧 פתח ב‑Outlook ({emailConfirm.recipients.length}) →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteDialog && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 60,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={() => setDeleteDialog(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg)',
+              borderRadius: '16px',
+              padding: '28px 28px 24px',
+              maxWidth: '400px',
+              width: '100%',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.3)',
+              border: '1px solid var(--divider)',
+            }}
+          >
+            <div className="serif text-[22px] mb-1" style={{ color: 'var(--ink)' }}>מחיקת סטודנט</div>
+            <div className="text-[14px] mb-6 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
+              כיצד למחוק את <strong style={{ color: 'var(--ink)' }}>{deleteDialog.name}</strong>?
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => confirmDeleteAll(deleteDialog)}
+                style={{ ...btnPrimary(), width: '100%', textAlign: 'right' }}
+              >
+                מחק הכל — כולל מועמדות →
+              </button>
+              <button
+                onClick={() => confirmKeepAsCandidate(deleteDialog)}
+                style={{ ...btnSecondary(), width: '100%', textAlign: 'right' }}
+              >
+                הסר כסטודנט — השאר כמועמד
+              </button>
+              <button
+                onClick={() => setDeleteDialog(null)}
+                className="mono text-[11px] uppercase tracking-[0.14em] font-semibold"
+                style={{ color: 'var(--text-soft)', paddingTop: '6px' }}
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(editing || creating) && (
         <StudentEditor
@@ -332,6 +693,20 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           onAutoSave={editing ? handleAutoSave : undefined}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
+          placementExtras={editing ? {
+            allStudents: all,
+            dispatches: data.dispatches || [],
+            approvalRequests: data.employerApprovalRequests || [],
+            placementSettings: data.placementSettings || {},
+            userName,
+            onDataChange: async (patch: Partial<PracticumData>) => {
+              setSaving(true);
+              const res = await saveSnapshot({ ...data, ...patch }, { name: userName });
+              setSaving(false);
+              if (res.ok) onRefresh();
+              else showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
+            },
+          } : undefined}
         />
       )}
     </main>
@@ -355,10 +730,9 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
-function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, cvUpdate, onCvUpdateSeen }: {
+function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selectMode, selected, onToggleSelect }: {
   s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void; onRevert?: () => void;
-  cvUpdate?: { id: string; cv_file_path: string; uploaded_at: string };
-  onCvUpdateSeen?: (id: string, filePath: string) => void;
+  selectMode?: boolean; selected?: boolean; onToggleSelect?: () => void;
 }) {
   const placed = !!s.acceptedOrg;
   const hired = !!s.hired;
@@ -382,46 +756,45 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, cvUpdate, onCvUp
   return (
     <li className="relative group" data-info-row>
       <div
-        onClick={onTogglePin}
+        onClick={selectMode ? onToggleSelect : onTogglePin}
         className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
-        style={{ borderColor: 'var(--divider)' }}
+        style={{ borderColor: 'var(--divider)', background: selected ? 'rgba(122,30,43,0.04)' : undefined }}
       >
-        {/* Line 1: dot · name · tags */}
+        {/* Line 1: checkbox (selectMode) · dot · name · tags */}
         <div className="flex items-center gap-2 min-w-0 mb-1.5">
+          {selectMode && (
+            <span
+              onClick={e => { e.stopPropagation(); onToggleSelect?.(); }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                border: `2px solid ${selected ? 'var(--accent)' : 'var(--divider)'}`,
+                background: selected ? 'var(--accent)' : 'transparent',
+                color: 'white', fontSize: 11, cursor: 'pointer',
+              }}
+            >{selected ? '✓' : ''}</span>
+          )}
           <StatusDot status={dotStatus} size={9} />
           <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
             {s.name || 'ללא שם'}
           </div>
-          <div className="flex items-center gap-1 flex-wrap justify-end shrink-0">
+          <div className="flex items-center gap-1 flex-wrap justify-end" style={{ maxWidth: '55%', flexShrink: 0 }}>
             {(!s.phone || !s.email) && <NeedsUpdate />}
             {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
             {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
-            {s.cvUpdatedUrl ? <Tag label="CV ✓" color="#15803d" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
+            {s.cvUpdatedUrl ? <Tag label="CV ✓" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
             {placed && !hired && !completed && <Tag label="שובץ/ה" />}
             {hired && !completed && <Tag label="נקלט/ה" solid />}
             {completed && <Tag label="✓ סיים" color="#b45309" />}
-            {cvUpdate && (
-              <button
-                type="button"
-                onClick={async e => {
-                  e.stopPropagation();
-                  const { data: urlData } = await supabase.storage.from('candidate-uploads').getPublicUrl(cvUpdate.cv_file_path);
-                  window.open(urlData.publicUrl, '_blank');
-                  onCvUpdateSeen?.(cvUpdate.id, cvUpdate.cv_file_path);
-                }}
-                title={`CV מעודכן הועלה — ${new Date(cvUpdate.uploaded_at).toLocaleDateString('he-IL')}`}
-                className="mono text-[10px] uppercase tracking-[0.13em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap animate-pulse"
-                style={{ color: '#fff', background: '#d97706', border: 'none' }}>
-                CV ✦ חדש
-              </button>
-            )}
+            {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
+            {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
           </div>
         </div>
         {/* Line 2: contact info · actions */}
         <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
             {s.phone && <span dir="ltr">{s.phone}</span>}
-            {s.email && <span className="truncate max-w-[200px]">{s.email}</span>}
+            {s.email && <span className="truncate" style={{ maxWidth: 'min(200px, 50vw)' }}>{s.email}</span>}
             {s.city && <span>· {s.city}</span>}
             {placed && <span style={{ color: 'var(--accent)' }}>· {s.acceptedOrg}</span>}
           </div>
@@ -464,7 +837,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, cvUpdate, onCvUp
           <DetailRow label="שובץ ב" value={s.acceptedOrg} accent />
           <DetailRow label="שעות" value={s.hoursApproved ? `${s.hoursApproved} מאושרות / ${s.hoursReported || 0} דיווח` : undefined} />
           <DetailRow label="CV" value={s.cvUrl ? '✓ זמין' : undefined} />
-          <DetailRow label="CV מעודכן" value={s.cvUpdatedUrl ? '✓ הוגש' : prepPassed ? '⚠ נדרש' : undefined} accent={!!s.cvUpdatedUrl} />
+          <DetailRow label="CV מעודכן" value={s.cvUpdatedUrl ? '✓ הוגש' : prepPassed ? '⚠ נדרש' : undefined} accent={!!s.cvUpdatedUrl} warn={!s.cvUpdatedUrl && prepPassed} />
           {s.notes && <DetailRow label="הערות" value={s.notes} />}
         </div>
       </Popover>
@@ -507,21 +880,22 @@ export function Popover({ pinned, children }: { pinned: boolean; children: any }
   );
 }
 
-function DetailRow({ label, value, accent }: { label: string; value?: string | number | null; accent?: boolean }) {
+function DetailRow({ label, value, accent, warn }: { label: string; value?: string | number | null; accent?: boolean; warn?: boolean }) {
   if (value == null || value === '' || value === 0) return null;
+  const color = accent ? 'var(--accent)' : warn ? '#b45309' : 'var(--ink)';
   return (
     <div className="flex items-baseline gap-3">
       <span className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold w-20 shrink-0" style={{ color: 'var(--text-soft)' }}>
         {label}
       </span>
-      <span style={{ color: accent ? 'var(--accent)' : 'var(--ink)' }}>{String(value)}</span>
+      <span style={{ color }}>{String(value)}</span>
     </div>
   );
 }
 
 export function RowActions({
-  phone, email, name, onEdit, calendarUrl,
-}: { phone?: string; email?: string; name?: string; onEdit: () => void; calendarUrl?: string }) {
+  phone, email, name, onEdit, calendarUrl, onCalendar,
+}: { phone?: string; email?: string; name?: string; onEdit: () => void; calendarUrl?: string; onCalendar?: () => void }) {
   function call() {
     if (!phone) return;
     window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
@@ -535,9 +909,10 @@ export function RowActions({
   function mail() {
     if (!email) return;
     const subject = encodeURIComponent(`פרקטיקום — ${name || ''}`);
-    window.location.href = `mailto:${email}?subject=${subject}`;
+    openMailto(`mailto:${email}?subject=${subject}`);
   }
   function cal() {
+    if (onCalendar) { onCalendar(); return; }
     if (calendarUrl) window.open(calendarUrl, '_blank');
   }
   const btn = "w-7 h-7 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)]";
@@ -545,7 +920,7 @@ export function RowActions({
   return (
     <div className="flex items-center gap-1.5">
       {calendarUrl !== undefined && calendarUrl && (
-        <button type="button" onClick={cal} title="הוסף ליומן Outlook" className={btn} style={style}>📅</button>
+        <button type="button" onClick={cal} title="פתח ב-Outlook" className={btn} style={style}>📅</button>
       )}
       {phone && <button type="button" onClick={call} title="התקשר" className={btn} style={style}>📞</button>}
       {phone && <button type="button" onClick={wa} title="WhatsApp" className={btn} style={style}>💬</button>}

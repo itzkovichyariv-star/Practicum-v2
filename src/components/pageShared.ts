@@ -75,27 +75,103 @@ export function groupByYearCourse<T extends { courseId?: string | null; year?: s
   });
 }
 
-export function outlookCalendarUrl(opts: {
+/**
+ * Returns an Outlook Web App (O365/Ariel) day-view URL for a given date.
+ * Opens the institutional calendar at the specific day — no login needed
+ * if the user is already signed into their Ariel O365 account.
+ * Only `startDate` (YYYY-MM-DD) is required; the rest are unused but kept
+ * for call-site compatibility.
+ */
+/**
+ * Opens a calendar event by generating an ICS blob and opening it.
+ * iOS/macOS recognise text/calendar and hand it to Outlook (or Calendar).
+ * This is the only reliable cross-platform way to navigate to a specific
+ * event date — OWA SPA URLs reset to today when opened externally.
+ *
+ * Call this function directly from a click handler — no URL needed.
+ */
+export function openIcsEvent(opts: {
   subject: string;
-  startDate: string;
-  startTime?: string;
-  endTime?: string;
+  startDate: string;    // YYYY-MM-DD
+  startTime?: string;   // HH:MM
+  endTime?: string;     // HH:MM
+  location?: string;
+  description?: string;
+}): void {
+  function toIcsDt(date: string, time?: string): string {
+    // YYYYMMDDTHHMMSS (local, no Z — Israel timezone, no DST confusion)
+    const d = date.replace(/-/g, '');
+    if (!time) return `${d}`;
+    const t = time.replace(/:/g, '').slice(0, 4) + '00';
+    return `${d}T${t}`;
+  }
+
+  const start = toIcsDt(opts.startDate, opts.startTime);
+  // Default end = start + 1 hour
+  let end = start;
+  if (opts.endTime) {
+    end = toIcsDt(opts.startDate, opts.endTime);
+  } else if (opts.startTime) {
+    const [h, m] = opts.startTime.split(':').map(Number);
+    const endH = String(h + 1).padStart(2, '0');
+    end = toIcsDt(opts.startDate, `${endH}:${String(m).padStart(2, '0')}`);
+  }
+
+  const uid = `${Date.now()}@practicum.yarivitzkovich.org`;
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Practicum Ariel//HE',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
+    `SUMMARY:${opts.subject}`,
+    opts.location ? `LOCATION:${opts.location}` : '',
+    opts.description ? `DESCRIPTION:${opts.description.replace(/\n/g, '\\n')}` : '',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
+
+  const blob = new Blob([lines], { type: 'text/calendar;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `event-${opts.startDate}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/**
+ * Returns an Outlook Web App (O365 / Ariel) compose-event URL.
+ * Opens OWA in the browser at the correct date & time — no file download,
+ * no login if already signed into the Ariel O365 account.
+ * The compose form is pre-filled; closing it shows the calendar at that date.
+ */
+export function outlookCalendarUrl(opts: {
+  subject?: string;
+  startDate: string;    // YYYY-MM-DD
+  startTime?: string;   // HH:MM
+  endTime?: string;     // HH:MM
   location?: string;
   attendeeEmail?: string;
   body?: string;
 }): string {
-  const base = 'https://outlook.live.com/calendar/0/deeplink/compose';
-  const startdt = opts.startTime ? `${opts.startDate}T${opts.startTime}:00` : opts.startDate;
-  const enddt   = opts.endTime   ? `${opts.startDate}T${opts.endTime}:00`   : startdt;
-  const params = new URLSearchParams({
-    path: '/calendar/action/compose',
-    rru: 'addevent',
-    subject: opts.subject,
-    startdt,
-    enddt,
-    body: opts.body ?? '',
-    to: opts.attendeeEmail ?? '',
-  });
-  if (opts.location) params.set('location', opts.location);
-  return `${base}?${params.toString()}`;
+  function addHour(t: string) {
+    const [h, m] = t.split(':').map(Number);
+    return `${String(h + 1).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const time    = opts.startTime ?? '08:00';
+  const endTime = opts.endTime   ?? addHour(time);
+  const startdt = encodeURIComponent(`${opts.startDate}T${time}:00`);
+  const enddt   = encodeURIComponent(`${opts.startDate}T${endTime}:00`);
+  const subject = encodeURIComponent(opts.subject ?? '');
+  const body    = encodeURIComponent(opts.body ?? '');
+  const location = opts.location ? `&location=${encodeURIComponent(opts.location)}` : '';
+  const to = opts.attendeeEmail ? `&to=${encodeURIComponent(opts.attendeeEmail)}` : '';
+  return `https://outlook.office.com/calendar/0/deeplink/compose?rru=addevent&startdt=${startdt}&enddt=${enddt}&subject=${subject}&body=${body}${location}${to}`;
 }

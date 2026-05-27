@@ -1,0 +1,18 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:4325",
+      "localStorage": [
+        {
+          "name": "practicum_v2_context",
+          "value": "{\"courseId\":\"__all__\",\"year\":\"__all__\"}"
+        },
+        {
+          "name": "practicum_v2_session",
+          "value": "{\"profile\":{\"name\":\"יריב בדיקה\",\"email\":\"yarivi@ariel.ac.il\"}}"
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,85 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: true, autoRefreshToken: true },
 });
 
+// ── Placement extension types ─────────────────────────────────────────────────
+
+export type VacancySlotStatus = 'available' | 'tentative' | 'under_review' | 'placed';
+
+export type VacancySlot = {
+  id: string;
+  courseId: string;
+  status: VacancySlotStatus;
+  studentId?: string | null;
+  prefRank?: number | null;
+  history: Array<{
+    at: string;
+    from: VacancySlotStatus | null;
+    to: VacancySlotStatus;
+    by: 'admin' | 'student' | 'system';
+    actorId?: string;
+    reason?: string;
+  }>;
+};
+
+export type StudentPreference = {
+  rank: number;
+  employerId: string;
+  slotId: string;
+  status: 'tentative' | 'under_review' | 'rejected' | 'placed' | 'withdrawn';
+};
+
+export type Dispatch = {
+  id: string;
+  studentId: string;
+  employerId: string;
+  slotId: string;
+  channel: 'whatsapp' | 'email';
+  sentBy: string;
+  sentAt: string;
+  messageSnapshot: string;
+  result: 'pending' | 'rejected' | 'placed' | 'withdrawn';
+  resultAt?: string | null;
+  resultBy?: string | null;
+};
+
+export type EmployerApprovalRequest = {
+  id: string;
+  requesterStudentId: string;
+  courseId: string;
+  draft: {
+    name?: string;
+    contact?: string;
+    phone?: string;
+    email?: string;
+    location?: string;
+    description?: string;
+    positionsTotal?: number;
+  };
+  status: 'pending' | 'approved' | 'rejected';
+  decision?: 'student-only' | 'course-wide' | null;
+  decidedBy?: string | null;
+  decidedAt?: string | null;
+  createdAt: string;
+  resultingEmployerId?: string | null;
+};
+
+export type PlacementSettings = {
+  defaultPreferenceCount: number;
+  defaultAgingThresholdDays: number;
+  whatsappTemplate: string;
+  emailSubjectTemplate: string;
+  emailBodyTemplate: string;
+  whatsappWithdrawalTemplate: string;
+  emailWithdrawalSubjectTemplate: string;
+  emailWithdrawalBodyTemplate: string;
+  studentNotifyApprovedTemplateWhatsApp: string;
+  studentNotifyApprovedTemplateEmailSubject: string;
+  studentNotifyApprovedTemplateEmailBody: string;
+  studentNotifyRejectedTemplateWhatsApp: string;
+  studentNotifyRejectedTemplateEmailSubject: string;
+  studentNotifyRejectedTemplateEmailBody: string;
+};
+
 export type Student = {
   id: string; name: string; phone?: string; email?: string; city?: string;
   courseId: string; year?: string;
@@ -30,6 +109,17 @@ export type Student = {
   // Employer feedback
   feedbackToken?: string;        // opaque token sent to employer for the feedback form URL
   feedbackSubmittedAt?: string;  // ISO timestamp when employer submitted feedback
+  // Email tracking
+  acceptanceEmailSent?: boolean; // true after acceptance email was sent
+  rejectionEmailSent?: boolean;  // true after rejection email was sent
+  // Placement date — auto-set when acceptedOrg is first recorded
+  placedAt?: string;             // ISO date (YYYY-MM-DD) when placement was logged
+  // Placement extension
+  cvShareUrl?: string | null;
+  submissionStatus?: 'not_submitted' | 'submitted' | 'under_review' | 'placed' | 'exhausted';
+  submittedAt?: string | null;
+  preferences?: StudentPreference[];
+  legacyPreferences?: string[];
 };
 export type Employer = {
   id: string; name: string; contactPerson?: string; contactPhone?: string; contactEmail?: string;
@@ -41,6 +131,12 @@ export type Employer = {
   year?: string;
   positions?: number; filledPositions?: number; location?: string;
   notes?: string;
+  // Placement extension
+  positionsTotal?: number;
+  vacancySlots?: VacancySlot[];
+  addedBy?: 'admin' | string;
+  approvalStatus?: 'approved' | 'pending' | 'rejected';
+  restrictedToStudentId?: string | null;
 };
 export type Candidate = {
   id: string; name: string; phone?: string; email?: string;
@@ -65,6 +161,15 @@ export type Candidate = {
   applicationUrl?: string;
   submittedAt?: string;
   convertedToStudentId?: string;
+  // Email tracking
+  acceptanceEmailSent?: boolean;
+  rejectionEmailSent?: boolean;
+  // Questionnaire answers (copied from candidate_submissions on intake)
+  questionnaire?: {
+    studyTracks?: string; gpa?: string; workHistory?: string;
+    favRole?: string; leastFavRole?: string; whyPracticum?: string;
+    whySuitable?: string; persistence?: string; expectations?: string;
+  } | null;
 };
 export type Lecture = {
   id: string; courseId?: string; courseName?: string; year?: string;
@@ -74,7 +179,19 @@ export type Lecture = {
   status?: string; cost?: string | number; notes?: string;
   graphEventId?: string;  // Microsoft Graph event ID (for instant Outlook sync)
 };
-export type Course = { id: string; name: string; year?: string; institution?: string };
+export type Course = {
+  id: string; name: string; year?: string; institution?: string;
+  // Linked institutions (multiple, collapsible in UI)
+  linkedInstitutions?: string[];
+  // Email automation settings (per course)
+  autoSendAcceptance?: boolean;  // send acceptance email automatically when candidate is converted to student
+  autoSendRejection?: boolean;   // send rejection email automatically when candidate is marked as failed
+  // Placement extension
+  type?: 'practicum' | 'other';
+  preferenceCount?: number;
+  reviewAgingThresholdDays?: number;
+  acceptanceNote?: string;
+};
 export type Trainer = {
   id: string;
   name: string;
@@ -116,6 +233,11 @@ export type PracticumData = {
   // System settings
   coordinatorEmail?: string;  // coordinator (Rachel) — receives employer feedback + candidate submissions
   supervisorEmail?: string;   // academic supervisor (Yariv) — also receives copies of all notifications
+  notifyEmails?: string[];    // additional email addresses to CC on system notifications
+  // Placement extension
+  dispatches?: Dispatch[];
+  employerApprovalRequests?: EmployerApprovalRequest[];
+  placementSettings?: PlacementSettings;
 };
 
 export type CloudSnapshot = {

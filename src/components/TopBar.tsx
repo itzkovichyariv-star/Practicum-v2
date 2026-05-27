@@ -156,8 +156,8 @@ export default function TopBar({
         </div>
 
         {/* ── Mobile context row (always visible) ── */}
-        <div className="flex md:hidden items-center gap-2 px-4 pb-3">
-          <ContextSelect label="קורס" value={context.courseId} onChange={v => onContext({ ...context, courseId: v })} options={courseOptions} />
+        <div className="flex md:hidden items-center gap-2 px-4 pb-3 overflow-hidden">
+          <ContextSelect label="קורס" value={context.courseId} onChange={v => onContext({ ...context, courseId: v })} options={courseOptions} grow />
           <ContextSelect label="שנה" value={context.year} onChange={v => onContext({ ...context, year: v })} options={yearOptions} />
         </div>
       </header>
@@ -231,14 +231,26 @@ export default function TopBar({
   );
 }
 
-function ContextSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: Option[] }) {
+function ContextSelect({ label, value, onChange, options, grow }: {
+  label: string; value: string; onChange: (v: string) => void; options: Option[]; grow?: boolean;
+}) {
   const current = options.find(o => o.value === value)?.label || value;
   return (
-    <div className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer transition-colors hover:border-[var(--accent)]"
-      style={{ borderColor: 'var(--divider)', background: 'var(--accent-soft)' }}>
-      <span className="mono text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>{label}</span>
-      <span className="mono text-[12px] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--accent)' }}>{current}</span>
-      <span style={{ color: 'var(--accent)', fontSize: '9px', opacity: 0.7 }}>▾</span>
+    <div
+      className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border cursor-pointer transition-colors hover:border-[var(--accent)]"
+      style={{
+        borderColor: 'var(--divider)',
+        background: 'var(--accent-soft)',
+        ...(grow ? { flex: 1, minWidth: 0, overflow: 'hidden' } : { flexShrink: 0 }),
+      }}
+      title={current}
+    >
+      <span className="mono text-[10px] uppercase tracking-[0.14em] shrink-0" style={{ color: 'var(--text-soft)' }}>{label}</span>
+      <span
+        className="mono text-[12px] font-bold uppercase tracking-[0.1em]"
+        style={{ color: 'var(--accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
+      >{current}</span>
+      <span style={{ color: 'var(--accent)', fontSize: '9px', opacity: 0.7, flexShrink: 0 }}>▾</span>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}

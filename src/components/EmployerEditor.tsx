@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
+import { openMailto } from '../lib/openMailto';
 import Modal from './Modal';
 
 type Props = {
@@ -55,7 +56,7 @@ export default function EmployerEditor({
     if (!form.contactEmail) { alert('אין מייל איש קשר'); return; }
     const subject = encodeURIComponent(`פרקטיקום משאבי אנוש — ${form.name}`);
     const body = encodeURIComponent(`שלום ${form.contactPerson || ''},\n\n`);
-    window.location.href = `mailto:${encodeURIComponent(form.contactEmail)}?subject=${subject}&body=${body}`;
+    openMailto(`mailto:${encodeURIComponent(form.contactEmail)}?subject=${subject}&body=${body}`);
   }
 
   function openCall() {

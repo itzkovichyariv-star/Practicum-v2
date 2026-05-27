@@ -546,7 +546,6 @@ export default function FormsPage(props: PageProps) {
       </section>
 
       <RegistrationLinkCard />
-      <QuickLinksCard />
 
       {/* ── Student picker ── */}
       <section className="mb-8 rounded-xl border p-5" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.35)' }}>
@@ -675,6 +674,21 @@ export default function FormsPage(props: PageProps) {
       <p className="text-[13px] mt-4 leading-[1.55]" style={{ color: 'var(--text-soft)' }}>
         💡 טופס הערכה עם פרטי סטודנט ספציפי — פתח את כרטיס הסטודנט/ית במודול "סטודנטים" ולחץ על "🖨 טופס הערכה".
       </p>
+
+      {/* ── Admin links (minimal) ── */}
+      <div className="mt-16 pt-6 border-t flex flex-wrap gap-x-6 gap-y-2" style={{ borderColor: 'var(--divider)' }}>
+        {[
+          { label: 'SQL Editor', url: 'https://supabase.com/dashboard/project/vpqgmcmavnszcnakhiat/sql/new' },
+          { label: 'טבלאות Supabase', url: 'https://supabase.com/dashboard/project/vpqgmcmavnszcnakhiat/editor' },
+          { label: 'GitHub', url: 'https://github.com/itzkovichyariv-star/Practicum-v2' },
+        ].map(l => (
+          <a key={l.label} href={l.url} target="_blank" rel="noopener"
+            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+            style={{ color: 'var(--text-soft)' }}>
+            {l.label} ↗
+          </a>
+        ))}
+      </div>
 
       {openForm === 'evaluation' && firstStudent && (
         <EvaluationForm

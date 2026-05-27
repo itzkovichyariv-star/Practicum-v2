@@ -56,7 +56,7 @@ export default function CandidateEditor({
   });
 
   // Pipeline stage
-  const hasDocs = !!(form.cvUrl && form.applicationUrl);
+  const hasDocs = !!form.cvUrl;
   const hasInterview = !!form.interviewDate;
   const passed = form.interviewResult === 'passed';
   const alreadyConverted = !!form.convertedToStudentId;
@@ -64,8 +64,8 @@ export default function CandidateEditor({
                 passed ? 'עבר — מוכן/ה להעברה' :
                 hasInterview && form.interviewResult === 'failed' ? 'לא עבר ראיון' :
                 hasInterview ? 'ממתין/ה לתוצאת ראיון' :
-                hasDocs ? 'מסמכים הוגשו — לקבוע ראיון' :
-                'ממתין/ה למסמכים';
+                hasDocs ? 'קורות חיים הוגשו — לקבוע ראיון' :
+                'ממתין/ה לקורות חיים';
 
   function update<K extends keyof Candidate>(k: K, v: Candidate[K]) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -74,11 +74,6 @@ export default function CandidateEditor({
     if (!form.name.trim()) { alert('שם חסר'); return; }
     if (form.interviewResult === 'failed' && !form.rejectionReason?.trim()) {
       alert('יש למלא סיבת דחייה כשמסמנים "לא התקבל"');
-      return;
-    }
-    // Block pass/fail without submitted documents
-    if ((form.interviewResult === 'passed' || form.interviewResult === 'failed') && !(form.cvUrl && form.applicationUrl)) {
-      alert('לא ניתן לסמן תוצאת ראיון ללא הגשת מסמכים.\n\nיש לוודא שהמועמד/ת העלה/תה:\n• קורות חיים (CV)\n• טופס הגשת מועמדות\n\nהעדכן/י את השדות בקטע "שלב 1 — מסמכים" ושמור שוב.');
       return;
     }
     onSave(form);
@@ -150,14 +145,19 @@ export default function CandidateEditor({
             <div className="col-span-full">
               <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px' }}>שלב 1 — מסמכים</div>
             </div>
-            <FileField label="קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}
-              placeholder="לכאן יועלו קורות החיים שהמועמד/ת יצרף/ת דרך קישור ההרשמה"/>
-            <FileField label="טופס הגשת מועמדות" value={form.applicationUrl||''} onChange={v=>update('applicationUrl',v)}
-              placeholder="לכאן יועלה טופס המועמדות שהמועמד/ת יצרף/ת דרך קישור ההרשמה"/>
+            <div className="col-span-full">
+              <FileField label="קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}
+                placeholder="לכאן יועלו קורות החיים שהמועמד/ת יצרף/ת דרך קישור ההרשמה"/>
+            </div>
+            {candidate?.questionnaire && (
+              <div className="col-span-full">
+                <QuestionnaireView q={candidate.questionnaire} candidateName={candidate.name} />
+              </div>
+            )}
 
             <div className="col-span-full">
-              <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px', color: hasDocs ? 'var(--accent)' : 'var(--text-soft)' }}>
-                שלב 2 — ראיון {!hasDocs && ' 🔒 (יש להגיש מסמכים קודם)'}
+              <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px', color: form.cvUrl ? 'var(--accent)' : 'var(--text-soft)' }}>
+                שלב 2 — ראיון {!form.cvUrl && ' 🔒 (יש להגיש קורות חיים קודם)'}
               </div>
             </div>
             <Field label="תאריך הגשה">
@@ -296,12 +296,33 @@ function FileField({ label, value, onChange, placeholder }: { label: string; val
     }
   }
 
-  function openFile() {
-    if (isHttpUrl) { openFileUrl(value); return; }
+  function getPublicUrl() {
+    if (isHttpUrl) return value;
     const bucket = storageMatch ? storageMatch[1] : 'candidate-uploads';
     const path = storageMatch ? storageMatch[2] : value;
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-    openFileUrl(data.publicUrl);
+    return data.publicUrl;
+  }
+
+  function openFile() {
+    openFileUrl(getPublicUrl());
+  }
+
+  async function downloadFile() {
+    const bucket = storageMatch ? storageMatch[1] : 'candidate-uploads';
+    const path = storageMatch ? storageMatch[2] : (isPlainPath ? value : null);
+    if (path) {
+      const { data: blob } = await supabase.storage.from(bucket).download(path);
+      if (blob) {
+        const filename = path.split('/').pop() || 'file';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+    }
+    // Fallback for HTTP URLs
+    const a = document.createElement('a'); a.href = getPublicUrl(); a.download = ''; a.target = '_blank'; a.click();
   }
 
   return (
@@ -317,11 +338,19 @@ function FileField({ label, value, onChange, placeholder }: { label: string; val
           style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isHttpUrl ? 'ui-monospace, monospace' : undefined }}
         />
         {canOpen && (
-          <button type="button" onClick={openFile}
-            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 rounded-lg shrink-0"
-            style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-            פתח ↗
-          </button>
+          <>
+            <button type="button" onClick={openFile}
+              className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 rounded-lg shrink-0"
+              style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+              פתח ↗
+            </button>
+            <button type="button" onClick={downloadFile}
+              className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 rounded-lg shrink-0"
+              style={{ background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}
+              title="הורד קובץ">
+              ↓
+            </button>
+          </>
         )}
         {value && (
           <button type="button" onClick={() => onChange('')}
@@ -361,5 +390,144 @@ function Select({ value, onChange, options, placeholder }: any) {
       {placeholder && <option value="">{placeholder}</option>}
       {opts.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
+  );
+}
+
+const Q_ITEMS: { key: string; question: string }[] = [
+  { key: 'workHistory',   question: 'תאר/י את מקומות העבודה המרכזיים בהם עבדת עד כה, תפקידך בכל אחד מהם ומשך העסקה.' },
+  { key: 'favRole',       question: 'בחר/י תפקיד אחד שאהבת במיוחד — מה בתוכו היה משמעותי עבורך?' },
+  { key: 'leastFavRole',  question: 'בחר/י תפקיד שפחות התחברת אליו — מה הייתה הסיבה לכך?' },
+  { key: 'whyPracticum',  question: 'מהן הסיבות שבגללן בחרת להירשם לפרקטיקום במשאבי אנוש?' },
+  { key: 'whySuitable',   question: 'מדוע אתה חושב/ת שאת/ה מתאים/ה לפרקטיקום?' },
+  { key: 'persistence',   question: 'ספר/י על מצב בעבר שבו נדרשת להתמיד במשימה מאתגרת לאורך זמן, למרות קשיים או עומסים. מה עזר לך? מה היו התוצאות?' },
+  { key: 'expectations',  question: 'מה הציפיות שלך מהפרקטיקום?' },
+];
+
+function QuestionnaireView({ q, candidateName }: { q: NonNullable<import('../lib/supabase').Candidate['questionnaire']>; candidateName?: string }) {
+  const [open, setOpen] = useState(false);
+  const filled = Q_ITEMS.filter(item => (q as any)[item.key]?.trim());
+  if (filled.length === 0) return null;
+
+  function buildHtml() {
+    const rows = Q_ITEMS.map((item, idx) => {
+      const ans = (q as any)[item.key]?.trim() || '';
+      return `<div style="margin-bottom:20px;page-break-inside:avoid">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px;direction:rtl">${idx+1}. ${item.question}</div>
+        <div style="background:#f9f5f4;border:1px solid #ddd;border-radius:6px;padding:10px 14px;font-size:13px;line-height:1.7;direction:rtl;white-space:pre-wrap">${ans || '<span style="color:#aaa;font-style:italic">לא מולא</span>'}</div>
+      </div>`;
+    }).join('');
+    return `<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8">
+      <title>שאלון מועמדות — ${candidateName || ''}</title>
+      <style>body{font-family:Arial,sans-serif;max-width:720px;margin:32px auto;padding:0 24px;direction:rtl}
+      h1{font-size:18px;margin-bottom:4px}p{color:#666;font-size:12px;margin-bottom:24px}
+      @media print{body{margin:16px}}</style></head>
+      <body>
+        <h1>טופס הגשת מועמדות — פרקטיקום משאבי אנוש</h1>
+        <p>${candidateName || ''}${q.studyTracks ? ' · ' + q.studyTracks : ''}${q.gpa ? ' · ממוצע ' + q.gpa : ''}</p>
+        ${rows}
+      </body></html>`;
+  }
+
+  function handlePrint() {
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(buildHtml());
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); }, 300);
+  }
+
+  function handleDownload() {
+    const blob = new Blob([buildHtml()], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `שאלון_${(candidateName || 'מועמד').replace(/\s+/g, '_')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="mt-6" style={{ borderTop: '1px solid var(--divider)', paddingTop: '24px' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-1">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="flex items-center gap-2 mono text-[11px] uppercase tracking-[0.14em] font-semibold"
+          style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <span>שאלון מועמדות</span>
+          <span style={{ fontSize: '10px', opacity: 0.7 }}>{open ? '▲' : '▼'}</span>
+        </button>
+        <div className="flex items-center gap-3">
+          <span className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
+            {filled.length} / {Q_ITEMS.length} שאלות
+          </span>
+          <button type="button" onClick={handlePrint}
+            className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2.5 py-1 rounded-full border"
+            style={{ color: 'var(--accent)', borderColor: 'var(--accent)', background: 'transparent', cursor: 'pointer' }}>
+            🖨 הדפס
+          </button>
+          <button type="button" onClick={handleDownload}
+            className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2.5 py-1 rounded-full border"
+            style={{ color: 'var(--accent)', borderColor: 'var(--accent)', background: 'transparent', cursor: 'pointer' }}>
+            ↓ הורד
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <div className="mt-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--divider)' }}>
+          {/* Document header strip */}
+          <div className="px-6 py-4 flex items-center justify-between"
+            style={{ background: 'rgba(122,30,43,0.06)', borderBottom: '1px solid var(--divider)' }}>
+            <div>
+              <div className="serif text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>טופס הגשת מועמדות — פרקטיקום משאבי אנוש</div>
+              {q.studyTracks && (
+                <div className="mono text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                  חוג: {q.studyTracks}{q.gpa ? ` · ממוצע: ${q.gpa}` : ''}
+                </div>
+              )}
+            </div>
+            <div className="mono text-[10px] uppercase tracking-widest px-2 py-1 rounded"
+              style={{ background: 'rgba(122,30,43,0.1)', color: 'var(--accent)' }}>
+              קריאה בלבד
+            </div>
+          </div>
+
+          {/* Questions */}
+          <div className="divide-y" style={{ '--tw-divide-opacity': 1 } as any}>
+            {Q_ITEMS.map((item, idx) => {
+              const answer = (q as any)[item.key]?.trim() || '';
+              return (
+                <div key={item.key} className="px-6 py-5" style={{ background: idx % 2 === 0 ? 'white' : 'rgba(0,0,0,0.015)' }}>
+                  {/* Question */}
+                  <div className="flex gap-3 mb-3">
+                    <span className="mono text-[10px] font-semibold shrink-0 mt-0.5 w-5 text-center rounded-full h-5 flex items-center justify-center"
+                      style={{ background: answer ? 'rgba(122,30,43,0.1)' : 'rgba(0,0,0,0.06)', color: answer ? 'var(--accent)' : 'var(--text-soft)', lineHeight: 1 }}>
+                      {idx + 1}
+                    </span>
+                    <span className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--ink)' }}>{item.question}</span>
+                  </div>
+                  {/* Answer */}
+                  {answer ? (
+                    <div className="mr-8 px-4 py-3 rounded-lg text-[13.5px] leading-relaxed whitespace-pre-wrap"
+                      style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid rgba(122,30,43,0.12)', color: 'var(--ink)', direction: 'rtl' }}>
+                      {answer}
+                    </div>
+                  ) : (
+                    <div className="mr-8 px-4 py-2 rounded-lg text-[12.5px] italic"
+                      style={{ color: 'var(--text-soft)', background: 'rgba(0,0,0,0.03)' }}>
+                      לא מולא
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { btnPrimary } from '../lib/design';
 import type { Lecture } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, outlookCalendarUrl } from './pageShared';
@@ -152,7 +153,58 @@ export default function LecturesPage({
     }
     setEditing(null);
     setCreating(false);
-    await persistAfterChange(next, action, synced.topic || synced.courseName || 'הרצאה');
+
+    // Sync employer contact data when lecturer name matches a known employer contact
+    const lecName = (synced.lecturer || '').trim().toLowerCase();
+    const allEmployers: any[] = data.employers || [];
+    let updatedEmployers = allEmployers;
+    if (lecName) {
+      const empIdx = allEmployers.findIndex((e: any) =>
+        (e.contactPerson || '').trim().toLowerCase() === lecName
+      );
+      if (empIdx >= 0) {
+        const emp = { ...allEmployers[empIdx] };
+        let changed = false;
+        if (synced.lecturerEmail && synced.lecturerEmail !== emp.contactEmail) {
+          emp.contactEmail = synced.lecturerEmail;
+          changed = true;
+        }
+        if (synced.lecturerPhone && synced.lecturerPhone !== emp.contactPhone) {
+          emp.contactPhone = synced.lecturerPhone;
+          changed = true;
+        }
+        if (changed) {
+          updatedEmployers = [...allEmployers];
+          updatedEmployers[empIdx] = emp;
+          (data.employers as any[]) = updatedEmployers;
+          action += ` · פרטי קשר של ${emp.name} עודכנו`;
+        }
+      }
+    }
+
+    const saveData = updatedEmployers !== allEmployers
+      ? { ...data, lectures: next, employers: updatedEmployers }
+      : { ...data, lectures: next };
+
+    setSaving(true);
+    setSaveMsg(null);
+    const actVerb = action.includes('נוצרה') ? 'נוסף' : 'עודכן';
+    const res = await saveSnapshot(
+      saveData,
+      { name: userName },
+      { action: actVerb, entity: 'הרצאה', target: synced.topic || synced.courseName || 'הרצאה' }
+    );
+    setSaving(false);
+    if (!res.ok) {
+      setSaveMsg('שגיאה: ' + (res.error || ''));
+      showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
+      return;
+    }
+    setSaveMsg(action);
+    showToast(action + ' · נשמר בענן ☁️', 'success');
+    (data.lectures as Lecture[]) = next;
+    onRefresh();
+    setTimeout(() => setSaveMsg(null), 2500);
   }
 
   async function handleDelete(id: string) {
@@ -181,11 +233,7 @@ export default function LecturesPage({
               {buildHeadline(upcomingCount, scoped.length, statusCounts)}
             </p>
           </div>
-          <button onClick={() => setCreating(true)} style={{
-            display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, alignSelf: 'flex-start',
-          }}>+ הרצאה חדשה →</button>
+          <button onClick={() => setCreating(true)} style={{ ...btnPrimary(), alignSelf: 'flex-start' }}>+ הרצאה חדשה →</button>
         </div>
 
         {/* Status breakdown */}

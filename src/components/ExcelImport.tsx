@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { btnPrimary } from '../lib/design';
 import * as XLSX from 'xlsx';
 import type { PracticumData, Student, Candidate, Trainer, Employer } from '../lib/supabase';
 import { saveSnapshot, randomId } from '../lib/dataApi';
@@ -278,13 +279,7 @@ export default function ExcelImport({ kind, data, userName, onDone }: Props) {
             </div>
           ) : (
             <div className="flex gap-2">
-              <button onClick={doImport} disabled={importing} style={{
-                display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-                background: importing ? 'var(--divider)' : 'var(--accent)',
-                color: 'white', border: 'none', borderRadius: '999px',
-                cursor: importing ? 'not-allowed' : 'pointer',
-                whiteSpace: 'nowrap', flexShrink: 0, opacity: importing ? 0.7 : 1,
-              }}>{importing ? 'מייבא...' : `ייבא ${parsed.rows.length} שורות →`}</button>
+              <button onClick={doImport} disabled={importing} style={btnPrimary(importing)}>{importing ? 'מייבא...' : `ייבא ${parsed.rows.length} שורות →`}</button>
               <button onClick={() => { setParsed(null); setFile(null); }}
                 className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">
                 בטל

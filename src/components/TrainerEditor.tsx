@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Trainer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
+import { openMailto } from '../lib/openMailto';
 import Modal from './Modal';
 
 type Props = {
@@ -46,7 +47,7 @@ export default function TrainerEditor({
     if (!form.email) { alert('לא הוזן מייל'); return; }
     const subject = encodeURIComponent(`פרקטיקום משאבי אנוש — ${form.name}`);
     const body = encodeURIComponent(`שלום ${form.name},\n\n`);
-    window.location.href = `mailto:${encodeURIComponent(form.email)}?subject=${subject}&body=${body}`;
+    openMailto(`mailto:${encodeURIComponent(form.email)}?subject=${subject}&body=${body}`);
   }
 
   function openCall() {

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { btnPrimary, btnSecondary } from '../lib/design';
 import type { Trainer } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
@@ -99,16 +100,8 @@ export default function TrainersPage({ data, context, userName, onRefresh }: Pag
             </div>
           </div>
           <div className="flex gap-2 self-start md:self-auto flex-wrap">
-            <button onClick={() => setCreating(true)} style={{
-              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>+ מנחה חדש/ה →</button>
-            <button onClick={() => setShowImport(i => !i)} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>⬆ ייבוא Excel</button>
+            <button onClick={() => setCreating(true)} style={btnPrimary()}>+ מנחה חדש/ה →</button>
+            <button onClick={() => setShowImport(i => !i)} style={btnSecondary()}>⬆ ייבוא Excel</button>
           </div>
         </div>
       </section>
@@ -215,10 +208,10 @@ function TrainerRow({ trainer: t, onEdit, pinned, onTogglePin }: {
         {/* Line 2: contact + actions */}
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
-            {t.organization && <span className="truncate max-w-[140px]">{t.organization}</span>}
+            {t.organization && <span className="truncate" style={{ maxWidth: 'clamp(100px, 35vw, 160px)' }}>{t.organization}</span>}
             {t.role && <span>· {t.role}</span>}
             {t.phone && <span dir="ltr">{t.phone}</span>}
-            {t.email && <span className="truncate max-w-[180px]">{t.email}</span>}
+            {t.email && <span className="truncate" style={{ maxWidth: 'clamp(120px, 40vw, 200px)' }}>{t.email}</span>}
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {(!t.phone || !t.email) && <NeedsUpdate />}

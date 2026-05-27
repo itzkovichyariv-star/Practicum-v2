@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PageProps } from './pageShared';
-import type { Course } from '../lib/supabase';
+import type { Course, Employer } from '../lib/supabase';
+import { btnPrimary, btnSecondary, btnTab, btnGhost, btnDanger, btnSmall } from '../lib/design';
 import { supabase } from '../lib/supabase';
 import { normalizeYear } from '../lib/session';
 import { saveSnapshot, randomId, loadSnapshots, restoreSnapshot, type SnapshotMeta } from '../lib/dataApi';
 import { CONTACT_PATCHES } from '../lib/contactPatches';
 import { showToast } from '../lib/toast';
 import * as fs from '../lib/folderCreation';
+import { countSlotsByStatus } from '../lib/placement';
+import EmployerEditor from './EmployerEditor';
 
 export default function ManagementPage(props: PageProps) {
   return (
@@ -16,20 +19,18 @@ export default function ManagementPage(props: PageProps) {
         <div className="chapter-mark mb-4">X · ניהול</div>
         <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>ניהול</h1>
         <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
-          הוסף ונהל קורסים, שנים אקדמיות, ומוסדות. יצירת קורס חדש מאפשרת גם יצירת תיקיות ב‑OneDrive בלחיצה אחת.
+          מועדי ראיון, גרסאות שחזור, קורסים ושנים אקדמיות.
         </p>
       </section>
 
-      <SettingsSection {...props} />
+      <SlotsSection {...props} />
+      <SnapshotsSection {...props} />
       <SeedLecturesSection {...props} />
       <PatchContactsSection {...props} />
       <SeedTrainersSection {...props} />
-      <ActivityLogSection {...props} />
-      <SnapshotsSection {...props} />
       <YearsSection {...props} />
       <InstitutionsSection {...props} />
       <CoursesSection {...props} />
-      <SlotsSection {...props} />
     </main>
   );
 }
@@ -37,18 +38,21 @@ export default function ManagementPage(props: PageProps) {
 /* ====== Versioned Snapshots / Restore ====== */
 
 function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
+  const [collapsed, setCollapsed] = useState(true);
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
-
-  // Auto-load on mount so the list is always visible without a manual click
-  useEffect(() => { fetchSnapshots(); }, []);
 
   async function fetchSnapshots() {
     setLoading(true);
     const list = await loadSnapshots();
     setSnapshots(list);
     setLoading(false);
+  }
+
+  function handleToggle() {
+    if (collapsed && snapshots.length === 0 && !loading) fetchSnapshots();
+    setCollapsed(c => !c);
   }
 
   async function handleRestore(snap: SnapshotMeta) {
@@ -102,145 +106,90 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
   }
 
   return (
-    <section className="mb-12 rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-      <div className="flex items-start justify-between gap-4 mb-5">
+    <section className="mb-12 rounded-xl border" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
+      {/* Collapsible header */}
+      <div
+        className="flex items-center justify-between gap-4 px-6 py-4 cursor-pointer select-none"
+        onClick={handleToggle}
+        style={{ borderBottom: collapsed ? 'none' : '1px solid var(--divider)' }}
+      >
         <div>
-          <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>גיבוי · Snapshots</div>
-          <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>גרסאות לשחזור</div>
-          <div className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
-            כל שמירה יוצרת גרסה אוטומטית (עד 50 גרסאות). גיבוי אוטומטי כל 12 שעות.
+          <div className="chapter-mark" style={{ fontSize: '11px', marginBottom: '2px' }}>גיבוי · Snapshots</div>
+          <div className="serif text-[20px]" style={{ color: 'var(--ink)' }}>
+            גרסאות לשחזור
+            {!collapsed && snapshots.length > 0 && (
+              <span className="mono text-[11px] font-normal mr-3" style={{ color: 'var(--text-soft)' }}>
+                {snapshots.length} גרסאות
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <button onClick={handleDownloadBackup} title="הורד קובץ JSON של כל הנתונים" style={{
-            display: 'inline-block', padding: '10px 18px', fontSize: '12px', fontWeight: 600,
-            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-            borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-          }}>⬇ הורד גיבוי</button>
-          <button onClick={fetchSnapshots} disabled={loading} style={{
-            display: 'inline-block', padding: '10px 18px', fontSize: '12px', fontWeight: 600,
-            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-            borderRadius: '999px', cursor: loading ? 'not-allowed' : 'pointer',
-            whiteSpace: 'nowrap', flexShrink: 0, opacity: loading ? 0.6 : 1,
-          }}>
-            {loading ? 'טוען...' : '↻ רענן'}
+        <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+          <button onClick={handleDownloadBackup} title="הורד קובץ JSON של כל הנתונים" style={btnSecondary()}>⬇ הורד גיבוי</button>
+          {!collapsed && (
+            <button onClick={fetchSnapshots} disabled={loading} style={btnSecondary(loading)}>
+              {loading ? 'טוען...' : '↻ רענן'}
+            </button>
+          )}
+          <button
+            onClick={handleToggle}
+            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 py-1 rounded-full border"
+            style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}>
+            {collapsed ? 'הצג' : 'הסתר'}
           </button>
         </div>
       </div>
 
-      {!loading && snapshots.length === 0 && (
-        <div className="mono text-[12px] uppercase tracking-[0.14em] py-4" style={{ color: 'var(--text-soft)' }}>
-          אין גרסאות שמורות עדיין — הן נוצרות אוטומטית בכל שמירה.
-          <br />
-          <span className="text-[11px] mt-1 block">דרושה הרצת ה-SQL ביצירת הטבלה ב-Supabase Dashboard.</span>
+      {!collapsed && (
+        <div className="px-6 pb-5 pt-4">
+          <div className="text-[13px] mb-4" style={{ color: 'var(--text-soft)' }}>
+            כל שמירה יוצרת גרסה אוטומטית (עד 50 גרסאות). גיבוי אוטומטי כל 12 שעות.
+          </div>
+
+          {!loading && snapshots.length === 0 && (
+            <div className="mono text-[12px] uppercase tracking-[0.14em] py-4" style={{ color: 'var(--text-soft)' }}>
+              אין גרסאות שמורות עדיין — הן נוצרות אוטומטית בכל שמירה.
+              <br />
+              <span className="text-[11px] mt-1 block">דרושה הרצת ה-SQL ביצירת הטבלה ב-Supabase Dashboard.</span>
+            </div>
+          )}
+
+          {loading && (
+            <div className="mono text-[12px] uppercase tracking-[0.14em] py-4" style={{ color: 'var(--text-soft)' }}>
+              טוען גרסאות...
+            </div>
+          )}
+
+          {!loading && snapshots.length > 0 && (
+            <ul>
+              {snapshots.map((snap, i) => (
+                <li key={snap.id}
+                  className="py-3.5 border-b flex items-center gap-4"
+                  style={{ borderColor: 'var(--divider)' }}>
+                  <span className="mono text-[10.5px] uppercase tracking-[0.13em] w-5 shrink-0 text-right" style={{ color: 'var(--text-soft)' }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13.5px] font-medium" style={{ color: 'var(--ink)' }}>
+                      {snap.action}{snap.entity ? ` · ${snap.entity}` : ''}{snap.target ? ` — ${snap.target}` : ''}
+                    </div>
+                    <div className="mono text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                      {timeLabel(snap.created_at)} · ע"י {snap.editor_name} · v{snap.version}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRestore(snap)}
+                    disabled={restoring === snap.id}
+                    className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold px-3 py-1.5 rounded-full border shrink-0 hover:bg-[rgba(122,30,43,0.06)] disabled:opacity-40"
+                    style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                    {restoring === snap.id ? 'משחזר...' : 'שחזר'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
-
-      {loading && (
-        <div className="mono text-[12px] uppercase tracking-[0.14em] py-4" style={{ color: 'var(--text-soft)' }}>
-          טוען גרסאות...
-        </div>
-      )}
-
-      {!loading && snapshots.length > 0 && (
-        <ul>
-          {snapshots.map((snap, i) => (
-            <li key={snap.id}
-              className="py-3.5 border-b flex items-center gap-4"
-              style={{ borderColor: 'var(--divider)' }}>
-              <span className="mono text-[10.5px] uppercase tracking-[0.13em] w-5 shrink-0 text-right" style={{ color: 'var(--text-soft)' }}>
-                {String(i + 1).padStart(2, '0')}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13.5px] font-medium" style={{ color: 'var(--ink)' }}>
-                  {snap.action}{snap.entity ? ` · ${snap.entity}` : ''}{snap.target ? ` — ${snap.target}` : ''}
-                </div>
-                <div className="mono text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                  {timeLabel(snap.created_at)} · ע"י {snap.editor_name} · v{snap.version}
-                </div>
-              </div>
-              <button
-                onClick={() => handleRestore(snap)}
-                disabled={restoring === snap.id}
-                className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold px-3 py-1.5 rounded-full border shrink-0 hover:bg-[rgba(122,30,43,0.06)] disabled:opacity-40"
-                style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-                {restoring === snap.id ? 'משחזר...' : 'שחזר'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/* ====== System Settings ====== */
-
-function SettingsSection({ data, userName, onRefresh }: PageProps) {
-  const [coordEmail, setCoordEmail] = useState((data as any).coordinatorEmail || '');
-  const [supEmail, setSupEmail] = useState((data as any).supervisorEmail || '');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  async function save() {
-    setSaving(true); setMsg(null);
-    const res = await saveSnapshot(
-      { ...data, coordinatorEmail: coordEmail.trim(), supervisorEmail: supEmail.trim() },
-      { name: userName },
-      { action: 'עודכן', entity: 'הגדרות', target: 'מיילים' }
-    );
-    setSaving(false);
-    if (!res.ok) { setMsg('שגיאה: ' + (res.error || '')); return; }
-    (data as any).coordinatorEmail = coordEmail.trim();
-    (data as any).supervisorEmail = supEmail.trim();
-    setMsg('✓ נשמר');
-    showToast('✓ הגדרות נשמרו', 'success');
-    onRefresh();
-    setTimeout(() => setMsg(null), 2500);
-  }
-
-  return (
-    <section className="mb-12 rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-      <div className="chapter-mark mb-1" style={{ fontSize: '11px' }}>הגדרות מערכת</div>
-      <div className="serif text-[22px] mb-4" style={{ color: 'var(--ink)' }}>הגדרות</div>
-      <div className="max-w-[520px] space-y-4">
-        <label className="block">
-          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
-            מייל הרכזת (רחל) — מקבל עותקים ממשובים והגשות
-          </span>
-          <input
-            type="email"
-            value={coordEmail}
-            onChange={e => setCoordEmail(e.target.value)}
-            placeholder="rachel@ariel.ac.il"
-            className="input w-full"
-            style={{ padding: '10px 14px', fontSize: '14px' }}
-          />
-        </label>
-        <label className="block">
-          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
-            מייל המפקח האקדמי (יריב) — מקבל עותקים גם כן
-          </span>
-          <input
-            type="email"
-            value={supEmail}
-            onChange={e => setSupEmail(e.target.value)}
-            placeholder="itzkovichyariv@gmail.com"
-            className="input w-full"
-            style={{ padding: '10px 14px', fontSize: '14px' }}
-          />
-        </label>
-        <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-          כאשר מעסיק ממלא משוב, ומועמד מגיש טופס — שניהם מקבלים עותק אוטומטית.
-        </div>
-        <button onClick={save} disabled={saving} style={{
-          display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-          background: saving ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-          borderRadius: '999px', cursor: saving ? 'not-allowed' : 'pointer',
-          whiteSpace: 'nowrap', flexShrink: 0, opacity: saving ? 0.7 : 1,
-        }}>{saving ? 'שומר...' : 'שמור הגדרות'}</button>
-        {msg && <div className="mono text-[11.5px] uppercase tracking-[0.14em]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
-      </div>
     </section>
   );
 }
@@ -279,19 +228,7 @@ function SeedLecturesSection({ data, userName, onRefresh }: PageProps) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  if (lectureCount > 0 && !msg) {
-    // Already has lectures — show compact status only (no reset button to avoid accidental data loss)
-    return (
-      <section className="mb-10 rounded-xl border p-5 flex items-center gap-4"
-        style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-        <span className="serif text-[28px]">📚</span>
-        <div>
-          <div className="chapter-mark mb-0.5" style={{ fontSize: '11px' }}>הרצאות · Seed Data</div>
-          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>✓ יש {lectureCount} הרצאות במערכת</div>
-        </div>
-      </section>
-    );
-  }
+  if (lectureCount > 0 && !msg) return null;
 
   return (
     <section className="mb-14 rounded-2xl border-2 p-8" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
@@ -307,12 +244,7 @@ function SeedLecturesSection({ data, userName, onRefresh }: PageProps) {
           </p>
         </div>
       </div>
-      <button onClick={() => doSeed(data, userName, onRefresh, setBusy, setMsg)} disabled={busy} style={{
-        display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-        background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-        borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
-        whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
-      }}>{busy ? 'שומר לענן...' : '🌱 ייבא 23 הרצאות לענן →'}</button>
+      <button onClick={() => doSeed(data, userName, onRefresh, setBusy, setMsg)} disabled={busy} style={btnPrimary(busy)}>{busy ? 'שומר לענן...' : '🌱 ייבא 23 הרצאות לענן →'}</button>
       {msg && (
         <div className="mt-4 mono text-[12px] uppercase tracking-[0.12em]"
           style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>
@@ -380,20 +312,7 @@ function PatchContactsSection({ data, userName, onRefresh }: PageProps) {
     onRefresh();
   }
 
-  if (needsPatch.length === 0 || done) {
-    return (
-      <section className="mb-10 rounded-xl border p-5 flex items-center gap-4"
-        style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-        <span className="serif text-[28px]">✅</span>
-        <div>
-          <div className="chapter-mark mb-0.5" style={{ fontSize: '11px' }}>פרטי קשר · הרצאות</div>
-          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>
-            {msg || 'כל פרטי הקשר הידועים מולאו בהרצאות'}
-          </div>
-        </div>
-      </section>
-    );
-  }
+  if (needsPatch.length === 0 || done) return null;
 
   return (
     <section className="mb-10 rounded-xl border-2 p-6"
@@ -408,12 +327,7 @@ function PatchContactsSection({ data, userName, onRefresh }: PageProps) {
             {needsPatch.map(l => l.lecturer || 'ללא שם').join(' · ')}
           </div>
         </div>
-        <button onClick={() => doPatch(false)} disabled={busy} style={{
-          display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-          background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-          borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
-          whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
-        }}>{busy ? 'מעדכן...' : '📋 עדכן פרטים →'}</button>
+        <button onClick={() => doPatch(false)} disabled={busy} style={btnPrimary(busy)}>{busy ? 'מעדכן...' : '📋 עדכן פרטים →'}</button>
       </div>
       {msg && <div className="mt-3 mono text-[11.5px]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>{msg}</div>}
     </section>
@@ -468,32 +382,8 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
     onRefresh();
   }
 
-  if (existing.length > 0 && !msg) {
-    // Already seeded — compact status only (no reset button to avoid accidental data loss)
-    return (
-      <section className="mb-10 rounded-xl border p-5 flex items-center gap-4"
-        style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-        <span className="serif text-[28px]">🧑‍🏫</span>
-        <div>
-          <div className="chapter-mark mb-0.5" style={{ fontSize: '11px' }}>מנחים · Seed Data</div>
-          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>✓ יש {existing.length} מנחים במערכת</div>
-        </div>
-      </section>
-    );
-  }
-
-  if (done && msg) {
-    return (
-      <section className="mb-10 rounded-xl border p-5 flex items-center gap-4"
-        style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-        <span className="serif text-[28px]">🧑‍🏫</span>
-        <div>
-          <div className="chapter-mark mb-0.5" style={{ fontSize: '11px' }}>מנחים · Seed Data</div>
-          <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>{msg}</div>
-        </div>
-      </section>
-    );
-  }
+  if ((existing.length > 0 || done) && !msg) return null;
+  if (done && msg) return null;
 
   return (
     <section className="mb-14 rounded-2xl border-2 p-8" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
@@ -509,12 +399,7 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
           </p>
         </div>
       </div>
-      <button onClick={() => doSeedTrainers(false)} disabled={busy} style={{
-        display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-        background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-        borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
-        whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
-      }}>{busy ? 'שומר לענן...' : `🧑‍🏫 ייבא ${KNOWN_LECTURERS.length} מנחים →`}</button>
+      <button onClick={() => doSeedTrainers(false)} disabled={busy} style={btnPrimary(busy)}>{busy ? 'שומר לענן...' : `🧑‍🏫 ייבא ${KNOWN_LECTURERS.length} מנחים →`}</button>
       {msg && (
         <div className="mt-4 mono text-[12px] uppercase tracking-[0.12em]"
           style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>
@@ -522,64 +407,6 @@ function SeedTrainersSection({ data, userName, onRefresh }: PageProps) {
         </div>
       )}
     </section>
-  );
-}
-
-/* ====== Activity log ====== */
-
-function ActivityLogSection({ data }: PageProps) {
-  const history: any[] = (data as any).history || [];
-  const [showAll, setShowAll] = useState(false);
-  const PAGE = 15;
-  const visible = showAll ? history : history.slice(0, PAGE);
-
-  function timeAgo(ts: string) {
-    const diff = Date.now() - new Date(ts).getTime();
-    const m = Math.round(diff / 60000);
-    if (m < 1) return 'עכשיו';
-    if (m < 60) return `לפני ${m} ד׳`;
-    const h = Math.round(m / 60);
-    if (h < 24) return `לפני ${h} שע׳`;
-    const d = Math.round(h / 24);
-    if (d < 7) return `לפני ${d} ימים`;
-    return new Date(ts).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: '2-digit' });
-  }
-
-  if (history.length === 0) return null;
-
-  return (
-    <Section title="יומן פעולות" count={history.length}>
-      <p className="text-[13.5px] leading-[1.55] mb-5" style={{ color: 'var(--text-soft)' }}>
-        כל שינוי שנשמר בענן נרשם כאן אוטומטית.
-      </p>
-      <ul>
-        {visible.map((h: any, i: number) => (
-          <li key={i} className="flex items-baseline gap-4 py-3 border-b text-[13.5px]"
-            style={{ borderColor: 'var(--divider)' }}>
-            <span className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold shrink-0 w-24"
-              style={{ color: 'var(--text-soft)' }}>
-              {timeAgo(h.ts)}
-            </span>
-            <span className="mono text-[10.5px] uppercase tracking-[0.12em] shrink-0 w-14"
-              style={{ color: 'var(--accent)' }}>
-              {h.who}
-            </span>
-            <span style={{ color: 'var(--ink)' }} className="flex-1 leading-[1.4]">
-              {h.action} <strong>{h.entity}</strong>
-              {h.target ? <span style={{ color: 'var(--text-soft)' }}> — {h.target}</span> : ''}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {history.length > PAGE && (
-        <button
-          onClick={() => setShowAll(s => !s)}
-          className="mt-5 mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2 rounded-full border hover:opacity-70"
-          style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}>
-          {showAll ? `הסתר · הצג ${PAGE} אחרונים` : `הצג הכל (${history.length} פעולות)`}
-        </button>
-      )}
-    </Section>
   );
 }
 
@@ -828,18 +655,7 @@ function SlotsSection({ data }: PageProps) {
       <button
         type="button"
         onClick={() => { setPlannerOpen(v => !v); }}
-        style={{
-          display: 'inline-block',
-          padding: '12px 20px',
-          marginBottom: '24px',
-          fontSize: '14px',
-          fontWeight: 600,
-          background: 'var(--accent)',
-          color: 'white',
-          border: 'none',
-          borderRadius: '12px',
-          cursor: 'pointer',
-        }}
+        style={{ ...btnPrimary(), marginBottom: '24px' }}
       >
         📅 {plannerOpen ? 'סגור תכנון' : 'תכנן מועדי ראיון'}
       </button>
@@ -980,11 +796,7 @@ function SlotsSection({ data }: PageProps) {
           {/* View tabs */}
           <div className="flex gap-1 mb-4 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.05)', display: 'inline-flex' }}>
             {(['all', 'booked'] as const).map(v => (
-              <button key={v} type="button" onClick={() => setView(v)} style={{
-                padding: '6px 14px', fontSize: '12px', fontWeight: 600, border: 'none', borderRadius: '9px', cursor: 'pointer',
-                background: view === v ? 'var(--accent)' : 'transparent',
-                color: view === v ? 'white' : 'var(--text-soft)',
-              }}>
+              <button key={v} type="button" onClick={() => setView(v)} style={btnTab(view === v)}>
                 {v === 'all' ? `כל המועדים (${slots.length})` : `נקבעו (${slots.filter(s => s.booked_count > 0).length})`}
               </button>
             ))}
@@ -996,8 +808,7 @@ function SlotsSection({ data }: PageProps) {
                 {view === 'all' ? `${slots.length} מועדים מוגדרים` : `${slots.filter(s => s.booked_count > 0).length} פגישות קבועות`}
               </span>
               <button type="button" onClick={downloadIcs}
-                className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
-                style={{ color: 'var(--ink)' }}>
+                style={btnGhost()}>
                 📥 רענן לוח שנה
               </button>
               <button type="button" onClick={() => {
@@ -1023,14 +834,13 @@ th{background:#f5f0f0;font-weight:bold}
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
                 setTimeout(() => URL.revokeObjectURL(url), 10000);
               }}
-                className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
-                style={{ color: 'var(--ink)' }}>
+                style={btnGhost()}>
                 🖨 הדפס רשימה
               </button>
             </span>
             {confirmDeleteAll ? (
               <span className="flex items-center gap-2">
-                <button onClick={deleteAll} className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--accent)' }}>
+                <button onClick={deleteAll} style={btnDanger()}>
                   אשר מחיקה
                 </button>
                 <button onClick={() => setConfirmDeleteAll(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>
@@ -1038,8 +848,7 @@ th{background:#f5f0f0;font-weight:bold}
                 </button>
               </span>
             ) : (
-              <button onClick={() => setConfirmDeleteAll(true)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100"
-                style={{ color: 'var(--accent)' }}>
+              <button onClick={() => setConfirmDeleteAll(true)} style={btnDanger()}>
                 🗑 מחק הכל
               </button>
             )}
@@ -1150,11 +959,13 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
 
   const [editing, setEditing] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל' });
+  const [form, setForm] = useState({
+    name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל',
+    autoSendAcceptance: true, autoSendRejection: false,
+    type: 'other' as 'practicum' | 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '',
+  });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [justAdded, setJustAdded] = useState<{ year: string; name: string } | null>(null);
-  const [folderMsg, setFolderMsg] = useState<string | null>(null);
 
   async function saveCourse(next: Course[], action: string, target: string) {
     setSaving(true); setMsg(null);
@@ -1190,35 +1001,21 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
       name: form.name.trim(),
       year: normalizeYear(form.year),
       institution: form.institution,
+      autoSendAcceptance: form.autoSendAcceptance,
+      autoSendRejection: form.autoSendRejection,
+      type: form.type,
+      preferenceCount: form.type === 'practicum' ? form.preferenceCount : undefined,
+      reviewAgingThresholdDays: form.type === 'practicum' ? form.reviewAgingThresholdDays : undefined,
+      acceptanceNote: form.type === 'practicum' ? form.acceptanceNote : undefined,
     };
     // Duplicate check
     const dup = courses.find(c => c.name === newCourse.name && normalizeYear(c.year || '') === newCourse.year);
     if (dup) { alert('קורס באותו שם ושנה כבר קיים'); return; }
     const ok = await saveCourse([...courses, newCourse], 'נוסף', newCourse.name);
     if (ok) {
-      setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל' });
+      setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל', autoSendAcceptance: true, autoSendRejection: false, type: 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '' });
       setAdding(false);
-      // Surface a button (fresh user gesture required for showDirectoryPicker)
-      if (fs.isSupported()) {
-        setJustAdded({ year: newCourse.year || 'ללא_שנה', name: newCourse.name });
-        setFolderMsg(null);
-      }
     }
-  }
-
-  async function createFoldersForJustAdded() {
-    if (!justAdded) return;
-    setFolderMsg('יוצר...');
-    const r = await fs.createCourseFolders(justAdded.year, justAdded.name);
-    setFolderMsg(r.message);
-    if (r.ok) setTimeout(() => { setJustAdded(null); setFolderMsg(null); }, 3000);
-  }
-
-  async function createFoldersForCourse(c: Course) {
-    if (!fs.isSupported()) { alert('הדפדפן לא תומך ביצירת תיקיות. פתח ב‑Chrome / Edge בדסקטופ.'); return; }
-    const year = c.year ? normalizeYear(c.year) : 'ללא_שנה';
-    const r = await fs.createCourseFolders(year, c.name);
-    alert(r.message);
   }
 
   async function updateCourse(id: string, patch: Partial<Course>) {
@@ -1241,102 +1038,139 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
     <Section title="קורסים" count={courses.length}>
       <ul>
         {courses.map(c => (
-          <li key={c.id} className="flex items-baseline gap-4 py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
+          <li key={c.id} className="py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
             {editing === c.id ? (
-              <CourseEditInline
-                course={c}
-                years={years}
-                institutions={institutions}
-                onSave={async (patch) => { await updateCourse(c.id, patch); setEditing(null); }}
-                onCancel={() => setEditing(null)}
-              />
+              <div className="flex items-baseline gap-4">
+                <CourseEditInline
+                  course={c}
+                  years={years}
+                  institutions={institutions}
+                  onSave={async (patch) => { await updateCourse(c.id, patch); setEditing(null); }}
+                  onCancel={() => setEditing(null)}
+                />
+              </div>
             ) : (
               <>
-                <div className="flex-1">
-                  <div className="serif text-[19px]" style={{ color: 'var(--ink)' }}>{c.name}</div>
-                  <div className="mono text-[11px] uppercase tracking-[0.14em] mt-0.5" style={{ color: 'var(--text-soft)' }}>
-                    {c.year ? normalizeYear(c.year) : 'ללא שנה'} · {c.institution || 'ללא מוסד'}
+                <div className="flex items-baseline gap-4">
+                  <div className="flex-1">
+                    <div className="serif text-[19px]" style={{ color: 'var(--ink)' }}>{c.name}</div>
+                    <div className="mono text-[11px] uppercase tracking-[0.14em] mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5" style={{ color: 'var(--text-soft)' }}>
+                      <span>{c.year ? normalizeYear(c.year) : 'ללא שנה'} · {c.institution || 'ללא מוסד'}</span>
+                      {c.type === 'practicum' && (
+                        <span style={{ color: 'var(--accent)' }}>🎯 פרקטיקום · {(c as any).preferenceCount ?? 3} העדפות</span>
+                      )}
+                      {(c.autoSendAcceptance !== false) && (
+                        <span style={{ color: 'var(--accent)' }}>✉ קבלה-אוטו</span>
+                      )}
+                      {c.autoSendRejection && (
+                        <span style={{ color: 'var(--accent)', opacity: 0.7 }}>✉ דחייה-אוטו</span>
+                      )}
+                    </div>
                   </div>
+                  <button onClick={() => setEditing(c.id)}
+                    className="w-7 h-7 rounded-full grid place-items-center hover:bg-[rgba(122,30,43,0.08)]"
+                    style={{ color: 'var(--ink)' }}
+                    title="ערוך קורס">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button onClick={() => deleteCourse(c)}
+                    className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-70 hover:opacity-100"
+                    style={{ color: 'var(--accent)' }}>
+                    🗑
+                  </button>
                 </div>
-                <button onClick={() => createFoldersForCourse(c)}
-                  title="צור תיקיות OneDrive (אם חסרות)"
-                  className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-3 py-1 rounded-full border"
-                  style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>
-                  🗂 תיקיות
-                </button>
-                <button onClick={() => setEditing(c.id)}
-                  className="w-7 h-7 rounded-full grid place-items-center hover:bg-[rgba(122,30,43,0.08)]"
-                  style={{ color: 'var(--ink)' }}
-                  title="ערוך קורס">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-                <button onClick={() => deleteCourse(c)}
-                  className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-70 hover:opacity-100"
-                  style={{ color: 'var(--accent)' }}>
-                  🗑
-                </button>
+                {/* Institution linker — all courses */}
+                <InstitutionLinkerSection
+                  course={c}
+                  allInstitutions={institutions}
+                  onUpdate={(patch) => updateCourse(c.id, patch)}
+                />
+                {/* Employer attach section — practicum courses only */}
+                {c.type === 'practicum' && (
+                  <EmployerAttachSection
+                    course={c}
+                    data={data}
+                    userName={userName}
+                    onRefresh={onRefresh}
+                  />
+                )}
               </>
             )}
           </li>
         ))}
       </ul>
 
-      {justAdded && (
-        <div className="mt-5 rounded-xl p-5 flex items-start gap-4" style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--accent)' }}>
-          <div className="flex-1">
-            <div className="serif text-[17px]" style={{ color: 'var(--ink)' }}>
-              ✓ הקורס <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>{justAdded.name}</em> ({justAdded.year}) נוסף
-            </div>
-            <div className="text-[13px] mt-1" style={{ color: 'var(--text-soft)' }}>
-              רוצה שאצור גם את תיקיות הקבצים ב‑OneDrive? לחצן הוא הפעלה ידנית — הדפדפן דורש זאת.
-            </div>
-            {folderMsg && (
-              <div className="mono text-[11.5px] uppercase tracking-[0.14em] mt-2" style={{ color: 'var(--accent)' }}>
-                {folderMsg}
-              </div>
-            )}
-          </div>
-          <button onClick={createFoldersForJustAdded} style={{
-            display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-          }}>🗂 צור תיקיות →
-          </button>
-          <button onClick={() => setJustAdded(null)}
-            className="mono text-[11.5px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100">
-            דלג
-          </button>
-        </div>
-      )}
-
       <button
         onClick={() => { setAdding(true); setTimeout(() => newCourseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
-        style={{
-          display: adding ? 'none' : 'inline-block', marginTop: '20px',
-          padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-          background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-          borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-        }}>+ הוסף קורס</button>
+        style={{ ...btnSecondary(), display: adding ? 'none' : 'inline-block', marginTop: '20px' }}>+ הוסף קורס</button>
 
       {adding && (
         <div ref={newCourseRef} className="mt-5 rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
           <div className="chapter-mark mb-3" style={{ fontSize: '11px' }}>קורס חדש</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
             <LabelledInput label="שם קורס" value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="למשל: פרקטיקום משאבי אנוש" />
-            {/* Year — free text with datalist: user can type תשפ״ז or pick from list */}
             <LabelledInputList label="שנה" value={form.year} onChange={v => setForm({ ...form, year: v })}
               options={years} listId="new-course-years" placeholder="למשל: תשפ״ז" />
             <LabelledInputList label="מוסד" value={form.institution} onChange={v => setForm({ ...form, institution: v })}
               options={institutions} listId="new-course-inst" placeholder="שם המוסד" />
           </div>
+          {/* Course type */}
+          <div className="flex items-center gap-4 mb-4">
+            <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>סוג:</span>
+            {(['practicum', 'other'] as const).map(t => (
+              <label key={t} className="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="new-course-type" value={t} checked={form.type === t}
+                  onChange={() => setForm({ ...form, type: t })}
+                  style={{ accentColor: 'var(--accent)' }} />
+                <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--ink)' }}>
+                  {t === 'practicum' ? 'פרקטיקום' : 'אחר'}
+                </span>
+              </label>
+            ))}
+          </div>
+          {/* Practicum-only fields */}
+          {form.type === 'practicum' && (
+            <div className="space-y-2 p-3 mb-4 rounded-lg" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
+              <div className="flex flex-wrap gap-3">
+                <label className="block">
+                  <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>מספר העדפות (1-10)</span>
+                  <input type="number" min={1} max={10} value={form.preferenceCount}
+                    onChange={e => setForm({ ...form, preferenceCount: Number(e.target.value) || 3 })}
+                    className="input" style={{ padding: '5px 10px', fontSize: '13px', width: 70 }} />
+                </label>
+                <label className="block">
+                  <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>סף המתנה (ימים)</span>
+                  <input type="number" min={1} value={form.reviewAgingThresholdDays}
+                    onChange={e => setForm({ ...form, reviewAgingThresholdDays: Number(e.target.value) || 14 })}
+                    className="input" style={{ padding: '5px 10px', fontSize: '13px', width: 70 }} />
+                </label>
+              </div>
+              <label className="block">
+                <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>הערת קבלה לסטודנט</span>
+                <textarea value={form.acceptanceNote}
+                  onChange={e => setForm({ ...form, acceptanceNote: e.target.value })}
+                  rows={2} className="input w-full" style={{ padding: '6px 10px', fontSize: '13px', resize: 'vertical' }} />
+              </label>
+            </div>
+          )}
+          {/* Email automation toggles */}
+          <div className="flex flex-wrap gap-5 mb-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={form.autoSendAcceptance}
+                onChange={e => setForm({ ...form, autoSendAcceptance: e.target.checked })}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+              <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--ink)' }}>שלח אישור קבלה אוטומטית</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={form.autoSendRejection}
+                onChange={e => setForm({ ...form, autoSendRejection: e.target.checked })}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+              <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--ink)' }}>שלח הודעת דחייה אוטומטית</span>
+            </label>
+          </div>
           <div className="flex gap-2">
-            <button onClick={addCourse} disabled={saving} style={{
-              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-              background: saving ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-              borderRadius: '999px', cursor: saving ? 'not-allowed' : 'pointer',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: saving ? 0.7 : 1,
-            }}>{saving ? 'שומר...' : 'הוסף →'}</button>
-            <button onClick={() => { setAdding(false); setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל' }); }}
+            <button onClick={addCourse} disabled={saving} style={btnPrimary(saving)}>{saving ? 'שומר...' : 'הוסף →'}</button>
+            <button onClick={() => { setAdding(false); setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל', autoSendAcceptance: true, autoSendRejection: false, type: 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '' }); }}
               className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">
               בטל
             </button>
@@ -1345,6 +1179,373 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
       )}
       {msg && <div className="mono text-[11.5px] uppercase tracking-[0.14em] mt-3" style={{ color: 'var(--accent)' }}>{msg}</div>}
     </Section>
+  );
+}
+
+/* ====== Employer Attach Section ====== */
+
+function EmployerAttachSection({ course, data, userName, onRefresh }: {
+  course: Course;
+  data: any;
+  userName: string;
+  onRefresh: () => void;
+}) {
+  const allEmployers: Employer[] = data.employers || [];
+  const [showAttachModal, setShowAttachModal] = useState(false);
+  const [showNewEmployer, setShowNewEmployer] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingPositions, setEditingPositions] = useState<string | null>(null);
+  const [editPositionsValue, setEditPositionsValue] = useState(0);
+
+  // Employers attached to this course
+  const attached = allEmployers.filter(e => {
+    const cids: string[] = (e as any).courseIds || ((e as any).courseId ? [(e as any).courseId] : []);
+    return cids.includes(course.id);
+  });
+
+  // Employers NOT attached (for the "pick from pool" modal)
+  const unattached = allEmployers.filter(e => {
+    const cids: string[] = (e as any).courseIds || ((e as any).courseId ? [(e as any).courseId] : []);
+    return !cids.includes(course.id);
+  });
+
+  // Vacancy summary across all attached employers
+  const summary = attached.reduce(
+    (acc, emp) => {
+      const counts = countSlotsByStatus(emp as any, course.id);
+      acc.total += counts.total;
+      acc.available += counts.available;
+      acc.tentative += counts.tentative;
+      acc.under_review += counts.under_review;
+      acc.placed += counts.placed;
+      return acc;
+    },
+    { total: 0, available: 0, tentative: 0, under_review: 0, placed: 0 }
+  );
+
+  async function attachEmployer(emp: Employer) {
+    setSaving(true);
+    const updatedEmp = { ...emp, courseIds: [...((emp as any).courseIds || []), course.id] };
+    const nextEmployers = allEmployers.map(e => e.id === emp.id ? updatedEmp : e);
+    const res = await saveSnapshot({ ...data, employers: nextEmployers }, { name: userName },
+      { action: 'שויך לקורס', entity: 'מעסיק', target: emp.name });
+    setSaving(false);
+    if (res.ok) { onRefresh(); showToast(`✓ ${emp.name} שויך לקורס`, 'success'); }
+    else showToast('שגיאה: ' + (res.error || ''), 'error');
+  }
+
+  async function detachEmployer(emp: Employer) {
+    // R15: block if tentative/under_review/placed > 0 for this course
+    const counts = countSlotsByStatus(emp as any, course.id);
+    if (counts.tentative + counts.under_review + counts.placed > 0) {
+      showToast(`לא ניתן להסיר — יש מועמדויות פתוחות/שיבוצים (${counts.tentative} ממתינים, ${counts.under_review} בבדיקה, ${counts.placed} שובצו)`, 'error');
+      return;
+    }
+    if (!confirm(`להסיר את "${emp.name}" מהקורס "${course.name}"?`)) return;
+    setSaving(true);
+    const newCourseIds = ((emp as any).courseIds || []).filter((id: string) => id !== course.id);
+    const updatedEmp = { ...emp, courseIds: newCourseIds };
+    const nextEmployers = allEmployers.map(e => e.id === emp.id ? updatedEmp : e);
+    const res = await saveSnapshot({ ...data, employers: nextEmployers }, { name: userName },
+      { action: 'הוסר מקורס', entity: 'מעסיק', target: emp.name });
+    setSaving(false);
+    if (res.ok) { onRefresh(); showToast(`✓ ${emp.name} הוסר מהקורס`, 'success'); }
+    else showToast('שגיאה: ' + (res.error || ''), 'error');
+  }
+
+  async function savePositionsTotal(emp: Employer, newTotal: number) {
+    const counts = countSlotsByStatus(emp as any, course.id);
+    const occupied = counts.tentative + counts.under_review + counts.placed;
+    // R14: block if decreasing below occupied
+    if (newTotal < occupied) {
+      showToast(`לא ניתן להפחית — ${occupied} מקומות תפוסים (${counts.tentative} ממתינים, ${counts.under_review} בבדיקה, ${counts.placed} שובצו)`, 'error');
+      return;
+    }
+    setSaving(true);
+    const existingSlots: any[] = (emp as any).vacancySlots || [];
+    const courseSlots = existingSlots.filter((s: any) => s.courseId === course.id);
+    const otherSlots = existingSlots.filter((s: any) => s.courseId !== course.id);
+    const now = new Date().toISOString();
+
+    // Resize slots array
+    let newCourseSlots = [...courseSlots];
+    if (newTotal > courseSlots.length) {
+      // Add new available slots
+      for (let i = courseSlots.length; i < newTotal; i++) {
+        newCourseSlots.push({
+          id: `${emp.id}-${course.id}-s${i + 1}`,
+          courseId: course.id,
+          status: 'available',
+          studentId: null,
+          prefRank: null,
+          history: [{ at: now, from: null, to: 'available', by: 'admin', actorId: userName }],
+        });
+      }
+    } else if (newTotal < courseSlots.length) {
+      // Remove available slots from the end
+      newCourseSlots = courseSlots.slice(0, newTotal);
+    }
+
+    const updatedEmp = { ...emp, positionsTotal: newTotal, vacancySlots: [...otherSlots, ...newCourseSlots] };
+    const nextEmployers = allEmployers.map(e => e.id === emp.id ? updatedEmp : e);
+    const res = await saveSnapshot({ ...data, employers: nextEmployers }, { name: userName },
+      { action: 'עודכן מספר מקומות', entity: 'מעסיק', target: emp.name });
+    setSaving(false);
+    setEditingPositions(null);
+    if (res.ok) { onRefresh(); showToast(`✓ עודכן ל-${newTotal} מקומות`, 'success'); }
+    else showToast('שגיאה: ' + (res.error || ''), 'error');
+  }
+
+  async function handleNewEmployerSave(emp: Employer) {
+    setSaving(true);
+    const newEmp = {
+      ...emp,
+      courseIds: [...((emp as any).courseIds || []), course.id],
+      addedBy: 'admin',
+      approvalStatus: 'approved',
+      restrictedToStudentId: null,
+      positionsTotal: emp.positions || 1,
+    };
+    // Build vacancy slots
+    const now = new Date().toISOString();
+    (newEmp as any).vacancySlots = Array.from({ length: newEmp.positionsTotal }, (_, i) => ({
+      id: `${newEmp.id}-s${i + 1}`,
+      courseId: course.id,
+      status: 'available',
+      studentId: null,
+      prefRank: null,
+      history: [{ at: now, from: null, to: 'available', by: 'admin', actorId: userName }],
+    }));
+    const nextEmployers = [...allEmployers, newEmp];
+    const res = await saveSnapshot({ ...data, employers: nextEmployers }, { name: userName },
+      { action: 'נוסף', entity: 'מעסיק', target: newEmp.name });
+    setSaving(false);
+    setShowNewEmployer(false);
+    if (res.ok) { onRefresh(); showToast(`✓ ${newEmp.name} נוסף ושויך לקורס`, 'success'); }
+    else showToast('שגיאה: ' + (res.error || ''), 'error');
+  }
+
+  const courses = data.courses || [];
+
+  return (
+    <div className="mt-3 pt-3" style={{ borderTop: '1px dashed var(--divider)' }}>
+      <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2 font-semibold" style={{ color: 'var(--text-soft)' }}>
+        מעסיקים מוצמדים לקורס
+      </div>
+
+      {/* Vacancy summary chips */}
+      {attached.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {[
+            { label: `סה"כ: ${summary.total}`, color: 'var(--ink)' },
+            { label: `פנויים: ${summary.available}`, color: '#059669' },
+            { label: `ממתינים: ${summary.tentative}`, color: '#d97706' },
+            { label: `בבדיקה: ${summary.under_review}`, color: '#2563eb' },
+            { label: `שובצו: ${summary.placed}`, color: 'var(--accent)' },
+          ].map(chip => (
+            <span key={chip.label}
+              className="mono text-[10.5px] px-2.5 py-0.5 rounded-full"
+              style={{ border: `1px solid ${chip.color}30`, color: chip.color, background: `${chip.color}10` }}>
+              {chip.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {attached.length === 0 && (
+        <div className="text-[13px] mb-3" style={{ color: 'var(--text-soft)' }}>
+          אין מעסיקים מוצמדים לקורס זה.
+        </div>
+      )}
+
+      {/* Attached employer rows */}
+      {attached.map(emp => {
+        const counts = countSlotsByStatus(emp as any, course.id);
+        const isPending = (emp as any).approvalStatus === 'pending';
+        return (
+          <div key={emp.id}
+            className="flex flex-wrap items-center gap-3 py-2 px-3 mb-1 rounded-lg"
+            style={{
+              background: isPending ? 'rgba(217,119,6,0.07)' : 'rgba(0,0,0,0.03)',
+              border: isPending ? '1px solid rgba(217,119,6,0.4)' : '1px solid var(--divider)',
+            }}>
+            <div className="flex-1 min-w-0">
+              <span className="text-[13.5px] font-medium" style={{ color: 'var(--ink)' }}>{emp.name}</span>
+              {isPending && (
+                <span className="mono text-[10px] mr-2 px-1.5 py-0.5 rounded"
+                  style={{ background: 'rgba(217,119,6,0.15)', color: '#b45309' }}>ממתין לאישור</span>
+              )}
+              <span className="mono text-[11px] mr-2" style={{ color: 'var(--text-soft)' }}>
+                {counts.available}פ · {counts.tentative}מ · {counts.under_review}ב · {counts.placed}ש
+              </span>
+            </div>
+            {editingPositions === emp.id ? (
+              <div className="flex items-center gap-2">
+                <input type="number" min={0} value={editPositionsValue}
+                  onChange={e => setEditPositionsValue(Number(e.target.value) || 0)}
+                  className="input" style={{ width: 60, padding: '4px 8px', fontSize: '13px' }} />
+                <button onClick={() => savePositionsTotal(emp, editPositionsValue)} disabled={saving}
+                  style={{ ...btnSmall(saving), fontSize: '11px' }}>שמור</button>
+                <button onClick={() => setEditingPositions(null)}
+                  className="mono text-[11px] opacity-60 hover:opacity-100">בטל</button>
+              </div>
+            ) : (
+              <button onClick={() => { setEditingPositions(emp.id); setEditPositionsValue((emp as any).positionsTotal || 0); }}
+                style={btnSmall()}>ערוך מקומות ({(emp as any).positionsTotal ?? counts.total})</button>
+            )}
+            <button onClick={() => detachEmployer(emp)} disabled={saving}
+              className="mono text-[11px] uppercase tracking-[0.12em] font-semibold opacity-70 hover:opacity-100"
+              style={{ color: 'var(--accent)' }}>הסר מקורס</button>
+          </div>
+        );
+      })}
+
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-2 mt-3">
+        <button onClick={() => setShowAttachModal(true)} style={btnSecondary()}>
+          ➕ בחר מעסיק מהמאגר
+        </button>
+        <button onClick={() => setShowNewEmployer(true)} style={btnSecondary()}>
+          ➕ הוסף מעסיק חדש
+        </button>
+      </div>
+
+      {/* Pick from pool modal */}
+      {showAttachModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-2xl border p-6 max-w-[520px] w-full mx-4 max-h-[80vh] overflow-y-auto"
+            style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div className="flex items-baseline justify-between mb-4">
+              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>בחר מעסיק מהמאגר</div>
+              <button onClick={() => setShowAttachModal(false)} className="mono text-[11px] opacity-60 hover:opacity-100">✕</button>
+            </div>
+            {unattached.length === 0 ? (
+              <div className="text-[14px]" style={{ color: 'var(--text-soft)' }}>כל המעסיקים כבר מוצמדים לקורס זה.</div>
+            ) : (
+              <ul>
+                {unattached.map(emp => (
+                  <li key={emp.id} className="flex items-center justify-between gap-3 py-2 border-b" style={{ borderColor: 'var(--divider)' }}>
+                    <div>
+                      <div className="text-[14px] font-medium" style={{ color: 'var(--ink)' }}>{emp.name}</div>
+                      {emp.location && <div className="mono text-[11px]" style={{ color: 'var(--text-soft)' }}>{emp.location}</div>}
+                    </div>
+                    <button onClick={async () => { await attachEmployer(emp); setShowAttachModal(false); }} disabled={saving}
+                      style={btnSmall(saving)}>צרף →</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* New employer modal */}
+      {showNewEmployer && (
+        <EmployerEditor
+          employer={null}
+          courses={courses}
+          years={[]}
+          defaultCourseId={course.id}
+          onSave={handleNewEmployerSave}
+          onClose={() => setShowNewEmployer(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ====== Institution Linker Section ====== */
+
+function InstitutionLinkerSection({ course, allInstitutions, onUpdate }: {
+  course: Course;
+  allInstitutions: string[];
+  onUpdate: (patch: Partial<Course>) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [inputVal, setInputVal] = useState('');
+  const linked: string[] = (course as any).linkedInstitutions || [];
+  const listId = `inst-link-dl-${course.id}`;
+
+  function addInstitution() {
+    const v = inputVal.trim();
+    if (!v) return;
+    if (linked.includes(v)) { setInputVal(''); return; }
+    onUpdate({ linkedInstitutions: [...linked, v] });
+    setInputVal('');
+  }
+
+  function removeInstitution(name: string) {
+    onUpdate({ linkedInstitutions: linked.filter(i => i !== name) });
+  }
+
+  return (
+    <div className="mt-2" style={{ borderTop: '1px dashed var(--divider)', paddingTop: '8px' }}>
+      {/* Toggle button */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+          display: 'flex', alignItems: 'center', gap: '5px',
+        }}>
+        <span style={{ fontSize: '12px', color: 'var(--text-soft)', transition: 'transform 0.15s', display: 'inline-block', transform: expanded ? 'rotate(90deg)' : 'none' }}>▶</span>
+        <span className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-soft)' }}>
+          🏫 מוסדות{linked.length > 0 ? ` (${linked.length})` : ' — הוסף'}
+        </span>
+        {linked.length > 0 && !expanded && (
+          <span className="text-[11px]" style={{ color: 'var(--text-soft)', opacity: 0.7 }}>
+            {linked.slice(0, 3).join(' · ')}{linked.length > 3 ? ` +${linked.length - 3}` : ''}
+          </span>
+        )}
+      </button>
+
+      {/* Expanded panel */}
+      {expanded && (
+        <div className="mt-2 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.03)', border: '1px solid var(--divider)' }}>
+          {/* Existing chips */}
+          {linked.length > 0 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+              {linked.map(inst => (
+                <span key={inst}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                    padding: '3px 10px', borderRadius: '999px', fontSize: '12px',
+                    background: 'rgba(122,30,43,0.07)', border: '1px solid rgba(122,30,43,0.2)',
+                    color: 'var(--ink)',
+                  }}>
+                  {inst}
+                  <button
+                    onClick={() => removeInstitution(inst)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--accent)', opacity: 0.6, fontSize: '12px' }}
+                    title="הסר">✕</button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[12px] mb-2" style={{ color: 'var(--text-soft)' }}>אין מוסדות מקושרים לקורס זה.</div>
+          )}
+
+          {/* Add input */}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <input
+              type="text"
+              value={inputVal}
+              onChange={e => setInputVal(e.target.value)}
+              list={listId}
+              placeholder="הוסף מוסד..."
+              className="input"
+              style={{ padding: '5px 10px', fontSize: '12px', flex: 1, maxWidth: '260px' }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addInstitution(); } }}
+            />
+            <datalist id={listId}>
+              {allInstitutions.filter(i => !linked.includes(i)).map(i => <option key={i} value={i} />)}
+            </datalist>
+            <button onClick={addInstitution} style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '999px', background: 'var(--accent)', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+              + הוסף
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1361,27 +1562,90 @@ function CourseEditInline({ course, years, institutions, onSave, onCancel }: {
     name: course.name,
     year: normalizeYear(course.year || years[0] || 'תשפ״ו'),
     institution: course.institution || institutions[0] || '',
+    autoSendAcceptance: course.autoSendAcceptance ?? true,
+    autoSendRejection: course.autoSendRejection ?? false,
+    type: (course as any).type || 'other',
+    preferenceCount: (course as any).preferenceCount ?? 3,
+    reviewAgingThresholdDays: (course as any).reviewAgingThresholdDays ?? 14,
+    acceptanceNote: (course as any).acceptanceNote || '',
   });
   return (
-    /* Two-row layout — name full width on top, fields + actions on bottom */
-    <div className="flex-1 space-y-2">
+    <div className="flex-1 space-y-3">
       <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
         className="input w-full" style={{ padding: '7px 12px', fontSize: '14px' }} />
       <div className="flex flex-wrap items-center gap-2">
-        {/* Year — free-text with datalist so Hebrew years can be typed */}
         <input value={form.year} onChange={e => setForm({ ...form, year: e.target.value })}
           list={yearListId} placeholder="שנה"
           className="input" style={{ padding: '6px 12px', fontSize: '13px', width: 110 }} />
         <datalist id={yearListId}>
           {years.map(y => <option key={y} value={normalizeYear(y)} />)}
         </datalist>
-        {/* Institution */}
         <input value={form.institution} onChange={e => setForm({ ...form, institution: e.target.value })}
           list={instListId} placeholder="מוסד"
           className="input" style={{ padding: '6px 12px', fontSize: '13px', width: 180 }} />
         <datalist id={instListId}>
           {institutions.map(i => <option key={i} value={i} />)}
         </datalist>
+      </div>
+      {/* Course type */}
+      <div className="flex items-center gap-4">
+        <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>סוג:</span>
+        {(['practicum', 'other'] as const).map(t => (
+          <label key={t} className="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name={`type-${course.id}`} value={t} checked={form.type === t}
+              onChange={() => setForm({ ...form, type: t })}
+              style={{ accentColor: 'var(--accent)' }} />
+            <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--ink)' }}>
+              {t === 'practicum' ? 'פרקטיקום' : 'אחר'}
+            </span>
+          </label>
+        ))}
+      </div>
+      {/* Practicum-only fields */}
+      {form.type === 'practicum' && (
+        <div className="space-y-2 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
+          <div className="flex flex-wrap gap-3">
+            <label className="block">
+              <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>מספר העדפות</span>
+              <input type="number" min={1} max={10} value={form.preferenceCount}
+                onChange={e => setForm({ ...form, preferenceCount: Number(e.target.value) || 3 })}
+                className="input" style={{ padding: '5px 10px', fontSize: '13px', width: 70 }} />
+            </label>
+            <label className="block">
+              <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>סף המתנה (ימים)</span>
+              <input type="number" min={1} value={form.reviewAgingThresholdDays}
+                onChange={e => setForm({ ...form, reviewAgingThresholdDays: Number(e.target.value) || 14 })}
+                className="input" style={{ padding: '5px 10px', fontSize: '13px', width: 70 }} />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>הערת קבלה לסטודנט</span>
+            <textarea value={form.acceptanceNote}
+              onChange={e => setForm({ ...form, acceptanceNote: e.target.value })}
+              rows={2} className="input w-full" style={{ padding: '6px 10px', fontSize: '13px', resize: 'vertical' }} />
+          </label>
+        </div>
+      )}
+      {/* Email automation toggles */}
+      <div className="flex flex-wrap gap-4 pt-1">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={form.autoSendAcceptance}
+            onChange={e => setForm({ ...form, autoSendAcceptance: e.target.checked })}
+            style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+          <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--ink)' }}>
+            שלח אישור קבלה אוטומטית
+          </span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" checked={form.autoSendRejection}
+            onChange={e => setForm({ ...form, autoSendRejection: e.target.checked })}
+            style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+          <span className="mono text-[11px] uppercase tracking-[0.12em]" style={{ color: 'var(--ink)' }}>
+            שלח הודעת דחייה אוטומטית
+          </span>
+        </label>
+      </div>
+      <div className="flex gap-2">
         <button onClick={() => onSave(form)}
           className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 py-1.5 rounded-full"
           style={{ background: 'var(--accent)', color: 'var(--bg)', whiteSpace: 'nowrap' }}>
@@ -1443,13 +1707,7 @@ function YearsSection({ data, userName, onRefresh }: PageProps) {
         <input value={newYear} onChange={e => setNewYear(e.target.value)} placeholder="למשל: תשפ״ז"
           className="input" style={{ padding: '8px 14px', fontSize: '14px', width: 200 }}
           onKeyDown={e => { if (e.key === 'Enter') addYear(); }} />
-        <button onClick={addYear} disabled={saving || !newYear.trim()} style={{
-          display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-          background: (saving || !newYear.trim()) ? 'var(--divider)' : 'var(--accent)',
-          color: 'white', border: 'none', borderRadius: '999px',
-          cursor: (saving || !newYear.trim()) ? 'not-allowed' : 'pointer',
-          whiteSpace: 'nowrap', flexShrink: 0, opacity: (saving || !newYear.trim()) ? 0.6 : 1,
-        }}>+ הוסף שנה</button>
+        <button onClick={addYear} disabled={saving || !newYear.trim()} style={btnPrimary(saving || !newYear.trim())}>+ הוסף שנה</button>
       </div>
     </Section>
   );
@@ -1502,13 +1760,7 @@ function InstitutionsSection({ data, userName, onRefresh }: PageProps) {
         <input value={newInst} onChange={e => setNewInst(e.target.value)} placeholder="למשל: המכללה האקדמית עמק יזרעאל"
           className="input" style={{ padding: '8px 14px', fontSize: '14px', width: 300 }}
           onKeyDown={e => { if (e.key === 'Enter') addInst(); }} />
-        <button onClick={addInst} disabled={saving || !newInst.trim()} style={{
-          display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-          background: (saving || !newInst.trim()) ? 'var(--divider)' : 'var(--accent)',
-          color: 'white', border: 'none', borderRadius: '999px',
-          cursor: (saving || !newInst.trim()) ? 'not-allowed' : 'pointer',
-          whiteSpace: 'nowrap', flexShrink: 0, opacity: (saving || !newInst.trim()) ? 0.6 : 1,
-        }}>+ הוסף מוסד</button>
+        <button onClick={addInst} disabled={saving || !newInst.trim()} style={btnPrimary(saving || !newInst.trim())}>+ הוסף מוסד</button>
       </div>
     </Section>
   );

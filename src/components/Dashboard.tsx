@@ -3,6 +3,7 @@ import type { Lecture } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear } from './pageShared';
 import { RefreshButton } from './StudentsPage';
+import { openMailto } from '../lib/openMailto';
 
 function hebDate(d: Date) {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -133,7 +134,7 @@ export default function Dashboard({
 תודה,
 ד"ר יריב איצקוביץ
 `);
-          window.location.href = `mailto:${encodeURIComponent(lec.lecturerEmail)}?subject=${subject}&body=${body}`;
+          openMailto(`mailto:${encodeURIComponent(lec.lecturerEmail)}?subject=${subject}&body=${body}`);
         },
       },
     });

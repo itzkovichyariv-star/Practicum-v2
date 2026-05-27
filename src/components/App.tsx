@@ -19,8 +19,10 @@ import {
   getSession, setSession, getContext, setContext as persistContext, signOut, normalizeYear,
   type UserProfile, type Context,
 } from '../lib/session';
+import { TOAST_COLORS, btnPrimary } from '../lib/design';
 import { loadSnapshot, supabase, type PracticumData } from '../lib/supabase';
 import { saveSnapshot, ensureAutoSnapshot } from '../lib/dataApi';
+import { migratePlacementData } from '../lib/placement';
 import { filterByPermissions, permissionsFor, describePermissions, type UserPermissions } from '../lib/permissions';
 import { CONTACT_PATCHES } from '../lib/contactPatches';
 
@@ -109,7 +111,8 @@ export default function App() {
       setLoading(false);
       return;
     }
-    setData(snap.data);
+    const migratedData = migratePlacementData(snap.data);
+    setData(migratedData);
     setLastUpdated(snap.updated_at);
     setLastEditor(snap.last_editor_name);
     setLoading(false);
@@ -242,10 +245,7 @@ export default function App() {
     return (
       <Loader
         text={loadError}
-        action={<button onClick={refresh} style={{
-          display: 'inline-block', marginTop: '24px', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-          background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer',
-        }}>נסה שוב</button>}
+        action={<button onClick={refresh} style={{ ...btnPrimary(), marginTop: '24px' }}>נסה שוב</button>}
       />
     );
   }
@@ -341,13 +341,6 @@ export function ToastContainer() {
 
   if (!toasts.length) return null;
 
-  const colors: Record<ToastType, string> = {
-    success: 'var(--accent)',
-    error: '#b91c1c',
-    info: '#1d4ed8',
-    warn: '#b45309',
-  };
-
   return (
     <div className="fixed bottom-8 left-1/2 z-[9999] flex flex-col gap-2"
       style={{ transform: 'translateX(-50%)', minWidth: '260px', maxWidth: '480px' }}>
@@ -355,8 +348,8 @@ export function ToastContainer() {
         <div key={t.id}
           className="px-5 py-3 rounded-xl text-[14px] font-semibold shadow-2xl flex items-center gap-3"
           style={{
-            background: colors[t.type],
-            color: '#f4efe6',
+            background: TOAST_COLORS[t.type]?.bg ?? 'var(--accent)',
+            color: TOAST_COLORS[t.type]?.text ?? 'white',
             animation: 'toast-in 0.25s ease',
           }}>
           <span style={{ fontSize: '16px' }}>

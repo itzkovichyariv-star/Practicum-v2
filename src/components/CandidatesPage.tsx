@@ -1,4 +1,5 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
+import { btnPrimary, btnSmall, btnSecondary } from '../lib/design';
 import { supabase } from '../lib/supabase';
 import type { Candidate } from '../lib/supabase';
 import type { PageProps } from './pageShared';
@@ -10,10 +11,12 @@ import CandidateEditor from './CandidateEditor';
 import { RowActions, Popover, RefreshButton, StatusDot, type DotStatus } from './StudentsPage';
 import SubmissionsInbox from './SubmissionsInbox';
 import ExcelImport from './ExcelImport';
+// email sending is via Outlook (mailto:) — no direct API imports needed
+import { openMailto } from '../lib/openMailto';
 
 export default function CandidatesPage({ data, context, userName, onRefresh }: PageProps) {
   const [search, setSearch] = useState('');
-  const [stage, setStage] = useState<'all' | 'pending' | 'passed' | 'failed'>('all');
+  const [stage, setStage] = useState<'all' | 'pending' | 'passed' | 'failed' | 'submitted' | 'notsubmitted'>('all');
   const [editing, setEditing] = useState<Candidate | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -25,26 +28,95 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const [msgSubject, setMsgSubject] = useState('');
   const [msgBody, setMsgBody] = useState('');
 
-  // CV updates (unseen uploads from candidates)
-  const [cvUpdates, setCvUpdates] = useState<Record<string, { id: string; cv_file_path: string; uploaded_at: string }>>({});
+  // Email confirmation state — no email goes out without user review
+  type EmailConfirm = {
+    type: 'acceptance' | 'rejection';
+    recipients: Array<{ id: string; name: string; email: string }>;
+    subject: string;
+    body: string;
+  };
+  const [emailConfirm, setEmailConfirm] = useState<EmailConfirm | null>(null);
 
-  useEffect(() => {
-    supabase.from('cv_updates')
-      .select('id, email, cv_file_path, uploaded_at')
-      .is('seen_at', null)
-      .then(({ data }) => {
-        if (!data) return;
-        const map: Record<string, { id: string; cv_file_path: string; uploaded_at: string }> = {};
-        for (const row of data) {
-          const key = (row.email || '').toLowerCase();
-          // Keep most recent per email
-          if (!map[key] || row.uploaded_at > map[key].uploaded_at) {
-            map[key] = { id: row.id, cv_file_path: row.cv_file_path, uploaded_at: row.uploaded_at };
-          }
-        }
-        setCvUpdates(map);
-      });
-  }, []);
+  const EMAIL_TEMPLATES = {
+    acceptance: {
+      subject: 'ברכות — התקבלת לתכנית הפרקטיקום',
+      body: `שלום {{שם}},
+
+ברכות חמות! שמחנו לבשר כי עברת בהצלחה את ראיון הקבלה לתכנית הפרקטיקום במשאבי אנוש, אוניברסיטת אריאל.
+
+📌 השלבים הקרובים:
+
+1. השתתפות בסדנת הכנה לפרקטיקום — פרטים יישלחו בנפרד.
+
+2. עדכון קורות החיים לאחר הסדנה — חובה לפני שיבוץ לארגון.
+   קישור אישי לעדכון קו"ח: {{קישור_קוח}}
+
+3. בחירת ארגון לפרקטיקום — לאחר הגשת קו"ח מעודכן תתבקש/י לבחור ארגון מתוך רשימת הארגונות המשתתפים. לכל ארגון מצורף תיאור המפרט את תחומי הפעילות וסוג הניסיון שתצבור/י — קרא/י אותם לפני הבחירה.
+
+לכל שאלה, נשמח לענות.
+
+בברכה,
+צוות הפרקטיקום · אוניברסיטת אריאל`,
+    },
+    rejection: {
+      subject: 'תוצאת ראיון — תכנית הפרקטיקום',
+      body: `שלום {{שם}},
+
+תודה רבה על עניינך בתכנית הפרקטיקום ועל הזמן שהשקעת בתהליך.
+
+לאור מספר המקומות המצומצם בתכנית, לצערנו לא נוכל לקלוט אותך במחזור הנוכחי. אם יתפנה מקום, נשמח לשקול את מועמדותך מחדש.
+
+גם אם לא נצליח לקלוט אותך הפעם — אם תרצה/י להתייעץ בנוגע לקידום הקריירה שלך במשאבי אנוש, אתה/את מוזמן/ת לתאם פגישה עם ד״ר יריב איצקוביץ, מנחה התכנית.
+
+אנו מודים לך על הגשת המועמדות ומאחלים לך הצלחה רבה בהמשך.
+
+בברכה,
+צוות הפרקטיקום · אוניברסיטת אריאל`,
+    },
+  } as const;
+
+  function openEmailConfirm(type: 'acceptance' | 'rejection', recipients: Array<{ id: string; name: string; email: string }>) {
+    if (!recipients.length) { showToast('לאף אחד מהנבחרים אין מייל', 'error'); return; }
+    setEmailConfirm({
+      type,
+      recipients,
+      subject: EMAIL_TEMPLATES[type].subject,
+      body: EMAIL_TEMPLATES[type].body,
+    });
+  }
+
+  function sendConfirmedEmail() {
+    if (!emailConfirm) return;
+    const { type, recipients, subject, body } = emailConfirm;
+
+    if (recipients.length === 1) {
+      // Single recipient — personalize {{שם}} with their name
+      const r = recipients[0];
+      const cvLink = `${window.location.origin}/cv-update/?email=${encodeURIComponent(r.email)}&name=${encodeURIComponent(r.name)}`;
+      const personalBody = body
+        .replace(/\{\{שם\}\}/g, r.name)
+        .replace(/\{\{קישור_קוח\}\}/g, cvLink);
+      openMailto(`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`);
+    } else {
+      // Group — BCC all, replace {{שם}} with generic placeholder
+      const bcc = recipients.map(r => r.email).filter(Boolean).join(',');
+      const groupBody = body
+        .replace(/\{\{שם\}\}/g, '[שם הנמען]')
+        .replace(/\{\{קישור_קוח\}\}/g, '[קישור אישי לעדכון קו"ח ייושלח לכל אחד בנפרד]');
+      openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(groupBody)}`);
+    }
+
+    // Optimistically mark as "email sent" so we don't re-prompt for the same person
+    const next = [...all];
+    const field = type === 'acceptance' ? 'acceptanceEmailSent' : 'rejectionEmailSent';
+    for (const r of recipients) {
+      const i = next.findIndex(c => c.id === r.id);
+      if (i >= 0) next[i] = { ...next[i], [field]: true };
+    }
+    persistAndRefresh(next, `✉ Outlook נפתח ל‑${recipients.length} נמענים`);
+    setEmailConfirm(null);
+    showToast(`✓ נפתח Outlook ל‑${recipients.length} נמענים`, 'success');
+  }
 
   const all = data.candidates || [];
   const courses = data.courses || [];
@@ -62,7 +134,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return scoped.filter(c => {
-      if (stage !== 'all' && (c.interviewResult || 'pending') !== stage) return false;
+      const hasDocs = !!(c.cvUrl && c.applicationUrl);
+      const result = c.interviewResult || 'pending';
+      if (stage === 'submitted') return hasDocs;
+      if (stage === 'notsubmitted') return !hasDocs && result === 'pending';
+      if (stage !== 'all' && result !== stage) return false;
       if (!q) return true;
       const hay = [c.name, c.phone, c.email].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
@@ -74,6 +150,8 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     pending: scoped.filter(c => !c.interviewResult || c.interviewResult === 'pending').length,
     passed: scoped.filter(c => c.interviewResult === 'passed').length,
     failed: scoped.filter(c => c.interviewResult === 'failed').length,
+    submitted: scoped.filter(c => !!(c.cvUrl && c.applicationUrl)).length,
+    notsubmitted: scoped.filter(c => !(c.cvUrl && c.applicationUrl) && (!c.interviewResult || c.interviewResult === 'pending')).length,
   }), [scoped]);
 
   async function persistAndRefresh(next: Candidate[], msg: string) {
@@ -89,6 +167,11 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   async function handleSave(c: Candidate) {
+    // Require interview summary before pass/fail
+    if ((c.interviewResult === 'passed' || c.interviewResult === 'failed') && !c.interviewSummary?.trim()) {
+      showToast('יש למלא סיכום ראיון לפני סימון תוצאה', 'error');
+      return;
+    }
     // Auto-convert to student if interview passed and not yet converted
     const shouldAutoConvert = c.interviewResult === 'passed' && !c.convertedToStudentId;
 
@@ -170,21 +253,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       setSaveMsg('✓ עבר ראיון והועבר לסטודנטים');
       setTimeout(() => setSaveMsg(null), 3500);
 
-      // Send acceptance email with CV-update link (fire-and-forget)
+      // Offer acceptance email — user must confirm before it sends
       if (c.email) {
-        const { data: sess } = await supabase.auth.getSession();
-        const token = sess.session?.access_token || 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-        fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-acceptance', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-            'apikey': 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt',
-          },
-          body: JSON.stringify({ candidate: c }),
-        }).catch(err => console.warn('notify-acceptance failed:', err));
+        openEmailConfirm('acceptance', [{ id: updatedCand.id, name: c.name, email: c.email }]);
       }
-
       return;
     }
 
@@ -193,6 +265,15 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     if (idx >= 0) next[idx] = c;
     setEditing(null); setCreating(false);
     await persistAndRefresh(next, idx >= 0 ? '✓ עודכן' : '✓ נוסף');
+
+    // Offer rejection email — user must confirm before it sends
+    const prevResult = previous?.interviewResult;
+    const nowFailed  = c.interviewResult === 'failed';
+    const wasntFailed = !prevResult || prevResult !== 'failed';
+    const alreadySent = previous?.rejectionEmailSent;
+    if (nowFailed && wasntFailed && !alreadySent && c.email) {
+      openEmailConfirm('rejection', [{ id: c.id, name: c.name, email: c.email }]);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -213,17 +294,26 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     const interviewDate = slotMatch?.[1] || '';
     const interviewTime = slotMatch?.[2] || '';
 
-    // ── Dedup logic ──────────────────────────────────────────────────────────
+    // ── Always read candidates fresh from Supabase ───────────────────────────
+    // Prevents race condition: onRefresh() from a previous intake may complete
+    // AFTER the next intake begins, causing the app to regress to a stale list
+    // and then overwrite a recently-saved candidate on the next save.
+    const { data: freshRow } = await supabase
+      .from('practicum_data')
+      .select('data')
+      .eq('org_id', 'default')
+      .single();
+    const currentCandidates: Candidate[] = (freshRow as any)?.data?.candidates || [];
     function normN(n: string) { return (n || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
     const byEmail = sub.email
-      ? all.find(c => c.email && c.email.toLowerCase() === sub.email!.toLowerCase())
+      ? currentCandidates.find((c: Candidate) => c.email && c.email.toLowerCase() === sub.email!.toLowerCase())
       : undefined;
     const byExactName = !byEmail
-      ? all.find(c => normN(c.name) === normN(sub.name))
+      ? currentCandidates.find((c: Candidate) => normN(c.name) === normN(sub.name))
       : undefined;
     const subLastToken = normN(sub.name).split(' ').pop() || '';
     const bySimilarName = !byEmail && !byExactName && subLastToken.length > 2
-      ? all.find(c => {
+      ? currentCandidates.find((c: Candidate) => {
           const t = normN(c.name).split(' ').pop() || '';
           return t === subLastToken && normN(c.name) !== normN(sub.name);
         })
@@ -248,7 +338,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         submittedAt: sub.submitted_at,
         applicationDate: existingRecord.applicationDate || sub.submitted_at?.slice(0, 10) || '',
       };
-      const nextCandidates = all.map(c => c.id === existingRecord!.id ? updated : c);
+      const nextCandidates = currentCandidates.map((c: Candidate) => c.id === existingRecord!.id ? updated : c);
       setSaving(true);
       const res = await saveSnapshot(
         { ...data, candidates: nextCandidates },
@@ -276,8 +366,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         interviewTime,
         interviewResult: 'pending',
         notes: sub.notes || '',
+        questionnaire: sub.questionnaire || null,
       };
-      const nextCandidates = [...all, newCandidate];
+      const nextCandidates = [...currentCandidates, newCandidate];
       setSaving(true);
       const res = await saveSnapshot(
         { ...data, candidates: nextCandidates },
@@ -377,11 +468,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
             </p>
           </div>
           <div className="flex flex-col gap-2 items-end">
-            <button onClick={() => setCreating(true)} style={{
-              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>+ מועמד/ת חדש/ה →</button>
+            <button onClick={() => setCreating(true)} style={btnPrimary()}>+ מועמד/ת חדש/ה →</button>
             <button onClick={() => setShowImport(s => !s)}
               className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
               style={{ color: 'var(--accent)' }}>
@@ -408,10 +495,12 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       {/* Ramzor tab bar */}
       <div className="ramzor-bar mb-4">
         {([
-          ['all',     'הכל',      counts.total,   null   ],
-          ['pending', 'ממתינים', counts.pending,  'gray' ],
-          ['passed',  'עברו',     counts.passed,   'green'],
-          ['failed',  'לא עברו', counts.failed,   'red'  ],
+          ['all',          'הכל',          counts.total,         null   ],
+          ['submitted',    'הגישו מסמכים', counts.submitted,     'amber'],
+          ['notsubmitted', 'טרם הגישו',   counts.notsubmitted,  'gray' ],
+          ['pending',      'ממתינים',      counts.pending,       'gray' ],
+          ['passed',       'עברו',         counts.passed,        'green'],
+          ['failed',       'לא עברו',      counts.failed,        'red'  ],
         ] as const).map(([key, label, n, dot]) => {
           const active = stage === key;
           const borderCol = dot ? `var(--tl-${dot})` : 'var(--accent)';
@@ -426,17 +515,88 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
           );
         })}
       </div>
-      <div className="mb-4 flex gap-3 items-center">
+      {/* Status legend */}
+      <div className="flex flex-wrap gap-x-5 gap-y-1 mb-5 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+        {([
+          ['green', 'עבר ראיון / הועבר לסטודנטים'],
+          ['amber', 'הגיש/ה מסמכים'],
+          ['gray',  'טרם הגיש/ה מסמכים'],
+          ['red',   'לא התקבל/ה'],
+        ] as const).map(([color, label]) => (
+          <span key={color} className="flex items-center gap-1.5">
+            <StatusDot status={color} size={7} />
+            <span>{label}</span>
+          </span>
+        ))}
+      </div>
+
+      {/* Quick action strip for passed/failed groups */}
+      {(stage === 'passed' || stage === 'failed') && filtered.length > 0 && (
+        <div className="mb-4 flex items-center gap-3 p-3 rounded-xl flex-wrap"
+          style={{
+            background: stage === 'passed' ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.06)',
+            border: `1px solid ${stage === 'passed' ? 'rgba(22,163,74,0.25)' : 'rgba(220,38,38,0.25)'}`,
+          }}>
+          <span className="mono text-[11.5px] font-semibold" style={{ color: 'var(--ink)' }}>
+            {filtered.length} מועמדים {stage === 'passed' ? 'שעברו ראיון' : 'שלא עברו'} בפילטר הנוכחי
+          </span>
+          <button
+            onClick={() => {
+              const ids = new Set(filtered.map(c => c.id));
+              setSelectedIds(ids);
+              const people = filtered.filter(c => c.email).map(c => ({ id: c.id, name: c.name, email: c.email! }));
+              if (people.length === 0) { showToast('אין מועמדים עם מייל בקבוצה', 'error'); return; }
+              openEmailConfirm(stage === 'passed' ? 'acceptance' : 'rejection', people);
+            }}
+            style={{
+              display: 'inline-block', padding: '7px 14px', fontSize: '12px', fontWeight: 600,
+              background: stage === 'passed' ? '#16a34a' : '#dc2626',
+              color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
+            }}>
+            {stage === 'passed' ? '✉ שלח הודעת קבלה לקבוצה' : '✉ שלח הודעת דחייה לקבוצה'}
+          </button>
+        </div>
+      )}
+
+      <div className="mb-4 flex gap-3 items-center flex-wrap">
         <input type="search" value={search} onChange={e=>setSearch(e.target.value)}
           placeholder="חפש לפי שם, טלפון, מייל..."
           className="input flex-1"
           style={{ padding: '8px 14px', fontSize: '14px' }}/>
+        {/* Select all / deselect all */}
+        <button
+          onClick={() => {
+            const allFilteredIds = new Set(filtered.map(c => c.id));
+            const allSelected = filtered.every(c => selectedIds.has(c.id));
+            setSelectedIds(allSelected ? new Set() : allFilteredIds);
+          }}
+          className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+          style={{ color: filtered.every(c => selectedIds.has(c.id)) && filtered.length > 0 ? 'var(--accent)' : 'var(--text-soft)', whiteSpace: 'nowrap' }}
+        >
+          {filtered.every(c => selectedIds.has(c.id)) && filtered.length > 0 ? '✕ בטל הכל' : '☑ בחר הכל'}
+        </button>
         {selectedIds.size > 0 && (
-          <button onClick={() => setShowMsgModal(true)} style={{
-            display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-          }}>📧 שלח הודעה ({selectedIds.size})</button>
+          <button onClick={() => setShowMsgModal(true)} style={btnSmall()}>📧 מייל Outlook</button>
+        )}
+        {selectedIds.size > 0 && (
+          <button
+            style={btnSmall()}
+            onClick={() => {
+              const people = Array.from(selectedIds).map(id => all.find(c => c.id === id)).filter(Boolean) as Candidate[];
+              const withEmail = people.filter(c => c.email).map(c => ({ id: c.id, name: c.name, email: c.email! }));
+              openEmailConfirm('acceptance', withEmail);
+            }}
+          >✓ הודעת קבלה ({selectedIds.size})</button>
+        )}
+        {selectedIds.size > 0 && (
+          <button
+            style={{ ...btnSmall(), borderColor: 'var(--accent)', color: 'var(--accent)' }}
+            onClick={() => {
+              const people = Array.from(selectedIds).map(id => all.find(c => c.id === id)).filter(Boolean) as Candidate[];
+              const withEmail = people.filter(c => c.email).map(c => ({ id: c.id, name: c.name, email: c.email! }));
+              openEmailConfirm('rejection', withEmail);
+            }}
+          >✗ הודעת דחייה ({selectedIds.size})</button>
         )}
         {selectedIds.size > 0 && (
           <button
@@ -444,7 +604,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
             className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
             style={{ color: 'var(--text-soft)' }}
           >
-            נקה בחירה
+            ביטול בחירה
           </button>
         )}
       </div>
@@ -454,7 +614,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.55)' }}>
           <div className="rounded-2xl border p-8 max-w-[520px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)' }}>
             <div className="flex items-baseline justify-between mb-5">
-              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>שלח הודעה לנבחרים</div>
+              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>מייל קבוצתי ב‑Outlook</div>
               <button onClick={() => setShowMsgModal(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
             </div>
             <div className="mono text-[11px] uppercase tracking-[0.14em] mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', color: 'var(--ink)' }}>
@@ -495,9 +655,8 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                     showToast('לאף אחד מהנבחרים אין מייל רשום', 'error');
                     return;
                   }
-                  const to = emails.join(',');
-                  const url = `mailto:${to}?subject=${encodeURIComponent(msgSubject)}&body=${encodeURIComponent(msgBody)}`;
-                  window.location.href = url;
+                  const bcc = emails.join(',');
+                  openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(msgSubject)}&body=${encodeURIComponent(msgBody)}`);
                   if (missing.length > 0) {
                     showToast(`נפתח Outlook ל‑${emails.length} נמענים · ללא מייל: ${missing.join(', ')}`, 'success');
                   } else {
@@ -507,11 +666,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   setMsgSubject(''); setMsgBody('');
                   setSelectedIds(new Set());
                 }}
-                style={{
-                  display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-                  background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                }}
+                style={btnPrimary()}
               >
                 📧 פתח ב‑Outlook
               </button>
@@ -541,22 +696,84 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   next.has(c.id) ? next.delete(c.id) : next.add(c.id);
                   setSelectedIds(next);
                 }}
-                cvUpdate={c.email ? cvUpdates[(c.email || '').toLowerCase()] : undefined}
-                onCvUpdateSeen={async (updateId) => {
-                  await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', updateId);
-                  setCvUpdates(prev => {
-                    const next = { ...prev };
-                    const key = (c.email || '').toLowerCase();
-                    delete next[key];
-                    return next;
-                  });
-                }}
                 onRevert={() => handleRevertToSubmission(c)}
               />
             ))}
           </ul>
         )}
       </section>
+
+      {/* ── Email confirmation modal — shown before any email is sent ── */}
+      {emailConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.6)' }}>
+          <div className="rounded-2xl border p-8 max-w-[560px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+            {/* Header */}
+            <div className="flex items-baseline justify-between mb-1">
+              <div className="serif text-[24px]" style={{ color: 'var(--ink)' }}>
+                {emailConfirm.type === 'acceptance' ? '✉ הודעת קבלה' : '✉ הודעת דחייה'}
+              </div>
+              <button onClick={() => setEmailConfirm(null)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
+            </div>
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-5" style={{ color: 'var(--text-soft)' }}>
+              {emailConfirm.type === 'acceptance' ? 'הודעת קבלה לפרקטיקום' : 'הודעת אי-קבלה לפרקטיקום'} — בדוק/י לפני שליחה
+            </div>
+
+            {/* Recipients */}
+            <div className="mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--divider)' }}>
+              <div className="mono text-[10px] uppercase tracking-[0.15em] mb-2 font-semibold" style={{ color: 'var(--text-soft)' }}>
+                שולחים ל‑{emailConfirm.recipients.length} נמענים
+              </div>
+              <div className="text-[13px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
+                {emailConfirm.recipients.map(r => r.name).join(' · ')}
+              </div>
+              {emailConfirm.recipients.length > 1 && (
+                <div className="mono text-[10.5px] mt-2" style={{ color: 'var(--text-soft)' }}>
+                  {'ⓘ שליחה קבוצתית — כולם ב‑BCC, ללא שם אישי ({{שם}} יוחלף ב‑[שם הנמען])'}
+                </div>
+              )}
+            </div>
+
+            {/* Subject */}
+            <label className="block mb-3">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
+              <input
+                value={emailConfirm.subject}
+                onChange={e => setEmailConfirm(prev => prev ? { ...prev, subject: e.target.value } : null)}
+                className="input w-full"
+                style={{ padding: '10px 14px', fontSize: '14px' }}
+              />
+            </label>
+
+            {/* Body */}
+            <label className="block mb-2">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>תוכן</span>
+              <textarea
+                value={emailConfirm.body}
+                onChange={e => setEmailConfirm(prev => prev ? { ...prev, body: e.target.value } : null)}
+                rows={7}
+                className="input w-full"
+                style={{ padding: '10px 14px', fontSize: '13.5px', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
+              />
+            </label>
+            <div className="mono text-[10.5px] mb-5" style={{ color: 'var(--text-soft)' }}>
+              {'ⓘ ניתן לערוך נושא ותוכן. לנמען יחיד — {{שם}} יוחלף בשמו האישי.'}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 justify-between items-center">
+              <button onClick={() => setEmailConfirm(null)} style={{ ...btnSecondary(), fontSize: '12px' }}>
+                ביטול — אל תשלח
+              </button>
+              <button
+                onClick={sendConfirmedEmail}
+                style={{ ...btnPrimary(), fontSize: '13px' }}
+              >
+                📧 פתח ב‑Outlook ({emailConfirm.recipients.length}) →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(editing || creating) && (
         <CandidateEditor
@@ -575,11 +792,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, cvUpdate, onCvUpdateSeen, onRevert }: {
+function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert }: {
   c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void;
-  cvUpdate?: { id: string; cv_file_path: string; uploaded_at: string };
-  onCvUpdateSeen?: (id: string) => void;
   onRevert?: () => void;
 }) {
   const r = c.interviewResult || 'pending';
@@ -593,10 +808,11 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
                 hasDocs ? 'מסמכים הוגשו' : 'ממתין/ה למסמכים';
 
   const dotStatus: DotStatus =
+    c.convertedToStudentId ? 'green' :  // converted to student → always green regardless of result
     r === 'failed' ? 'red' :
-    r === 'passed' || c.convertedToStudentId ? 'green' :
-    c.interviewDate ? 'amber' :
-    'gray';
+    r === 'passed' ? 'green' :
+    hasDocs ? 'amber' :   // submitted both files → amber (visible, ready for interview)
+    'gray';               // in list, hasn't submitted yet → gray
 
   return (
     <li className="relative group" data-info-row>
@@ -618,28 +834,13 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
             style={{ color: isPass ? 'var(--bg)' : 'var(--accent)', background: isPass ? 'var(--accent)' : 'rgba(122,30,43,0.08)' }}>
             {label}
           </span>
-          {cvUpdate && (
-            <button
-              type="button"
-              onClick={async e => {
-                e.stopPropagation();
-                const { data } = await supabase.storage.from('candidate-uploads').getPublicUrl(cvUpdate.cv_file_path);
-                window.open(data.publicUrl, '_blank');
-                onCvUpdateSeen?.(cvUpdate.id);
-              }}
-              title={`CV מעודכן הועלה — ${new Date(cvUpdate.uploaded_at).toLocaleDateString('he-IL')}`}
-              className="mono text-[10px] uppercase tracking-[0.13em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap animate-pulse"
-              style={{ color: '#fff', background: '#d97706', border: 'none' }}>
-              CV ✦ חדש
-            </button>
-          )}
         </div>
 
         {/* Line 2: contact info · action icons */}
         <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
             {c.phone && <span dir="ltr">{c.phone}</span>}
-            {c.email && <span className="truncate max-w-[200px]">{c.email}</span>}
+            {c.email && <span className="truncate" style={{ maxWidth: 'clamp(120px, 40vw, 220px)' }}>{c.email}</span>}
             {c.interviewDate && <span className="whitespace-nowrap">· {new Date(c.interviewDate).toLocaleDateString('he-IL')}</span>}
           </div>
           {onRevert && (

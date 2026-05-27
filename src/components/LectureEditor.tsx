@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Lecture, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
+import { outlookCalendarUrl } from './pageShared';
 import Modal from './Modal';
 
 const DEFAULT_TYPES = ['הרצאה', 'סדנה', 'סימולציה', 'מפגש', 'ייעוץ'];
@@ -109,26 +110,23 @@ export default function LectureEditor({
   }
 
   function addToOutlookCalendar() {
-    if (!form.date || !form.startTime) {
-      alert('חסר תאריך / שעת התחלה');
-      return;
-    }
+    if (!form.date) { alert('חסר תאריך'); return; }
     const course = courses.find(c => c.id === form.courseId);
-    // Build ISO datetimes in Israel timezone
-    const startLocal = `${form.date}T${form.startTime}:00`;
-    const endLocal = form.endTime ? `${form.date}T${form.endTime}:00` : `${form.date}T${addHour(form.startTime)}:00`;
-    const subject = encodeURIComponent(`${form.type || 'הרצאה'}: ${form.topic || course?.name || ''}`);
-    const location = encodeURIComponent(form.link || form.location || form.institution || '');
-    const body = encodeURIComponent(
-`${form.topic || ''}
-${course?.name ? 'קורס: ' + course.name : ''}
-${form.lecturer ? 'מרצה: ' + form.lecturer : ''}
-${form.lecturerEmail ? 'מייל: ' + form.lecturerEmail : ''}
-${form.lecturerPhone ? 'טלפון: ' + form.lecturerPhone : ''}
-${form.notes ? '\nהערות: ' + form.notes : ''}`);
-    const attendees = form.lecturerEmail ? `&to=${encodeURIComponent(form.lecturerEmail)}` : '';
-    // Outlook for Work deeplink — opens create-event form pre-filled
-    const url = `https://outlook.office.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addevent&subject=${subject}&body=${body}&location=${location}&startdt=${encodeURIComponent(startLocal)}&enddt=${encodeURIComponent(endLocal)}${attendees}`;
+    const url = outlookCalendarUrl({
+      subject: `${form.type || 'הרצאה'}: ${form.topic || course?.name || ''}`,
+      startDate: form.date,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      location: form.link || form.location || form.institution || '',
+      body: [
+        form.topic,
+        course?.name ? 'קורס: ' + course.name : '',
+        form.lecturer ? 'מרצה: ' + form.lecturer : '',
+        form.lecturerEmail ? 'מייל: ' + form.lecturerEmail : '',
+        form.notes ? 'הערות: ' + form.notes : '',
+      ].filter(Boolean).join('\n'),
+      attendeeEmail: form.lecturerEmail,
+    });
     window.open(url, '_blank');
   }
 
@@ -199,12 +197,12 @@ ${form.notes ? '\nהערות: ' + form.notes : ''}`);
               background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
               cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
             }}>{isNew ? 'צור הרצאה' : 'שמור שינויים'} →</button>
-            <button type="button" onClick={addToOutlookCalendar} disabled={!form.date || !form.startTime} style={{
+            <button type="button" onClick={addToOutlookCalendar} disabled={!form.date} style={{
               display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
               background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: (form.date && form.startTime) ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: (form.date && form.startTime) ? 1 : 0.4,
-            }}>📅 הוסף ליומן Outlook</button>
+              borderRadius: '999px', cursor: form.date ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.date ? 1 : 0.4,
+            }}>📅 פתח יומן אריאל</button>
             <button type="button" onClick={openCall} disabled={!form.lecturerPhone} style={{
               display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
               background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',

@@ -1,68 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { btnPrimary, btnSecondary } from '../lib/design';
 import type { PageProps } from './pageShared';
-import { describePermissions, permissionsFor } from '../lib/permissions';
-import * as ms from '../lib/msGraph';
-import * as fs from '../lib/folderCreation';
+import { saveSnapshot } from '../lib/dataApi';
+import { showToast } from '../lib/toast';
+import type { PlacementSettings } from '../lib/supabase';
+import { getDefaultPlacementSettings } from '../lib/placement';
 
-export default function SettingsPage(props: PageProps) {
-  const { userName, data } = props;
-  const [clientId, setClientId] = useState('');
-  const [tenant, setTenant] = useState('common');
-  const [cfgOk, setCfgOk] = useState(ms.hasConfig());
-  const [signedIn, setSignedIn] = useState(false);
-  const [msEmail, setMsEmail] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      const existing = ms.getConfig();
-      if (existing) {
-        setClientId(existing.clientId);
-        setTenant(existing.tenant);
-        setCfgOk(true);
-        setSignedIn(await ms.isSignedIn());
-        setMsEmail(await ms.signedInEmail());
-      }
-    })();
-  }, []);
-
-  async function handleSaveConfig() {
-    if (!clientId.trim()) { alert('הדבק את ה‑Application (client) ID מ‑Entra'); return; }
-    ms.setConfig(clientId.trim(), tenant.trim() || 'common');
-    setCfgOk(true);
-    setMsg('✓ נשמר. עכשיו לחץ "התחבר לאאוטלוק"');
-    setTimeout(() => setMsg(null), 3000);
-  }
-
-  async function handleConnect() {
-    setBusy(true); setMsg(null);
-    const r = await ms.signIn();
-    setBusy(false);
-    if (!r.ok) { setMsg('שגיאה: ' + (r.error || 'התחברות נכשלה')); return; }
-    setSignedIn(true);
-    setMsEmail(r.email || null);
-    setMsg('✓ מחובר ל‑Outlook. כל הרצאה שתיצור/תערוך תסונכרן ליומן תוך שנייה.');
-    setTimeout(() => setMsg(null), 6000);
-  }
-
-  async function handleDisconnect() {
-    setBusy(true);
-    await ms.signOut();
-    setBusy(false);
-    setSignedIn(false);
-    setMsEmail(null);
-    setMsg('✓ נותק');
-    setTimeout(() => setMsg(null), 3000);
-  }
-
-  async function handleClear() {
-    if (!confirm('למחוק את פרטי ההתחברות ל‑Entra? תצטרך להזין שוב.')) return;
-    ms.clearConfig();
-    setClientId(''); setTenant('common');
-    setCfgOk(false); setSignedIn(false); setMsEmail(null);
-  }
-
+export default function SettingsPage({ data, userName, onRefresh }: PageProps & { data: any }) {
   return (
     <main className="max-w-[900px] mx-auto px-4 sm:px-10 pt-14 pb-28">
 
@@ -70,209 +14,291 @@ export default function SettingsPage(props: PageProps) {
         <div className="chapter-mark mb-6">VII · הגדרות</div>
         <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>הגדרות</h1>
         <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
-          אינטגרציה עם יומן Outlook, הרשאות, והגדרות מערכת.
+          מיילים, גיבוי ושיתוף עם רחל.
         </p>
       </section>
 
-      {/* Outlook sync card */}
-      <section className="mb-16">
-        <div className="flex items-baseline justify-between gap-8 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
-          <h2 className="serif text-[30px] tracking-tight" style={{ color: 'var(--ink)' }}>
-            סנכרון ליומן Outlook
-          </h2>
-          <StatusChip signedIn={signedIn} cfgOk={cfgOk} />
-        </div>
-
-        <p className="text-[15px] max-w-[720px] leading-[1.6] mb-8" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-          חיבור חד‑פעמי של החשבון <strong>yarivi@ariel.ac.il</strong> ל‑Microsoft Graph.
-          אחרי ההתחברות, כל הרצאה / ראיון שתיצור או תערוך במערכת תופיע ביומן Outlook שלך
-          <em style={{ color: 'var(--accent)' }}>תוך שנייה</em>, אוטומטית.
-        </p>
-
-        {!cfgOk ? (
-          <SetupInstructions
-            clientId={clientId} setClientId={setClientId}
-            tenant={tenant} setTenant={setTenant}
-            onSave={handleSaveConfig}
-          />
-        ) : (
-          <div className="space-y-3">
-            <Row label="Application (Client) ID" value={clientId.slice(0,8) + '...' + clientId.slice(-4)} />
-            <Row label="Tenant" value={tenant} />
-            {signedIn && msEmail && <Row label="מחובר כ" value={msEmail} accent />}
-
-            <div className="flex flex-wrap gap-3 pt-6">
-              {!signedIn ? (
-                <button onClick={handleConnect} disabled={busy} style={{
-                  display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-                  background: busy ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-                  borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
-                }}>{busy ? 'מתחבר...' : 'התחבר ל‑Outlook →'}</button>
-              ) : (
-                <button onClick={handleDisconnect} disabled={busy} style={{
-                  display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                  borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
-                }}>{busy ? 'מתנתק...' : 'התנתק'}</button>
-              )}
-              <button onClick={handleClear}
-                className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold mr-auto hover:opacity-70"
-                style={{ color: 'var(--accent)' }}>
-                אפס הגדרות Entra
-              </button>
-            </div>
-          </div>
-        )}
-
-        {msg && (
-          <div className="mt-6 mono text-[11.5px] uppercase tracking-[0.14em]" style={{ color: msg.startsWith('✓') ? 'var(--accent)' : 'var(--accent)' }}>
-            {msg}
-          </div>
-        )}
-      </section>
-
-      {/* Folder creation card */}
-      <FolderCreationCard data={data} />
-
-      {/* JSON backup download */}
+      <EmailSettingsCard data={data} userName={userName} onRefresh={onRefresh!} />
+      <PlacementSettingsCard data={data} userName={userName} onRefresh={onRefresh!} />
       <JsonBackupCard data={data} />
-
-      {/* Sharing / collaboration guide */}
       <SharingGuide />
 
-      {/* Profile card */}
       <section>
-        <div className="flex items-baseline justify-between gap-8 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
-          <h2 className="serif text-[30px] tracking-tight" style={{ color: 'var(--ink)' }}>פרופיל וגישה</h2>
+        <div className="flex items-baseline gap-6 py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
+          <span className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold w-52 shrink-0" style={{ color: 'var(--text-soft)' }}>
+            משתמש
+          </span>
+          <span className="text-[15px]" style={{ color: 'var(--ink)', fontFamily: 'ui-monospace, monospace' }}>
+            {userName}
+          </span>
         </div>
-        <Row label="משתמש" value={userName} />
-        <Row label="הרשאות" value={describePermissions(permissionsFor(null /* could be wired */))} accent />
       </section>
+
     </main>
   );
 }
 
-function FolderCreationCard({ data }: { data: any }) {
-  const [busy, setBusy] = useState(false);
-  const [log, setLog] = useState<string[]>([]);
-  const [supported] = useState(fs.isSupported());
+/* ─── Email Settings ─────────────────────────────────────────────────────── */
 
-  async function handleCreateAll() {
-    if (!confirm('צור את כל תיקיות הקבצים עבור כל הקורסים/שנים הקיימים?\nפעולה זו דורשת לבחור פעם אחת את תיקיית "data" ב‑OneDrive.')) return;
-    setBusy(true);
-    setLog([]);
-    const r = await fs.createFoldersForAllCourses(data);
-    setBusy(false);
-    setLog([
-      `✓ נוצרו מבני תיקיות חדשים: ${r.fullyCreated}`,
-      `🔧 הושלמו חסרות בקורסים קיימים: ${r.partiallyFilled}`,
-      `⚠ כבר היו קיימים: ${r.alreadyExisted}`,
-      r.errors > 0 ? `✗ שגיאות: ${r.errors}` : '',
-      '',
-      ...r.log,
-    ].filter(Boolean));
+function EmailSettingsCard({ data, userName, onRefresh }: { data: any; userName: string; onRefresh: () => void }) {
+  const [coordEmail, setCoordEmail]   = useState((data.coordinatorEmail as string) || '');
+  const [supEmail,   setSupEmail]     = useState((data.supervisorEmail  as string) || '');
+  const [extras,     setExtras]       = useState<string[]>((data.notifyEmails as string[]) || []);
+  const [newExtra,   setNewExtra]     = useState('');
+  const [saving,     setSaving]       = useState(false);
+  const [msg,        setMsg]          = useState<string | null>(null);
+
+  function addExtra() {
+    const v = newExtra.trim().toLowerCase();
+    if (!v) return;
+    if (extras.includes(v)) { setMsg('המייל כבר קיים ברשימה'); setTimeout(() => setMsg(null), 2000); return; }
+    setExtras(prev => [...prev, v]);
+    setNewExtra('');
   }
 
-  async function handleRepick() {
-    await fs.getOrRequestDataDir(true);
+  function removeExtra(email: string) {
+    setExtras(prev => prev.filter(e => e !== email));
+  }
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    const res = await saveSnapshot(
+      { ...data, coordinatorEmail: coordEmail.trim(), supervisorEmail: supEmail.trim(), notifyEmails: extras },
+      { name: userName },
+      { action: 'עודכן', entity: 'הגדרות', target: 'מיילים' }
+    );
+    setSaving(false);
+    if (!res.ok) { setMsg('שגיאה: ' + (res.error || '')); return; }
+    data.coordinatorEmail = coordEmail.trim();
+    data.supervisorEmail  = supEmail.trim();
+    data.notifyEmails     = extras;
+    showToast('✓ הגדרות נשמרו', 'success');
+    setMsg('✓ נשמר');
+    onRefresh();
+    setTimeout(() => setMsg(null), 2500);
   }
 
   return (
     <section className="mb-16">
       <div className="flex items-baseline justify-between gap-8 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
-        <h2 className="serif text-[30px] tracking-tight" style={{ color: 'var(--ink)' }}>
-          תיקיות OneDrive — יצירה אוטומטית
-        </h2>
-        <span className="mono text-[11px] uppercase tracking-[0.15em] font-semibold px-3 py-1 rounded-full"
-          style={{
-            color: supported ? 'var(--accent)' : 'var(--text-soft)',
-            background: supported ? 'rgba(122,30,43,0.08)' : 'transparent',
-            border: supported ? 'none' : '1px solid var(--divider)',
-          }}>
-          {supported ? '✓ נתמך' : 'לא נתמך (נדרש Chrome/Edge)'}
-        </span>
+        <h2 className="serif text-[30px] tracking-tight" style={{ color: 'var(--ink)' }}>הגדרות מייל</h2>
       </div>
-
       <p className="text-[15px] max-w-[720px] leading-[1.6] mb-6" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-        יצירה אוטומטית של מבנה התיקיות ב‑<strong>OneDrive</strong> עבור כל קורס/שנה:
-        &nbsp;קורות חיים · טפסי הגשה · טפסי מועמדות · סיכומי ראיון · חוות דעת ארגון.
-        <br />
-        <span className="mono text-[11.5px] uppercase tracking-[0.12em] mt-3 inline-block" style={{ color: 'var(--text-soft)' }}>
-          פעם ראשונה: הדפדפן יבקש לבחור את תיקיית "data" שבתוך "מערכת לניהול פרקטיקום" ב‑OneDrive. תידרש אישור פעם אחת בלבד.
-        </span>
+        כאשר מועמד מגיש טופס, מעסיק ממלא משוב, או נשלחת הודעת קבלה/דחייה — הכתובות הבאות מקבלות עותק.
       </p>
 
-      {!supported && (
-        <div className="rounded-xl p-5 mb-5" style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--accent)' }}>
-          <div className="text-[14px]" style={{ color: 'var(--ink)' }}>
-            תכונה זו דורשת File System Access API הזמין רק ב‑<strong>Chrome</strong> או <strong>Edge</strong> (מחשב).
-            <br />Safari, Firefox, ומובייל — יש ליצור את התיקיות ידנית.
+      <div className="max-w-[560px] space-y-5">
+        <label className="block">
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+            מייל הרכזת (רחל)
+          </span>
+          <input type="email" value={coordEmail} onChange={e => setCoordEmail(e.target.value)}
+            placeholder="rachel@ariel.ac.il" className="input w-full"
+            style={{ padding: '10px 14px', fontSize: '14px' }} />
+        </label>
+
+        <label className="block">
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+            מייל המפקח האקדמי (יריב)
+          </span>
+          <input type="email" value={supEmail} onChange={e => setSupEmail(e.target.value)}
+            placeholder="itzkovichyariv@gmail.com" className="input w-full"
+            style={{ padding: '10px 14px', fontSize: '14px' }} />
+        </label>
+
+        {/* Extra notify emails */}
+        <div>
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-2" style={{ color: 'var(--text-soft)' }}>
+            מיילים נוספים לעדכון (CC)
+          </span>
+          {extras.length > 0 && (
+            <ul className="flex flex-wrap gap-2 mb-3">
+              {extras.map(e => (
+                <li key={e} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+                  style={{ borderColor: 'var(--divider)', background: 'rgba(122,30,43,0.05)' }}>
+                  <span className="mono text-[12px]" style={{ color: 'var(--ink)' }}>{e}</span>
+                  <button onClick={() => removeExtra(e)}
+                    className="opacity-50 hover:opacity-100 text-[13px] leading-none"
+                    style={{ color: 'var(--accent)' }}>✕</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2">
+            <input type="email" value={newExtra} onChange={e => setNewExtra(e.target.value)}
+              placeholder="הוסף כתובת מייל..."
+              className="input flex-1" style={{ padding: '9px 14px', fontSize: '13px' }}
+              onKeyDown={ev => { if (ev.key === 'Enter') { ev.preventDefault(); addExtra(); } }} />
+            <button onClick={addExtra} style={btnSecondary()}>+ הוסף</button>
           </div>
         </div>
-      )}
 
-      <div className="flex flex-wrap gap-3">
-        <button onClick={handleCreateAll} disabled={!supported || busy} style={{
-          display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-          background: (!supported || busy) ? 'var(--divider)' : 'var(--accent)', color: 'white', border: 'none',
-          borderRadius: '999px', cursor: (!supported || busy) ? 'not-allowed' : 'pointer',
-          whiteSpace: 'nowrap', flexShrink: 0, opacity: (!supported || busy) ? 0.6 : 1,
-        }}>{busy ? 'יוצר...' : '🗂 צור תיקיות לכל הקורסים →'}</button>
-        {supported && (
-          <button onClick={handleRepick} disabled={busy} style={{
-            display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-            background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-            borderRadius: '999px', cursor: busy ? 'not-allowed' : 'pointer',
-            whiteSpace: 'nowrap', flexShrink: 0, opacity: busy ? 0.7 : 1,
-          }}>החלף תיקיית יעד</button>
+        <button onClick={save} disabled={saving} style={btnPrimary(saving)}>
+          {saving ? 'שומר...' : 'שמור הגדרות'}
+        </button>
+        {msg && (
+          <div className="mono text-[11.5px] uppercase tracking-[0.14em]"
+            style={{ color: msg.startsWith('✓') ? 'var(--accent)' : '#b91c1c' }}>
+            {msg}
+          </div>
         )}
       </div>
-
-      {log.length > 0 && (
-        <div className="mt-8 rounded-xl p-5 font-mono text-[12px] leading-[1.7]"
-          style={{ background: 'rgba(26,22,18,0.04)', border: '1px solid var(--divider)', color: 'var(--ink)' }}>
-          {log.map((line, i) => <div key={i}>{line}</div>)}
-        </div>
-      )}
     </section>
   );
 }
 
-function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+/* ─── Placement Settings ─────────────────────────────────────────────────── */
+
+const TEMPLATE_FIELDS: { key: keyof PlacementSettings; label: string; rows?: number; desc?: string }[] = [
+  { key: 'whatsappTemplate',                      label: 'WhatsApp — שליחת מועמדות',          rows: 6,  desc: 'נשלח למעסיק כשמגישים מועמדות.' },
+  { key: 'emailSubjectTemplate',                  label: 'אימייל שורת נושא — שליחת מועמדות', rows: 1 },
+  { key: 'emailBodyTemplate',                     label: 'אימייל גוף — שליחת מועמדות',        rows: 7 },
+  { key: 'whatsappWithdrawalTemplate',            label: 'WhatsApp — ביטול מועמדות',           rows: 5,  desc: 'נשלח למעסיק בעת ביטול.' },
+  { key: 'emailWithdrawalSubjectTemplate',        label: 'אימייל נושא — ביטול מועמדות',       rows: 1 },
+  { key: 'emailWithdrawalBodyTemplate',           label: 'אימייל גוף — ביטול מועמדות',        rows: 6 },
+  { key: 'studentNotifyApprovedTemplateWhatsApp', label: 'WhatsApp — הודעה לסטודנט: אושר',   rows: 5,  desc: 'נשלח לסטודנט אחרי אישור הצעת מעסיק.' },
+  { key: 'studentNotifyApprovedTemplateEmailSubject', label: 'אימייל נושא — הודעה לסטודנט: אושר', rows: 1 },
+  { key: 'studentNotifyApprovedTemplateEmailBody',    label: 'אימייל גוף — הודעה לסטודנט: אושר',  rows: 6 },
+  { key: 'studentNotifyRejectedTemplateWhatsApp', label: 'WhatsApp — הודעה לסטודנט: נדחה',   rows: 5,  desc: 'נשלח לסטודנט אחרי דחיית הצעת מעסיק.' },
+  { key: 'studentNotifyRejectedTemplateEmailSubject', label: 'אימייל נושא — הודעה לסטודנט: נדחה', rows: 1 },
+  { key: 'studentNotifyRejectedTemplateEmailBody',    label: 'אימייל גוף — הודעה לסטודנט: נדחה',  rows: 6 },
+];
+
+const TOKEN_HELP = [
+  '{studentName}', '{contactName}', '{employerName}', '{positionTitle}',
+  '{courseName}', '{cvLink}', '{adminName}', '{scope}',
+];
+
+function PlacementSettingsCard({ data, userName, onRefresh }: { data: any; userName: string; onRefresh: () => void }) {
+  const defaults = getDefaultPlacementSettings();
+  const saved: PlacementSettings = { ...defaults, ...(data.placementSettings || {}) };
+
+  const [prefCount,       setPrefCount]   = useState(String(saved.defaultPreferenceCount));
+  const [agingDays,       setAgingDays]   = useState(String(saved.defaultAgingThresholdDays));
+  const [templates,       setTemplates]   = useState<PlacementSettings>(saved);
+  const [saving,          setSaving]      = useState(false);
+  const [expanded,        setExpanded]    = useState(false);
+
+  function setTpl(key: keyof PlacementSettings, val: string) {
+    setTemplates(prev => ({ ...prev, [key]: val }));
+  }
+
+  async function save() {
+    const updated: PlacementSettings = {
+      ...templates,
+      defaultPreferenceCount:     Math.max(1, Math.min(10, Number(prefCount) || defaults.defaultPreferenceCount)),
+      defaultAgingThresholdDays:  Math.max(1, Math.min(90, Number(agingDays) || defaults.defaultAgingThresholdDays)),
+    };
+    setSaving(true);
+    const res = await saveSnapshot(
+      { ...data, placementSettings: updated },
+      { name: userName },
+      { action: 'עודכן', entity: 'הגדרות שיבוץ', target: 'תבניות' }
+    );
+    setSaving(false);
+    if (!res.ok) { showToast('שגיאה: ' + (res.error || ''), 'error'); return; }
+    data.placementSettings = updated;
+    showToast('✓ הגדרות שיבוץ נשמרו', 'success');
+    onRefresh();
+  }
+
   return (
-    <div className="flex items-baseline gap-6 py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
-      <span className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold w-52 shrink-0" style={{ color: 'var(--text-soft)' }}>
-        {label}
-      </span>
-      <span className="text-[15px]" style={{ color: accent ? 'var(--accent)' : 'var(--ink)', fontFamily: accent ? undefined : 'ui-monospace, monospace' }}>
-        {value}
-      </span>
-    </div>
+    <section className="mb-16" dir="rtl">
+      <div className="flex items-baseline justify-between gap-8 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
+        <h2 className="serif text-[30px] tracking-tight" style={{ color: 'var(--ink)' }}>🎯 הגדרות שיבוץ</h2>
+      </div>
+      <p className="text-[15px] max-w-[720px] leading-[1.6] mb-8" style={{ color: 'var(--ink)', opacity: 0.82 }}>
+        ערכי ברירת מחדל לתהליך השיבוץ — מספר העדפות, סף הזדקנות, ותבניות הודעות.
+      </p>
+
+      {/* Numeric settings */}
+      <div className="max-w-[560px] space-y-5 mb-8">
+        <label className="block">
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+            מספר העדפות ברירת מחדל לסטודנט
+          </span>
+          <input
+            type="number" min="1" max="10" value={prefCount}
+            onChange={e => setPrefCount(e.target.value)}
+            className="input" style={{ width: '120px', padding: '10px 14px', fontSize: '14px' }} />
+          <span className="text-[12px] mr-3" style={{ color: 'var(--text-soft)' }}>בין 1 ל-10</span>
+        </label>
+
+        <label className="block">
+          <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+            סף הזדקנות (ימים) — הדגשה אדומה אחרי N ימי המתנה
+          </span>
+          <input
+            type="number" min="1" max="90" value={agingDays}
+            onChange={e => setAgingDays(e.target.value)}
+            className="input" style={{ width: '120px', padding: '10px 14px', fontSize: '14px' }} />
+          <span className="text-[12px] mr-3" style={{ color: 'var(--text-soft)' }}>בין 1 ל-90 ימים</span>
+        </label>
+      </div>
+
+      {/* Token reference */}
+      <div className="mb-6 p-4 rounded-xl" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
+        <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-2" style={{ color: 'var(--text-soft)' }}>
+          אסימוני תבנית זמינים
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {TOKEN_HELP.map(tok => (
+            <code key={tok} className="px-2 py-1 rounded text-[12px]"
+              style={{ background: 'var(--bg)', border: '1px solid var(--divider)', color: 'var(--accent)', fontFamily: 'ui-monospace, monospace' }}>
+              {tok}
+            </code>
+          ))}
+        </div>
+      </div>
+
+      {/* Templates collapsible */}
+      <div className="mb-6">
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="flex items-center gap-2 text-[14px] font-semibold"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink)', padding: 0 }}>
+          {expanded ? '▲' : '▼'} {expanded ? 'הסתר תבניות הודעות' : 'הצג ועדוך תבניות הודעות'}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="space-y-6 mb-8 max-w-[720px]">
+          {TEMPLATE_FIELDS.map(({ key, label, rows = 4, desc }) => (
+            <label key={key} className="block">
+              <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1"
+                style={{ color: 'var(--text-soft)' }}>
+                {label}
+              </span>
+              {desc && (
+                <span className="text-[12px] block mb-1.5" style={{ color: 'var(--text-soft)' }}>{desc}</span>
+              )}
+              <textarea
+                value={(templates as any)[key] || ''}
+                onChange={e => setTpl(key, e.target.value)}
+                rows={rows}
+                className="input w-full"
+                style={{ padding: '10px 14px', fontSize: '13px', fontFamily: 'ui-monospace, monospace', resize: 'vertical', direction: 'rtl' }}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+
+      <button onClick={save} disabled={saving} style={btnPrimary(saving)}>
+        {saving ? 'שומר...' : 'שמור הגדרות שיבוץ'}
+      </button>
+    </section>
   );
 }
 
-function StatusChip({ signedIn, cfgOk }: { signedIn: boolean; cfgOk: boolean }) {
-  const text = !cfgOk ? 'לא מוגדר' : signedIn ? '✓ מחובר' : 'לא מחובר';
-  const color = !cfgOk ? 'var(--text-soft)' : signedIn ? 'var(--accent)' : 'var(--text-soft)';
-  return (
-    <span className="mono text-[11px] uppercase tracking-[0.15em] font-semibold px-3 py-1 rounded-full whitespace-nowrap"
-      style={{ color, background: signedIn ? 'rgba(122, 30, 43, 0.08)' : 'transparent', border: signedIn ? 'none' : '1px solid var(--divider)' }}>
-      {text}
-    </span>
-  );
-}
+/* ─── JSON Backup ────────────────────────────────────────────────────────── */
 
-/* ─── JSON Backup Download ───────────────────────────────────────────── */
 function JsonBackupCard({ data }: { data: any }) {
   const [done, setDone] = useState(false);
 
   function download() {
-    const now = new Date();
-    const stamp = now.toISOString().slice(0, 10);
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -299,7 +325,6 @@ function JsonBackupCard({ data }: { data: any }) {
       </div>
       <p className="text-[15px] max-w-[720px] leading-[1.6] mb-6" style={{ color: 'var(--ink)', opacity: 0.82 }}>
         הורד עותק מלא של כל הנתונים כקובץ JSON — גיבוי מקומי נוסף על גיבוי הענן האוטומטי.
-        הקובץ כולל סטודנטים, מועמדים, מעסיקים, הרצאות ועוד.
       </p>
 
       <div className="flex flex-wrap items-center gap-6 mb-6">
@@ -313,22 +338,24 @@ function JsonBackupCard({ data }: { data: any }) {
 
       <button onClick={download} style={{
         display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-        background: done ? '#17a34a' : 'var(--accent)', color: 'white', border: 'none',
+        background: done ? 'var(--accent)' : 'var(--accent)', color: 'white', border: 'none',
         borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+        opacity: done ? 0.75 : 1,
       }}>{done ? '✓ הקובץ הורד!' : '⬇ הורד גיבוי JSON →'}</button>
     </section>
   );
 }
 
-/* ─── Sharing / Collaboration Guide ─────────────────────────────────── */
+/* ─── Sharing Guide ──────────────────────────────────────────────────────── */
+
 function SharingGuide() {
-  const appUrl = 'https://itzkovichyariv-star.github.io/Practicum-v2/';
+  const appUrl = 'https://practicum.yarivitzkovich.org/';
 
   return (
     <section className="mb-16">
       <div className="flex items-baseline justify-between gap-8 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
         <h2 className="serif text-[30px] tracking-tight" style={{ color: 'var(--ink)' }}>
-          שיתוף עם קולגה (רחל)
+          שיתוף עם רחל
         </h2>
         <span className="mono text-[11px] uppercase tracking-[0.15em] font-semibold px-3 py-1 rounded-full"
           style={{ color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' }}>
@@ -337,21 +364,16 @@ function SharingGuide() {
       </div>
 
       <p className="text-[15px] max-w-[720px] leading-[1.6] mb-8" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-        המערכת שומרת את כל הנתונים ב‑<strong>Supabase Cloud</strong> — כך שכל שינוי שאת או רחל עושות
-        מתעדכן אוטומטית לשניכן תוך שניות. אין צורך לשלוח קבצים; כל שינוי נשמר מיד בענן.
+        המערכת שומרת את כל הנתונים ב‑<strong>Supabase Cloud</strong> — כל שינוי שאת או רחל עושות מתעדכן אוטומטית לשניכן תוך שניות. אין צורך לשלוח קבצים.
       </p>
 
-      <div className="space-y-6">
+      <div className="space-y-5">
 
-        {/* Step 1 */}
         <div className="rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
           <div className="flex items-start gap-4">
             <div className="chapter-mark shrink-0 mt-1" style={{ fontSize: '11px', minWidth: '28px' }}>01</div>
             <div>
-              <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>שלח לרחל את קישור המערכת</div>
-              <p className="text-[14px] leading-[1.6] mb-3" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-                שלח/י לרחל בווטסאפ / מייל את הקישור הבא. היא פותחת אותו בדפדפן — לא צריך להתקין כלום.
-              </p>
+              <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>שלחי לרחל את קישור המערכת</div>
               <div className="mono text-[12.5px] px-4 py-2.5 rounded-lg select-all break-all"
                 style={{ background: 'var(--bg)', border: '1px solid var(--divider)', color: 'var(--accent)' }}>
                 {appUrl}
@@ -360,135 +382,47 @@ function SharingGuide() {
           </div>
         </div>
 
-        {/* Step 2 */}
         <div className="rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
           <div className="flex items-start gap-4">
             <div className="chapter-mark shrink-0 mt-1" style={{ fontSize: '11px', minWidth: '28px' }}>02</div>
             <div>
               <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>רחל מזינה סיסמה ומתחברת לענן</div>
               <ol className="text-[14px] leading-[1.85] space-y-1 pr-0" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-                <li><strong>א.</strong> כשנפתחת המערכת — מוצג מסך סיסמה. הסיסמה זהה לסיסמה שלך (צור קשר לקבלה).</li>
-                <li><strong>ב.</strong> לאחר הסיסמה — מוצג מסך "כניסה לענן". רחל מכניסה את כתובת המייל שלה ולוחצת "שלח קוד".</li>
-                <li><strong>ג.</strong> היא מקבלת קוד ב‑6 ספרות למייל — מזינה אותו ומאושרת.</li>
-                <li><strong>ד.</strong> <strong>פעם אחת בלבד</strong> — לאחר מכן הדפדפן שלה זוכר את ההתחברות.</li>
+                <li><strong>א.</strong> מוצג מסך סיסמה — הסיסמה זהה לשלך.</li>
+                <li><strong>ב.</strong> מוצג מסך "כניסה לענן" — רחל מכניסה מייל ולוחצת "שלח קוד".</li>
+                <li><strong>ג.</strong> היא מקבלת קוד ב‑6 ספרות למייל ומזינה אותו.</li>
+                <li><strong>ד.</strong> <strong>פעם אחת בלבד</strong> — הדפדפן זוכר את ההתחברות.</li>
               </ol>
             </div>
           </div>
         </div>
 
-        {/* Step 3 */}
         <div className="rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
           <div className="flex items-start gap-4">
             <div className="chapter-mark shrink-0 mt-1" style={{ fontSize: '11px', minWidth: '28px' }}>03</div>
             <div>
               <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>עבודה שוטפת — ענן אוטומטי</div>
               <ul className="text-[14px] leading-[1.85] space-y-1" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-                <li>✓ כל שמירה (הוספת סטודנט, עדכון הרצאה, וכד') עוברת מיד לענן.</li>
-                <li>✓ שתיכן רואות את אותם נתונים — הנתונים משותפים לחלוטין.</li>
-                <li>✓ אין צורך לרענן ידנית — השינויים מופיעים אוטומטית תוך שניות (Realtime Sync).</li>
-                <li>✓ כשרחל שומרת — את רואה את השינוי שלה תוך שנייה, ולהפך.</li>
+                <li>✓ כל שמירה עוברת מיד לענן ומופיעה אצל שניכן תוך שניות.</li>
+                <li>✓ הנתונים משותפים לחלוטין — אין צורך לרענן ידנית.</li>
+                <li>✓ ניתן להגדיר הרשאות לפי קורס כך שרחל רואה רק את הקורסים שלה.</li>
               </ul>
             </div>
           </div>
         </div>
 
-        {/* Step 4 */}
-        <div className="rounded-xl border p-6" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-          <div className="flex items-start gap-4">
-            <div className="chapter-mark shrink-0 mt-1" style={{ fontSize: '11px', minWidth: '28px' }}>04</div>
-            <div>
-              <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>הרשאות — מה רחל יכולה לראות</div>
-              <p className="text-[14px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-                ניתן להגדיר הרשאות לפי קורס / שנה. כך רחל רואה רק את הקורסים שלה ואת עצמה.
-                לשינוי הרשאות — עדכן את הקובץ <code className="mono text-[12px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(122,30,43,0.08)' }}>src/lib/permissions.ts</code> בקוד המקור.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Troubleshooting */}
         <div className="rounded-xl p-5" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
           <div className="mono text-[11px] uppercase tracking-[0.15em] font-semibold mb-3" style={{ color: 'var(--text-soft)' }}>
-            פתרון בעיות נפוצות
+            פתרון בעיות
           </div>
           <ul className="text-[13.5px] leading-[1.8] space-y-1" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-            <li>• <strong>לא קיבלתי קוד במייל</strong> — בדקי ב-Spam. המייל מגיע מ‑<em>noreply@mail.app.supabase.io</em></li>
-            <li>• <strong>הנתונים לא מתעדכנים</strong> — לחצי "↻ רענן מהענן" בכל עמוד. בדקי חיבור אינטרנט.</li>
-            <li>• <strong>השתנו נתונים בטעות</strong> — ניתן לראות היסטוריית עריכות בעמוד "ניהול" → History.</li>
-            <li>• <strong>שאלה נוספת</strong> — פנה לתמיכה טכנית: <strong>yarivi@ariel.ac.il</strong></li>
+            <li>• <strong>לא קיבלתי קוד</strong> — בדקי ב‑Spam. המייל מגיע מ‑<em>noreply@mail.app.supabase.io</em></li>
+            <li>• <strong>הנתונים לא מתעדכנים</strong> — לחצי "↻ רענן מהענן" בכל עמוד.</li>
+            <li>• <strong>שאלה נוספת</strong> — <strong>yarivi@ariel.ac.il</strong></li>
           </ul>
         </div>
 
       </div>
     </section>
-  );
-}
-
-function SetupInstructions({
-  clientId, setClientId, tenant, setTenant, onSave,
-}: { clientId: string; setClientId: (v: string) => void; tenant: string; setTenant: (v: string) => void; onSave: () => void }) {
-  return (
-    <div className="rounded-xl border p-7 space-y-5" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.3)' }}>
-
-      <div>
-        <div className="chapter-mark mb-3" style={{ fontSize: '11px' }}>Step 1</div>
-        <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>רשום אפליקציה ב‑Microsoft Entra</div>
-        <ol className="text-[14px] leading-[1.7] space-y-1 pr-4" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-          <li>1. היכנס ל‑<a href="https://entra.microsoft.com" target="_blank" rel="noopener" style={{ color: 'var(--accent)', borderBottom: '1px solid var(--accent)' }}>entra.microsoft.com</a></li>
-          <li>2. <strong>Applications → App registrations → New registration</strong></li>
-          <li>3. שם: "Practicum v2"</li>
-          <li>4. Supported account types: <strong>Accounts in any organizational directory</strong></li>
-          <li>5. Redirect URI (<strong>Single-page application</strong>): <code style={{ background: 'rgba(122,30,43,0.08)', padding: '2px 6px', borderRadius: 4 }}>https://itzkovichyariv-star.github.io/Practicum-v2/</code></li>
-          <li>6. <strong>Register</strong></li>
-        </ol>
-      </div>
-
-      <div>
-        <div className="chapter-mark mb-3" style={{ fontSize: '11px' }}>Step 2</div>
-        <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>הוסף הרשאה ליומן</div>
-        <ol className="text-[14px] leading-[1.7] space-y-1 pr-4" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-          <li>1. <strong>API permissions → Add a permission → Microsoft Graph → Delegated permissions</strong></li>
-          <li>2. בחר: <code style={{ background: 'rgba(122,30,43,0.08)', padding: '2px 6px', borderRadius: 4 }}>Calendars.ReadWrite</code></li>
-          <li>3. <strong>Add permissions</strong></li>
-        </ol>
-      </div>
-
-      <div>
-        <div className="chapter-mark mb-3" style={{ fontSize: '11px' }}>Step 3</div>
-        <div className="serif text-[19px] mb-4" style={{ color: 'var(--ink)' }}>הדבק את ה‑Application (client) ID כאן</div>
-        <div className="space-y-3">
-          <label className="block">
-            <span className="small-caps block mb-1.5">Application (Client) ID</span>
-            <input
-              type="text"
-              value={clientId}
-              onChange={e => setClientId(e.target.value)}
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              className="input"
-              style={{ padding: '12px 16px', fontSize: '14px', fontFamily: 'ui-monospace, monospace' }}
-            />
-          </label>
-          <label className="block">
-            <span className="small-caps block mb-1.5">Tenant (אופציונלי — ברירת מחדל: common)</span>
-            <input
-              type="text"
-              value={tenant}
-              onChange={e => setTenant(e.target.value)}
-              placeholder="common"
-              className="input"
-              style={{ padding: '12px 16px', fontSize: '14px', fontFamily: 'ui-monospace, monospace' }}
-            />
-            <span className="text-[12px] mt-1 block" style={{ color: 'var(--text-soft)' }}>
-              אם Ariel IT נתנו tenant ID ספציפי, הזן אותו. אחרת השאר "common".
-            </span>
-          </label>
-          <button onClick={onSave} style={{
-            display: 'inline-block', marginTop: '12px', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-            background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-          }}>שמור →</button>
-        </div>
-      </div>
-    </div>
   );
 }

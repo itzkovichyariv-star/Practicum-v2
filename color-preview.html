@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>בחירת פלטת צבעים — מצב לילה</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+    background: #f0ece8;
+    color: #1a1a1a;
+    padding: 32px 24px 60px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    text-align: center;
+    letter-spacing: -0.3px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 36px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .option {
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    border: 3px solid transparent;
+  }
+  .option:hover { transform: translateY(-3px); box-shadow: 0 8px 32px rgba(0,0,0,0.25); }
+  .option.selected { border-color: #2563eb; }
+  .tag {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-top: 12px;
+    color: #555;
+  }
+
+  /* ─── Card structure ─── */
+  .card { padding: 20px; }
+  .card-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    opacity: 0.5;
+  }
+  .card-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.3px; }
+  .card-sub { font-size: 11px; opacity: 0.55; margin-bottom: 18px; }
+
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .row:last-of-type { border-bottom: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .row-name { font-size: 12px; font-weight: 500; flex: 1; }
+  .pill {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .btn {
+    margin-top: 16px;
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .btn-ghost {
+    margin-top: 8px;
+    width: 100%;
+    padding: 8px;
+    background: transparent;
+    border-radius: 8px;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+  }
+  .stat-row { display: flex; gap: 12px; margin-top: 14px; }
+  .stat { flex: 1; padding: 10px; border-radius: 8px; }
+  .stat-n { font-size: 22px; font-weight: 700; }
+  .stat-l { font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; margin-top: 2px; opacity: 0.55; }
+
+  /* ─── OPTION A: Wine Rose — close to current but accent is light ─── */
+  .a-bg   { background: #191215; }
+  .a-card { background: #221519; }
+  .a-accent { color: #e8909a; }
+  .a-accent-bg { background: #e8909a; }
+  .a-accent-muted { background: rgba(232,144,154,0.15); }
+  .a-text { color: #f0e8ea; }
+  .a-soft { color: rgba(240,232,234,0.5); }
+  .a-dot { background: #e8909a; }
+  .a-border { border-bottom: 1px solid rgba(232,144,154,0.15) !important; }
+  .a-stat { background: rgba(232,144,154,0.1); }
+  .a-btn-ghost { color: rgba(240,232,234,0.5); border: 1px solid rgba(255,255,255,0.1); }
+
+  /* ─── OPTION B: Warm Ember — warmer bg, more saturated accent ─── */
+  .b-bg   { background: #161110; }
+  .b-card { background: #1f1816; }
+  .b-accent { color: #f0a060; }
+  .b-accent-bg { background: #f0a060; }
+  .b-accent-muted { background: rgba(240,160,96,0.15); }
+  .b-text { color: #f5ede8; }
+  .b-soft { color: rgba(245,237,232,0.5); }
+  .b-dot { background: #f0a060; }
+  .b-border { border-bottom: 1px solid rgba(240,160,96,0.15) !important; }
+  .b-stat { background: rgba(240,160,96,0.1); }
+  .b-btn-ghost { color: rgba(245,237,232,0.5); border: 1px solid rgba(255,255,255,0.1); }
+
+  /* ─── OPTION C: Cool Slate — blue-grey dark, wine stays more saturated ─── */
+  .c-bg   { background: #13151a; }
+  .c-card { background: #1b1e26; }
+  .c-accent { color: #c97890; }
+  .c-accent-bg { background: #c97890; }
+  .c-accent-muted { background: rgba(201,120,144,0.15); }
+  .c-text { color: #e8eaf0; }
+  .c-soft { color: rgba(232,234,240,0.5); }
+  .c-dot { background: #c97890; }
+  .c-border { border-bottom: 1px solid rgba(201,120,144,0.12) !important; }
+  .c-stat { background: rgba(201,120,144,0.1); }
+  .c-btn-ghost { color: rgba(232,234,240,0.5); border: 1px solid rgba(255,255,255,0.08); }
+
+  /* ─── OPTION D: Pure (no change — current) for comparison ─── */
+  .d-bg   { background: #141414; }
+  .d-card { background: #1c1c1c; }
+  .d-accent { color: #7a1e2b; }
+  .d-accent-bg { background: #7a1e2b; }
+  .d-accent-muted { background: rgba(122,30,43,0.25); }
+  .d-text { color: #f5f5f5; }
+  .d-soft { color: rgba(245,245,245,0.45); }
+  .d-dot { background: #7a1e2b; }
+  .d-border { border-bottom: 1px solid rgba(122,30,43,0.2) !important; }
+  .d-stat { background: rgba(122,30,43,0.15); }
+  .d-btn-ghost { color: rgba(245,245,245,0.45); border: 1px solid rgba(255,255,255,0.08); }
+</style>
+</head>
+<body>
+
+<h1>בחירת פלטת מצב לילה</h1>
+<p class="subtitle">הצד הכהה של המערכת — לחץ/י על הכרטיס שתרצה ואמור לי מה בחרת</p>
+
+<div class="grid">
+
+  <!-- OPTION A: Wine Rose -->
+  <div>
+    <div class="option a-bg" onclick="this.classList.toggle('selected')">
+      <div class="card a-card">
+        <div class="card-label a-soft">דוחות · VIII</div>
+        <div class="card-title a-text">שמירת גרסה</div>
+        <div class="card-sub a-soft">תשפ״ו · פרקטיקום</div>
+
+        <div class="row a-border">
+          <div class="dot a-dot"></div>
+          <div class="row-name a-text">מיה כהן</div>
+          <div class="pill a-accent-muted a-accent">שובצה</div>
+        </div>
+        <div class="row a-border">
+          <div class="dot" style="background:rgba(232,144,154,0.3)"></div>
+          <div class="row-name a-text">רון לוי</div>
+          <div class="pill" style="background:rgba(255,255,255,0.07);color:rgba(240,232,234,0.5)">ממתין</div>
+        </div>
+        <div class="row">
+          <div class="dot a-dot"></div>
+          <div class="row-name a-text">דנה שפירא</div>
+          <div class="pill a-accent-muted a-accent">שובצה</div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat a-stat">
+            <div class="stat-n a-accent">12</div>
+            <div class="stat-l a-soft">שובצו</div>
+          </div>
+          <div class="stat a-stat">
+            <div class="stat-n a-text">84%</div>
+            <div class="stat-l a-soft">השמה</div>
+          </div>
+        </div>
+
+        <button class="btn a-accent-bg" style="color:#191215">שמור שינויים ←</button>
+        <button class="btn-ghost a-btn-ghost">ביטול</button>
+      </div>
+    </div>
+    <div class="tag">A · Rose Wine<br><span style="font-weight:400;font-size:10px;color:#aaa">רקע חם · accent ורוד-יין</span></div>
+  </div>
+
+  <!-- OPTION B: Warm Ember -->
+  <div>
+    <div class="option b-bg" onclick="this.classList.toggle('selected')">
+      <div class="card b-card">
+        <div class="card-label b-soft">דוחות · VIII</div>
+        <div class="card-title b-text">שמירת גרסה</div>
+        <div class="card-sub b-soft">תשפ״ו · פרקטיקום</div>
+
+        <div class="row b-border">
+          <div class="dot b-dot"></div>
+          <div class="row-name b-text">מיה כהן</div>
+          <div class="pill b-accent-muted b-accent">שובצה</div>
+        </div>
+        <div class="row b-border">
+          <div class="dot" style="background:rgba(240,160,96,0.3)"></div>
+          <div class="row-name b-text">רון לוי</div>
+          <div class="pill" style="background:rgba(255,255,255,0.07);color:rgba(245,237,232,0.5)">ממתין</div>
+        </div>
+        <div class="row">
+          <div class="dot b-dot"></div>
+          <div class="row-name b-text">דנה שפירא</div>
+          <div class="pill b-accent-muted b-accent">שובצה</div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat b-stat">
+            <div class="stat-n b-accent">12</div>
+            <div class="stat-l b-soft">שובצו</div>
+          </div>
+          <div class="stat b-stat">
+            <div class="stat-n b-text">84%</div>
+            <div class="stat-l b-soft">השמה</div>
+          </div>
+        </div>
+
+        <button class="btn b-accent-bg" style="color:#161110">שמור שינויים ←</button>
+        <button class="btn-ghost b-btn-ghost">ביטול</button>
+      </div>
+    </div>
+    <div class="tag">B · Warm Ember<br><span style="font-weight:400;font-size:10px;color:#aaa">רקע חם · accent כתמתם-זהוב</span></div>
+  </div>
+
+  <!-- OPTION C: Cool Slate -->
+  <div>
+    <div class="option c-bg" onclick="this.classList.toggle('selected')">
+      <div class="card c-card">
+        <div class="card-label c-soft">דוחות · VIII</div>
+        <div class="card-title c-text">שמירת גרסה</div>
+        <div class="card-sub c-soft">תשפ״ו · פרקטיקום</div>
+
+        <div class="row c-border">
+          <div class="dot c-dot"></div>
+          <div class="row-name c-text">מיה כהן</div>
+          <div class="pill c-accent-muted c-accent">שובצה</div>
+        </div>
+        <div class="row c-border">
+          <div class="dot" style="background:rgba(201,120,144,0.3)"></div>
+          <div class="row-name c-text">רון לוי</div>
+          <div class="pill" style="background:rgba(255,255,255,0.07);color:rgba(232,234,240,0.5)">ממתין</div>
+        </div>
+        <div class="row">
+          <div class="dot c-dot"></div>
+          <div class="row-name c-text">דנה שפירא</div>
+          <div class="pill c-accent-muted c-accent">שובצה</div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat c-stat">
+            <div class="stat-n c-accent">12</div>
+            <div class="stat-l c-soft">שובצו</div>
+          </div>
+          <div class="stat c-stat">
+            <div class="stat-n c-text">84%</div>
+            <div class="stat-l c-soft">השמה</div>
+          </div>
+        </div>
+
+        <button class="btn c-accent-bg" style="color:#fff">שמור שינויים ←</button>
+        <button class="btn-ghost c-btn-ghost">ביטול</button>
+      </div>
+    </div>
+    <div class="tag">C · Cool Slate<br><span style="font-weight:400;font-size:10px;color:#aaa">רקע כחלחל · accent wine בינוני</span></div>
+  </div>
+
+  <!-- OPTION D: Current (no change) -->
+  <div>
+    <div class="option d-bg" onclick="this.classList.toggle('selected')">
+      <div class="card d-card">
+        <div class="card-label d-soft">דוחות · VIII</div>
+        <div class="card-title d-text">שמירת גרסה</div>
+        <div class="card-sub d-soft">תשפ״ו · פרקטיקום</div>
+
+        <div class="row d-border">
+          <div class="dot d-dot"></div>
+          <div class="row-name d-text">מיה כהן</div>
+          <div class="pill d-accent-muted d-accent">שובצה</div>
+        </div>
+        <div class="row d-border">
+          <div class="dot" style="background:rgba(122,30,43,0.4)"></div>
+          <div class="row-name d-text">רון לוי</div>
+          <div class="pill" style="background:rgba(255,255,255,0.07);color:rgba(245,245,245,0.45)">ממתין</div>
+        </div>
+        <div class="row">
+          <div class="dot d-dot"></div>
+          <div class="row-name d-text">דנה שפירא</div>
+          <div class="pill d-accent-muted d-accent">שובצה</div>
+        </div>
+
+        <div class="stat-row">
+          <div class="stat d-stat">
+            <div class="stat-n d-accent">12</div>
+            <div class="stat-l d-soft">שובצו</div>
+          </div>
+          <div class="stat d-stat">
+            <div class="stat-n d-text">84%</div>
+            <div class="stat-l d-soft">השמה</div>
+          </div>
+        </div>
+
+        <button class="btn d-accent-bg" style="color:#fff">שמור שינויים ←</button>
+        <button class="btn-ghost d-btn-ghost">ביטול</button>
+      </div>
+    </div>
+    <div class="tag">D · כרגע (ללא שינוי)<br><span style="font-weight:400;font-size:10px;color:#aaa">wine #7a1e2b כהה מאוד</span></div>
+  </div>
+
+</div>
+
+<div style="max-width:1100px;margin:28px auto 0;padding:20px;background:#fff;border-radius:12px;font-size:13px;line-height:1.7;color:#555;">
+  <strong style="color:#222">הבעיה עם D (הנוכחי):</strong>
+  הצבע <code>#7a1e2b</code> הוא wine כהה מאוד — כמעט שחור על רקע כהה. בניגוד למאסטרו ואתר הבית שלך, שם ה-accent <em>מואר</em> על רקע כהה, כאן הוא נספג בחושך ומאבד את תפקיד הסמן החזותי. <br>
+  <strong style="color:#222">A</strong> = הכי קרוב ל-DNA הנוכחי (wine), רק מוארת. <strong style="color:#222">B</strong> = מחמם יותר, כתמתם — שונה מהזהות. <strong style="color:#222">C</strong> = כחלחל, אלגנטי אבל רחוק מ-wine.
+</div>
+
+</body>
+</html>

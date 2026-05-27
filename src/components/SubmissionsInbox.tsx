@@ -1,6 +1,31 @@
 import { useEffect, useState } from 'react';
+import { btnPrimary, btnSecondary } from '../lib/design';
 import { supabase } from '../lib/supabase';
 import JSZip from 'jszip';
+
+type Questionnaire = {
+  studyTracks?: string;
+  gpa?: string;
+  workHistory?: string;
+  favRole?: string;
+  leastFavRole?: string;
+  whyPracticum?: string;
+  whySuitable?: string;
+  persistence?: string;
+  expectations?: string;
+};
+
+const Q_LABELS: { key: keyof Questionnaire; label: string }[] = [
+  { key: 'studyTracks',   label: 'חוגי לימוד' },
+  { key: 'gpa',           label: 'ממוצע ציונים א׳+ב׳' },
+  { key: 'workHistory',   label: 'ניסיון תעסוקתי' },
+  { key: 'favRole',       label: 'תפקיד שאהבת במיוחד' },
+  { key: 'leastFavRole',  label: 'תפקיד שפחות התחברת אליו' },
+  { key: 'whyPracticum',  label: 'מדוע נרשמת לפרקטיקום' },
+  { key: 'whySuitable',   label: 'מדוע אתה מתאים/ה' },
+  { key: 'persistence',   label: 'התמדה במשימה מאתגרת' },
+  { key: 'expectations',  label: 'ציפיות מהפרקטיקום' },
+];
 
 type Submission = {
   id: string;
@@ -13,6 +38,7 @@ type Submission = {
   cv_file_path: string | null;
   application_file_path: string | null;
   notes: string | null;
+  questionnaire: Questionnaire | null;
   submitted_at: string;
   processed: boolean;
 };
@@ -231,30 +257,8 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
             </span>
             {selectedIds.size > 0 && (
               <div className="flex flex-wrap gap-2 mr-auto">
-                <button onClick={() => bulkDownload('cv')} disabled={downloading} style={{
-                  display: 'inline-block', padding: '10px 16px', fontSize: '12px', fontWeight: 600,
-                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                  borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap', flexShrink: 0, opacity: downloading ? 0.5 : 1,
-                }}>📄 הורד CV נבחרים</button>
-                <button onClick={() => bulkDownload('application')} disabled={downloading} style={{
-                  display: 'inline-block', padding: '10px 16px', fontSize: '12px', fontWeight: 600,
-                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                  borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap', flexShrink: 0, opacity: downloading ? 0.5 : 1,
-                }}>📝 הורד טפסי מועמדות</button>
-                <button onClick={() => bulkDownload('both')} disabled={downloading} style={{
-                  display: 'inline-block', padding: '10px 16px', fontSize: '12px', fontWeight: 600,
-                  background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                  borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap', flexShrink: 0, opacity: downloading ? 0.5 : 1,
-                }}>📦 הכל (ZIP עם תיקיות)</button>
-                <button onClick={acceptSelected} disabled={downloading} style={{
-                  display: 'inline-block', padding: '10px 18px', fontSize: '12px', fontWeight: 600,
-                  background: downloading ? 'var(--divider)' : 'var(--accent)', color: 'white',
-                  border: 'none', borderRadius: '999px', cursor: downloading ? 'not-allowed' : 'pointer',
-                  opacity: downloading ? 0.6 : 1, whiteSpace: 'nowrap', flexShrink: 0,
-                }}>
+                <button onClick={() => bulkDownload('cv')} disabled={downloading} style={btnSecondary(downloading)}>📄 הורד CV נבחרים</button>
+                <button onClick={acceptSelected} disabled={downloading} style={btnPrimary(downloading)}>
                   ✓ קלוט למערכת
                 </button>
                 <button onClick={deleteSelected} disabled={downloading}
@@ -273,45 +277,79 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
           )}
 
           <ul>
-            {visible.map(s => (
-              <li key={s.id} className="flex items-baseline gap-4 px-5 py-4 border-b hover:bg-[rgba(122,30,43,0.03)]"
-                style={{ borderColor: 'var(--divider)', opacity: s.processed ? 0.55 : 1 }}>
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(s.id)}
-                  onChange={() => toggle(s.id)}
-                  disabled={s.processed}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="serif text-[18px] leading-[1.2]" style={{ color: 'var(--ink)' }}>
-                    {s.name}
-                    {s.processed && <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
-                      style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>✓ נקלט</span>}
-                  </div>
-                  <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-1 mt-1" style={{ color: 'var(--text-soft)' }}>
-                    {s.phone && <span dir="ltr">{s.phone}</span>}
-                    {s.email && <span>{s.email}</span>}
-                    {s.course_name && <span>· {s.course_name}</span>}
-                    {s.year && <span>· {s.year}</span>}
-                    <span>· {new Date(s.submitted_at).toLocaleDateString('he-IL')}</span>
-                  </div>
-                </div>
-                <div className="flex gap-1.5 shrink-0 items-center">
-                  {s.cv_file_path && <FilePill label="CV" path={s.cv_file_path} />}
-                  {s.application_file_path && <FilePill label="טופס" path={s.application_file_path} />}
-                  <button
-                    onClick={() => deleteOne(s)}
-                    title="מחק הגשה + קבצים"
-                    className="w-7 h-7 rounded-full grid place-items-center text-[13px] hover:bg-[rgba(122,30,43,0.1)]"
-                    style={{ color: 'var(--accent)' }}
-                  >🗑</button>
-                </div>
-              </li>
-            ))}
+            {visible.map(s => <SubmissionCard key={s.id} s={s} selected={selectedIds.has(s.id)} onToggle={() => toggle(s.id)} onDelete={() => deleteOne(s)} />)}
           </ul>
         </>
       )}
     </section>
+  );
+}
+
+function SubmissionCard({ s, selected, onToggle, onDelete }: {
+  s: Submission; selected: boolean; onToggle: () => void; onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasQ = s.questionnaire && Object.values(s.questionnaire).some(v => v?.trim());
+
+  return (
+    <li className="border-b" style={{ borderColor: 'var(--divider)', opacity: s.processed ? 0.6 : 1 }}>
+      {/* ── header row ── */}
+      <div className="flex items-start gap-4 px-5 py-4 hover:bg-[rgba(122,30,43,0.02)]">
+        <input type="checkbox" checked={selected} onChange={onToggle} disabled={s.processed} className="mt-1" />
+        <div className="flex-1 min-w-0">
+          <div className="serif text-[18px] leading-[1.2]" style={{ color: 'var(--ink)' }}>
+            {s.name}
+            {s.processed && (
+              <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>✓ נקלט</span>
+            )}
+          </div>
+          <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 mt-1" style={{ color: 'var(--text-soft)' }}>
+            {s.phone && <span dir="ltr">{s.phone}</span>}
+            {s.email && <span>{s.email}</span>}
+            {s.questionnaire?.studyTracks && <span>· {s.questionnaire.studyTracks}</span>}
+            {s.questionnaire?.gpa && <span>· ממוצע {s.questionnaire.gpa}</span>}
+            {s.course_name && <span>· {s.course_name}</span>}
+            {s.year && <span>· {s.year}</span>}
+            <span>· {new Date(s.submitted_at).toLocaleDateString('he-IL')}</span>
+          </div>
+          {s.notes && (
+            <div className="mt-1.5 mono text-[11px] tracking-[0.04em] px-2 py-1 rounded"
+              style={{ background: 'rgba(122,30,43,0.06)', color: 'var(--accent)', display: 'inline-block' }}>
+              {s.notes}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-1.5 shrink-0 items-center mt-0.5">
+          {s.cv_file_path && <FilePill label="CV" path={s.cv_file_path} />}
+          {s.application_file_path && <FilePill label="טופס" path={s.application_file_path} />}
+          {hasQ && (
+            <button onClick={() => setOpen(o => !o)}
+              className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-1 rounded-full border hover:bg-[rgba(122,30,43,0.08)]"
+              style={{ borderColor: 'var(--divider)', color: open ? 'var(--accent)' : 'var(--text-soft)' }}>
+              שאלון {open ? '▲' : '▼'}
+            </button>
+          )}
+          <button onClick={onDelete} title="מחק הגשה"
+            className="w-7 h-7 rounded-full grid place-items-center text-[13px] hover:bg-[rgba(122,30,43,0.1)]"
+            style={{ color: 'var(--accent)' }}>🗑</button>
+        </div>
+      </div>
+
+      {/* ── questionnaire panel ── */}
+      {open && hasQ && (
+        <div className="px-14 pb-5 space-y-4">
+          {Q_LABELS.filter(({ key }) => s.questionnaire?.[key]?.trim()).map(({ key, label }) => (
+            <div key={key}>
+              <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-1" style={{ color: 'var(--accent)' }}>{label}</div>
+              <p className="text-[13.5px] leading-[1.65] whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>
+                {s.questionnaire![key]}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </li>
   );
 }
 
