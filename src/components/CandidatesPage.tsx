@@ -52,6 +52,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
    קישור אישי לעדכון קו"ח: {{קישור_קוח}}
 
 3. בחירת ארגון לפרקטיקום — לאחר הגשת קו"ח מעודכן תתבקש/י לבחור ארגון מתוך רשימת הארגונות המשתתפים. לכל ארגון מצורף תיאור המפרט את תחומי הפעילות וסוג הניסיון שתצבור/י — קרא/י אותם לפני הבחירה.
+   רשימת הארגונות: {{קישור_ארגונים}}
 
 לכל שאלה, נשמח לענות.
 
@@ -89,20 +90,24 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     if (!emailConfirm) return;
     const { type, recipients, subject, body } = emailConfirm;
 
+    const orgsLink = `${window.location.origin}/organizations`;
+
     if (recipients.length === 1) {
       // Single recipient — personalize {{שם}} with their name
       const r = recipients[0];
       const cvLink = `${window.location.origin}/cv-update/?email=${encodeURIComponent(r.email)}&name=${encodeURIComponent(r.name)}`;
       const personalBody = body
         .replace(/\{\{שם\}\}/g, r.name)
-        .replace(/\{\{קישור_קוח\}\}/g, cvLink);
+        .replace(/\{\{קישור_קוח\}\}/g, cvLink)
+        .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
       openMailto(`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`);
     } else {
       // Group — BCC all, replace {{שם}} with generic placeholder
       const bcc = recipients.map(r => r.email).filter(Boolean).join(',');
       const groupBody = body
         .replace(/\{\{שם\}\}/g, '[שם הנמען]')
-        .replace(/\{\{קישור_קוח\}\}/g, '[קישור אישי לעדכון קו"ח ייושלח לכל אחד בנפרד]');
+        .replace(/\{\{קישור_קוח\}\}/g, '[קישור אישי לעדכון קו"ח ייושלח לכל אחד בנפרד]')
+        .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
       openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(groupBody)}`);
     }
 

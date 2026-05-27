@@ -1,0 +1,7 @@
+---
+import Layout from '../layouts/Layout.astro';
+import OrganizationsPage from '../components/OrganizationsPage.tsx';
+---
+<Layout title="ארגונות לפרקטיקום">
+  <OrganizationsPage client:only="react" />
+</Layout>
