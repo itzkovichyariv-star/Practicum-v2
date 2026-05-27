@@ -19,6 +19,8 @@ function empCourseIds(e: Employer): string[] {
 
 type PosFilter = 'all' | 'open' | 'full' | 'none';
 
+type ViewMode = 'list' | 'grid';
+
 export default function EmployersPage({ data, context, userName, onRefresh }: PageProps & { data: any }) {
   const [tab, setTab] = useState<'employers' | 'approvals'>('employers');
   const [search, setSearch] = useState('');
@@ -29,6 +31,14 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem('employers_view') as ViewMode) || 'list'; } catch { return 'list'; }
+  });
+
+  function toggleView(mode: ViewMode) {
+    setViewMode(mode);
+    try { localStorage.setItem('employers_view', mode); } catch {}
+  }
 
   const all: Employer[] = data.employers || [];
   const courses = data.courses || [];
@@ -177,6 +187,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           )}
 
           {/* Filter bar */}
+          {/* Filter bar + view toggle */}
           <div className="flex gap-3 flex-wrap mb-6 items-center">
             <input
               type="search"
@@ -215,15 +226,34 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                 </button>
               ))}
             </div>
+            {/* View mode toggle */}
+            <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'rgba(0,0,0,0.05)', marginRight: 'auto' }}>
+              <button onClick={() => toggleView('list')} title="תצוגת רשימה"
+                className="mono text-[13px] px-2.5 py-1 rounded"
+                style={{
+                  background: viewMode === 'list' ? 'var(--bg)' : 'transparent',
+                  color: viewMode === 'list' ? 'var(--ink)' : 'var(--text-soft)',
+                  border: viewMode === 'list' ? '1px solid var(--divider)' : '1px solid transparent',
+                  cursor: 'pointer', boxShadow: viewMode === 'list' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>☰</button>
+              <button onClick={() => toggleView('grid')} title="תצוגת כרטיסים"
+                className="mono text-[13px] px-2.5 py-1 rounded"
+                style={{
+                  background: viewMode === 'grid' ? 'var(--bg)' : 'transparent',
+                  color: viewMode === 'grid' ? 'var(--ink)' : 'var(--text-soft)',
+                  border: viewMode === 'grid' ? '1px solid var(--divider)' : '1px solid transparent',
+                  cursor: 'pointer', boxShadow: viewMode === 'grid' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}>⊞</button>
+            </div>
           </div>
 
-          {/* Employer list */}
+          {/* Employer list / grid */}
           {filtered.length === 0 ? (
             <div className="py-24 text-center">
               <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מעסיקים להצגה</div>
               <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>שנה סינון או הוסף חדש.</div>
             </div>
-          ) : (
+          ) : viewMode === 'list' ? (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--divider)', borderRadius: '14px', overflow: 'hidden' }}>
               {filtered.map((e, idx) => {
                 const hiredHere = students.filter(s => s.acceptedOrg === e.name);
@@ -241,6 +271,23 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                 );
               })}
             </ul>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '16px' }}>
+              {filtered.map(e => {
+                const hiredHere = students.filter(s => s.acceptedOrg === e.name);
+                const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
+                return (
+                  <EmployerCard
+                    key={e.id}
+                    emp={e}
+                    hiredCount={hiredHere.length}
+                    hiredNames={hiredHere.map(s => s.name)}
+                    linkedCourses={linkedCourses}
+                    onEdit={() => setEditing(e)}
+                  />
+                );
+              })}
+            </div>
           )}
         </>
       )}
@@ -258,6 +305,97 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
         />
       )}
     </main>
+  );
+}
+
+/* ── Employer card (grid view) ── */
+function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, onEdit }: {
+  emp: Employer; hiredCount: number; hiredNames: string[];
+  linkedCourses: { name: string; year?: string; id?: string }[];
+  onEdit: () => void;
+}) {
+  const total = Number(emp.positions) || 0;
+  const filled = Number(emp.filledPositions) || 0;
+  const open = Math.max(0, total - filled);
+  const isPending = (emp as any).approvalStatus === 'pending';
+  const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
+  const dotColor = isPending ? '#d97706' : open > 0 ? 'var(--tl-green)' : total > 0 ? '#94a3b8' : '#94a3b8';
+  const dotLabel = isPending ? 'ממתין לאישור' : open > 0 ? `${open} משרות פתוחות` : total > 0 ? 'כל המשרות מאוישות' : 'ללא הגדרת משרות';
+  const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
+
+  function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
+  function whatsappEmployer() {
+    if (!emp.contactPhone) return;
+    let n = emp.contactPhone.replace(/[^\d]/g, '');
+    if (n.startsWith('0')) n = '972' + n.slice(1);
+    window.open(`https://wa.me/${n}`, '_blank');
+  }
+  function emailEmployer() {
+    if (emp.contactEmail) openMailto(`mailto:${encodeURIComponent(emp.contactEmail)}?subject=${encodeURIComponent(`פרקטיקום — ${emp.name}`)}&body=${encodeURIComponent(`שלום ${emp.contactPerson || ''},\n\n`)}`);
+  }
+
+  return (
+    <div style={{ borderRadius: '16px', border: `1px solid ${isPending ? 'rgba(217,119,6,0.4)' : 'var(--divider)'}`, background: 'var(--bg)', boxShadow: '0 1px 6px rgba(0,0,0,0.05)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid var(--divider)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            <div style={{ flexShrink: 0, width: '9px', height: '9px', borderRadius: '50%', background: dotColor }} title={dotLabel} />
+            <div className="serif text-[17px] leading-tight" style={{ color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
+          </div>
+          <button type="button" onClick={onEdit} style={{ flexShrink: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 600, background: 'transparent', color: 'var(--text-soft)', border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em' }}>עריכה</button>
+        </div>
+        {emp.location && <div style={{ fontSize: '12px', color: 'var(--text-soft)', paddingRight: '17px' }}>📍 {emp.location}</div>}
+        <div style={{ fontSize: '10.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em', color: dotColor, paddingRight: '17px', marginTop: '2px', textTransform: 'uppercase' }}>{dotLabel}</div>
+      </div>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
+        {emp.contactPerson
+          ? <div style={{ fontSize: '13.5px', fontWeight: 500, color: 'var(--ink)', marginBottom: '10px' }}>👤 {emp.contactPerson}</div>
+          : <div style={{ fontSize: '12px', color: 'var(--text-soft)', marginBottom: '10px' }}>⚠ אין איש קשר מוגדר</div>}
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={callEmployer} disabled={!emp.contactPhone} title={emp.contactPhone || 'אין טלפון'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 600, background: emp.contactPhone ? 'rgba(122,30,43,0.07)' : 'transparent', color: emp.contactPhone ? 'var(--accent)' : 'var(--text-soft)', border: `1px solid ${emp.contactPhone ? 'rgba(122,30,43,0.3)' : 'var(--divider)'}`, borderRadius: '999px', cursor: emp.contactPhone ? 'pointer' : 'not-allowed', opacity: emp.contactPhone ? 1 : 0.4, whiteSpace: 'nowrap' }}>
+            📞{emp.contactPhone ? <span dir="ltr" style={{ fontFamily: 'monospace', fontSize: '11px' }}> {emp.contactPhone}</span> : ' חייג'}
+          </button>
+          <button onClick={whatsappEmployer} disabled={!emp.contactPhone}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 600, background: emp.contactPhone ? 'rgba(37,211,102,0.1)' : 'transparent', color: emp.contactPhone ? '#15803d' : 'var(--text-soft)', border: `1px solid ${emp.contactPhone ? 'rgba(37,211,102,0.5)' : 'var(--divider)'}`, borderRadius: '999px', cursor: emp.contactPhone ? 'pointer' : 'not-allowed', opacity: emp.contactPhone ? 1 : 0.4 }}>
+            📱 WhatsApp
+          </button>
+          <button onClick={emailEmployer} disabled={!emp.contactEmail} title={emp.contactEmail || 'אין מייל'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 600, background: emp.contactEmail ? 'rgba(37,99,235,0.07)' : 'transparent', color: emp.contactEmail ? '#1d4ed8' : 'var(--text-soft)', border: `1px solid ${emp.contactEmail ? 'rgba(37,99,235,0.35)' : 'var(--divider)'}`, borderRadius: '999px', cursor: emp.contactEmail ? 'pointer' : 'not-allowed', opacity: emp.contactEmail ? 1 : 0.4 }}>
+            ✉ מייל
+          </button>
+          {(!emp.contactPhone || !emp.contactEmail) && <NeedsUpdate />}
+        </div>
+        {emp.notes && <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-soft)', lineHeight: 1.5 }}>{emp.notes}</div>}
+      </div>
+      {total > 0 && (
+        <div style={{ padding: '12px 18px', borderBottom: hasFooter ? '1px solid var(--divider)' : undefined }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-soft)' }}>קיבולת</span>
+            <span style={{ fontSize: '11.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', color: 'var(--ink)' }}>
+              {filled}/{total}{open > 0 && <span style={{ color: 'var(--tl-green)' }}> · {open} פתוחות</span>}
+            </span>
+          </div>
+          <div style={{ height: '5px', borderRadius: '99px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: '99px', width: `${fillPct}%`, background: fillPct >= 100 ? '#94a3b8' : fillPct > 65 ? '#f59e0b' : 'var(--tl-green)', transition: 'width 0.4s ease' }} />
+          </div>
+        </div>
+      )}
+      {hasFooter && (
+        <div style={{ padding: '10px 18px 14px' }}>
+          {linkedCourses.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: hiredCount > 0 ? '7px' : '0' }}>
+              {linkedCourses.map((c: any) => (
+                <span key={c.name + c.year} style={{ fontSize: '10px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.08em', padding: '2px 8px', borderRadius: '999px', background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>
+                  {c.name}{c.year ? ` · ${c.year}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {hiredCount > 0 && <div style={{ fontSize: '12px', color: 'var(--text-soft)' }}>👤 {hiredNames.slice(0, 3).join(', ')}{hiredNames.length > 3 ? ` +${hiredNames.length - 3}` : ''}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
