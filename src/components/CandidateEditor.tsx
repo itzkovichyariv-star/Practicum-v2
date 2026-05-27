@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
+import { btnSmall, btnSecondary } from '../lib/design';
 import type { Candidate, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { supabase } from '../lib/supabase';
+import { openMailto } from '../lib/openMailto';
 import Modal from './Modal';
 
 const RESULTS: Array<{ value: string; label: string }> = [
@@ -74,6 +76,11 @@ export default function CandidateEditor({
       alert('יש למלא סיבת דחייה כשמסמנים "לא התקבל"');
       return;
     }
+    // Block pass/fail without submitted documents
+    if ((form.interviewResult === 'passed' || form.interviewResult === 'failed') && !(form.cvUrl && form.applicationUrl)) {
+      alert('לא ניתן לסמן תוצאת ראיון ללא הגשת מסמכים.\n\nיש לוודא שהמועמד/ת העלה/תה:\n• קורות חיים (CV)\n• טופס הגשת מועמדות\n\nהעדכן/י את השדות בקטע "שלב 1 — מסמכים" ושמור שוב.');
+      return;
+    }
     onSave(form);
   }
 
@@ -100,7 +107,7 @@ export default function CandidateEditor({
   }
   function openMail() {
     if (!form.email) { alert('אין מייל'); return; }
-    window.location.href = `mailto:${encodeURIComponent(form.email)}?subject=${encodeURIComponent('פרקטיקום — ראיון')}`;
+    openMailto(`mailto:${encodeURIComponent(form.email)}?subject=${encodeURIComponent('פרקטיקום — ראיון')}`);
   }
 
   function copyCvUpdateLink() {
@@ -143,12 +150,14 @@ export default function CandidateEditor({
             <div className="col-span-full">
               <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px' }}>שלב 1 — מסמכים</div>
             </div>
-            <FileField label="קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
-            <FileField label="טופס הגשת מועמדות" value={form.applicationUrl||''} onChange={v=>update('applicationUrl',v)}/>
+            <FileField label="קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}
+              placeholder="לכאן יועלו קורות החיים שהמועמד/ת יצרף/ת דרך קישור ההרשמה"/>
+            <FileField label="טופס הגשת מועמדות" value={form.applicationUrl||''} onChange={v=>update('applicationUrl',v)}
+              placeholder="לכאן יועלה טופס המועמדות שהמועמד/ת יצרף/ת דרך קישור ההרשמה"/>
 
             <div className="col-span-full">
               <div className="chapter-mark mb-3 mt-4" style={{ fontSize: '11px', color: hasDocs ? 'var(--accent)' : 'var(--text-soft)' }}>
-                שלב 2 — ראיון {!hasDocs && ' (נדרשים קודם CV + טופס מועמדות)'}
+                שלב 2 — ראיון {!hasDocs && ' 🔒 (יש להגיש מסמכים קודם)'}
               </div>
             </div>
             <Field label="תאריך הגשה">
@@ -214,7 +223,10 @@ export default function CandidateEditor({
 
             {form.interviewResult === 'failed' && (
               <div className="col-span-full rounded-xl p-4 mt-1"
-                style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
+                style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.35)' }}>
+                <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-2 font-semibold" style={{ color: '#b91c1c' }}>
+                  ⚠ סיבת אי-קבלה — פנימי בלבד, לא נשלח למועמד/ת
+                </div>
                 <Field label="סיבת דחייה (חובה)">
                   <Input value={form.rejectionReason||''} onChange={v=>update('rejectionReason',v)}
                     placeholder="למשל: אין התאמה לתחום / מוטיבציה חלשה / ניסיון קודם חסר"/>
@@ -242,41 +254,16 @@ export default function CandidateEditor({
               background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
               cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
             }}>{isNew ? 'צור' : 'שמור'} →</button>
-            <button type="button" onClick={openCall} disabled={!form.phone} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
-            }}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
-            }}>WhatsApp</button>
-            <button type="button" onClick={openMail} disabled={!form.email} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
-            }}>✉ מייל</button>
+            <button type="button" onClick={openCall} disabled={!form.phone} style={btnSmall(!form.phone)}>📞 התקשר</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={btnSmall(!form.phone)}>WhatsApp</button>
+            <button type="button" onClick={openMail} disabled={!form.email} style={btnSmall(!form.email)}>✉ מייל</button>
             {!isNew && (
               <button type="button" onClick={sendCvLinkWhatsApp} disabled={!form.phone || !form.email}
-                title="שלח לסטודנט קישור עדכון CV בוואטסאפ" style={{
-                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                borderRadius: '999px', cursor: (form.phone && form.email) ? 'pointer' : 'not-allowed',
-                whiteSpace: 'nowrap', flexShrink: 0, opacity: (form.phone && form.email) ? 1 : 0.4,
-              }}>📎 קישור CV (WhatsApp)</button>
+                title="שלח לסטודנט קישור עדכון CV בוואטסאפ" style={btnSmall(!(form.phone && form.email))}>📎 קישור CV (WhatsApp)</button>
             )}
             {!isNew && (
               <button type="button" onClick={copyCvUpdateLink} disabled={!form.email}
-                title="העתק קישור עדכון CV" style={{
-                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
-                whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
-              }}>🔗 העתק קישור</button>
+                title="העתק קישור עדכון CV" style={btnSmall(!form.email)}>🔗 העתק קישור</button>
             )}
             {!isNew && onDelete && (
               <button type="button"
@@ -293,7 +280,7 @@ export default function CandidateEditor({
   );
 }
 
-function FileField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function FileField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   const isHttpUrl = /^https?:\/\//i.test(value);
   const storageMatch = value.match(/^storage:\/\/([^/]+)\/(.+)$/);
   // Plain path — legacy records saved before the storage:// convention
@@ -325,7 +312,7 @@ function FileField({ label, value, onChange }: { label: string; value: string; o
           type="text"
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder="קישור OneDrive / SharePoint"
+          placeholder={placeholder || ''}
           className="input flex-1"
           style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isHttpUrl ? 'ui-monospace, monospace' : undefined }}
         />
@@ -334,6 +321,14 @@ function FileField({ label, value, onChange }: { label: string; value: string; o
             className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-4 rounded-lg shrink-0"
             style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
             פתח ↗
+          </button>
+        )}
+        {value && (
+          <button type="button" onClick={() => onChange('')}
+            title="הסר קובץ"
+            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 rounded-lg shrink-0"
+            style={{ background: 'transparent', color: 'var(--text-soft)', border: '1px solid var(--divider)' }}>
+            ✕
           </button>
         )}
       </div>

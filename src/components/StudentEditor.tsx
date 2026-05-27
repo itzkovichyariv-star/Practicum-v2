@@ -1,9 +1,22 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import type { Student, Course, Employer } from '../lib/supabase';
+import { btnSmall, btnSecondary } from '../lib/design';
+import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
+import { openMailto } from '../lib/openMailto';
+import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import Modal from './Modal';
+import PlacementPanel from './PlacementPanel';
+
+type PlacementExtras = {
+  allStudents: Student[];
+  dispatches: Dispatch[];
+  approvalRequests: EmployerApprovalRequest[];
+  placementSettings: PlacementSettings | Record<string, any>;
+  userName: string;
+  onDataChange: (patch: Partial<PracticumData>) => Promise<void>;
+};
 
 type Props = {
   student: Student | null;
@@ -16,10 +29,11 @@ type Props = {
   onAutoSave?: (s: Student) => Promise<void>;
   onDelete?: (id: string) => void;
   onClose: () => void;
+  placementExtras?: PlacementExtras;
 };
 
 export default function StudentEditor({
-  student, courses, years, employers, defaultCourseId, defaultYear, onSave, onAutoSave, onDelete, onClose,
+  student, courses, years, employers, defaultCourseId, defaultYear, onSave, onAutoSave, onDelete, onClose, placementExtras,
 }: Props) {
   const isNew = !student;
   const [showEval, setShowEval] = useState(false);
@@ -55,6 +69,9 @@ export default function StudentEditor({
     placementInterviewOrg: student?.placementInterviewOrg || '',
     feedbackToken: student?.feedbackToken || '',
     feedbackSubmittedAt: student?.feedbackSubmittedAt || '',
+    placedAt: student?.placedAt || '',
+    // Placement extension
+    cvShareUrl: (student as any)?.cvShareUrl || '',
   });
 
   const prepPassed = !!form.preparation?.passed;
@@ -217,14 +234,42 @@ export default function StudentEditor({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) { alert('שם הסטודנט/ית חסר'); return; }
-    onSave(form);
+
+    // Item 7: can't mark hired before org is set
+    if (form.hired && !form.acceptedOrg) {
+      alert('לא ניתן לסמן "נקלט/ה לעבודה" לפני שמוגדר ארגון מאכסן בפועל.\nהגדר/י ארגון בשדה "ארגון מאכסן בפועל" ושמור שוב.');
+      return;
+    }
+    // Item 6: can't report hours before org is set
+    if ((form.hoursReported || 0) > 0 && !form.acceptedOrg) {
+      alert('לא ניתן לדווח שעות לפני שמוגדר ארגון מאכסן בפועל.');
+      return;
+    }
+    // Item 6: can't complete practicum before org is set
+    if (form.practicumCompleted && !form.acceptedOrg) {
+      alert('לא ניתן לסיים פרקטיקום לפני שמוגדר ארגון מאכסן בפועל.');
+      return;
+    }
+    // Item 8: can't complete practicum before 120 approved hours
+    const minHours = 120;
+    if (form.practicumCompleted && (form.hoursApproved || 0) < minHours) {
+      alert(`לא ניתן לסיים פרקטיקום לפני מילוי מכסת ${minHours} שעות מאושרות.\nשעות מאושרות כרגע: ${form.hoursApproved || 0}`);
+      return;
+    }
+
+    let saved = form;
+    // Auto-stamp placedAt the first time acceptedOrg is recorded
+    if (saved.acceptedOrg && !student?.acceptedOrg && !saved.placedAt) {
+      saved = { ...saved, placedAt: new Date().toISOString().slice(0, 10) };
+    }
+    onSave(saved);
   }
 
   function openOutlookCompose() {
     if (!form.email) { alert('לא הוזן מייל'); return; }
     const subject = encodeURIComponent(`פרקטיקום — ${form.name}`);
     const body = encodeURIComponent(`שלום ${form.name},\n\n`);
-    window.location.href = `mailto:${encodeURIComponent(form.email)}?subject=${subject}&body=${body}`;
+    openMailto(`mailto:${encodeURIComponent(form.email)}?subject=${subject}&body=${body}`);
   }
 
   function openCall() {
@@ -297,10 +342,31 @@ export default function StudentEditor({
   async function handleCopyFeedbackLink() {
     const url = await ensureFeedbackUrl();
     setShownFeedbackUrl(url);
-    if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+    // Try modern clipboard API; fall back to execCommand for iOS Safari
+    let copied = false;
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(url); copied = true; } catch {}
+    }
+    if (!copied) {
+      // iOS fallback: create a temporary input, select and copy
+      const el = document.createElement('input');
+      el.value = url;
+      el.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(el);
+      el.focus(); el.select();
+      try { copied = document.execCommand('copy'); } catch {}
+      document.body.removeChild(el);
+    }
+    if (copied) {
+      showToast('✓ קישור המשוב הועתק ללוח', 'success');
+    } else {
+      // Clipboard not available — just show the URL so user can copy manually
+      showToast('לא ניתן להעתיק — העתק ידנית מהתיבה למטה', 'warn');
+    }
   }
 
   return (
+    <>
     <Modal onClose={onClose} maxWidth="max-w-[820px]">
         <form onSubmit={handleSubmit} className="px-5 py-7 md:px-10 md:py-10">
 
@@ -337,6 +403,28 @@ export default function StudentEditor({
             </Field>
             <Field label="תאריך הכנה"><Input type="date" value={form.preparation?.date||''} onChange={v=>updatePrep('date', v)}/></Field>
           </SectionSub>
+
+          {/* CV for dispatch — auto-uses cvUpdatedUrl or cvUrl (Supabase Storage links) */}
+          {(form as any).cvUpdatedUrl || (form as any).cvUrl ? (
+            <SectionSub title="📋 שיבוץ — קו&quot;ח לשליחה">
+              <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.3)' }}>
+                <div className="mono text-[11px] font-semibold mb-1" style={{ color: '#059669' }}>
+                  ✓ {(form as any).cvUpdatedUrl ? 'קו"ח מעודכן (אחרי הכנה) — יצורף אוטומטית לשליחה למעסיק' : 'קו"ח מקורי — יצורף אוטומטית לשליחה למעסיק'}
+                </div>
+                <div className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
+                  הקישור מגיע מה-Supabase ומצורף להודעת WhatsApp/מייל ללא הגדרה נוספת.
+                </div>
+              </div>
+            </SectionSub>
+          ) : (
+            <SectionSub title="📋 שיבוץ — קו&quot;ח לשליחה">
+              <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.3)' }}>
+                <div className="mono text-[11px] font-semibold" style={{ color: '#b91c1c' }}>
+                  ⚠ לא הועלה קו"ח — יש להעלות קו"ח בקטע "מסמכים וחוו"ד" למטה לפני שליחה למעסיק.
+                </div>
+              </div>
+            </SectionSub>
+          )}
 
           <SectionSub title="CV מעודכן (חובה לפני בחירת ארגון)">
             {pendingCv && (
@@ -391,7 +479,7 @@ export default function StudentEditor({
               <Select value={form.firstChoiceResult||'pending'} onChange={v=>update('firstChoiceResult', v as any)}
                 options={[
                   { value: 'pending', label: 'טרם רואיין' },
-                  { value: 'passed', label: 'עבר — שובץ' },
+                  { value: 'passed', label: 'עבר' },
                   { value: 'failed', label: 'לא עבר' },
                 ]}/>
             </Field>
@@ -405,7 +493,7 @@ export default function StudentEditor({
               <Select value={form.secondChoiceResult||'pending'} onChange={v=>update('secondChoiceResult', v as any)}
                 options={[
                   { value: 'pending', label: 'טרם רואיין' },
-                  { value: 'passed', label: 'עבר — שובץ' },
+                  { value: 'passed', label: 'עבר' },
                   { value: 'failed', label: 'לא עבר' },
                 ]}/>
             </Field>
@@ -442,7 +530,25 @@ export default function StudentEditor({
               </div>
             ) : (
               <div className="col-span-full flex items-center gap-2">
-                <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>ממתין למשוב מהמעסיק</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const orgName = form.placementInterviewOrg || form.acceptedOrg;
+                    if (!orgName) { alert('לא הוגדר ארגון לראיון שיבוץ'); return; }
+                    const emp = employers.find(e => e.name === orgName);
+                    if (!emp?.contactPhone) {
+                      alert(`לא נמצא טלפון לארגון "${orgName}" — הוסף טלפון בדף המעסיקים`);
+                      return;
+                    }
+                    let n = emp.contactPhone.replace(/[^\d]/g, '');
+                    if (n.startsWith('0')) n = '972' + n.slice(1);
+                    window.open(`https://wa.me/${n}`, '_blank');
+                  }}
+                  title="פתח WhatsApp עם ארגון הראיון לבקשת משוב"
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <span className="text-[12px]" style={{ color: 'var(--text-soft)', textDecoration: 'underline dotted' }}>💬 ממתין למשוב מהמעסיק</span>
+                </button>
                 <button type="button" onClick={checkFeedbackStatus} disabled={checkingFeedback}
                   className="mono text-[10px] uppercase tracking-[0.13em] font-semibold px-2.5 py-1 rounded-full border"
                   style={{ color: 'var(--text-soft)', borderColor: 'var(--divider)', background: 'transparent', cursor: 'pointer', opacity: checkingFeedback ? 0.5 : 1 }}>
@@ -524,30 +630,11 @@ export default function StudentEditor({
               background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
               cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
             }}>{isNew ? 'צור' : 'שמור'} →</button>
-            <button type="button" onClick={openCall} disabled={!form.phone} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
-            }}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.phone ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.phone ? 1 : 0.4,
-            }}>WhatsApp</button>
-            <button type="button" onClick={openOutlookCompose} disabled={!form.email} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.email ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.email ? 1 : 0.4,
-            }}>מייל (Outlook)</button>
+            <button type="button" onClick={openCall} disabled={!form.phone} style={btnSmall(!form.phone)}>📞 התקשר</button>
+            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={btnSmall(!form.phone)}>WhatsApp</button>
+            <button type="button" onClick={openOutlookCompose} disabled={!form.email} style={btnSmall(!form.email)}>מייל (Outlook)</button>
             {!isNew && (
-              <button type="button" onClick={() => setShowEval(true)} style={{
-                display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-                background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-              }}>🖨 טופס הערכה</button>
+              <button type="button" onClick={() => setShowEval(true)} style={btnSecondary()}>🖨 טופס הערכה</button>
             )}
             {!isNew && !form.feedbackSubmittedAt && (
               <button type="button" onClick={handleSendFeedbackEmail}
@@ -573,33 +660,6 @@ export default function StudentEditor({
                 borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
               }}>🔗 העתק קישור</button>
             )}
-            {shownFeedbackUrl && (
-              <div className="w-full mt-1 p-3 rounded-lg flex items-center gap-2 flex-wrap"
-                style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--divider)' }}>
-                <span className="mono text-[10px] uppercase tracking-[0.13em] shrink-0" style={{ color: 'var(--text-soft)' }}>
-                  {form.acceptedOrg && employers.find(e => e.name === form.acceptedOrg)?.contactEmail
-                    ? '✓ הודעה נשלחה — העתק ידנית אם לא נפתח:'
-                    : '⚠ אין מייל לארגון — שלחי ידנית:'}
-                </span>
-                <input
-                  readOnly
-                  value={shownFeedbackUrl}
-                  className="input flex-1 text-[12px] font-mono"
-                  style={{ padding: '6px 10px', minWidth: '200px', direction: 'ltr' }}
-                  onFocus={e => e.currentTarget.select()}
-                />
-                <button
-                  type="button"
-                  onClick={() => { if (navigator.clipboard) navigator.clipboard.writeText(shownFeedbackUrl).catch(() => {}); }}
-                  style={{
-                    display: 'inline-block', padding: '6px 14px', fontSize: '12px', fontWeight: 600,
-                    background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                    borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                  }}>
-                  העתק
-                </button>
-              </div>
-            )}
             {!isNew && onDelete && (
               <button type="button"
                 onClick={() => { if (confirm('למחוק סטודנט/ית זה/ו?')) onDelete(form.id); }}
@@ -610,18 +670,44 @@ export default function StudentEditor({
               className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100"
               style={{ flexShrink: 0 }}>בטל</button>
           </div>
+
+          {/* PlacementPanel — dispatch workflow for existing students in practicum courses */}
+          {!isNew && placementExtras && (() => {
+            const studentCourse = courses.find(c => c.id === form.courseId);
+            if (!studentCourse || (studentCourse as any).type !== 'practicum') return null;
+            const ps = placementExtras.placementSettings as PlacementSettings;
+            return (
+              <div style={{ borderTop: '2px solid var(--divider)', marginTop: '32px', paddingTop: '24px' }}>
+                <PlacementPanel
+                  student={form as Student & { cvShareUrl?: string | null; submissionStatus?: string; preferences?: any[] }}
+                  allStudents={placementExtras.allStudents}
+                  employers={employers}
+                  courses={courses}
+                  dispatches={placementExtras.dispatches}
+                  approvalRequests={placementExtras.approvalRequests}
+                  placementSettings={ps}
+                  userName={placementExtras.userName}
+                  onDataChange={placementExtras.onDataChange}
+                />
+              </div>
+            );
+          })()}
         </form>
 
-      {showEval && (
-        <EvaluationForm
-          student={form}
-          courses={courses}
-          employers={employers}
-          onClose={() => setShowEval(false)}
-        />
-      )}
-
     </Modal>
+
+    {/* Render EvaluationForm OUTSIDE the Modal so its position:fixed overlay
+        is not nested inside another fixed element (Safari stacking context bug) */}
+    {showEval && (
+      <EvaluationForm
+        student={form}
+        courses={courses}
+        employers={employers}
+        onClose={() => setShowEval(false)}
+      />
+    )}
+
+</>
   );
 }
 
@@ -634,7 +720,7 @@ function SectionSub({ title, children }: { title: string; children: any }) {
   );
 }
 
-function FileField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function FileField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   const isHttpUrl = /^https?:\/\//i.test(value);
   const storageMatch = value.match(/^storage:\/\/([^/]+)\/(.+)$/);
   // Plain path (no prefix) — legacy records saved before the storage:// convention
@@ -667,7 +753,7 @@ function FileField({ label, value, onChange }: { label: string; value: string; o
           type="text"
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder="הדבק קישור OneDrive / SharePoint"
+          placeholder={placeholder || ''}
           className="input flex-1"
           style={{ padding: '12px 16px', fontSize: '13.5px', fontFamily: isHttpUrl ? 'ui-monospace, monospace' : undefined }}
         />
