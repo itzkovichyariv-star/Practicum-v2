@@ -1,54 +1,57 @@
 import { useMemo, useState } from 'react';
-import type { Employer } from '../lib/supabase';
+import { btnPrimary, btnSecondary, btnSmall, btnTab } from '../lib/design';
+import type { Employer, EmployerApprovalRequest, Student } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { normalizeYear } from './pageShared';
 import { saveSnapshot } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
-import { RowActions, Popover, NeedsUpdate, RefreshButton } from './StudentsPage';
+import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate } from '../lib/placement';
+import { openMailto } from '../lib/openMailto';
 
-/** Returns the courseIds of an employer, supporting both old and new format */
 function empCourseIds(e: Employer): string[] {
   if (e.courseIds && e.courseIds.length > 0) return e.courseIds;
   if (e.courseId) return [e.courseId];
   return [];
 }
 
-export default function EmployersPage({ data, context, userName, onRefresh }: PageProps) {
+type PosFilter = 'all' | 'open' | 'full' | 'none';
+
+export default function EmployersPage({ data, context, userName, onRefresh }: PageProps & { data: any }) {
+  const [tab, setTab] = useState<'employers' | 'approvals'>('employers');
   const [search, setSearch] = useState('');
+  const [posFilter, setPosFilter] = useState<PosFilter>('all');
+  const [courseFilter, setCourseFilter] = useState('');
   const [editing, setEditing] = useState<Employer | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
-  const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [showImport, setShowImport] = useState(false);
 
-  const all = data.employers || [];
+  const all: Employer[] = data.employers || [];
   const courses = data.courses || [];
-  const students = data.students || [];
+  const students: Student[] = data.students || [];
 
   const years = useMemo(() => {
     const set = new Set<string>();
-    courses.forEach(c => c.year && set.add(normalizeYear(c.year)));
-    (data.academicYears || []).forEach(y => set.add(normalizeYear(y)));
+    courses.forEach((c: any) => c.year && set.add(normalizeYear(c.year)));
+    (data.academicYears || []).forEach((y: string) => set.add(normalizeYear(y)));
     return Array.from(set).sort().reverse();
   }, [courses, data.academicYears]);
 
-  // Employers are filtered by courseIds (new) or courseId (legacy).
-  // Year filter: check if any linked course matches the selected year.
   const scoped = useMemo(() => all.filter(e => {
     const ids = empCourseIds(e);
     if (context.courseId !== '__all__') {
-      // context.courseId may be a course name — expand to all matching IDs
       const allowedIds = new Set(
-        courses.filter(c => c.name === context.courseId || c.id === context.courseId).map(c => c.id)
+        courses.filter((c: any) => c.name === context.courseId || c.id === context.courseId).map((c: any) => c.id)
       );
       if (!ids.some(id => allowedIds.has(id))) return false;
     }
     if (context.year !== '__all__') {
       const matches = ids.some(cid => {
-        const course = courses.find(c => c.id === cid);
+        const course = courses.find((c: any) => c.id === cid);
         return course && normalizeYear(course.year) === normalizeYear(context.year);
       });
       if (!matches) return false;
@@ -59,11 +62,23 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return scoped.filter(e => {
-      if (!q) return true;
-      const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
+      const total = Number(e.positions) || 0;
+      const filled = Number(e.filledPositions) || 0;
+      const open = Math.max(0, total - filled);
+      if (posFilter === 'open' && open === 0) return false;
+      if (posFilter === 'full' && (open > 0 || total === 0)) return false;
+      if (posFilter === 'none' && total > 0) return false;
+      if (courseFilter) {
+        const ids = empCourseIds(e);
+        if (!ids.includes(courseFilter)) return false;
+      }
+      if (q) {
+        const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
     }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
-  }, [scoped, search]);
+  }, [scoped, search, posFilter, courseFilter]);
 
   const totalPositions = scoped.reduce((s, e) => s + (Number(e.positions) || 0), 0);
   const filledPositions = scoped.reduce((s, e) => s + (Number(e.filledPositions) || 0), 0);
@@ -94,76 +109,141 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     await persistAndRefresh(all.filter(e => e.id !== id), '✓ נמחק');
   }
 
+  const approvalRequests: EmployerApprovalRequest[] = (data as any).employerApprovalRequests || [];
+  const pendingApprovals = approvalRequests.filter(r => r.status === 'pending');
+  const placementSettings = (data as any).placementSettings || {};
+
   return (
     <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
-      <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
+      {/* Hero */}
+      <section className="pt-4 pb-10 border-b mb-8" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">IV · מעסיקים</div>
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>מעסיקים</h1>
-            <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
-              {scoped.length === 0
-                ? 'אין מעסיקים בהקשר הנוכחי.'
-                : `${scoped.length} ארגונים · ${totalPositions} משרות · ${openPositions} פתוחות · ${filledPositions} מאוישות`}
-            </p>
+            <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-4" style={{ color: 'var(--ink)' }}>מעסיקים</h1>
+            <div className="flex gap-8 flex-wrap">
+              <StatBox label="ארגונים" value={scoped.length} />
+              <StatBox label="משרות" value={totalPositions} />
+              <StatBox label="פתוחות" value={openPositions} accent={openPositions > 0} />
+              <StatBox label="מאוישות" value={filledPositions} />
+            </div>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setCreating(true)} style={{
-              display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
-              background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
-              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>+ מעסיק חדש →</button>
-            <button onClick={() => setShowImport(i => !i)} style={{
-              display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
-              background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-            }}>⬆ ייבוא Excel</button>
+            <button onClick={() => setCreating(true)} style={btnPrimary()}>+ מעסיק חדש →</button>
+            <button onClick={() => setShowImport(i => !i)} style={btnSecondary()}>⬆ Excel</button>
           </div>
         </div>
       </section>
 
-      <div className="mono text-[12px] uppercase tracking-[0.16em] flex items-center gap-4 flex-wrap mb-10" style={{ color: 'var(--text-soft)' }}>
+      {/* Sub-tabs */}
+      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.05)', display: 'inline-flex' }}>
+        <button onClick={() => setTab('employers')} style={btnTab(tab === 'employers')}>
+          מעסיקים ({scoped.length})
+        </button>
+        <button onClick={() => setTab('approvals')} style={btnTab(tab === 'approvals')}>
+          תור אישורים
+          {pendingApprovals.length > 0 && (
+            <span className="mono text-[10px] mr-1.5 px-1.5 py-0.5 rounded-full"
+              style={{ background: 'var(--accent)', color: 'white' }}>
+              {pendingApprovals.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div className="mono text-[12px] uppercase tracking-[0.16em] flex items-center gap-4 flex-wrap mb-6" style={{ color: 'var(--text-soft)' }}>
         <RefreshButton onRefresh={onRefresh} />
         {saveMsg && <span style={{ color: 'var(--accent)' }}>· {saveMsg}</span>}
         {saving && <span className="opacity-75">· שומר...</span>}
       </div>
 
-      {showImport && (
-        <section className="mb-8">
-          <ExcelImport kind="employers" data={data} userName={userName} onDone={() => { setShowImport(false); onRefresh(); }} />
-        </section>
-      )}
-
-      <section className="mb-10">
-        <input
-          type="search"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="חפש לפי שם ארגון, איש קשר, מייל, מיקום..."
-          className="input w-full"
-          style={{ padding: '10px 16px', fontSize: '14px' }}
+      {tab === 'approvals' ? (
+        <ApprovalQueueSection
+          requests={approvalRequests}
+          employers={all}
+          students={students}
+          courses={courses}
+          placementSettings={placementSettings}
+          data={data}
+          userName={userName}
+          onRefresh={onRefresh}
         />
-      </section>
+      ) : (
+        <>
+          {showImport && (
+            <section className="mb-8">
+              <ExcelImport kind="employers" data={data} userName={userName} onDone={() => { setShowImport(false); onRefresh(); }} />
+            </section>
+          )}
 
-      <section>
-        {filtered.length === 0 ? (
-          <div className="py-24 text-center">
-            <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מעסיקים להצגה</div>
-            <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>נסה להסיר סינון או להוסיף חדש.</div>
+          {/* Filter bar */}
+          <div className="flex gap-3 flex-wrap mb-6 items-center">
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="חפש שם ארגון, איש קשר..."
+              className="input"
+              style={{ padding: '9px 14px', fontSize: '14px', flex: '1 1 180px', minWidth: '0' }}
+            />
+            <select
+              value={courseFilter}
+              onChange={e => setCourseFilter(e.target.value)}
+              className="input"
+              style={{ padding: '9px 14px', fontSize: '13px', flex: '0 1 auto', minWidth: '130px' }}
+            >
+              <option value="">כל הקורסים</option>
+              {courses.map((c: any) => (
+                <option key={c.id} value={c.id}>{c.name}{c.year ? ` · ${c.year}` : ''}</option>
+              ))}
+            </select>
+            <div className="flex gap-1 p-1 rounded-lg flex-wrap" style={{ background: 'rgba(0,0,0,0.05)' }}>
+              {([
+                ['all', 'הכל'] as const,
+                ['open', 'פתוחות'] as const,
+                ['full', 'מלאות'] as const,
+                ['none', 'ללא הגדרה'] as const,
+              ]).map(([v, label]) => (
+                <button key={v} onClick={() => setPosFilter(v)}
+                  className="mono text-[10.5px] uppercase tracking-[0.1em] font-semibold px-3 py-1.5 rounded"
+                  style={{
+                    background: posFilter === v ? 'var(--accent)' : 'transparent',
+                    color: posFilter === v ? 'white' : 'var(--text-soft)',
+                    border: 'none', cursor: 'pointer',
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          <ul>
-            {filtered.map(e => {
-              const hiredHere = students.filter(s => s.acceptedOrg === e.name);
-              const linkedCourses = empCourseIds(e).map(cid => courses.find(c => c.id === cid)).filter(Boolean);
-              return <EmployerRow key={e.id} emp={e} hiredCount={hiredHere.length}
-                linkedCourses={linkedCourses as any}
-                onEdit={() => setEditing(e)} hiredNames={hiredHere.map(s => s.name)}
-                pinned={pinnedId === e.id} onTogglePin={() => setPinnedId(pinnedId === e.id ? null : e.id)} />;
-            })}
-          </ul>
-        )}
-      </section>
+
+          {/* Employer list */}
+          {filtered.length === 0 ? (
+            <div className="py-24 text-center">
+              <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מעסיקים להצגה</div>
+              <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>שנה סינון או הוסף חדש.</div>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--divider)', borderRadius: '14px', overflow: 'hidden' }}>
+              {filtered.map((e, idx) => {
+                const hiredHere = students.filter(s => s.acceptedOrg === e.name);
+                const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
+                return (
+                  <EmployerRow
+                    key={e.id}
+                    emp={e}
+                    hiredCount={hiredHere.length}
+                    hiredNames={hiredHere.map(s => s.name)}
+                    linkedCourses={linkedCourses}
+                    isLast={idx === filtered.length - 1}
+                    onEdit={() => setEditing(e)}
+                  />
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
 
       {(editing || creating) && (
         <EmployerEditor
@@ -181,88 +261,432 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   );
 }
 
-function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, onEdit, pinned, onTogglePin }: {
-  emp: Employer; hiredCount: number; hiredNames: string[]; linkedCourses: { name: string; year?: string }[];
-  onEdit: () => void; pinned: boolean; onTogglePin: () => void;
+/* ── Stat box ── */
+function StatBox({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div>
+      <div className="mono text-[10px] uppercase tracking-[0.15em] mb-0.5 font-semibold" style={{ color: 'var(--text-soft)' }}>{label}</div>
+      <div className="serif text-[30px] leading-none tracking-tight" style={{ color: accent ? 'var(--accent)' : 'var(--ink)' }}>{value}</div>
+    </div>
+  );
+}
+
+/* ── Employer row (collapsible) ── */
+function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdit }: {
+  emp: Employer; hiredCount: number; hiredNames: string[];
+  linkedCourses: { name: string; year?: string; id?: string }[];
+  isLast: boolean;
+  onEdit: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+
   const total = Number(emp.positions) || 0;
   const filled = Number(emp.filledPositions) || 0;
-  const open = Math.max(0, total - filled);
+  const available = Math.max(0, total - filled);
+  const isPending = (emp as any).approvalStatus === 'pending';
+  const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
+
+  const dotColor = isPending ? '#d97706'
+    : available > 0 ? 'var(--tl-green)'
+    : total > 0 ? '#94a3b8'
+    : '#cbd5e1';
+
+  const posLabel = isPending ? 'ממתין לאישור'
+    : total === 0 ? '—'
+    : available > 0 ? `${available}/${total} פתוחות`
+    : `${filled}/${total} מאוישות`;
+
+  function callEmployer() {
+    if (!emp.contactPhone) return;
+    window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`;
+  }
+  function whatsappEmployer() {
+    if (!emp.contactPhone) return;
+    let n = emp.contactPhone.replace(/[^\d]/g, '');
+    if (n.startsWith('0')) n = '972' + n.slice(1);
+    window.open(`https://wa.me/${n}`, '_blank');
+  }
+  function emailEmployer() {
+    if (!emp.contactEmail) return;
+    openMailto(`mailto:${encodeURIComponent(emp.contactEmail)}?subject=${encodeURIComponent(`פרקטיקום — ${emp.name}`)}&body=${encodeURIComponent(`שלום ${emp.contactPerson || ''},\n\n`)}`);
+  }
+
   return (
-    <li className="relative group" data-info-row>
-      <div onClick={onTogglePin}
-        className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
-        style={{ borderColor: 'var(--divider)' }}>
+    <li style={{
+      borderBottom: isLast ? 'none' : '1px solid var(--divider)',
+      background: open ? 'rgba(0,0,0,0.015)' : 'var(--bg)',
+      transition: 'background 0.15s',
+    }}>
+      {/* ── Collapsed row ── */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: '12px',
+          padding: '11px 18px', cursor: 'pointer', userSelect: 'none',
+        }}
+        onClick={() => setOpen(o => !o)}
+      >
+        {/* Status dot */}
+        <div style={{ flexShrink: 0, width: '8px', height: '8px', borderRadius: '50%', background: dotColor }} title={posLabel} />
 
-        {/* Line 1: name · location · positions badge */}
-        <div className="flex items-center gap-2 min-w-0 mb-1.5">
-          <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
-            {emp.name}
-            {emp.location && <span className="text-[13px] mr-2 font-sans" style={{ color: 'var(--text-soft)' }}>· {emp.location}</span>}
-          </div>
-          {total > 0 && (
-            <span className="mono text-[10px] uppercase tracking-[0.1em] font-semibold shrink-0 px-2.5 py-1 rounded-full whitespace-nowrap"
-              style={{ background: 'rgba(122,30,43,0.08)', color: open > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
-              {filled}/{total}{open > 0 ? ` · ${open} פתוחות` : ''}
-            </span>
-          )}
-          {total === 0 && hiredCount > 0 && (
-            <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-soft)' }}>{hiredCount} סטודנטים</span>
-          )}
+        {/* Name */}
+        <div className="serif" style={{
+          flex: '1 1 160px', minWidth: 0, fontSize: '15px', fontWeight: 500,
+          color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {emp.name}
         </div>
 
-        {/* Line 2: contact details · actions */}
-        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
-            {emp.contactPerson && <span>{emp.contactPerson}</span>}
-            {emp.contactPhone && <span dir="ltr">{emp.contactPhone}</span>}
-            {emp.contactEmail && <span className="truncate max-w-[200px]">{emp.contactEmail}</span>}
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {(!emp.contactPhone || !emp.contactEmail) && <NeedsUpdate />}
-            <RowActions phone={emp.contactPhone} email={emp.contactEmail} name={emp.contactPerson || emp.name} onEdit={onEdit} />
-          </div>
-        </div>
-
-        {/* Line 3: course tags */}
-        {linkedCourses.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {linkedCourses.map(c => (
-              <span key={c.name + c.year} className="mono text-[10px] uppercase tracking-[0.1em] px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>
-                {c.name} {c.year}
-              </span>
-            ))}
+        {/* Contact person — shown on wider screens */}
+        {emp.contactPerson && (
+          <div style={{
+            flex: '0 1 140px', minWidth: 0, fontSize: '12.5px', color: 'var(--text-soft)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {emp.contactPerson}
           </div>
         )}
+
+        {/* Location */}
+        {emp.location && (
+          <div style={{
+            flex: '0 1 110px', minWidth: 0, fontSize: '12px', color: 'var(--text-soft)',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            📍 {emp.location}
+          </div>
+        )}
+
+        {/* Position pill */}
+        <div style={{
+          flexShrink: 0, fontSize: '11px', fontFamily: 'var(--font-mono,monospace)',
+          fontWeight: 600, letterSpacing: '0.06em', padding: '2px 9px', borderRadius: '999px',
+          background: available > 0 ? 'rgba(21,128,61,0.1)' : total > 0 ? 'rgba(0,0,0,0.06)' : 'transparent',
+          color: available > 0 ? '#15803d' : 'var(--text-soft)',
+          whiteSpace: 'nowrap',
+        }}>
+          {posLabel}
+        </div>
+
+        {/* Action buttons — always visible */}
+        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          <ActionBtn icon="📞" active={!!emp.contactPhone} title={emp.contactPhone || 'אין טלפון'} color="var(--accent)" bg="rgba(122,30,43,0.07)" border="rgba(122,30,43,0.25)" onClick={callEmployer} />
+          <ActionBtn icon="📱" active={!!emp.contactPhone} title="WhatsApp" color="#15803d" bg="rgba(37,211,102,0.08)" border="rgba(37,211,102,0.4)" onClick={whatsappEmployer} />
+          <ActionBtn icon="✉" active={!!emp.contactEmail} title={emp.contactEmail || 'אין מייל'} color="#1d4ed8" bg="rgba(37,99,235,0.07)" border="rgba(37,99,235,0.3)" onClick={emailEmployer} />
+        </div>
+
+        {/* Edit + expand toggle */}
+        <button type="button" onClick={e => { e.stopPropagation(); onEdit(); }}
+          style={{
+            flexShrink: 0, padding: '3px 10px', fontSize: '10.5px', fontWeight: 600,
+            background: 'transparent', color: 'var(--text-soft)',
+            border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer',
+            fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.08em',
+          }}>
+          עריכה
+        </button>
+
+        <div style={{ flexShrink: 0, fontSize: '11px', color: 'var(--text-soft)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
+          ▾
+        </div>
       </div>
 
-      <Popover pinned={pinned}>
-        <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
+      {/* ── Expanded detail ── */}
+      {open && (
+        <div style={{
+          padding: '0 18px 16px 38px',
+          borderTop: '1px solid var(--divider)',
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px',
+        }}>
+
+          {/* Contact details */}
           <div>
-            <div className="serif text-[22px] leading-[1.15]" style={{ color: 'var(--ink)' }}>{emp.name}</div>
-            {emp.location && <div className="mono text-[10.5px] uppercase tracking-[0.14em] mt-1" style={{ color: 'var(--text-soft)' }}>{emp.location}</div>}
+            <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-soft)', marginBottom: '5px', marginTop: '12px' }}>קשר</div>
+            {emp.contactPerson && <div style={{ fontSize: '13px', color: 'var(--ink)', marginBottom: '2px' }}>👤 {emp.contactPerson}</div>}
+            {emp.contactPhone && <div style={{ fontSize: '12.5px', color: 'var(--text-soft)' }} dir="ltr">📞 {emp.contactPhone}</div>}
+            {emp.contactEmail && <div style={{ fontSize: '12px', color: 'var(--text-soft)', wordBreak: 'break-all' }}>✉ {emp.contactEmail}</div>}
+            {(!emp.contactPhone || !emp.contactEmail) && <NeedsUpdate />}
           </div>
-          {pinned && <button onClick={onTogglePin} className="mono text-[10px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">✕</button>}
+
+          {/* Capacity bar */}
+          {total > 0 && (
+            <div style={{ marginTop: '12px' }}>
+              <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-soft)', marginBottom: '5px' }}>קיבולת</div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                {filled} / {total}
+                {available > 0 && <span style={{ color: '#15803d' }}> · {available} פתוחות</span>}
+              </div>
+              <div style={{ height: '5px', borderRadius: '99px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: '99px', width: `${fillPct}%`,
+                  background: fillPct >= 100 ? '#94a3b8' : fillPct > 65 ? '#f59e0b' : 'var(--tl-green)',
+                  transition: 'width 0.4s ease',
+                }} />
+              </div>
+            </div>
+          )}
+
+          {/* Courses + hired */}
+          {(linkedCourses.length > 0 || hiredCount > 0) && (
+            <div style={{ marginTop: '12px' }}>
+              {linkedCourses.length > 0 && (
+                <>
+                  <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-soft)', marginBottom: '5px' }}>קורסים</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: hiredCount > 0 ? '8px' : '0' }}>
+                    {linkedCourses.map((c: any) => (
+                      <span key={c.name + c.year} style={{
+                        fontSize: '10px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.07em',
+                        padding: '2px 8px', borderRadius: '999px', background: 'rgba(122,30,43,0.08)', color: 'var(--accent)',
+                      }}>
+                        {c.name}{c.year ? ` · ${c.year}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+              {hiredCount > 0 && (
+                <div style={{ fontSize: '12px', color: 'var(--text-soft)' }}>
+                  <span style={{ fontWeight: 600 }}>👤 {hiredCount} סטודנטים:</span>{' '}
+                  {hiredNames.slice(0, 4).join(', ')}{hiredNames.length > 4 ? ` +${hiredNames.length - 4}` : ''}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Notes */}
+          {emp.notes && (
+            <div style={{ marginTop: '12px', gridColumn: '1 / -1' }}>
+              <div style={{ fontSize: '10px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-soft)', marginBottom: '4px' }}>הערות</div>
+              <div style={{ fontSize: '12.5px', color: 'var(--text-soft)', lineHeight: 1.6 }}>{emp.notes}</div>
+            </div>
+          )}
         </div>
-        <div className="space-y-1.5 text-[13px]">
-          <DetailRowE label="איש קשר" value={emp.contactPerson} />
-          <DetailRowE label="טלפון" value={emp.contactPhone} />
-          <DetailRowE label="מייל" value={emp.contactEmail} />
-          <DetailRowE label="משרות" value={total > 0 ? `${filled}/${total} · ${open} פתוחות` : undefined} />
-          <DetailRowE label="סטודנטים שובצו" value={hiredNames.length > 0 ? hiredNames.join(', ') : undefined} accent={hiredNames.length > 0} />
-        </div>
-      </Popover>
+      )}
     </li>
   );
 }
 
-function DetailRowE({ label, value, accent }: { label: string; value?: string | null; accent?: boolean }) {
-  if (!value) return null;
+/* ── Tiny action button ── */
+function ActionBtn({ icon, active, title, color, bg, border, onClick }: {
+  icon: string; active: boolean; title: string; color: string; bg: string; border: string; onClick: () => void;
+}) {
   return (
-    <div className="flex items-baseline gap-3">
-      <span className="mono text-[10.5px] uppercase tracking-[0.13em] font-semibold w-24 shrink-0" style={{ color: 'var(--text-soft)' }}>{label}</span>
-      <span style={{ color: accent ? 'var(--accent)' : 'var(--ink)' }}>{value}</span>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!active}
+      title={title}
+      style={{
+        width: '30px', height: '30px', borderRadius: '8px', border: `1px solid ${active ? border : 'var(--divider)'}`,
+        background: active ? bg : 'transparent', color: active ? color : 'var(--text-soft)',
+        cursor: active ? 'pointer' : 'not-allowed', opacity: active ? 1 : 0.35,
+        fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+      {icon}
+    </button>
+  );
+}
+
+/* ── Approval Queue ── */
+function ApprovalQueueSection({ requests, employers, students, courses, placementSettings, data, userName, onRefresh }: {
+  requests: EmployerApprovalRequest[];
+  employers: Employer[];
+  students: Student[];
+  courses: any[];
+  placementSettings: any;
+  data: any;
+  userName: string;
+  onRefresh: () => void;
+}) {
+  const [decidedId, setDecidedId] = useState<string | null>(null);
+  const [decisionData, setDecisionData] = useState<{
+    requestId: string;
+    decision: 'student-only' | 'course-wide' | 'rejected';
+    student: Student;
+    employer: Employer | null;
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const pending = requests.filter(r => r.status === 'pending');
+  const decided = requests.filter(r => r.status !== 'pending');
+
+  async function handleDecision(request: EmployerApprovalRequest, decision: 'student-only' | 'course-wide' | 'rejected') {
+    const student = students.find(s => s.id === request.requesterStudentId);
+    const employer = employers.find(e => e.id === request.resultingEmployerId);
+    setSaving(true);
+    const now = new Date().toISOString();
+    const updatedRequests = (data.employerApprovalRequests || []).map((r: EmployerApprovalRequest) =>
+      r.id === request.id
+        ? { ...r, status: decision === 'rejected' ? 'rejected' : 'approved', decision, decidedBy: userName, decidedAt: now }
+        : r
+    );
+    let updatedEmployers = [...(data.employers || [])] as Employer[];
+    let updatedStudents = [...(data.students || [])] as Student[];
+    if (employer) {
+      if (decision === 'course-wide') {
+        updatedEmployers = updatedEmployers.map(e =>
+          e.id === employer.id ? { ...e, approvalStatus: 'approved', restrictedToStudentId: null } as any : e
+        );
+      } else if (decision === 'student-only') {
+        updatedEmployers = updatedEmployers.map(e =>
+          e.id === employer.id ? { ...e, approvalStatus: 'approved' } as any : e
+        );
+      } else if (decision === 'rejected') {
+        updatedEmployers = updatedEmployers.map(e => {
+          if (e.id !== employer.id) return e;
+          const updatedSlots = ((e as any).vacancySlots || []).map((s: any) => {
+            if (s.studentId !== request.requesterStudentId || s.status !== 'tentative') return s;
+            return { ...s, status: 'available', studentId: null, prefRank: null, history: [...(s.history || []), { at: now, from: 'tentative', to: 'available', by: 'admin', actorId: userName, reason: 'approval-rejected' }] };
+          });
+          return { ...e, approvalStatus: 'rejected', vacancySlots: updatedSlots } as any;
+        });
+        if (student) {
+          const updatedPrefs = ((student as any).preferences || []).filter((p: any) => p.employerId !== employer.id);
+          const noteEntry = `\nהצעת מעסיק "${employer.name}" נדחתה ב-${new Date(now).toLocaleDateString('he-IL')} על ידי ${userName}`;
+          updatedStudents = updatedStudents.map(s =>
+            s.id === student.id ? { ...s, preferences: updatedPrefs, notes: (s.notes || '') + noteEntry } as any : s
+          );
+        }
+      }
+    }
+    if (student && decision !== 'rejected') {
+      const scope = decision === 'student-only' ? 'לשימוש פרטי שלך' : 'לכל הקורס';
+      const noteEntry = `\nהצעת מעסיק "${employer?.name || request.draft.name}" אושרה ${scope} ב-${new Date(now).toLocaleDateString('he-IL')} על ידי ${userName}`;
+      updatedStudents = updatedStudents.map(s =>
+        s.id === student.id ? { ...s, notes: (s.notes || '') + noteEntry } as any : s
+      );
+    }
+    const res = await saveSnapshot(
+      { ...data, employerApprovalRequests: updatedRequests, employers: updatedEmployers, students: updatedStudents },
+      { name: userName },
+      { action: decision === 'rejected' ? 'נדחה' : 'אושר', entity: 'הצעת מעסיק', target: employer?.name || request.draft.name || '' }
+    );
+    setSaving(false);
+    if (!res.ok) { showToast('שגיאה: ' + (res.error || ''), 'error'); return; }
+    showToast('✓ החלטה נרשמה', 'success');
+    setDecisionData({ requestId: request.id, decision, student: student!, employer: employer || null });
+    setDecidedId(request.id);
+    onRefresh();
+  }
+
+  if (requests.length === 0) {
+    return (
+      <div className="py-16 text-center">
+        <div className="serif text-[22px] mb-2" style={{ color: 'var(--ink)' }}>תור האישורים ריק</div>
+        <div className="text-[14px]" style={{ color: 'var(--text-soft)' }}>הצעות מעסיקים חדשות מסטודנטים יופיעו כאן.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {pending.length > 0 && (
+        <div className="mb-8">
+          <div className="serif text-[20px] mb-4" style={{ color: 'var(--ink)' }}>ממתין לאישור ({pending.length})</div>
+          {pending.map(req => {
+            const student = students.find(s => s.id === req.requesterStudentId);
+            const employer = employers.find(e => e.id === req.resultingEmployerId);
+            const course = courses.find((c: any) => c.id === req.courseId);
+            const isJustDecided = decidedId === req.id;
+            return (
+              <div key={req.id} className="rounded-xl border p-4 mb-3"
+                style={{ borderColor: 'rgba(217,119,6,0.4)', background: 'rgba(217,119,6,0.06)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                  <div>
+                    <div className="font-semibold text-[14px]" style={{ color: 'var(--ink)' }}>{student?.name || 'סטודנט לא ידוע'}</div>
+                    <div className="mono text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                      {course?.name || ''} · {new Date(req.createdAt).toLocaleDateString('he-IL')}
+                    </div>
+                  </div>
+                  <div className="text-[13.5px]" style={{ color: 'var(--ink)' }}>
+                    <strong>{req.draft.name}</strong>
+                    {req.draft.contact && <span style={{ color: 'var(--text-soft)' }}> · {req.draft.contact}</span>}
+                    {req.draft.phone && <span dir="ltr" style={{ color: 'var(--text-soft)' }}> · {req.draft.phone}</span>}
+                    {req.draft.email && <span style={{ color: 'var(--text-soft)' }}> · {req.draft.email}</span>}
+                  </div>
+                </div>
+                {isJustDecided && decisionData ? (
+                  <div>
+                    <div className="mono text-[11.5px] mb-3 font-semibold" style={{ color: 'var(--accent)' }}>
+                      ✓ {decisionData.decision === 'rejected' ? 'נדחה' : decisionData.decision === 'student-only' ? 'אושר לסטודנט בלבד' : 'אושר לכלל הקורס'}
+                    </div>
+                    {decisionData.decision !== 'rejected' && decisionData.student && (
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => {
+                          const st = decisionData.student;
+                          const scope = decisionData.decision === 'student-only' ? 'פרטית עבורך' : 'לכל הקורס';
+                          const msg = renderTemplate(placementSettings.studentNotifyApprovedTemplateWhatsApp || '', { studentName: st.name, employerName: req.draft.name || '', scope, adminName: userName });
+                          if (st.phone) window.open(buildWhatsAppUrl(st.phone, msg), '_blank');
+                        }} style={{ ...btnSmall(), background: '#25D366', color: 'white', borderColor: '#25D366' }}>
+                          📱 הודע לסטודנט (WhatsApp)
+                        </button>
+                        <button onClick={() => {
+                          const st = decisionData.student;
+                          const scope = decisionData.decision === 'student-only' ? 'פרטית עבורך' : 'לכל הקורס';
+                          const subject = renderTemplate(placementSettings.studentNotifyApprovedTemplateEmailSubject || '', { employerName: req.draft.name || '' });
+                          const body = renderTemplate(placementSettings.studentNotifyApprovedTemplateEmailBody || '', { studentName: st.name, employerName: req.draft.name || '', scope, adminName: userName });
+                          if (st.email) window.open(buildMailtoUrl(st.email, subject, body), '_blank');
+                        }} style={{ ...btnSmall(), background: '#2563eb', color: 'white', borderColor: '#2563eb' }}>
+                          ✉ הודע לסטודנט (Email)
+                        </button>
+                      </div>
+                    )}
+                    {decisionData.decision === 'rejected' && decisionData.student && (
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => {
+                          const st = decisionData.student;
+                          const msg = renderTemplate(placementSettings.studentNotifyRejectedTemplateWhatsApp || '', { studentName: st.name, employerName: req.draft.name || '', adminName: userName });
+                          if (st.phone) window.open(buildWhatsAppUrl(st.phone, msg), '_blank');
+                        }} style={{ ...btnSmall(), background: '#25D366', color: 'white', borderColor: '#25D366' }}>
+                          📱 הודע לסטודנט (WhatsApp)
+                        </button>
+                        <button onClick={() => {
+                          const st = decisionData.student;
+                          const subject = renderTemplate(placementSettings.studentNotifyRejectedTemplateEmailSubject || '', { employerName: req.draft.name || '' });
+                          const body = renderTemplate(placementSettings.studentNotifyRejectedTemplateEmailBody || '', { studentName: st.name, employerName: req.draft.name || '', adminName: userName });
+                          if (st.email) window.open(buildMailtoUrl(st.email, subject, body), '_blank');
+                        }} style={{ ...btnSmall(), background: '#2563eb', color: 'white', borderColor: '#2563eb' }}>
+                          ✉ הודע לסטודנט (Email)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => handleDecision(req, 'student-only')} disabled={saving} style={btnSmall(saving)}>אשר לסטודנט בלבד</button>
+                    <button onClick={() => handleDecision(req, 'course-wide')} disabled={saving} style={btnSmall(saving)}>אשר לכלל הקורס</button>
+                    <button onClick={() => handleDecision(req, 'rejected')} disabled={saving}
+                      style={{ ...btnSmall(saving), color: '#dc2626', borderColor: '#dc2626' }}>דחה</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {decided.length > 0 && (
+        <div>
+          <div className="serif text-[18px] mb-3" style={{ color: 'var(--ink)' }}>הוחלט ({decided.length})</div>
+          {decided.map(req => {
+            const student = students.find(s => s.id === req.requesterStudentId);
+            const decisionLabel = req.decision === 'student-only' ? 'אושר לסטודנט' : req.decision === 'course-wide' ? 'אושר לכולם' : 'נדחה';
+            return (
+              <div key={req.id} className="flex items-center gap-3 py-2 border-b" style={{ borderColor: 'var(--divider)' }}>
+                <span className="text-[13px] flex-1" style={{ color: 'var(--ink)' }}>{student?.name || '—'} · {req.draft.name}</span>
+                <span className="mono text-[10.5px] px-2 py-0.5 rounded-full"
+                  style={{
+                    background: req.status === 'rejected' ? 'rgba(220,38,38,0.1)' : 'rgba(5,150,105,0.1)',
+                    color: req.status === 'rejected' ? '#dc2626' : '#059669',
+                  }}>
+                  {decisionLabel}
+                </span>
+                <span className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
+                  {req.decidedAt ? new Date(req.decidedAt).toLocaleDateString('he-IL') : ''}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
