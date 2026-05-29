@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
@@ -7,12 +7,41 @@ export default function CvUpdateForm() {
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const prefillEmail = params.get('email') || '';
   const prefillName  = params.get('name')  || '';
+  const courseParam  = params.get('course') || '';
 
   const [email, setEmail] = useState(prefillEmail);
   const [name,  setName]  = useState(prefillName);
   const [file,  setFile]  = useState<File | null>(null);
+  const [orgs,  setOrgs]  = useState<string[]>([]);
+  const [pref1, setPref1] = useState('');
+  const [pref2, setPref2] = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [err,    setErr]    = useState<string | null>(null);
+
+  // Load approved organizations so the candidate can state a preference.
+  useEffect(() => {
+    supabase
+      .from('practicum_data')
+      .select('data')
+      .eq('org_id', 'default')
+      .single()
+      .then(({ data }) => {
+        const all: any[] = (data as any)?.data?.employers || [];
+        const names = all
+          .filter(e => {
+            if (!e?.name) return false;
+            if (e.approvalStatus === 'rejected') return false;
+            if (courseParam) {
+              const ids = e.courseIds || (e.courseId ? [e.courseId] : []);
+              if (ids.length && !ids.includes(courseParam)) return false;
+            }
+            return true;
+          })
+          .map(e => e.name as string)
+          .sort((a, b) => a.localeCompare(b, 'he'));
+        setOrgs(Array.from(new Set(names)));
+      });
+  }, [courseParam]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,6 +73,8 @@ export default function CvUpdateForm() {
       email: email.trim().toLowerCase(),
       name: name.trim() || null,
       cv_file_path: path,
+      org_pref_1: pref1 || null,
+      org_pref_2: pref2 || null,
     });
 
     if (dbErr) {
@@ -153,6 +184,38 @@ export default function CvUpdateForm() {
             </div>
           </label>
         </div>
+
+        {orgs.length > 0 && (
+          <div className="space-y-4 pt-1">
+            <div>
+              <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>העדפת ארגון — בחירה ראשונה</span>
+              <select
+                value={pref1}
+                onChange={e => setPref1(e.target.value)}
+                className="input w-full"
+                style={{ padding: '12px 16px', fontSize: '14.5px' }}
+              >
+                <option value="">— ללא העדפה —</option>
+                {orgs.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>העדפת ארגון — בחירה שנייה (אופציונלי)</span>
+              <select
+                value={pref2}
+                onChange={e => setPref2(e.target.value)}
+                className="input w-full"
+                style={{ padding: '12px 16px', fontSize: '14.5px' }}
+              >
+                <option value="">— ללא —</option>
+                {orgs.filter(o => o !== pref1).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <p className="text-[12px] leading-[1.5]" style={{ color: 'var(--text-soft)' }}>
+              ההעדפה אינה מחייבת שיבוץ — הארגון מראיין בהמשך ויש מועמדים נוספים. ניתן להשאיר ריק.
+            </p>
+          </div>
+        )}
 
         {err && (
           <div className="mono text-[11.5px] uppercase tracking-[0.14em] py-2" style={{ color: 'var(--accent)' }}>

@@ -360,8 +360,8 @@ const BUILTIN_FORMS: FormDef[] = [
 /* ─── Sub-components ─────────────────────────────────────────────────── */
 
 function QuickLinksCard() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://itzkovichyariv-star.github.io';
-  const base = `${origin}/Practicum-v2`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://practicum.yarivitzkovich.org';
+  const base = origin;
   const sections = [
     { title: '🎛 המערכת', links: [
       { label: 'דשבורד', url: `${base}/#dashboard`, hash: 'dashboard' },
@@ -376,7 +376,9 @@ function QuickLinksCard() {
       { label: 'הגדרות', url: `${base}/#settings`, hash: 'settings' },
     ]},
     { title: '🌐 ציבורי', links: [
-      { label: 'טופס הרשמת מועמדים', url: `${base}/register/`, hash: null },
+      { label: 'שלב 1 · טופס הרשמת מועמדים', url: `${base}/register/`, hash: null },
+      { label: 'שלב 2 · עדכון קו״ח + בחירת ארגון', url: `${base}/cv-update/`, hash: null },
+      { label: 'שלב 2 · רשימת הארגונות', url: `${base}/organizations`, hash: null },
       { label: 'המערכת הישנה (v1)', url: 'https://itzkovichyariv-star.github.io/Practicum/', hash: null },
     ]},
     { title: '🛠 ניהול Supabase', links: [
@@ -491,6 +493,65 @@ function RegistrationLinkCard() {
   );
 }
 
+function CopyOpenRow({ label, url }: { label: string; url: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); return; } catch {}
+    }
+    try {
+      const ta = document.createElement('textarea'); ta.value = url; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      if (document.execCommand('copy')) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+      document.body.removeChild(ta);
+    } catch { alert('העתק ידנית'); }
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-soft)' }}>{label}</div>
+      <div className="w-full mono text-[12.5px] px-4 py-2.5 rounded-lg select-all"
+        style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--divider)', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{url}</div>
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={copy} className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg"
+          style={{ background: 'var(--accent)', color: 'var(--bg)' }}>{copied ? '✓ הועתק' : '📋 העתק'}</button>
+        <a href={url} target="_blank" rel="noopener"
+          className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 py-2.5 rounded-lg border"
+          style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>פתח ↗</a>
+      </div>
+    </div>
+  );
+}
+
+function Stage2LinkCard() {
+  const [base, setBase] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined')
+      setBase(window.location.origin + window.location.pathname.replace(/\/?(?:[a-z]+\/?)?$/i, '/'));
+  }, []);
+  const root = (base ? base.replace(/\/$/, '') : 'https://practicum.yarivitzkovich.org');
+  const cvLink  = `${root}/cv-update/`;
+  const orgLink = `${root}/organizations`;
+  return (
+    <section className="mb-10 rounded-2xl border p-7" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
+      <div className="flex items-start justify-between gap-6 mb-4">
+        <div>
+          <div className="chapter-mark mb-2" style={{ fontSize: '11px' }}>Public Form · Stage 2</div>
+          <h2 className="serif text-[26px] leading-[1.15] tracking-tight" style={{ color: 'var(--ink)' }}>עדכון קו״ח + בחירת ארגון</h2>
+          <p className="text-[14px] mt-2 leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.82 }}>
+            נשלח למועמדים שהתקבלו (לאחר הסדנה). המועמד מעלה קו״ח מעודכן ומציין העדפת ארגון — ההגשות נקלטות אוטומטית בכרטיס הסטודנט.
+            הקישור האישי לכל מועמד נשלח גם ממסך "מועמדים".
+          </p>
+        </div>
+        <span className="serif text-[34px] leading-none shrink-0">🎓</span>
+      </div>
+      <div className="flex flex-col gap-5">
+        <CopyOpenRow label="טופס עדכון קו״ח (שלב 2)" url={cvLink} />
+        <CopyOpenRow label="רשימת הארגונות לעיון" url={orgLink} />
+      </div>
+    </section>
+  );
+}
+
 /* ─── Main page ──────────────────────────────────────────────────────── */
 
 export default function FormsPage(props: PageProps) {
@@ -546,6 +607,7 @@ export default function FormsPage(props: PageProps) {
       </section>
 
       <RegistrationLinkCard />
+      <Stage2LinkCard />
 
       {/* ── Student picker ── */}
       <section className="mb-8 rounded-xl border p-5" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.35)' }}>
@@ -690,9 +752,9 @@ export default function FormsPage(props: PageProps) {
         ))}
       </div>
 
-      {openForm === 'evaluation' && firstStudent && (
+      {openForm === 'evaluation' && selectedStudent && (
         <EvaluationForm
-          student={firstStudent}
+          student={selectedStudent}
           courses={props.data.courses || []}
           employers={props.data.employers || []}
           onClose={() => setOpenForm(null)}

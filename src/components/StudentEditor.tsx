@@ -77,14 +77,14 @@ export default function StudentEditor({
   const prepPassed = !!form.preparation?.passed;
 
   // ── Pending CV update detection ──────────────────────────────────────
-  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string } | null>(null);
+  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
 
   useEffect(() => {
     const email = student?.email?.trim().toLowerCase();
     if (!email || student?.cvUpdatedUrl) return; // skip if already has a CV
     supabase.from('cv_updates')
-      .select('id, cv_file_path, uploaded_at')
+      .select('id, cv_file_path, uploaded_at, org_pref_1, org_pref_2')
       .eq('email', email)
       .is('seen_at', null)
       .order('uploaded_at', { ascending: false })
@@ -437,6 +437,11 @@ export default function StudentEditor({
                   <div className="text-[12px] mt-0.5" style={{ color: '#92400e' }}>
                     {pendingCv.cv_file_path.split('/').pop()}
                   </div>
+                  {(pendingCv.org_pref_1 || pendingCv.org_pref_2) && (
+                    <div className="text-[12px] mt-1 font-semibold" style={{ color: '#92400e' }}>
+                      ✦ העדפת ארגון: {[pendingCv.org_pref_1, pendingCv.org_pref_2].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button type="button" onClick={() => {
