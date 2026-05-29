@@ -46,13 +46,23 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
 
 📌 השלבים הקרובים:
 
-1. השתתפות בסדנת הכנה לפרקטיקום — פרטים יישלחו בנפרד.
+1. סדנת הכנה לפרקטיקום
+הסדנה תתקיים בתאריך {{תאריך_סדנה}}. פרטים נוספים יישלחו בנפרד.
 
-2. עדכון קורות החיים לאחר הסדנה — חובה לפני שיבוץ לארגון.
-   קישור אישי לעדכון קו"ח: {{קישור_קוח}}
+2. הגשת קורות חיים ובחירת ארגון
+לאחר הסדנה אתה/את מתבקש/ת להעלות קורות חיים מעודכנים ולציין את העדפותיך לארגון — הכל דרך הקישור המצורף:
+{{קישור_קוח}}
 
-3. בחירת ארגון לפרקטיקום — לאחר הגשת קו"ח מעודכן תתבקש/י לבחור ארגון מתוך רשימת הארגונות המשתתפים. לכל ארגון מצורף תיאור המפרט את תחומי הפעילות וסוג הניסיון שתצבור/י — קרא/י אותם לפני הבחירה.
-   רשימת הארגונות: {{קישור_ארגונים}}
+תהליך השיבוץ יחל רק לאחר הגשת קורות החיים המעודכנים והעדפותיך — אנא הקפד/י לבצע זאת בסמוך לסיום הסדנה.
+
+לצפייה מראש ברשימת הארגונות ותיאוריהם: {{קישור_ארגונים}}
+
+לכל ארגון מצורף תיאור המפרט את תחומי פעילותו ואת סוג הניסיון שתצבור/י בו — אנא קרא/י בעיון לפני הבחירה.
+
+שים/י לב: מאחר שהארגון עתיד לראיין אותך בהמשך התהליך, ומאחר שישנם מועמדים נוספים, איננו יכולים להבטיח שיבוץ בהתאם להעדפה.
+
+3. הצעת ארגון מטעמך (אופציונלי)
+אם יש ברשותך קשר עם ארגון שבו מנהלת משאבי אנוש המעוניינת לקלוט מתמחה/ת — תוכל/י להוסיף את פרטיו בטופס הקישור לעיל, ומנחה התכנית יבחן את אישורו.
 
 לכל שאלה, נשמח לענות.
 
@@ -63,7 +73,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       subject: 'תוצאת ראיון — תכנית הפרקטיקום',
       body: `שלום {{שם}},
 
-תודה רבה על עניינך בתכנית הפרקטיקום ועל הזמן שהשקעת בתהליך.
+תודה רבה על התעניינותך בתכנית הפרקטיקום ועל הזמן שהשקעת בתהליך.
 
 לאור מספר המקומות המצומצם בתכנית, לצערנו לא נוכל לקלוט אותך במחזור הנוכחי. אם יתפנה מקום, נשמח לשקול את מועמדותך מחדש.
 
@@ -78,12 +88,19 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
 
   function openEmailConfirm(type: 'acceptance' | 'rejection', recipients: Array<{ id: string; name: string; email: string }>) {
     if (!recipients.length) { showToast('לאף אחד מהנבחרים אין מייל', 'error'); return; }
-    setEmailConfirm({
-      type,
-      recipients,
-      subject: EMAIL_TEMPLATES[type].subject,
-      body: EMAIL_TEMPLATES[type].body,
-    });
+
+    let body: string = EMAIL_TEMPLATES[type].body;
+
+    // For acceptance emails: substitute {{תאריך_סדנה}} from the course settings.
+    // We look up the first recipient's course (all selected candidates should share a course).
+    if (type === 'acceptance') {
+      const firstCand = all.find(c => c.id === recipients[0].id);
+      const course = courses.find(c => c.id === firstCand?.courseId);
+      const workshopDate = (course as any)?.workshopDate || '';
+      body = body.replace(/\{\{תאריך_סדנה\}\}/g, workshopDate || '⚠️ תאריך טרם נקבע');
+    }
+
+    setEmailConfirm({ type, recipients, subject: EMAIL_TEMPLATES[type].subject, body });
   }
 
   function sendConfirmedEmail() {
@@ -760,9 +777,14 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                 style={{ padding: '10px 14px', fontSize: '13.5px', resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6 }}
               />
             </label>
-            <div className="mono text-[10.5px] mb-5" style={{ color: 'var(--text-soft)' }}>
+            <div className="mono text-[10.5px] mb-3" style={{ color: 'var(--text-soft)' }}>
               {'ⓘ ניתן לערוך נושא ותוכן. לנמען יחיד — {{שם}} יוחלף בשמו האישי.'}
             </div>
+            {emailConfirm.type === 'acceptance' && emailConfirm.body.includes('⚠️ תאריך טרם נקבע') && (
+              <div className="mono text-[11px] mb-4 px-3 py-2 rounded-lg" style={{ background: 'rgba(200,100,0,0.08)', border: '1px solid rgba(200,100,0,0.25)', color: '#b85c00' }}>
+                ⚠️ תאריך סדנה לא הוגדר לקורס זה — עדכן אותו בניהול → קורסים לפני שליחה, או ערוך ידנית את השדה למעלה.
+              </div>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3 justify-between items-center">
@@ -897,8 +919,49 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
           {c.evalScore != null && <DetailRowC label="ציון" value={String(c.evalScore)} accent={c.evalScore >= 85} />}
           {c.interviewSummary && <DetailRowC label="סיכום" value={c.interviewSummary} />}
         </div>
+
+        {(c.email || c.name) && (
+          <div className="pt-3 mt-3 border-t" style={{ borderColor: 'var(--divider)' }}>
+            <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-2" style={{ color: 'var(--accent)' }}>
+              קישורים אישיים
+            </div>
+            <PersonalLinksC email={c.email} name={c.name} />
+          </div>
+        )}
       </Popover>
     </li>
+  );
+}
+
+function PersonalLinksC({ email, name }: { email?: string | null; name?: string | null }) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const cvLink = `${origin}/cv-update/?email=${encodeURIComponent(email || '')}&name=${encodeURIComponent(name || '')}`;
+  const orgsLink = `${origin}/organizations`;
+
+  async function copy(url: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast(`✓ הקישור ל${label} הועתק`, 'success');
+    } catch {
+      showToast('שגיאה בהעתקה', 'error');
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <LinkRowC label="קו״ח אישי" url={cvLink} onCopy={() => copy(cvLink, 'קו״ח')} />
+      <LinkRowC label="ארגונים" url={orgsLink} onCopy={() => copy(orgsLink, 'ארגונים')} />
+    </div>
+  );
+}
+
+function LinkRowC({ label, url, onCopy }: { label: string; url: string; onCopy: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="mono text-[10px] uppercase tracking-[0.13em] font-semibold w-16 shrink-0" style={{ color: 'var(--text-soft)' }}>{label}</span>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="text-[12px] flex-1 min-w-0 truncate underline" style={{ color: 'var(--accent)' }} dir="ltr">{url}</a>
+      <button type="button" onClick={onCopy} className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-md border shrink-0 hover:opacity-80" style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}>העתק</button>
+    </div>
   );
 }
 
