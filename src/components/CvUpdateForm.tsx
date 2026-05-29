@@ -464,6 +464,7 @@ function OrgPicker({ label, value, onChange, options, placeholder }: {
                 </div>
                 {preview === o.name && hasNotes && (
                   <div
+                    data-org-description={o.name}
                     style={{
                       padding: '8px 14px 12px', fontSize: '12.5px', lineHeight: 1.6,
                       color: 'var(--ink)', opacity: 0.85, whiteSpace: 'pre-wrap',
