@@ -261,7 +261,7 @@ export default function CvUpdateForm() {
               placeholder="— ללא —"
             />
             <p className="text-[12px] leading-[1.5]" style={{ color: 'var(--text-soft)' }}>
-              לחיצה בוחרת ארגון · מעבר עכבר או לחיצה ארוכה מציגים את תיאור הארגון. ההעדפה אינה מחייבת שיבוץ — הארגון מראיין בהמשך ויש מועמדים נוספים. ניתן להשאיר ריק.
+לחיצה על שם הארגון בוחרת אותו · לחיצה על «ⓘ תיאור» מציגה את תיאור הארגון. ההעדפה אינה מחייבת שיבוץ — הארגון מראיין בהמשך ויש מועמדים נוספים. ניתן להשאיר ריק.
             </p>
           </div>
         )}
@@ -444,11 +444,21 @@ function OrgPicker({ label, value, onChange, options, placeholder }: {
                 >
                   <span style={{ flex: 1, minWidth: 0 }}>{o.name}</span>
                   {hasNotes && (
-                    <span
-                      aria-hidden
-                      title="מעבר עכבר / לחיצה ארוכה — תיאור"
-                      style={{ fontSize: '13px', opacity: preview === o.name ? 1 : 0.5, flexShrink: 0 }}
-                    >ⓘ</span>
+                    <button
+                      type="button"
+                      title="הצג תיאור הארגון"
+                      onClick={e => { e.stopPropagation(); setPreview(p => (p === o.name ? null : o.name)); }}
+                      onTouchStart={e => { e.stopPropagation(); }}
+                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setPreview(p => (p === o.name ? null : o.name)); }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0,
+                        fontSize: '11px', fontWeight: 600, lineHeight: 1, padding: '4px 8px',
+                        borderRadius: 999, cursor: 'pointer',
+                        border: '1px solid var(--divider)',
+                        background: preview === o.name ? 'var(--accent)' : 'transparent',
+                        color: preview === o.name ? 'var(--bg)' : 'var(--text-soft)',
+                      }}
+                    >ⓘ תיאור</button>
                   )}
                   {selected && <span style={{ flexShrink: 0, color: 'var(--accent)' }}>✓</span>}
                 </div>
