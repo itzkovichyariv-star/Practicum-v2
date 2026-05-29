@@ -1,7 +1,8 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
+type OrgOption = { name: string; notes: string };
 
 export default function CvUpdateForm() {
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -12,13 +13,23 @@ export default function CvUpdateForm() {
   const [email, setEmail] = useState(prefillEmail);
   const [name,  setName]  = useState(prefillName);
   const [file,  setFile]  = useState<File | null>(null);
-  const [orgs,  setOrgs]  = useState<string[]>([]);
+  const [orgs,  setOrgs]  = useState<OrgOption[]>([]);
   const [pref1, setPref1] = useState('');
   const [pref2, setPref2] = useState('');
+  const [pref3, setPref3] = useState('');
+  // Candidate-suggested organization (private, needs admin approval, becomes 1st choice)
+  const [suggesting, setSuggesting] = useState(false);
+  const [sgName,    setSgName]    = useState('');
+  const [sgContact, setSgContact] = useState('');
+  const [sgRole,    setSgRole]    = useState('');
+  const [sgEmail,   setSgEmail]   = useState('');
+  const [sgPhone,   setSgPhone]   = useState('');
+  const [sgLocation, setSgLocation] = useState('');
+  const [sgNotes,   setSgNotes]   = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [err,    setErr]    = useState<string | null>(null);
 
-  // Load approved organizations so the candidate can state a preference.
+  // Load approved organizations (with descriptions) so the candidate can state a preference.
   useEffect(() => {
     supabase
       .from('practicum_data')
@@ -27,7 +38,8 @@ export default function CvUpdateForm() {
       .single()
       .then(({ data }) => {
         const all: any[] = (data as any)?.data?.employers || [];
-        const names = all
+        const seen = new Set<string>();
+        const opts = all
           .filter(e => {
             if (!e?.name) return false;
             if (e.approvalStatus === 'rejected') return false;
@@ -35,11 +47,13 @@ export default function CvUpdateForm() {
               const ids = e.courseIds || (e.courseId ? [e.courseId] : []);
               if (ids.length && !ids.includes(courseParam)) return false;
             }
+            if (seen.has(e.name)) return false;
+            seen.add(e.name);
             return true;
           })
-          .map(e => e.name as string)
-          .sort((a, b) => a.localeCompare(b, 'he'));
-        setOrgs(Array.from(new Set(names)));
+          .map(e => ({ name: e.name as string, notes: (e.notes as string) || '' }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+        setOrgs(opts);
       });
   }, [courseParam]);
 
@@ -48,6 +62,24 @@ export default function CvUpdateForm() {
     setErr(null);
     if (!email.trim()) { setErr('יש להזין מייל'); return; }
     if (!file)         { setErr('יש לבחור קובץ'); return; }
+
+    // Build the suggested-org payload. Required fields apply only when suggesting.
+    let suggestedOrg: Record<string, string> | null = null;
+    if (suggesting) {
+      const required: Array<[string, string]> = [
+        [sgName, 'שם הארגון'], [sgContact, 'שם איש/אשת הקשר'], [sgRole, 'תפקיד'],
+        [sgEmail, 'אימייל'], [sgPhone, 'טלפון'],
+      ];
+      const missing = required.find(([v]) => !v.trim());
+      if (missing) { setErr(`להצעת ארגון יש למלא: ${missing[1]}`); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(sgEmail.trim())) { setErr('אימייל איש הקשר אינו תקין'); return; }
+      if (sgPhone.replace(/\D/g, '').length < 9) { setErr('טלפון איש הקשר אינו תקין'); return; }
+      suggestedOrg = {
+        name: sgName.trim(), contactName: sgContact.trim(), contactRole: sgRole.trim(),
+        email: sgEmail.trim(), phone: sgPhone.trim(),
+        location: sgLocation.trim(), notes: sgNotes.trim(),
+      };
+    }
 
     setStatus('uploading');
 
@@ -75,12 +107,32 @@ export default function CvUpdateForm() {
       cv_file_path: path,
       org_pref_1: pref1 || null,
       org_pref_2: pref2 || null,
+      org_pref_3: pref3 || null,
+      suggested_org: suggestedOrg,
     });
 
     if (dbErr) {
       setStatus('error');
       setErr('שגיאה בשמירה: ' + dbErr.message);
       return;
+    }
+
+    // Alert the coordinator when a candidate proposes their own organization.
+    // Best-effort: never block the submission on the notification.
+    if (suggestedOrg) {
+      try {
+        await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            record: {
+              candidateName: name.trim() || null,
+              candidateEmail: email.trim().toLowerCase(),
+              suggestedOrg,
+            },
+          }),
+        });
+      } catch { /* ignore — the suggestion is already saved in cv_updates */ }
     }
 
     setStatus('done');
@@ -187,35 +239,75 @@ export default function CvUpdateForm() {
 
         {orgs.length > 0 && (
           <div className="space-y-4 pt-1">
-            <div>
-              <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>העדפת ארגון — בחירה ראשונה</span>
-              <select
-                value={pref1}
-                onChange={e => setPref1(e.target.value)}
-                className="input w-full"
-                style={{ padding: '12px 16px', fontSize: '14.5px' }}
-              >
-                <option value="">— ללא העדפה —</option>
-                {orgs.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-            <div>
-              <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>העדפת ארגון — בחירה שנייה (אופציונלי)</span>
-              <select
-                value={pref2}
-                onChange={e => setPref2(e.target.value)}
-                className="input w-full"
-                style={{ padding: '12px 16px', fontSize: '14.5px' }}
-              >
-                <option value="">— ללא —</option>
-                {orgs.filter(o => o !== pref1).map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
+            <OrgPicker
+              label="העדפת ארגון — בחירה ראשונה"
+              value={pref1}
+              onChange={v => { setPref1(v); if (v && v === pref2) setPref2(''); if (v && v === pref3) setPref3(''); }}
+              options={orgs}
+              placeholder="— ללא העדפה —"
+            />
+            <OrgPicker
+              label="העדפת ארגון — בחירה שנייה (אופציונלי)"
+              value={pref2}
+              onChange={v => { setPref2(v); if (v && v === pref3) setPref3(''); }}
+              options={orgs.filter(o => o.name !== pref1)}
+              placeholder="— ללא —"
+            />
+            <OrgPicker
+              label="העדפת ארגון — בחירה שלישית (אופציונלי)"
+              value={pref3}
+              onChange={setPref3}
+              options={orgs.filter(o => o.name !== pref1 && o.name !== pref2)}
+              placeholder="— ללא —"
+            />
             <p className="text-[12px] leading-[1.5]" style={{ color: 'var(--text-soft)' }}>
-              ההעדפה אינה מחייבת שיבוץ — הארגון מראיין בהמשך ויש מועמדים נוספים. ניתן להשאיר ריק.
+              לחיצה בוחרת ארגון · מעבר עכבר או לחיצה ארוכה מציגים את תיאור הארגון. ההעדפה אינה מחייבת שיבוץ — הארגון מראיין בהמשך ויש מועמדים נוספים. ניתן להשאיר ריק.
             </p>
           </div>
         )}
+
+        {/* ── Suggest your own organization (private · needs approval · becomes 1st choice) ── */}
+        <div className="pt-1">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={suggesting}
+              onChange={e => setSuggesting(e.target.checked)}
+              className="mt-0.5"
+              style={{ accentColor: 'var(--accent)', width: 16, height: 16 }}
+            />
+            <span className="text-[14px] leading-[1.5]" style={{ color: 'var(--ink)' }}>
+              יש לי ארגון להציע (קשר אישי שאינו ברשימה)
+            </span>
+          </label>
+
+          {suggesting && (
+            <div className="mt-3 rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
+              <p className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
+                ההצעה פרטית אליך וכפופה לאישור מנחה התכנית. אם תאושר — הארגון יהפוך לבחירה הראשונה שלך.
+                יש למלא את פרטי איש/אשת הקשר במשאבי אנוש במלואם.
+              </p>
+              <SgInput label="שם הארגון *" value={sgName} onChange={setSgName} />
+              <SgInput label="שם איש/אשת הקשר (משאבי אנוש) *" value={sgContact} onChange={setSgContact} />
+              <SgInput label="תפקיד *" value={sgRole} onChange={setSgRole} placeholder="למשל: מנהלת משאבי אנוש" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <SgInput label="אימייל *" value={sgEmail} onChange={setSgEmail} type="email" />
+                <SgInput label="טלפון *" value={sgPhone} onChange={setSgPhone} type="tel" />
+              </div>
+              <SgInput label="מיקום (אופציונלי)" value={sgLocation} onChange={setSgLocation} />
+              <div>
+                <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>פרטים / הקשר שלך לארגון (אופציונלי)</span>
+                <textarea
+                  value={sgNotes}
+                  onChange={e => setSgNotes(e.target.value)}
+                  rows={3}
+                  className="input w-full"
+                  style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
         {err && (
           <div className="mono text-[11.5px] uppercase tracking-[0.14em] py-2" style={{ color: 'var(--accent)' }}>
@@ -237,6 +329,145 @@ export default function CvUpdateForm() {
           {busy ? 'מעלה...' : 'שלח CV מעודכן ←'}
         </button>
       </form>
+    </div>
+  );
+}
+
+function SgInput({ label, value, onChange, type = 'text', placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="input w-full"
+        style={{ padding: '10px 14px', fontSize: '14px' }}
+      />
+    </label>
+  );
+}
+
+/* Custom org selector: tap/click selects; hover (desktop) or long-press (mobile)
+   reveals the organization's description inline. Native <select> can't do this. */
+function OrgPicker({ label, value, onChange, options, placeholder }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: OrgOption[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null); // org name whose description is shown
+  const ref = useRef<HTMLDivElement>(null);
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpFired = useRef(false);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setPreview(null); }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  function select(name: string) { onChange(name); setOpen(false); setPreview(null); }
+
+  function startLongPress(name: string, hasNotes: boolean) {
+    lpFired.current = false;
+    if (lpTimer.current) clearTimeout(lpTimer.current);
+    lpTimer.current = setTimeout(() => {
+      lpFired.current = true;
+      if (hasNotes) setPreview(p => (p === name ? null : name));
+    }, 450);
+  }
+  function endLongPress(name: string) {
+    if (lpTimer.current) clearTimeout(lpTimer.current);
+    if (!lpFired.current) select(name); // short tap = select
+  }
+  function cancelLongPress() { if (lpTimer.current) clearTimeout(lpTimer.current); }
+
+  const sharedRow: CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: '10px', padding: '10px 14px', cursor: 'pointer', fontSize: '14px',
+    WebkitUserSelect: 'none', userSelect: 'none', WebkitTouchCallout: 'none',
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>{label}</span>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="input w-full"
+        style={{ padding: '12px 16px', fontSize: '14.5px', textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', cursor: 'pointer' }}
+      >
+        <span style={{ color: value ? 'var(--ink)' : 'var(--text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value || placeholder}
+        </span>
+        <span style={{ color: 'var(--text-soft)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: 'absolute', insetInlineStart: 0, insetInlineEnd: 0, top: 'calc(100% + 4px)', zIndex: 50,
+            maxHeight: '300px', overflowY: 'auto',
+            background: 'var(--card, var(--bg))', border: '1px solid var(--divider)', borderRadius: '12px',
+            boxShadow: '0 8px 28px rgba(0,0,0,0.16)',
+          }}
+        >
+          <div onClick={() => select('')} style={{ ...sharedRow, color: 'var(--text-soft)', borderBottom: '1px solid var(--divider)' }}>
+            {placeholder}
+          </div>
+          {options.map(o => {
+            const selected = value === o.name;
+            const hasNotes = !!o.notes.trim();
+            return (
+              <div key={o.name} style={{ borderBottom: '1px solid var(--divider)' }}>
+                <div
+                  onClick={() => select(o.name)}
+                  onMouseEnter={() => hasNotes && setPreview(o.name)}
+                  onMouseLeave={() => setPreview(p => (p === o.name ? null : p))}
+                  onTouchStart={() => startLongPress(o.name, hasNotes)}
+                  onTouchEnd={e => { e.preventDefault(); endLongPress(o.name); }}
+                  onTouchMove={cancelLongPress}
+                  style={{
+                    ...sharedRow,
+                    background: selected ? 'rgba(122,30,43,0.08)' : 'transparent',
+                    color: selected ? 'var(--accent)' : 'var(--ink)',
+                    fontWeight: selected ? 600 : 400,
+                  }}
+                >
+                  <span style={{ flex: 1, minWidth: 0 }}>{o.name}</span>
+                  {hasNotes && (
+                    <span
+                      aria-hidden
+                      title="מעבר עכבר / לחיצה ארוכה — תיאור"
+                      style={{ fontSize: '13px', opacity: preview === o.name ? 1 : 0.5, flexShrink: 0 }}
+                    >ⓘ</span>
+                  )}
+                  {selected && <span style={{ flexShrink: 0, color: 'var(--accent)' }}>✓</span>}
+                </div>
+                {preview === o.name && hasNotes && (
+                  <div
+                    style={{
+                      padding: '8px 14px 12px', fontSize: '12.5px', lineHeight: 1.6,
+                      color: 'var(--ink)', opacity: 0.85, whiteSpace: 'pre-wrap',
+                      background: 'rgba(122,30,43,0.04)',
+                    }}
+                  >
+                    {o.notes}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

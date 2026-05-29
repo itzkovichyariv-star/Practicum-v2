@@ -20,6 +20,42 @@ type Filters = {
 
 const emptyFilters: Filters = { search: '', stage: 'all', dotFilter: 'all' };
 
+// In-app alert: candidate-suggested organizations awaiting the coordinator's approval.
+function PendingSuggestionsBanner() {
+  const [pending, setPending] = useState<Array<{ id: string; name: string | null; email: string; org: string }>>([]);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('cv_updates')
+      .select('id, name, email, suggested_org')
+      .is('seen_at', null)
+      .not('suggested_org', 'is', null)
+      .order('uploaded_at', { ascending: false })
+      .then(({ data }) => {
+        if (!alive || !data) return;
+        setPending(data
+          .filter((r: any) => r.suggested_org?.name)
+          .map((r: any) => ({ id: r.id, name: r.name, email: r.email, org: r.suggested_org.name })));
+      });
+    return () => { alive = false; };
+  }, []);
+  if (pending.length === 0) return null;
+  return (
+    <div className="mb-6 rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.07)', border: '1px solid var(--accent)' }}>
+      <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-1.5" style={{ color: 'var(--accent)' }}>
+        ⚠ {pending.length} {pending.length === 1 ? 'הצעת ארגון ממתינה' : 'הצעות ארגון ממתינות'} לאישור
+      </div>
+      <div className="text-[13px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
+        {pending.map(p => (
+          <div key={p.id}>• {p.name || p.email} — <strong>{p.org}</strong></div>
+        ))}
+      </div>
+      <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>
+        פתח/י את כרטיס הסטודנט/ית התואם/ת → סעיף "CV מעודכן ממתין" → אשר/דחה.
+      </div>
+    </div>
+  );
+}
+
 export default function StudentsPage({ data, context, userName, onRefresh }: PageProps & { data: any }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [editing, setEditing] = useState<Student | null>(null);
@@ -320,6 +356,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
   return (
     <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
+      <PendingSuggestionsBanner />
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">III · סטודנטים</div>
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -693,6 +730,23 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           onAutoSave={editing ? handleAutoSave : undefined}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
+          onApproveSuggestion={async (emp) => {
+            const updatedEmps = [...employers, emp];
+            setSaving(true);
+            const res = await saveSnapshot(
+              { ...data, employers: updatedEmps },
+              { name: userName },
+              { action: 'אישר הצעת ארגון', entity: 'ארגון', target: emp.name }
+            );
+            setSaving(false);
+            if (res.ok) {
+              (data.employers as any) = updatedEmps;
+              showToast('✓ הצעת הארגון אושרה — נוסף כארגון פרטי', 'success');
+              onRefresh();
+            } else {
+              showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
+            }
+          }}
           placementExtras={editing ? {
             allStudents: all,
             dispatches: data.dispatches || [],

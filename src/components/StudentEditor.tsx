@@ -30,10 +30,12 @@ type Props = {
   onDelete?: (id: string) => void;
   onClose: () => void;
   placementExtras?: PlacementExtras;
+  /** Append a candidate-suggested org as a private (restricted) approved employer. */
+  onApproveSuggestion?: (emp: Employer) => Promise<void> | void;
 };
 
 export default function StudentEditor({
-  student, courses, years, employers, defaultCourseId, defaultYear, onSave, onAutoSave, onDelete, onClose, placementExtras,
+  student, courses, years, employers, defaultCourseId, defaultYear, onSave, onAutoSave, onDelete, onClose, placementExtras, onApproveSuggestion,
 }: Props) {
   const isNew = !student;
   const [showEval, setShowEval] = useState(false);
@@ -77,14 +79,16 @@ export default function StudentEditor({
   const prepPassed = !!form.preparation?.passed;
 
   // ── Pending CV update detection ──────────────────────────────────────
-  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null } | null>(null);
+  type SuggestedOrg = { name?: string; contactName?: string; contactRole?: string; email?: string; phone?: string; location?: string; notes?: string };
+  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
+  const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
 
   useEffect(() => {
     const email = student?.email?.trim().toLowerCase();
     if (!email || student?.cvUpdatedUrl) return; // skip if already has a CV
     supabase.from('cv_updates')
-      .select('id, cv_file_path, uploaded_at, org_pref_1, org_pref_2')
+      .select('id, cv_file_path, uploaded_at, org_pref_1, org_pref_2, org_pref_3, suggested_org')
       .eq('email', email)
       .is('seen_at', null)
       .order('uploaded_at', { ascending: false })
@@ -221,6 +225,35 @@ export default function StudentEditor({
     await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
     setPendingCv(null);
     setCvApplied(true);
+  }
+
+  // Approve a candidate-suggested org: make it the student's 1st choice AND create it
+  // as a private (restricted) approved employer so it's tracked for placement.
+  async function approveSuggestion() {
+    const o = pendingCv?.suggested_org;
+    if (!o?.name) return;
+    const emp: Employer = {
+      id: randomId('emp'),
+      name: o.name,
+      contactPerson: o.contactName || '',
+      contactPhone: o.phone || '',
+      contactEmail: o.email || '',
+      location: o.location || '',
+      notes: [o.contactRole ? `תפקיד איש הקשר: ${o.contactRole}` : '', o.notes || '', `(הצעת מועמד/ת: ${form.name || form.email || ''})`].filter(Boolean).join('\n'),
+      approvalStatus: 'approved',
+      restrictedToStudentId: form.id,
+      addedBy: form.email || 'candidate',
+      courseIds: form.courseId ? [form.courseId] : [],
+    };
+    await onApproveSuggestion?.(emp);
+    setForm(f => ({ ...f, firstChoiceOrg: o.name!, firstChoiceResult: 'pending' }));
+    if (pendingCv) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+    setSuggestionDecided('approved');
+  }
+
+  async function rejectSuggestion() {
+    if (pendingCv) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+    setSuggestionDecided('rejected');
   }
 
   function update<K extends keyof Student>(k: K, v: Student[K]) {
@@ -437,9 +470,9 @@ export default function StudentEditor({
                   <div className="text-[12px] mt-0.5" style={{ color: '#92400e' }}>
                     {pendingCv.cv_file_path.split('/').pop()}
                   </div>
-                  {(pendingCv.org_pref_1 || pendingCv.org_pref_2) && (
+                  {(pendingCv.org_pref_1 || pendingCv.org_pref_2 || pendingCv.org_pref_3) && (
                     <div className="text-[12px] mt-1 font-semibold" style={{ color: '#92400e' }}>
-                      ✦ העדפת ארגון: {[pendingCv.org_pref_1, pendingCv.org_pref_2].filter(Boolean).join(' · ')}
+                      ✦ העדפות ארגון: {[pendingCv.org_pref_1, pendingCv.org_pref_2, pendingCv.org_pref_3].filter(Boolean).join(' · ')}
                     </div>
                   )}
                 </div>
@@ -468,6 +501,42 @@ export default function StudentEditor({
                 ✓ CV מעודכן נוסף — לחץ שמור כדי לשמור
               </div>
             )}
+
+            {/* Candidate-suggested organization — private, requires approval, becomes 1st choice */}
+            {pendingCv?.suggested_org?.name && !suggestionDecided && (
+              <div className="col-span-full rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid rgba(122,30,43,0.4)' }}>
+                <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-2" style={{ color: 'var(--accent)' }}>
+                  ⚠ הצעת ארגון מהמועמד/ת — דרוש אישור
+                </div>
+                <div className="text-[13px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
+                  <div><strong>{pendingCv.suggested_org.name}</strong>{pendingCv.suggested_org.location ? ` · ${pendingCv.suggested_org.location}` : ''}</div>
+                  <div>איש/אשת קשר: {pendingCv.suggested_org.contactName || '—'}{pendingCv.suggested_org.contactRole ? ` (${pendingCv.suggested_org.contactRole})` : ''}</div>
+                  <div dir="ltr" style={{ textAlign: 'right' }}>{[pendingCv.suggested_org.email, pendingCv.suggested_org.phone].filter(Boolean).join(' · ')}</div>
+                  {pendingCv.suggested_org.notes && <div className="mt-1" style={{ opacity: 0.8, whiteSpace: 'pre-wrap' }}>{pendingCv.suggested_org.notes}</div>}
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button type="button" onClick={approveSuggestion} style={{
+                    padding: '7px 14px', fontSize: '12px', fontWeight: 600,
+                    background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer',
+                  }}>✓ אשר — צור ארגון פרטי וקבע כבחירה ראשונה</button>
+                  <button type="button" onClick={rejectSuggestion} style={{
+                    padding: '7px 14px', fontSize: '12px', fontWeight: 600,
+                    background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '999px', cursor: 'pointer',
+                  }}>דחה</button>
+                </div>
+              </div>
+            )}
+            {suggestionDecided === 'approved' && (
+              <div className="col-span-full mono text-[11px] uppercase tracking-[0.14em] font-semibold py-1" style={{ color: '#15803d' }}>
+                ✓ הצעת הארגון אושרה — נקבעה כבחירה ראשונה · לחץ שמור כדי לשמור
+              </div>
+            )}
+            {suggestionDecided === 'rejected' && (
+              <div className="col-span-full mono text-[11px] uppercase tracking-[0.14em] font-semibold py-1" style={{ color: 'var(--text-soft)' }}>
+                הצעת הארגון נדחתה
+              </div>
+            )}
+
             <div className="col-span-full">
               <FileField label="קורות חיים מעודכן — אחרי הכנה" value={form.cvUpdatedUrl||''} onChange={v=>update('cvUpdatedUrl',v)}/>
             </div>
