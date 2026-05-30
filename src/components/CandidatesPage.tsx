@@ -37,6 +37,13 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   };
   const [emailConfirm, setEmailConfirm] = useState<EmailConfirm | null>(null);
 
+  // Per-recipient draft queue. Opening many mailto: links in one synchronous
+  // loop makes the OS mail app race — every window ends up with the LAST
+  // recipient's content. So we open drafts ONE AT A TIME, each from its own
+  // click (its own user gesture), which also dodges the popup blocker.
+  type Draft = { name: string; email: string; url: string };
+  const [draftQueue, setDraftQueue] = useState<{ drafts: Draft[]; index: number } | null>(null);
+
   const EMAIL_TEMPLATES = {
     acceptance: {
       subject: 'ברכות — התקבלת לתכנית הפרקטיקום',
@@ -103,42 +110,59 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     setEmailConfirm({ type, recipients, subject: EMAIL_TEMPLATES[type].subject, body });
   }
 
+  // Build a personalized mailto: for ONE recipient (TO, not BCC) — name and
+  // their own /cv-update link prefilled.
+  function buildDraftUrl(r: { name: string; email: string }, subject: string, body: string, orgsLink: string): string {
+    const cvLink = `${window.location.origin}/cv-update/?email=${encodeURIComponent(r.email)}&name=${encodeURIComponent(r.name)}`;
+    const personalBody = body
+      .replace(/\{\{שם\}\}/g, r.name || '')
+      .replace(/\{\{קישור_קוח\}\}/g, cvLink)
+      .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
+    return `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`;
+  }
+
   function sendConfirmedEmail() {
     if (!emailConfirm) return;
     const { type, recipients, subject, body } = emailConfirm;
-
     const orgsLink = `${window.location.origin}/organizations`;
 
-    // Every recipient gets their OWN draft (TO, not BCC) so their name and a
-    // personal cv-update link are prefilled. A single BCC email shares one body
-    // across everyone, so it physically can't carry per-person links — that's
-    // why group sends used to fall back to a placeholder. Sending individually
-    // fixes that AND is more private (no shared recipient list — each person
-    // only ever sees their own address).
-    if (recipients.length > 8 &&
-        !window.confirm(`ייפתחו ${recipients.length} טיוטות נפרדות (אחת לכל נמען, עם קישור אישי). להמשיך?`)) {
-      return;
-    }
-    for (const r of recipients) {
-      const cvLink = `${window.location.origin}/cv-update/?email=${encodeURIComponent(r.email)}&name=${encodeURIComponent(r.name)}`;
-      const personalBody = body
-        .replace(/\{\{שם\}\}/g, r.name || '')
-        .replace(/\{\{קישור_קוח\}\}/g, cvLink)
-        .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
-      openMailto(`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`);
-    }
+    // One personalized draft per recipient. We open the FIRST now (inside this
+    // click's gesture) and hand the rest to the draft queue, which opens them
+    // one-at-a-time on their own clicks. Opening them all in a synchronous loop
+    // makes the OS mail app race so every window gets the LAST recipient — the
+    // exact "two drafts, same person" bug this replaces.
+    const drafts: Draft[] = recipients.map(r => ({ name: r.name, email: r.email, url: buildDraftUrl(r, subject, body, orgsLink) }));
+    if (!drafts.length) return;
+    openMailto(drafts[0].url);
 
-    // Optimistically mark as "email sent" so we don't re-prompt for the same person
+    // Optimistically mark every selected recipient as "email sent".
     const next = [...all];
     const field = type === 'acceptance' ? 'acceptanceEmailSent' : 'rejectionEmailSent';
     for (const r of recipients) {
       const i = next.findIndex(c => c.id === r.id);
       if (i >= 0) next[i] = { ...next[i], [field]: true };
     }
-    const word = recipients.length === 1 ? 'טיוטה מותאמת אישית' : `${recipients.length} טיוטות מותאמות אישית`;
-    persistAndRefresh(next, `✉ נפתחו ${word} ב‑Outlook`);
+    persistAndRefresh(next, drafts.length === 1 ? '✉ טיוטה נפתחה ב‑Outlook' : `✉ טיוטה 1 מתוך ${drafts.length} נפתחה ב‑Outlook`);
     setEmailConfirm(null);
-    showToast(`✓ נפתחו ${word} ב‑Outlook (קישור אישי לכל נמען)`, 'success');
+
+    if (drafts.length > 1) {
+      setDraftQueue({ drafts, index: 1 }); // prompt to open the rest, one click each
+    } else {
+      showToast('✓ טיוטה מותאמת אישית נפתחה ב‑Outlook', 'success');
+    }
+  }
+
+  function openNextDraft() {
+    if (!draftQueue) return;
+    const d = draftQueue.drafts[draftQueue.index];
+    if (d) openMailto(d.url);
+    const nextIndex = draftQueue.index + 1;
+    if (nextIndex >= draftQueue.drafts.length) {
+      setDraftQueue(null);
+      showToast(`✓ כל ${draftQueue.drafts.length} הטיוטות המותאמות אישית נפתחו`, 'success');
+    } else {
+      setDraftQueue({ ...draftQueue, index: nextIndex });
+    }
   }
 
   const all = data.candidates || [];
@@ -751,7 +775,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
               </div>
               {emailConfirm.recipients.length > 1 && (
                 <div className="mono text-[10.5px] mt-2" style={{ color: 'var(--text-soft)' }}>
-                  {`ⓘ תיפתח טיוטה נפרדת לכל נמען — השם והקישור האישי לעדכון קו"ח ימולאו אוטומטית (${emailConfirm.recipients.length} טיוטות)`}
+                  {`ⓘ תיפתח טיוטה נפרדת לכל נמען (${emailConfirm.recipients.length}) — השם והקישור האישי ימולאו אוטומטית. הטיוטות נפתחות אחת בכל פעם בלחיצה.`}
                 </div>
               )}
             </div>
@@ -799,6 +823,27 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                 📧 פתח ב‑Outlook ({emailConfirm.recipients.length}) →
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Per-recipient draft queue — open each personalized draft on its own click ── */}
+      {draftQueue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.6)' }}>
+          <div className="rounded-2xl border p-7 max-w-[460px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+            <div className="serif text-[22px] mb-1.5" style={{ color: 'var(--ink)' }}>פתיחת טיוטות — נמען אחר נמען</div>
+            <div className="text-[12.5px] mb-3 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
+              כדי שכל נמען יקבל את הקישור האישי הנכון, הטיוטות נפתחות אחת בכל פעם (פתיחה של כולן יחד גורמת ל‑Outlook לערבב ביניהן).
+            </div>
+            <div className="mb-4 p-2.5 rounded-lg text-[13px]" style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--divider)', color: 'var(--ink)' }}>
+              ✓ נפתחו {draftQueue.index} מתוך {draftQueue.drafts.length} טיוטות
+            </div>
+            <button onClick={openNextDraft} style={{ ...btnPrimary(), width: '100%', fontSize: '13px' }}>
+              📧 פתח טיוטה ל{draftQueue.drafts[draftQueue.index]?.name || ''} ({draftQueue.index + 1}/{draftQueue.drafts.length}) →
+            </button>
+            <button onClick={() => setDraftQueue(null)} style={{ ...btnSecondary(), width: '100%', marginTop: '8px', fontSize: '12px' }}>
+              עצור — אל תפתח את השאר
+            </button>
           </div>
         </div>
       )}

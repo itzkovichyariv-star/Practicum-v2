@@ -111,7 +111,16 @@ audit.log('GROUP-personalized: two passed candidates → two personalized drafts
     const sendBtn = audit.page.locator('button').filter({ hasText: /Outlook \(\d+\)/ }).first();
     if (await sendBtn.isVisible().catch(() => false)) {
       await sendBtn.click();
-      await audit.page.waitForTimeout(700);
+      await audit.page.waitForTimeout(600);
+      // Drafts open ONE AT A TIME: the send opens draft 1, then a queue modal
+      // ("פתח טיוטה ל…") opens each remaining draft on its own click. Click
+      // through the queue until it closes so every recipient's draft is captured.
+      for (let i = 0; i < 6; i++) {
+        const nextBtn = audit.page.locator('button').filter({ hasText: /פתח טיוטה ל/ }).first();
+        if (!(await nextBtn.isVisible().catch(() => false))) break;
+        await nextBtn.click();
+        await audit.page.waitForTimeout(400);
+      }
       mailtos = await audit.page.evaluate(() => window.__mailtos || []);
     }
   }
