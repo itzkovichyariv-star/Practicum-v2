@@ -4,7 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildPlacementPreferences, addPlacementPreference, openVacancies } from '../lib/placement';
+import { buildPlacementPreferences, addPlacementPreference, openVacancies, buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
@@ -368,6 +368,31 @@ export default function StudentEditor({
     }
   }
 
+  // ── Stage-2 link (org-preference selection) — sendable from the student card ──
+  function prefLink(): string {
+    const base = `${window.location.origin}/cv-update/`;
+    const p = new URLSearchParams();
+    if ((form.email || '').trim()) p.set('email', form.email!.trim());
+    if ((form.name || '').trim()) p.set('name', form.name!.trim());
+    const qs = p.toString();
+    return qs ? `${base}?${qs}` : base;
+  }
+  function prefLinkMessage(): string {
+    return `שלום ${form.name || ''},\nלהמשך תהליך הפרקטיקום — נא להעלות קורות חיים מעודכנים ולבחור העדפות ארגון בקישור האישי:\n${prefLink()}`;
+  }
+  async function copyPrefLink() {
+    try { await navigator.clipboard.writeText(prefLink()); showToast('✓ הקישור הועתק', 'success'); }
+    catch { showToast(prefLink(), 'info'); }
+  }
+  function waPrefLink() {
+    if (!(form.phone || '').trim()) { showToast('לא הוזן טלפון למועמד/ת', 'error'); return; }
+    window.open(buildWhatsAppUrl(form.phone!, prefLinkMessage()), '_blank');
+  }
+  function mailPrefLink() {
+    if (!(form.email || '').trim()) { showToast('לא הוזן מייל למועמד/ת', 'error'); return; }
+    openMailto(buildMailtoUrl(form.email!, 'בחירת העדפות ארגון — פרקטיקום, אוניברסיטת אריאל', prefLinkMessage()));
+  }
+
   // Open vacancies for an employer (available slots, or positionsTotal if no
   // slots have been generated yet).
   function openCapacity(e: Employer): number {
@@ -696,6 +721,20 @@ export default function StudentEditor({
           </SectionSub>
 
           <SectionSub title="בחירת ארגון">
+            {/* Send the personalized stage-2 (preference-selection) link from here */}
+            <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
+              <div className="text-[12.5px] font-semibold" style={{ color: 'var(--ink)' }}>📨 קישור אישי לבחירת העדפות (שלב 2)</div>
+              <div className="text-[11.5px] mb-2" style={{ color: 'var(--text-soft)' }}>
+                שליחת הקישור להעלאת קו"ח מעודכן ובחירת ארגונים — ישירות למועמד/ת.
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button type="button" onClick={copyPrefLink} style={{ ...btnSmall(), whiteSpace: 'nowrap' }}>📋 העתק קישור</button>
+                <button type="button" onClick={waPrefLink} disabled={!(form.phone || '').trim()}
+                  style={{ ...btnSmall(!(form.phone || '').trim()), background: (form.phone || '').trim() ? '#25D366' : undefined, color: (form.phone || '').trim() ? 'white' : undefined, borderColor: (form.phone || '').trim() ? '#25D366' : undefined, whiteSpace: 'nowrap' }}>💬 WhatsApp</button>
+                <button type="button" onClick={mailPrefLink} disabled={!(form.email || '').trim()}
+                  style={{ ...btnSmall(!(form.email || '').trim()), background: (form.email || '').trim() ? '#2563eb' : undefined, color: (form.email || '').trim() ? 'white' : undefined, borderColor: (form.email || '').trim() ? '#2563eb' : undefined, whiteSpace: 'nowrap' }}>✉ מייל</button>
+              </div>
+            </div>
             {cvHistory.length > 0 && (() => {
               const latest = cvHistory[0];
               const prev = cvHistory[1];
