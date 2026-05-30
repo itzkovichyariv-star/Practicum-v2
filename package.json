@@ -14,7 +14,7 @@
     "bump:minor": "node scripts/bump-version.mjs minor",
     "bump:major": "node scripts/bump-version.mjs major",
     "predeploy": "node scripts/bump-version.mjs",
-    "deploy": "astro build && /Users/yarivitzkovich/Code/family-tasks/node_modules/.bin/wrangler pages deploy dist --project-name practicum-v2",
+    "deploy": "astro build && /Users/yarivitzkovich/Code/family-tasks/node_modules/.bin/wrangler pages deploy dist --project-name practicum-v2 --commit-dirty=true --commit-message \"automated deploy\"",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
