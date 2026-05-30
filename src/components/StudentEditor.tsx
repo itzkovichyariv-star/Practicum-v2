@@ -3,6 +3,7 @@ import { btnSmall, btnSecondary } from '../lib/design';
 import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
+import { orgAvailability } from '../lib/orgAvailability';
 import { openMailto } from '../lib/openMailto';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
@@ -83,6 +84,9 @@ export default function StudentEditor({
   const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
   const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
+  // Org-assignment dropdowns are gated to student-available orgs by default;
+  // this toggle bypasses the gate to allow a deliberate manual override.
+  const [showAllOrgs, setShowAllOrgs] = useState(false);
 
   useEffect(() => {
     const email = student?.email?.trim().toLowerCase();
@@ -258,6 +262,21 @@ export default function StudentEditor({
 
   function update<K extends keyof Student>(k: K, v: Student[K]) {
     setForm(f => ({ ...f, [k]: v }));
+  }
+
+  // Org-assignment options: available orgs by default; incomplete ones appear
+  // (marked) only when the bypass is on, or if already selected for this student.
+  function gatedOrgOptions(selectedValue: string) {
+    return employers
+      .filter(e => {
+        if (orgAvailability(e).available) return true;
+        if (showAllOrgs) return true;
+        return e.name === selectedValue || e.name === form.firstChoiceOrg || e.name === form.secondChoiceOrg;
+      })
+      .map(e => {
+        const av = orgAvailability(e);
+        return { value: e.name, label: av.available ? e.name : `${e.name} — ${av.badge || 'לא זמין'}` };
+      });
   }
 
   function updatePrep<K extends keyof NonNullable<Student['preparation']>>(k: K, v: any) {
@@ -543,9 +562,18 @@ export default function StudentEditor({
           </SectionSub>
 
           <SectionSub title="בחירת ארגון">
+            <div className="col-span-full flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                מוצגים ארגונים זמינים לסטודנטים (תיאור + מקומות פנויים).
+              </span>
+              <label className="inline-flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: showAllOrgs ? 'var(--accent)' : 'var(--text-soft)' }}>
+                <input type="checkbox" checked={showAllOrgs} onChange={e=>setShowAllOrgs(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+                ⚠ הצג גם ארגונים שאינם זמינים (עקיפה ידנית)
+              </label>
+            </div>
             <Field label="בחירה ראשונה — ארגון">
               <Select value={form.firstChoiceOrg||''} onChange={v=>update('firstChoiceOrg',v)}
-                options={employers.map(e=>({value:e.name,label:e.name}))}
+                options={gatedOrgOptions(form.firstChoiceOrg||'')}
                 placeholder="בחר ארגון"
                 freeText/>
             </Field>
@@ -559,7 +587,7 @@ export default function StudentEditor({
             </Field>
             <Field label="בחירה שנייה — ארגון">
               <Select value={form.secondChoiceOrg||''} onChange={v=>update('secondChoiceOrg',v)}
-                options={employers.map(e=>({value:e.name,label:e.name}))}
+                options={gatedOrgOptions(form.secondChoiceOrg||'')}
                 placeholder="בחר ארגון שני"
                 freeText/>
             </Field>
