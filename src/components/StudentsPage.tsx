@@ -25,15 +25,22 @@ function PendingSuggestionsBanner() {
   const [pending, setPending] = useState<Array<{ id: string; name: string | null; email: string; org: string }>>([]);
   useEffect(() => {
     let alive = true;
+    // Latest-submission-per-candidate dedup: only the candidate's most recent
+    // submission counts, and only if it carries an unhandled suggestion. A newer
+    // submission without a suggestion supersedes (hides) an older suggestion.
     supabase.from('cv_updates')
-      .select('id, name, email, suggested_org')
-      .is('seen_at', null)
-      .not('suggested_org', 'is', null)
+      .select('id, name, email, suggested_org, uploaded_at, seen_at')
       .order('uploaded_at', { ascending: false })
       .then(({ data }) => {
         if (!alive || !data) return;
-        setPending(data
-          .filter((r: any) => r.suggested_org?.name)
+        const latestByEmail = new Map<string, any>();
+        for (const r of data) {
+          const key = (r.email || '').trim().toLowerCase();
+          if (!key || latestByEmail.has(key)) continue; // desc order → first seen = latest
+          latestByEmail.set(key, r);
+        }
+        setPending([...latestByEmail.values()]
+          .filter((r: any) => r.suggested_org?.name && !r.seen_at)
           .map((r: any) => ({ id: r.id, name: r.name, email: r.email, org: r.suggested_org.name })));
       });
     return () => { alive = false; };

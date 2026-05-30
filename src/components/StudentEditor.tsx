@@ -102,6 +102,22 @@ export default function StudentEditor({
       });
   }, [student?.email]);
 
+  // Full submission history for this candidate (every dated /cv-update submission).
+  type CvRow = { id: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
+  const [cvHistory, setCvHistory] = useState<CvRow[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  useEffect(() => {
+    const email = student?.email?.trim().toLowerCase();
+    if (!email) { setCvHistory([]); return; }
+    let alive = true;
+    supabase.from('cv_updates')
+      .select('id, uploaded_at, org_pref_1, org_pref_2, org_pref_3, suggested_org')
+      .eq('email', email)
+      .order('uploaded_at', { ascending: false })
+      .then(({ data }) => { if (alive) setCvHistory((data || []) as CvRow[]); });
+    return () => { alive = false; };
+  }, [student?.email]);
+
   function openFeedbackView() {
     if (!form.feedbackText) return;
     const date = form.feedbackSubmittedAt ? new Date(form.feedbackSubmittedAt).toLocaleDateString('he-IL') : '';
@@ -277,6 +293,21 @@ export default function StudentEditor({
         const av = orgAvailability(e);
         return { value: e.name, label: av.available ? e.name : `${e.name} — ${av.badge || 'לא זמין'}` };
       });
+  }
+
+  // Change-check for a current preference slot vs the previous submission.
+  function prefAt(row: CvRow | undefined, i: number): string {
+    if (!row) return '';
+    return (([row.org_pref_1, row.org_pref_2, row.org_pref_3][i] || '') as string).trim();
+  }
+  function changeTag(cur: CvRow, prev: CvRow | undefined, i: number): { label: string; color: string } | null {
+    const org = prefAt(cur, i);
+    if (!org || !prev) return null; // first submission → no diff
+    if (prefAt(prev, i) === org) return { label: 'ללא שינוי', color: 'var(--text-soft)' };
+    const wasAt = [0, 1, 2].findIndex(j => prefAt(prev, j) === org);
+    if (wasAt >= 0) return { label: `שינה מיקום (היה #${wasAt + 1})`, color: '#b45309' };
+    const replaced = prefAt(prev, i);
+    return { label: replaced ? `חדש (במקום ${replaced})` : 'חדש', color: 'var(--accent)' };
   }
 
   function updatePrep<K extends keyof NonNullable<Student['preparation']>>(k: K, v: any) {
@@ -562,6 +593,70 @@ export default function StudentEditor({
           </SectionSub>
 
           <SectionSub title="בחירת ארגון">
+            {cvHistory.length > 0 && (() => {
+              const latest = cvHistory[0];
+              const prev = cvHistory[1];
+              const fmt = (s: string) => { try { return new Date(s).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); } catch { return s; } };
+              const latestPrefs = [0, 1, 2].map(i => prefAt(latest, i)).filter(Boolean);
+              if (latestPrefs.length === 0 && !latest.suggested_org?.name) return null;
+              return (
+                <div className="col-span-full p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)' }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[12px] font-semibold" style={{ color: 'var(--ink)' }}>
+                      העדפות הארגון שהמועמד/ת הגיש/ה · {fmt(latest.uploaded_at)}
+                    </span>
+                    {!prev && <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>הגשה ראשונה</span>}
+                  </div>
+                  <ol className="mt-2 space-y-1">
+                    {[0, 1, 2].map(i => {
+                      const org = prefAt(latest, i);
+                      if (!org) return null;
+                      const tag = changeTag(latest, prev, i);
+                      return (
+                        <li key={i} className="text-[13px] flex items-center gap-2 flex-wrap" style={{ color: 'var(--ink)' }}>
+                          <span style={{ color: 'var(--text-soft)' }}>{i + 1}.</span>
+                          <span>{org}</span>
+                          {tag && (
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                              style={{ color: tag.color, background: 'rgba(0,0,0,0.04)' }}>
+                              {tag.label}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {latest.suggested_org?.name && (
+                    <div className="mt-2 text-[12px]" style={{ color: 'var(--ink)' }}>
+                      🔆 הצעת ארגון מהמועמד/ת: <strong>{latest.suggested_org.name}</strong>
+                    </div>
+                  )}
+                  {cvHistory.length > 1 && (
+                    <>
+                      <button type="button" onClick={() => setShowHistory(s => !s)}
+                        className="mt-2 text-[11px] underline" style={{ color: 'var(--accent)' }}>
+                        {showHistory ? 'הסתר היסטוריית הגשות' : `היסטוריית הגשות קודמות (${cvHistory.length - 1})`}
+                      </button>
+                      {showHistory && (
+                        <div className="mt-2 space-y-1.5 pt-2" style={{ borderTop: '1px dashed var(--divider)' }}>
+                          {cvHistory.slice(1).map(row => {
+                            const ps = [0, 1, 2].map(i => prefAt(row, i)).filter(Boolean);
+                            return (
+                              <div key={row.id} className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                                <span className="font-semibold">{fmt(row.uploaded_at)}</span>
+                                {' · '}
+                                {ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}
+                                {row.suggested_org?.name ? `   · הצעה: ${row.suggested_org.name}` : ''}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <div className="col-span-full flex items-center justify-between gap-3 flex-wrap">
               <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
                 מוצגים ארגונים זמינים לסטודנטים (תיאור + מקומות פנויים).

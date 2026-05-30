@@ -51,12 +51,26 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const [pendingSuggestions, setPendingSuggestions] = useState<Suggestion[]>([]);
   useEffect(() => {
     let alive = true;
+    // Fetch ALL submissions (not just unseen-with-suggestion) so we can pick the
+    // truly latest submission per candidate, then keep it only if THAT one carries
+    // an unhandled suggestion. This way a newer submission without a suggestion
+    // correctly supersedes (hides) an older suggestion, and we never show two rows
+    // for the same candidate.
     supabase.from('cv_updates')
-      .select('id, email, name, suggested_org')
-      .is('seen_at', null)
-      .not('suggested_org', 'is', null)
+      .select('id, email, name, suggested_org, uploaded_at, seen_at')
       .order('uploaded_at', { ascending: false })
-      .then(({ data }) => { if (alive) setPendingSuggestions((data || []).filter((r: any) => r.suggested_org?.name)); });
+      .then(({ data }) => {
+        if (!alive) return;
+        const latestByEmail = new Map<string, any>();
+        for (const r of (data || [])) {
+          const key = (r.email || '').trim().toLowerCase();
+          if (!key || latestByEmail.has(key)) continue; // desc order → first seen = latest
+          latestByEmail.set(key, r);
+        }
+        setPendingSuggestions(
+          [...latestByEmail.values()].filter((r: any) => r.suggested_org?.name && !r.seen_at),
+        );
+      });
     return () => { alive = false; };
   }, []);
 
