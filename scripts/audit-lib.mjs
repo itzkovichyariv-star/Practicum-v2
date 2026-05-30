@@ -120,6 +120,14 @@ export class Audit {
       locale: 'he-IL',
       timezoneId: 'Asia/Jerusalem',
     });
+
+    // NEVER send real emails from an audit. The notify-* Supabase edge functions
+    // send via Resend (a metered daily quota); stub them so any cell that submits
+    // a form (registration, org-suggestion, …) costs zero quota. Returns a fake
+    // 200 so the client-side success path still runs.
+    await this.ctx.route(/\/functions\/v1\/notify-(submission|acceptance|org-suggestion)/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: '{"stubbed":true}' }).catch(() => {}));
+
     this.page = await this.ctx.newPage();
 
     // Universal error observers. Console/page errors / network failures
