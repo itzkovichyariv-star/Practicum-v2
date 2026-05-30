@@ -295,7 +295,7 @@ function SubmissionCard({ s, selected, onToggle, onDelete }: {
     <li className="border-b" style={{ borderColor: 'var(--divider)', opacity: s.processed ? 0.6 : 1 }}>
       {/* ── header row ── */}
       <div className="flex items-start gap-4 px-5 py-4 hover:bg-[rgba(122,30,43,0.02)]">
-        <input type="checkbox" checked={selected} onChange={onToggle} disabled={s.processed} className="mt-1" />
+        <input type="checkbox" checked={selected} onChange={onToggle} className="mt-1 cursor-pointer" />
         <div className="flex-1 min-w-0">
           <div className="serif text-[18px] leading-[1.2]" style={{ color: 'var(--ink)' }}>
             {s.name}

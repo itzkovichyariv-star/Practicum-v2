@@ -99,5 +99,47 @@ audit.log('HOVER-vs-CLICK: hover does NOT open the card; click does');
   });
 }
 
+// ─── INBOX-select ─────────────────────────────────────────────────────
+// Submission-inbox checkboxes must be selectable — including already-processed
+// ('נקלט') submissions, which used to be disabled.
+audit.log('INBOX-select: submission checkboxes (incl. processed) are not disabled and toggle');
+{
+  await audit.page.reload({ waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(900);
+  audit.observerMark();
+  // Reveal processed submissions so the previously-disabled ones are testable.
+  const showProc = audit.page.getByText('הצג גם מעובדים', { exact: false });
+  if (await showProc.count()) { await showProc.first().click().catch(() => {}); await audit.page.waitForTimeout(500); }
+
+  const inboxBoxes = audit.page.locator('input.mt-1[type="checkbox"]');
+  const n = await inboxBoxes.count();
+  if (n === 0) {
+    audit.recordCell({
+      id: 'INBOX-select', tableRef: '/candidates / submission-inbox checkbox',
+      expected: 'inbox submission checkboxes selectable (incl. processed)',
+      observed: 'no submissions present in the inbox to exercise',
+      pass: null, notes: 'Data-dependent: no inbox submissions to test in this context.',
+    });
+  } else {
+    const anyDisabled = await audit.page.evaluate(() =>
+      [...document.querySelectorAll('input.mt-1[type="checkbox"]')].some(cb => cb.disabled));
+    const cb = inboxBoxes.first();
+    await cb.click();
+    await audit.page.waitForTimeout(300);
+    const checked = await cb.isChecked();
+    const after = await audit.shot('INBOX-after');
+    const obs = audit.observerSnapshot();
+    audit.recordCell({
+      id: 'INBOX-select', tableRef: '/candidates / submission-inbox checkbox',
+      expected: 'no inbox checkbox disabled; clicking one marks it; no page errors',
+      observed: `count=${n}, anyDisabled=${anyDisabled}, checkedAfter=${checked}, errors=(${obs.consoleErrors.length}c/${obs.pageErrors.length}p)`,
+      pass: anyDisabled === false && checked === true && obs.pageErrors.length === 0,
+      after,
+      notes: anyDisabled ? 'A processed submission checkbox is still disabled.' :
+             !checked ? 'Inbox checkbox did not toggle on click.' : '',
+    });
+  }
+}
+
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);
