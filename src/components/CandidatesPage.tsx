@@ -849,10 +849,15 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
 
         {/* Line 1: checkbox · dot · name · status badge */}
         <div className="flex items-center gap-2 min-w-0 mb-1.5">
-          <div onClick={e => { e.stopPropagation(); onToggleSelect?.(); }} className="shrink-0">
-            <input type="checkbox" checked={!!selected} onChange={() => {}}
+          <label
+            onClick={e => e.stopPropagation()}
+            className="shrink-0 inline-flex items-center justify-center cursor-pointer"
+            style={{ padding: '8px', margin: '-8px' }}
+            title="בחר/בטל בחירה">
+            <input type="checkbox" checked={!!selected}
+              onChange={() => onToggleSelect?.()}
               className="w-4 h-4 rounded cursor-pointer" style={{ accentColor: 'var(--accent)' }} />
-          </div>
+          </label>
           <StatusDot status={dotStatus} size={9} />
           <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
             {c.name || 'ללא שם'}

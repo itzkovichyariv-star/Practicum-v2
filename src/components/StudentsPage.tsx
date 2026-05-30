@@ -920,7 +920,7 @@ export function Popover({ pinned, children }: { pinned: boolean; children: any }
   return (
     <div
       ref={ref}
-      className={`absolute z-40 right-0 rounded-xl shadow-xl border p-5 transition-opacity ${flipUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${pinned ? 'opacity-100 visible' : 'invisible opacity-0 group-hover:visible group-hover:opacity-100'}`}
+      className={`absolute z-40 right-0 rounded-xl shadow-xl border p-5 transition-opacity ${flipUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${pinned ? 'opacity-100 visible' : 'invisible opacity-0 pointer-events-none'}`}
       style={{
         background: 'var(--bg)',
         borderColor: 'var(--divider)',
