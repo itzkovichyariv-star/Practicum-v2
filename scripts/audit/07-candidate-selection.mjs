@@ -111,7 +111,7 @@ audit.log('INBOX-select: submission checkboxes (incl. processed) are not disable
   const showProc = audit.page.getByText('הצג גם מעובדים', { exact: false });
   if (await showProc.count()) { await showProc.first().click().catch(() => {}); await audit.page.waitForTimeout(500); }
 
-  const inboxBoxes = audit.page.locator('input.mt-1[type="checkbox"]');
+  const inboxBoxes = audit.page.locator('input[data-inbox-cb]');
   const n = await inboxBoxes.count();
   if (n === 0) {
     audit.recordCell({
@@ -122,7 +122,7 @@ audit.log('INBOX-select: submission checkboxes (incl. processed) are not disable
     });
   } else {
     const anyDisabled = await audit.page.evaluate(() =>
-      [...document.querySelectorAll('input.mt-1[type="checkbox"]')].some(cb => cb.disabled));
+      [...document.querySelectorAll('input[data-inbox-cb]')].some(cb => cb.disabled));
     const cb = inboxBoxes.first();
     await cb.click();
     await audit.page.waitForTimeout(300);
