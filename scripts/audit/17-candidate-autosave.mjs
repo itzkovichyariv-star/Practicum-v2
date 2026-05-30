@@ -44,7 +44,7 @@ await audit.page.waitForTimeout(1000);
 audit.log('AUTOSAVE-pending: typing the summary persists without save / without deciding');
 {
   audit.observerMark();
-  let opened = false, savedSummary = '', resultAfter = '', indicatorSeen = false;
+  let opened = false, savedSummary = '', resultAfter = '', indicatorSeen = false, conductedPersisted = false, conductedResult = '';
 
   if (seedOk) {
     const row = audit.page.locator('li').filter({ hasText: CAND_NAME }).first();
@@ -69,6 +69,19 @@ audit.log('AUTOSAVE-pending: typing the summary persists without save / without 
         resultAfter = c?.interviewResult || '';
       }
       indicatorSeen = await audit.page.evaluate(() => /נשמר אוטומטית|שומר…/.test(document.body.textContent || ''));
+
+      // "ראיון בוצע" — marking it should FORCE an immediate save (protection
+      // checkpoint), persisting interviewConducted=true while result stays pending.
+      const conductedCb = audit.page.locator('label').filter({ hasText: 'הראיון בוצע' }).locator('input[type="checkbox"]').first();
+      if (await conductedCb.count() > 0) {
+        await conductedCb.scrollIntoViewIfNeeded();
+        await conductedCb.check().catch(() => {});
+        for (let i = 0; i < 8; i++) {
+          await audit.page.waitForTimeout(400);
+          const c = (await loadData()).candidates?.find(x => x.id === CAND_ID);
+          if (c?.interviewConducted === true) { conductedPersisted = true; conductedResult = c.interviewResult || ''; break; }
+        }
+      }
     }
   }
 
@@ -77,14 +90,18 @@ audit.log('AUTOSAVE-pending: typing the summary persists without save / without 
   if (!seedOk || !opened) {
     audit.recordCell({ id: 'AUTOSAVE-pending', tableRef: 'CandidateEditor auto-save', expected: 'open editor', observed: `seedOk=${seedOk}, opened=${opened}`, pass: seedOk ? false : null, notes: 'Could not seed/open.' });
   } else {
-    const pass = savedSummary === SUMMARY && resultAfter === 'pending' && indicatorSeen && obs.pageErrors.length === 0;
+    const pass = savedSummary === SUMMARY && resultAfter === 'pending' && indicatorSeen
+      && conductedPersisted && conductedResult === 'pending' && obs.pageErrors.length === 0;
     audit.recordCell({
       id: 'AUTOSAVE-pending',
-      tableRef: 'CandidateEditor / debounced auto-save (no save click, result stays pending)',
-      expected: 'interview summary persists to DB without clicking save; interviewResult stays "pending"; "נשמר אוטומטית" indicator shown',
-      observed: `summaryPersisted=${savedSummary === SUMMARY}, resultAfter="${resultAfter}", indicator=${indicatorSeen}, errors=(${obs.pageErrors.length}p)`,
+      tableRef: 'CandidateEditor / debounced auto-save + "ראיון בוצע" checkpoint (result stays pending)',
+      expected: 'summary auto-persists (no save click); marking "ראיון בוצע" force-saves interviewConducted=true; interviewResult stays "pending" throughout',
+      observed: `summaryPersisted=${savedSummary === SUMMARY}, conducted=${conductedPersisted}, resultAfter="${resultAfter}/${conductedResult}", indicator=${indicatorSeen}, errors=(${obs.pageErrors.length}p)`,
       pass, after,
-      notes: savedSummary !== SUMMARY ? 'Summary did not auto-persist (no save click).' : resultAfter !== 'pending' ? 'Result changed — should stay pending.' : !indicatorSeen ? 'No auto-save indicator shown.' : '',
+      notes: savedSummary !== SUMMARY ? 'Summary did not auto-persist (no save click).'
+        : !conductedPersisted ? '"ראיון בוצע" did not force-save interviewConducted.'
+        : (resultAfter !== 'pending' || conductedResult !== 'pending') ? 'Result changed — should stay pending.'
+        : !indicatorSeen ? 'No auto-save indicator shown.' : '',
     });
   }
 }

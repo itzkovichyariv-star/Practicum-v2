@@ -41,6 +41,8 @@ export default function CandidateEditor({
     applicationDate: candidate?.applicationDate || '',
     interviewDate: candidate?.interviewDate || '',
     interviewResult: candidate?.interviewResult || 'pending',
+    interviewConducted: candidate?.interviewConducted || false,
+    interviewConductedAt: candidate?.interviewConductedAt || '',
     preferredArea: candidate?.preferredArea || '',
     evalCommitment: candidate?.evalCommitment || '',
     evalMotivation: candidate?.evalMotivation || '',
@@ -83,14 +85,32 @@ export default function CandidateEditor({
   const hasInterview = !!form.interviewDate;
   const passed = form.interviewResult === 'passed';
   const alreadyConverted = !!form.convertedToStudentId;
+  const conductedPending = !!form.interviewConducted && form.interviewResult !== 'passed' && form.interviewResult !== 'failed';
   const stage = alreadyConverted ? 'הועבר לסטודנטים' :
                 passed ? 'עבר — מוכן/ה להעברה' :
                 hasInterview && form.interviewResult === 'failed' ? 'לא עבר ראיון' :
-                hasInterview ? 'ממתין/ה לתוצאת ראיון' :
+                conductedPending ? 'ראיון בוצע — בהערכה (החלטה בהמשך)' :
+                hasInterview ? 'ממתין/ה לראיון' :
                 hasDocs ? 'קורות חיים הוגשו — לקבוע ראיון' :
                 'ממתין/ה לקורות חיים';
 
   function update<K extends keyof Candidate>(k: K, v: Candidate[K]) { setForm(f => ({ ...f, [k]: v })); }
+
+  // "ראיון בוצע" toggle. Marking it also fires an IMMEDIATE save (not the 1.5s
+  // debounce) — a deliberate checkpoint so the assessment captured during the
+  // interview is protected the moment you flag the interview as done.
+  async function setConducted(v: boolean) {
+    const updated: Candidate = {
+      ...form,
+      interviewConducted: v,
+      interviewConductedAt: v ? (form.interviewConductedAt || new Date().toISOString()) : form.interviewConductedAt,
+    };
+    setForm(updated);
+    if (onAutoSave && updated.name.trim()) {
+      setAutoSave('saving');
+      try { await onAutoSave(updated); setAutoSave('saved'); } catch { setAutoSave('error'); }
+    }
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -242,6 +262,23 @@ export default function CandidateEditor({
                   style={{ padding: '12px 16px', fontSize: '14.5px', resize: 'vertical', minHeight: '72px' }}
                 />
               </Field>
+            </div>
+
+            <div className="col-span-full">
+              <label className="flex items-start gap-2.5 cursor-pointer rounded-xl p-3"
+                style={{ background: form.interviewConducted ? 'rgba(217,119,6,0.09)' : 'rgba(0,0,0,0.02)', border: `1px solid ${form.interviewConducted ? 'rgba(217,119,6,0.4)' : 'var(--divider)'}` }}>
+                <input type="checkbox" checked={!!form.interviewConducted}
+                  onChange={e => setConducted(e.target.checked)}
+                  className="mt-0.5" style={{ accentColor: 'var(--accent)', width: 16, height: 16 }} />
+                <span className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--ink)' }}>
+                  <strong>הראיון בוצע</strong> — סמן/י לאחר קיום הראיון. ההערכה נשמרת <strong>מיד</strong> (שמירת ביניים, מנגנון הגנה) וניתן להחליט עבר / לא עבר בהמשך.
+                  {form.interviewConducted && form.interviewConductedAt && (
+                    <span className="block mono text-[11px] mt-1" style={{ color: '#b45309' }}>
+                      ✓ סומן: {new Date(form.interviewConductedAt).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}
+                    </span>
+                  )}
+                </span>
+              </label>
             </div>
 
             <Field label="תוצאה סופית">

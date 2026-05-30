@@ -145,6 +145,8 @@ export type Candidate = {
   applicationDate?: string;
   interviewDate?: string;
   interviewResult?: 'passed' | 'failed' | 'pending';
+  interviewConducted?: boolean;     // the interview actually took place (assess now, decide later)
+  interviewConductedAt?: string;    // ISO timestamp it was marked conducted
   // Structured interview evaluation (ported from v1)
   preferredArea?: string;        // desired HR domain
   evalCommitment?: string;       // נמוך / בינוני / גבוה / מצטיין

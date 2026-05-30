@@ -16,7 +16,7 @@ import { openMailto } from '../lib/openMailto';
 
 export default function CandidatesPage({ data, context, userName, onRefresh }: PageProps) {
   const [search, setSearch] = useState('');
-  const [stage, setStage] = useState<'all' | 'pending' | 'passed' | 'failed' | 'submitted' | 'notsubmitted'>('all');
+  const [stage, setStage] = useState<'all' | 'pending' | 'conducted' | 'passed' | 'failed' | 'submitted' | 'notsubmitted'>('all');
   const [editing, setEditing] = useState<Candidate | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -185,6 +185,8 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       const result = c.interviewResult || 'pending';
       if (stage === 'submitted') return hasDocs;
       if (stage === 'notsubmitted') return !hasDocs && result === 'pending';
+      // "ראיון בוצע" = the interview happened and a pass/fail decision is still pending.
+      if (stage === 'conducted') return !!c.interviewConducted && result === 'pending';
       if (stage !== 'all' && result !== stage) return false;
       if (!q) return true;
       const hay = [c.name, c.phone, c.email].filter(Boolean).join(' ').toLowerCase();
@@ -195,6 +197,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const counts = useMemo(() => ({
     total: scoped.length,
     pending: scoped.filter(c => !c.interviewResult || c.interviewResult === 'pending').length,
+    conducted: scoped.filter(c => c.interviewConducted && (!c.interviewResult || c.interviewResult === 'pending')).length,
     passed: scoped.filter(c => c.interviewResult === 'passed').length,
     failed: scoped.filter(c => c.interviewResult === 'failed').length,
     submitted: scoped.filter(c => !!(c.cvUrl && c.applicationUrl)).length,
@@ -560,6 +563,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
           ['submitted',    'הגישו מסמכים', counts.submitted,     'amber'],
           ['notsubmitted', 'טרם הגישו',   counts.notsubmitted,  'gray' ],
           ['pending',      'ממתינים',      counts.pending,       'gray' ],
+          ['conducted',    'ראיון בוצע',   counts.conducted,     'amber'],
           ['passed',       'עברו',         counts.passed,        'green'],
           ['failed',       'לא עברו',      counts.failed,        'red'  ],
         ] as const).map(([key, label, n, dot]) => {
@@ -886,12 +890,14 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
   onRevert?: () => void;
 }) {
   const r = c.interviewResult || 'pending';
-  const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : 'ממתין';
+  const conductedPending = !!c.interviewConducted && r === 'pending';
+  const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : conductedPending ? 'ראיון בוצע' : 'ממתין';
   const isPass = r === 'passed';
   const hasDocs = !!(c.cvUrl && c.applicationUrl);
   const stage = c.convertedToStudentId ? 'הועבר לסטודנטים' :
                 isPass ? 'עבר ראיון' :
                 r === 'failed' ? 'לא התקבל' :
+                conductedPending ? 'ראיון בוצע — בהערכה' :
                 c.interviewDate ? 'ממתין/ה לתוצאה' :
                 hasDocs ? 'מסמכים הוגשו' : 'ממתין/ה למסמכים';
 
