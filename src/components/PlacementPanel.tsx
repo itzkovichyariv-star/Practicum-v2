@@ -9,7 +9,7 @@ import type {
   StudentPreference, VacancySlot,
 } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
-import { renderTemplate, buildWhatsAppUrl, buildMailtoUrl, openVacancies, reconcileEmployerCapacity } from '../lib/placement';
+import { renderTemplate, buildWhatsAppUrl, buildMailtoUrl, openVacancies, reconcileEmployerCapacity, countSlotsByStatus } from '../lib/placement';
 import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
@@ -363,13 +363,18 @@ export default function PlacementPanel({
                 העדפה {pref.rank} — {emp.name}
               </span>
               {(() => {
-                // Live remaining vacancies at this org — drops when a CV is sent, rises on reject/withdraw.
-                const open = openVacancies(emp);
+                // Full live capacity picture for this org, at the point of dispatch:
+                // total, already placed, in-process (this + others), and still free.
+                const c = countSlotsByStatus(emp);
+                const inProcess = c.tentative + c.under_review;
                 return (
-                  <span className="mono text-[10.5px] px-2 py-0.5 rounded-full"
-                    style={{ background: open > 0 ? 'rgba(5,150,105,0.08)' : 'rgba(180,60,60,0.08)', color: open > 0 ? '#059669' : '#b03030' }}
-                    title="מקומות פנויים בארגון (מתעדכן עם שליחה/ביטול)">
-                    {open > 0 ? `נותרו ${open} מקומות` : 'אין מקומות פנויים'}
+                  <span className="inline-flex items-center gap-2 mono text-[10.5px] px-2.5 py-1 rounded-full"
+                    style={{ background: 'rgba(0,0,0,0.035)', border: '1px solid var(--divider)', color: 'var(--text-soft)' }}
+                    title="תמונת קיבולת הארגון — מתעדכן עם כל שליחה / שיבוץ / ביטול">
+                    <span style={{ color: 'var(--ink)', fontWeight: 700 }}>{c.total} מקומות</span>
+                    <span style={{ color: '#059669' }}>● {c.placed} שובצו</span>
+                    <span style={{ color: '#1d4ed8' }}>● {inProcess} בתהליך</span>
+                    <span style={{ color: c.available > 0 ? '#059669' : '#b03030' }}>● {c.available} פנויים</span>
                   </span>
                 );
               })()}

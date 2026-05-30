@@ -77,7 +77,8 @@ audit.log('COUNTER-reserve-release: build reserves a vacancy, release frees it')
       if (await buildBtn.count() > 0) { await buildBtn.scrollIntoViewIfNeeded(); await buildBtn.click().catch(() => {}); await audit.page.waitForTimeout(2500); }
 
       availAfterBuild = availSlots((await loadData()).employers?.find(e => e.id === EMP_ID));
-      uiShowedRemaining = await audit.page.evaluate(() => /נותרו\s*1\s*מקומות/.test(document.body.textContent || ''));
+      // New capacity breakdown chip: "2 מקומות · 0 שובצו · 1 בתהליך · 1 פנויים".
+      uiShowedRemaining = await audit.page.evaluate(() => /1\s*פנויים/.test(document.body.textContent || '') && /בתהליך/.test(document.body.textContent || ''));
 
       // Release → frees the reserved slot. Wait for the button to settle after the
       // post-build refresh (which re-saves the reconciled employer ledger).
