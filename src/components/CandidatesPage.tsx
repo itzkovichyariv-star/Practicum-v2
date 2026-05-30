@@ -949,7 +949,7 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
         </div>
       </div>
 
-      <Popover pinned={pinned}>
+      <Popover pinned={pinned} onRequestClose={onTogglePin}>
         <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
           <div>
             <div className="serif text-[22px] leading-[1.15]" style={{ color: 'var(--ink)' }}>{c.name}</div>
@@ -957,7 +957,7 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
               שלב: {stage}
             </div>
           </div>
-          {pinned && <button onClick={onTogglePin} className="mono text-[10px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">✕</button>}
+          {pinned && <button type="button" onClick={onTogglePin} title="סגור" className="shrink-0 grid place-items-center w-7 h-7 rounded-full border mono text-[12px] font-semibold opacity-70 hover:opacity-100" style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>✕</button>}
         </div>
         <div className="space-y-1.5 text-[13px]">
           <DetailRowC label="טלפון" value={c.phone} />

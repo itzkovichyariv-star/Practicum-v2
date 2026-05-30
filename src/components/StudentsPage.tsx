@@ -872,7 +872,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selectMode, sele
       </div>
 
       {/* Hover + pinned details popover */}
-      <Popover pinned={pinned}>
+      <Popover pinned={pinned} onRequestClose={onTogglePin}>
         <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
           <div>
             <div className="serif text-[22px] leading-[1.15]" style={{ color: 'var(--ink)' }}>{s.name}</div>
@@ -881,9 +881,9 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selectMode, sele
             </div>
           </div>
           {pinned && (
-            <button type="button" onClick={onTogglePin}
-              className="mono text-[10px] uppercase tracking-[0.14em] font-semibold hover:opacity-60"
-              style={{ color: 'var(--text-soft)' }}>
+            <button type="button" onClick={onTogglePin} title="סגור"
+              className="shrink-0 grid place-items-center w-7 h-7 rounded-full border mono text-[12px] font-semibold opacity-70 hover:opacity-100"
+              style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>
               ✕
             </button>
           )}
@@ -910,7 +910,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selectMode, sele
  * Shared popover wrapper that flips above the row when near viewport bottom
  * so details aren't cut off. Used by Students/Candidates/Employers rows.
  */
-export function Popover({ pinned, children }: { pinned: boolean; children: any }) {
+export function Popover({ pinned, children, onRequestClose }: { pinned: boolean; children: any; onRequestClose?: () => void }) {
   const [flipUp, setFlipUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -924,9 +924,34 @@ export function Popover({ pinned, children }: { pinned: boolean; children: any }
     setFlipUp(rect.bottom + popoverHeight > viewportHeight - 20);
   }, [pinned]);
 
+  // Bulletproof dismissal: Escape and any click/tap outside the popover close it.
+  // Without this the only way out is the small ✕, and if that single target ever
+  // misses (overlap, hover quirk, mis-tap) the card feels "stuck".
+  useEffect(() => {
+    if (!pinned || !onRequestClose) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onRequestClose(); };
+    const onDown = (e: Event) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onRequestClose();
+    };
+    document.addEventListener('keydown', onKey);
+    // Defer attaching the outside-listener so the click that OPENED the popover
+    // (still propagating) doesn't immediately close it.
+    const id = window.setTimeout(() => {
+      document.addEventListener('mousedown', onDown);
+      document.addEventListener('touchstart', onDown);
+    }, 0);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      window.clearTimeout(id);
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+    };
+  }, [pinned, onRequestClose]);
+
   return (
     <div
       ref={ref}
+      data-popover-open={pinned ? 'true' : undefined}
       className={`absolute z-40 right-0 rounded-xl shadow-xl border p-5 transition-opacity ${flipUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${pinned ? 'opacity-100 visible' : 'invisible opacity-0 pointer-events-none'}`}
       style={{
         background: 'var(--bg)',
