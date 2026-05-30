@@ -118,12 +118,19 @@ export default function CvUpdateForm() {
     }
 
     // Alert the coordinator when a candidate proposes their own organization.
-    // Best-effort: never block the submission on the notification.
+    // Best-effort: never block the submission on the notification. Mirrors the
+    // header pattern of notify-submission so it works once the function is set
+    // to verify_jwt=false (required for public/anon invocation).
     if (suggestedOrg) {
       try {
+        const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
         await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ANON}`,
+            'apikey': ANON,
+          },
           body: JSON.stringify({
             record: {
               candidateName: name.trim() || null,
