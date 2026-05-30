@@ -959,7 +959,27 @@ export function RowActions({
 }: { phone?: string; email?: string; name?: string; onEdit: () => void; calendarUrl?: string; onCalendar?: () => void }) {
   function call() {
     if (!phone) return;
-    window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`;
+    const tel = phone.replace(/[^\d+]/g, '');
+    // On a real phone (touch device) tel: dials natively. On desktop tel: is a
+    // silent no-op — there's no phone app to hand off to — which reads as a
+    // dead button. So on desktop we give visible feedback instead: copy the
+    // number to the clipboard and toast it, the same way WhatsApp opens a tab.
+    const canDial = typeof window !== 'undefined' && (
+      window.matchMedia?.('(pointer: coarse)')?.matches ||
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    );
+    if (canDial) {
+      window.location.href = `tel:${tel}`;
+      return;
+    }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(phone).then(
+        () => showToast(`📞 ${phone} · המספר הועתק`, 'success'),
+        () => showToast(`📞 ${phone}`, 'info'),
+      );
+    } else {
+      showToast(`📞 ${phone}`, 'info');
+    }
   }
   function wa() {
     if (!phone) return;
