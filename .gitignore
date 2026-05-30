@@ -6,3 +6,9 @@ dist/
 !.env.example
 *.log
 .DS_Store
+
+# Generated test / report / CLI artifacts — never tracked
+test-results/
+e2e-report/
+playwright-report/
+supabase/.temp/
