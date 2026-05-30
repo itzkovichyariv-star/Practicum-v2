@@ -231,6 +231,34 @@ audit.log('EMAIL-workshop-date: acceptance body contains workshop date (resolved
   });
 }
 
+// ─── EMAIL-present-tense ─────────────────────────────────────────────────────
+audit.log('EMAIL-present-tense: acceptance body uses present tense ("אנו שמחים", not "שמחנו")');
+{
+  audit.observerMark();
+  let pass = null;
+  let observed = 'dialog not open — skipped';
+  if (dialogOpen) {
+    let bodyVal = '';
+    const textareas = await audit.page.locator('textarea').all();
+    for (const ta of textareas) {
+      const val = await ta.inputValue().catch(() => '');
+      if (val.length > 50) bodyVal = val; // the body is the long textarea
+    }
+    const hasPresent = bodyVal.includes('אנו שמחים');
+    const hasPast = bodyVal.includes('שמחנו');
+    pass = hasPresent && !hasPast;
+    observed = `present("אנו שמחים")=${hasPresent}, past("שמחנו")=${hasPast}`;
+  }
+  audit.recordCell({
+    id: 'EMAIL-present-tense',
+    tableRef: 'CandidatesPage / acceptance body / present-tense phrasing',
+    expected: 'body contains "אנו שמחים" and NOT the past-tense "שמחנו"',
+    observed,
+    pass,
+    notes: pass === false ? 'Acceptance copy is past tense ("שמחנו") — should be present ("אנו שמחים").' : '',
+  });
+}
+
 // Close dialog — modal has no Escape handler; must click ✕ or ביטול button inside it.
 // The backdrop (fixed inset-0) doesn't block clicks on elements INSIDE the modal box.
 if (dialogOpen) {
