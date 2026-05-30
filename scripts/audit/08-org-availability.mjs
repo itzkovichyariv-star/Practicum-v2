@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+/**
+ * 08-org-availability.mjs — organization availability gating.
+ *
+ *   ADMIN-legend     The Employers admin list shows the legend ('מקרא') and a
+ *                    not-available summary, and incomplete orgs carry a purple
+ *                    '⚠ חסר …' badge.
+ *   STUDENT-hidden   The public /organizations list shows FEWER orgs than the
+ *                    admin total — i.e. incomplete orgs are hidden from students.
+ */
+import { Audit, sbQuery } from '../audit-lib.mjs';
+
+const audit = new Audit({ name: 'org-availability' });
+await audit.setup();
+
+// How many orgs are "available" per the rule (description + open places, not pending/rejected)?
+let dbTotal = 0, dbAvailable = 0;
+try {
+  const rows = await sbQuery('practicum_data', { filter: `org_id=eq.default`, select: 'data' });
+  const emps = (rows?.[0]?.data?.employers || []).filter(e => e?.name);
+  dbTotal = emps.length;
+  dbAvailable = emps.filter(e => {
+    const total = Number(e.positions) || 0, filled = Number(e.filledPositions) || 0;
+    const open = Math.max(0, total - filled);
+    const hasDesc = !!(e.notes && String(e.notes).trim());
+    return hasDesc && total > 0 && open > 0 && e.approvalStatus !== 'rejected' && e.approvalStatus !== 'pending';
+  }).length;
+} catch (e) {
+  audit.log(`could not preload employer data (non-fatal): ${e.message.slice(0, 100)}`);
+}
+
+// ─── ADMIN-legend ─────────────────────────────────────────────────────
+audit.log('ADMIN-legend: Employers list shows legend + purple incomplete badges');
+{
+  await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));
+  await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1500);
+  audit.observerMark();
+  const before = await audit.shot('ADMIN-legend');
+  const info = await audit.page.evaluate(() => {
+    const body = document.body.textContent || '';
+    return {
+      hasLegend: body.includes('מקרא'),
+      hasGreenMeaning: body.includes('זמין לסטודנטים'),
+      hasNotAvailableMeaning: /לא זמין/.test(body),
+      purpleBadges: [...document.querySelectorAll('span')].filter(s => /⚠ חסר|⏳ ממתין|✕ נדחה/.test(s.textContent || '')).length,
+    };
+  });
+  const obs = audit.observerSnapshot();
+  // If the DB has incomplete orgs, we expect at least one purple badge.
+  const expectBadges = (dbTotal - dbAvailable) > 0;
+  const pass = info.hasLegend && info.hasGreenMeaning && info.hasNotAvailableMeaning &&
+    (!expectBadges || info.purpleBadges > 0) && obs.pageErrors.length === 0;
+  audit.recordCell({
+    id: 'ADMIN-legend',
+    tableRef: 'Employers admin / legend + incomplete badges',
+    expected: `legend present; green+not-available meanings; ≥1 purple badge if incomplete orgs exist (db: ${dbTotal - dbAvailable} incomplete)`,
+    observed: `legend=${info.hasLegend}, greenMeaning=${info.hasGreenMeaning}, notAvailMeaning=${info.hasNotAvailableMeaning}, purpleBadges=${info.purpleBadges}, errors=(${obs.pageErrors.length}p)`,
+    pass, before,
+    notes: !info.hasLegend ? 'Legend (מקרא) missing.' :
+           (expectBadges && info.purpleBadges === 0) ? 'Expected purple incomplete badges but found none.' : '',
+  });
+}
+
+// ─── STUDENT-hidden ───────────────────────────────────────────────────
+audit.log('STUDENT-hidden: /organizations hides incomplete orgs');
+{
+  await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1200);
+  audit.observerMark();
+  const after = await audit.shot('STUDENT-hidden');
+  // count cards on the public page
+  const studentCount = await audit.page.evaluate(() => {
+    const m = (document.body.textContent || '').match(/(\d+)\s*ארגונות/);
+    return m ? Number(m[1]) : null;
+  });
+  const obs = audit.observerSnapshot();
+  // Student count should equal the available count (and be ≤ admin total).
+  const pass = studentCount !== null && studentCount === dbAvailable && studentCount <= dbTotal && obs.pageErrors.length === 0;
+  audit.recordCell({
+    id: 'STUDENT-hidden',
+    tableRef: '/organizations / availability filter',
+    expected: `student-visible orgs == available count (${dbAvailable}); ≤ admin total (${dbTotal})`,
+    observed: `studentCount=${studentCount}, dbAvailable=${dbAvailable}, dbTotal=${dbTotal}, errors=(${obs.pageErrors.length}p)`,
+    pass, after,
+    notes: studentCount !== dbAvailable ? `Student count ${studentCount} != available ${dbAvailable}.` : '',
+  });
+}
+
+await audit.teardown();
+process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);

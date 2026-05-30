@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
+import { orgAvailability } from '../lib/orgAvailability';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
 type OrgOption = { name: string; notes: string };
@@ -42,7 +43,8 @@ export default function CvUpdateForm() {
         const opts = all
           .filter(e => {
             if (!e?.name) return false;
-            if (e.approvalStatus === 'rejected') return false;
+            // Only orgs ready for students: description + open places, not pending/rejected.
+            if (!orgAvailability(e).available) return false;
             if (courseParam) {
               const ids = e.courseIds || (e.courseId ? [e.courseId] : []);
               if (ids.length && !ids.includes(courseParam)) return false;
