@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Employer } from '../lib/supabase';
 import { orgAvailability } from '../lib/orgAvailability';
+import { openVacancies, migratePlacementData } from '../lib/placement';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -17,9 +18,8 @@ function getParam(key: string): string {
 }
 
 function availableCount(emp: Employer): number {
-  const total = emp.positionsTotal ?? emp.positions ?? 0;
-  const filled = emp.filledPositions ?? 0;
-  return Math.max(0, total - filled);
+  // Unified capacity ledger: open = available vacancySlots (falls back to legacy).
+  return openVacancies(emp);
 }
 
 // ── sub-components ───────────────────────────────────────────────────────────
@@ -134,7 +134,10 @@ export default function OrganizationsPage() {
       .eq('org_id', 'default')
       .single()
       .then(({ data }) => {
-        const allEmps: Employer[] = (data as any)?.data?.employers || [];
+        // Run the placement migration so the public counter reflects the same
+        // reconciled vacancy ledger the admin app uses (acceptedOrg → slots).
+        const migrated = migratePlacementData(((data as any)?.data || {}) as any);
+        const allEmps: Employer[] = (migrated.employers as any) || [];
         // Filter: only approved (or unset) employers with at least a name
         const active = allEmps.filter(e => {
           if (!e.name) return false;

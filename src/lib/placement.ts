@@ -233,6 +233,33 @@ export function migratePlacementData(data: PracticumData): PracticumData {
     if (settingsChanged) changed = true;
   }
 
+  // 5. Reconcile legacy `acceptedOrg` placements into the vacancySlots ledger
+  //    (idempotent). Until now, marking a student placed via acceptedOrg bumped
+  //    `filledPositions` but never occupied a slot, so the slot ledger (now the
+  //    single source of truth for "open places") over-reported availability for
+  //    orgs that already have placed students. For each placed student, occupy
+  //    one available slot at their org. Then mirror the legacy counters.
+  if (d.students && d.employers) {
+    const byName = new Map(d.employers.filter(e => e?.name).map(e => [e.name, e]));
+    for (const st of d.students) {
+      const orgName = (st as any).acceptedOrg;
+      if (!orgName) continue;
+      const emp: any = byName.get(orgName);
+      if (!emp) continue;
+      const slots: any[] = (emp.vacancySlots = emp.vacancySlots || []);
+      if (slots.some(s => s.studentId === st.id)) continue; // already reflected
+      const slot = slots.find(s => s.status === 'available');
+      if (!slot) continue; // org at/over capacity — open stays 0, which is correct
+      slot.status = 'placed';
+      slot.studentId = st.id;
+      slot.prefRank = slot.prefRank ?? null;
+      slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'placed', by: 'system', actorId: 'migrate-acceptedOrg' }];
+      changed = true;
+    }
+    const mirrored = d.employers.map(e => reconcileEmployerCapacity(e as Employer));
+    if (JSON.stringify(mirrored) !== JSON.stringify(d.employers)) { d.employers = mirrored as any; changed = true; }
+  }
+
   return changed ? d : data;
 }
 
@@ -348,7 +375,9 @@ export function buildPlacementPreferences(
     // Mark "submitted" so the placement workflow is active (never downgrade a placed student).
     submissionStatus: student.submissionStatus === 'placed' ? 'placed' : (prefs.length ? 'submitted' : student.submissionStatus),
   };
-  return { updatedStudent, updatedEmployers: emps, built, unresolved };
+  // Mirror the slot ledger into legacy capacity fields for the employers we touched.
+  const updatedEmployers = emps.map(e => usedEmployerIds.has(e.id) ? reconcileEmployerCapacity(e) : e);
+  return { updatedStudent, updatedEmployers, built, unresolved };
 }
 
 // ── Add a single ad-hoc placement (employer outside the candidate's list) ─────
@@ -394,7 +423,7 @@ export function addPlacementPreference(
     slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'tentative', by: 'admin', actorId: opts.actorId }];
   }
   (emp as any).vacancySlots = slots;
-  if ((emp as any).positionsTotal == null) (emp as any).positionsTotal = slots.length;
+  emps[idx] = reconcileEmployerCapacity(emp);
 
   const updatedStudent: Student = {
     ...student,
@@ -445,6 +474,38 @@ export function getAvailableEmployersForCourse(
 
     return hasCapacity;
   });
+}
+
+// ── Single source of truth for "open places" ─────────────────────────────────
+//
+// vacancySlots is the capacity ledger. openVacancies = available slots; when an
+// employer has no slots yet (not migrated), fall back to positions/filledPositions.
+// reconcileEmployerCapacity mirrors the slot ledger back into the legacy
+// positions/positionsTotal/filledPositions fields so older readers stay correct.
+export function totalVacancies(emp: any): number {
+  const slots = emp?.vacancySlots || [];
+  if (slots.length) return slots.length;
+  return Math.max(0, Number(emp?.positionsTotal ?? emp?.positions ?? 0) || 0);
+}
+
+export function openVacancies(emp: any): number {
+  const slots = emp?.vacancySlots || [];
+  if (slots.length) return slots.filter((s: any) => s?.status === 'available').length;
+  const total = Number(emp?.positionsTotal ?? emp?.positions ?? 0) || 0;
+  const filled = Number(emp?.filledPositions ?? 0) || 0;
+  return Math.max(0, total - filled);
+}
+
+export function reconcileEmployerCapacity<T extends Employer>(emp: T): T {
+  const slots = (emp as any)?.vacancySlots || [];
+  if (!slots.length) return emp; // nothing to mirror from
+  const occupied = slots.filter((s: any) => s?.status !== 'available').length;
+  return {
+    ...emp,
+    positionsTotal: slots.length,
+    positions: slots.length,
+    filledPositions: occupied,
+  } as T;
 }
 
 /**

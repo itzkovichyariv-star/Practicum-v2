@@ -102,22 +102,24 @@ audit.log('ORG-expand: clicking a card with notes expands the description');
   let pass = null;
   let observed = '';
 
-  if (dbEmps.length === 0) {
-    observed = 'No employers with notes in DB — cannot test expand';
+  // Only orgs that are actually rendered (available + not full + not private) can
+  // be expanded — a full org is correctly hidden from /organizations now.
+  let emp = null;
+  for (const e of dbEmps) {
+    const vis = await audit.page.getByText(e.name, { exact: true }).first().isVisible().catch(() => false);
+    if (vis) { emp = e; break; }
+  }
+
+  if (!emp) {
+    observed = 'No notes-employer is currently visible on /organizations — cannot test expand';
     pass = null;
   } else {
-    const emp = dbEmps[0];
     audit.log(`  Using employer with notes: "${emp.name}"`);
 
     // Use getByText with exact match to find the employer name element directly.
     // Clicking it bubbles up to the OrgCard outer div's onClick handler.
     const nameEl = audit.page.getByText(emp.name, { exact: true }).first();
-    const cardVisible = await nameEl.isVisible().catch(() => false);
-
-    if (!cardVisible) {
-      observed = `Card for "${emp.name}" not found in DOM`;
-      pass = false;
-    } else {
+    {
       // Notes panel is only rendered when open=true — not in DOM before click
       const bodyBefore = await audit.page.textContent('body').catch(() => '');
       const notesSnippet = emp.notes.slice(0, 12);

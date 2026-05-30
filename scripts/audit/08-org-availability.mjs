@@ -13,17 +13,41 @@ import { Audit, sbQuery } from '../audit-lib.mjs';
 const audit = new Audit({ name: 'org-availability' });
 await audit.setup();
 
-// How many orgs are "available" per the rule (description + open places, not pending/rejected)?
+// How many orgs are student-visible? Mirror the app's UNIFIED capacity ledger:
+// open places = available vacancySlots, AFTER reconciling legacy acceptedOrg
+// placements into the slots (same as migratePlacementData). Private (restricted)
+// orgs are hidden from the public /organizations page.
 let dbTotal = 0, dbAvailable = 0;
 try {
   const rows = await sbQuery('practicum_data', { filter: `org_id=eq.default`, select: 'data' });
-  const emps = (rows?.[0]?.data?.employers || []).filter(e => e?.name);
+  const data = rows?.[0]?.data || {};
+  const emps = (data.employers || []).filter(e => e?.name);
+  const students = data.students || [];
   dbTotal = emps.length;
+
+  // Replicate the acceptedOrg → slot reconciliation on a clone.
+  const slotsByName = {};
+  for (const e of emps) slotsByName[e.name] = (e.vacancySlots || []).map(s => ({ ...s }));
+  for (const st of students) {
+    const org = st.acceptedOrg; if (!org) continue;
+    const slots = slotsByName[org]; if (!slots) continue;
+    if (slots.some(s => s.studentId === st.id)) continue;
+    const slot = slots.find(s => s.status === 'available'); if (!slot) continue;
+    slot.status = 'placed'; slot.studentId = st.id;
+  }
+  const openVac = (e) => {
+    const slots = slotsByName[e.name] || [];
+    if (slots.length) return slots.filter(s => s.status === 'available').length;
+    return Math.max(0, (Number(e.positionsTotal ?? e.positions ?? 0) || 0) - (Number(e.filledPositions ?? 0) || 0));
+  };
+  const totalVac = (e) => {
+    const slots = slotsByName[e.name] || [];
+    return slots.length || (Number(e.positionsTotal ?? e.positions ?? 0) || 0);
+  };
   dbAvailable = emps.filter(e => {
-    const total = Number(e.positions) || 0, filled = Number(e.filledPositions) || 0;
-    const open = Math.max(0, total - filled);
+    if (e.restrictedToStudentId) return false; // public page hides private orgs
     const hasDesc = !!(e.notes && String(e.notes).trim());
-    return hasDesc && total > 0 && open > 0 && e.approvalStatus !== 'rejected' && e.approvalStatus !== 'pending';
+    return hasDesc && totalVac(e) > 0 && openVac(e) > 0 && e.approvalStatus !== 'rejected' && e.approvalStatus !== 'pending';
   }).length;
 } catch (e) {
   audit.log(`could not preload employer data (non-fatal): ${e.message.slice(0, 100)}`);

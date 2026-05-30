@@ -4,7 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildPlacementPreferences, addPlacementPreference } from '../lib/placement';
+import { buildPlacementPreferences, addPlacementPreference, openVacancies } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
@@ -371,9 +371,7 @@ export default function StudentEditor({
   // Open vacancies for an employer (available slots, or positionsTotal if no
   // slots have been generated yet).
   function openCapacity(e: Employer): number {
-    const slots = (e as any).vacancySlots || [];
-    if (slots.length) return slots.filter((s: any) => s.status === 'available').length;
-    return Math.max(0, Number((e as any).positionsTotal ?? e.positions ?? 0) || 0);
+    return openVacancies(e);
   }
 
   // Employers the admin can send this student to (full list, gated to ones with a
@@ -873,6 +871,35 @@ export default function StudentEditor({
             )}
           </SectionSub>
 
+          {/* Dispatch workflow — co-located right after building the org preferences */}
+          {!isNew && placementExtras && (() => {
+            const studentCourse = courses.find(c => c.id === form.courseId);
+            if (!studentCourse || (studentCourse as any).type !== 'practicum') return null;
+            const ps = placementExtras.placementSettings as PlacementSettings;
+            return (
+              <div style={{ borderTop: '2px solid var(--divider)', marginTop: '24px', paddingTop: '20px' }}>
+                <PlacementPanel
+                  student={form as Student & { cvShareUrl?: string | null; submissionStatus?: string; preferences?: any[] }}
+                  allStudents={placementExtras.allStudents}
+                  employers={employers}
+                  courses={courses}
+                  dispatches={placementExtras.dispatches}
+                  approvalRequests={placementExtras.approvalRequests}
+                  placementSettings={ps}
+                  userName={placementExtras.userName}
+                  onDataChange={async (patch) => {
+                    await placementExtras.onDataChange(patch);
+                    // Keep the form in sync with PlacementPanel's own mutations
+                    // (dispatch → under_review, result → placed/…) so the panel,
+                    // which is fed `form`, reflects them without a reopen.
+                    const me = (patch.students || []).find(s => s.id === form.id) as Student | undefined;
+                    if (me) setForm(f => ({ ...f, preferences: me.preferences || [], submissionStatus: me.submissionStatus, acceptedOrg: me.acceptedOrg ?? f.acceptedOrg }));
+                  }}
+                />
+              </div>
+            );
+          })()}
+
           <SectionSub title="ראיון שיבוץ (רחל — תיאום עם מעסיק)">
             <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>
             <Field label="שעת ראיון שיבוץ"><Input type="time" value={form.placementInterviewTime||''} onChange={v=>update('placementInterviewTime',v)}/></Field>
@@ -1045,34 +1072,6 @@ export default function StudentEditor({
               style={{ flexShrink: 0 }}>בטל</button>
           </div>
 
-          {/* PlacementPanel — dispatch workflow for existing students in practicum courses */}
-          {!isNew && placementExtras && (() => {
-            const studentCourse = courses.find(c => c.id === form.courseId);
-            if (!studentCourse || (studentCourse as any).type !== 'practicum') return null;
-            const ps = placementExtras.placementSettings as PlacementSettings;
-            return (
-              <div style={{ borderTop: '2px solid var(--divider)', marginTop: '32px', paddingTop: '24px' }}>
-                <PlacementPanel
-                  student={form as Student & { cvShareUrl?: string | null; submissionStatus?: string; preferences?: any[] }}
-                  allStudents={placementExtras.allStudents}
-                  employers={employers}
-                  courses={courses}
-                  dispatches={placementExtras.dispatches}
-                  approvalRequests={placementExtras.approvalRequests}
-                  placementSettings={ps}
-                  userName={placementExtras.userName}
-                  onDataChange={async (patch) => {
-                    await placementExtras.onDataChange(patch);
-                    // Keep the form in sync with PlacementPanel's own mutations
-                    // (dispatch → under_review, result → placed/…) so the panel,
-                    // which is fed `form`, reflects them without a reopen.
-                    const me = (patch.students || []).find(s => s.id === form.id) as Student | undefined;
-                    if (me) setForm(f => ({ ...f, preferences: me.preferences || [], submissionStatus: me.submissionStatus, acceptedOrg: me.acceptedOrg ?? f.acceptedOrg }));
-                  }}
-                />
-              </div>
-            );
-          })()}
         </form>
 
     </Modal>

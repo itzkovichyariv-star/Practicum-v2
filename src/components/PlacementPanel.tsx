@@ -9,7 +9,7 @@ import type {
   StudentPreference, VacancySlot,
 } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
-import { renderTemplate, buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
+import { renderTemplate, buildWhatsAppUrl, buildMailtoUrl, openVacancies, reconcileEmployerCapacity } from '../lib/placement';
 import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
 import { showToast } from '../lib/toast';
 
@@ -125,7 +125,7 @@ export default function PlacementPanel({
         history: [...(s.history || []), { at: now, from: s.status, to: 'under_review', by: 'admin', actorId: userName }],
       };
     });
-    const updatedEmp = { ...emp, vacancySlots: updatedSlots };
+    const updatedEmp = reconcileEmployerCapacity({ ...emp, vacancySlots: updatedSlots });
 
     // Update student preference status
     const updatedPrefs = preferences.map((p, i) =>
@@ -206,7 +206,7 @@ export default function PlacementPanel({
       };
     });
 
-    const updatedEmp = { ...emp, vacancySlots: updatedSlots };
+    const updatedEmp = reconcileEmployerCapacity({ ...emp, vacancySlots: updatedSlots });
 
     // Update preference
     const updatedPrefs = preferences.map((p, i) =>
@@ -247,6 +247,27 @@ export default function PlacementPanel({
     const resultLabel = result === 'placed' ? 'שובץ!' : result === 'rejected' ? 'נדחה' : 'בוטל';
     showToast(`✓ ${resultLabel}`, 'success');
     setConfirmDialog(null);
+  }
+
+  // Release a not-yet-sent (tentative) preference: free its reserved vacancy and
+  // drop the row — for when you decide to go with another org instead.
+  async function handleRelease(prefIndex: number, pref: StudentPreference) {
+    const emp = getEmployer(pref.employerId);
+    const now = new Date().toISOString();
+    let nextEmployers = employers;
+    if (emp) {
+      const updatedSlots = ((emp as any).vacancySlots || []).map((s: any) => {
+        if (s.id !== pref.slotId) return s;
+        return { ...s, status: 'available', studentId: null, prefRank: null, history: [...(s.history || []), { at: now, from: s.status, to: 'available', by: 'admin', actorId: userName, reason: 'released' }] };
+      });
+      const updatedEmp = reconcileEmployerCapacity({ ...emp, vacancySlots: updatedSlots });
+      nextEmployers = employers.map(e => e.id === emp.id ? updatedEmp : e);
+    }
+    const updatedPrefs = preferences.filter((_, i) => i !== prefIndex).map((p, i) => ({ ...p, rank: i + 1 }));
+    const updatedStudent = { ...student, preferences: updatedPrefs } as any;
+    const nextStudents = allStudents.map(s => s.id === student.id ? updatedStudent : s);
+    await onDataChange({ students: nextStudents, employers: nextEmployers });
+    showToast('✓ ההעדפה הוסרה והמקום שוחרר', 'success');
   }
 
   const hasAnyUnderReview = preferences.some(p => p.status === 'under_review');
@@ -333,6 +354,17 @@ export default function PlacementPanel({
               <span className="font-semibold text-[14px]" style={{ color: 'var(--ink)' }}>
                 העדפה {pref.rank} — {emp.name}
               </span>
+              {(() => {
+                // Live remaining vacancies at this org — drops when a CV is sent, rises on reject/withdraw.
+                const open = openVacancies(emp);
+                return (
+                  <span className="mono text-[10.5px] px-2 py-0.5 rounded-full"
+                    style={{ background: open > 0 ? 'rgba(5,150,105,0.08)' : 'rgba(180,60,60,0.08)', color: open > 0 ? '#059669' : '#b03030' }}
+                    title="מקומות פנויים בארגון (מתעדכן עם שליחה/ביטול)">
+                    {open > 0 ? `נותרו ${open} מקומות` : 'אין מקומות פנויים'}
+                  </span>
+                );
+              })()}
               {isPending && (
                 <span className="mono text-[10px] px-1.5 py-0.5 rounded"
                   style={{ background: 'rgba(217,119,6,0.15)', color: '#b45309' }}>ממתין לאישור</span>
@@ -384,6 +416,14 @@ export default function PlacementPanel({
                   }}>
                   ✉ מייל
                 </button>
+                {pref.status === 'tentative' && (
+                  <button
+                    onClick={() => handleRelease(idx, pref)}
+                    title="הסר העדפה זו ושחרר את המקום שהשתריין"
+                    style={{ ...btnSmall(), color: 'var(--text-soft)' }}>
+                    ✕ הסר ושחרר מקום
+                  </button>
+                )}
                 {!hasCv && (
                   <span className="mono text-[11px]" style={{ color: '#b91c1c' }}>
                     יש להעלות קו"ח בטופס הסטודנט

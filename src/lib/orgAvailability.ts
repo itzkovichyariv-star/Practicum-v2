@@ -2,6 +2,8 @@
 // Rule: it needs a description (notes) AND open places (positions defined and not
 // all filled) and must not be pending/rejected.
 //   Green dot = available · Purple dot = not available (see `reason`).
+import { openVacancies, totalVacancies } from './placement';
+
 export const ORG_PURPLE = '#9333ea';
 
 export type OrgAvailability = {
@@ -14,9 +16,11 @@ export type OrgAvailability = {
 };
 
 export function orgAvailability(emp: any): OrgAvailability {
-  const total = Number(emp?.positions) || 0;
-  const filled = Number(emp?.filledPositions) || 0;
-  const open = Math.max(0, total - filled);
+  // Capacity from the vacancySlots ledger (single source of truth), falling back
+  // to legacy positions/filledPositions when an employer has no slots yet.
+  const total = totalVacancies(emp);
+  const open = openVacancies(emp);
+  const filled = Math.max(0, total - open);
   const hasDesc = !!(emp?.notes && String(emp.notes).trim());
   const isRejected = emp?.approvalStatus === 'rejected';
   const isPending = emp?.approvalStatus === 'pending';
