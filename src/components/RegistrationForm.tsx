@@ -234,14 +234,16 @@ export default function RegistrationForm() {
           <div className="mt-6 rounded-xl p-5 text-right" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid var(--divider)' }}>
             <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2" style={{ color: 'var(--text-soft)' }}>תיאום ראיון</div>
             <p className="text-[14.5px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
-              לא היו מועדים פנויים בעת ההגשה.
-              לתיאום ראיון יש לפנות ישירות אל מנחה הפרקטיקום:
+              מאחר ולא היו מועדי ראיון זמינים לבחירה, יש ליצור קשר ביוזמתך עם מנחה הפרקטיקום לתיאום מועד ראיון:
             </p>
-            <p className="mt-2 font-semibold text-[15px]" style={{ color: 'var(--ink)' }}>ד״ר איצקוביץ יריב</p>
+            <p className="mt-2 font-semibold text-[15px]" style={{ color: 'var(--ink)' }}>ד״ר יריב איצקוביץ</p>
             <a href="mailto:yarivi@ariel.ac.il" className="mono text-[13px] tracking-[0.06em]"
               style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
               yarivi@ariel.ac.il
             </a>
+            <p className="text-[12.5px] leading-[1.6] mt-3" style={{ color: 'var(--text-soft)' }}>
+              בכל שאלה או בעיה אחרת ניתן לפנות לד״ר יריב איצקוביץ או לרחל.
+            </p>
           </div>
         )}
 
@@ -384,14 +386,16 @@ export default function RegistrationForm() {
           <div className="rounded-xl p-5 text-right" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid var(--divider)' }}>
             <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2" style={{ color: 'var(--text-soft)' }}>תיאום ראיון</div>
             <p className="text-[14.5px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
-              אין מועדים פנויים כרגע להרשמה עצמאית.
-              לתיאום ראיון יש לפנות ישירות אל מנחה הפרקטיקום:
+              אין כרגע מועדי ראיון זמינים לבחירה. ניתן להשלים את ההגשה, ולאחר מכן יש ליצור קשר ביוזמתך עם מנחה הפרקטיקום לתיאום מועד ראיון:
             </p>
-            <p className="mt-2 font-semibold text-[15px]" style={{ color: 'var(--ink)' }}>ד״ר איצקוביץ יריב</p>
+            <p className="mt-2 font-semibold text-[15px]" style={{ color: 'var(--ink)' }}>ד״ר יריב איצקוביץ</p>
             <a href="mailto:yarivi@ariel.ac.il" className="mono text-[13px] tracking-[0.06em]"
               style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
               yarivi@ariel.ac.il
             </a>
+            <p className="text-[12.5px] leading-[1.6] mt-3" style={{ color: 'var(--text-soft)' }}>
+              בכל שאלה או בעיה אחרת ניתן לפנות לד״ר יריב איצקוביץ או לרחל.
+            </p>
           </div>
         )}
 
@@ -477,6 +481,9 @@ function Textarea({ value, onChange, rows = 4, id, error }: {
 }
 
 function Select({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+  // Deduplicate options before rendering — course names can repeat across
+  // academic years, causing React duplicate-key warnings when keyed by value.
+  const unique = options.filter((o, i) => options.indexOf(o) === i);
   return (
     <select value={value} onChange={e => onChange(e.target.value)} className="input w-full"
       style={{
@@ -486,7 +493,7 @@ function Select({ value, onChange, options }: { value: string; onChange: (v: str
         backgroundPosition: 'calc(100% - 14px) center, calc(100% - 10px) center',
         backgroundSize: '5px 5px', backgroundRepeat: 'no-repeat', paddingLeft: '28px',
       }}>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
+      {unique.map((o, i) => <option key={i} value={o}>{o}</option>)}
     </select>
   );
 }

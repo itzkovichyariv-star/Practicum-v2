@@ -56,6 +56,26 @@ Deno.serve(async (req) => {
 
     // ── 1. Confirmation to candidate ────────────────────────────────────
     if (record.email) {
+      const course = record.course_name || record.courseId || '';
+      // The booked slot is recorded in `notes` as "בחר מועד ראיון: <date> <start>–<end>".
+      const note = String(record.notes || '');
+      const slotMatch = note.match(/בחר מועד ראיון:\s*(.+)/);
+      const bookedSlot = slotMatch ? slotMatch[1].trim() : '';
+
+      const interviewSection = bookedSlot
+        ? `
+          <div style="background:#fff;border-radius:8px;padding:16px;margin:18px 0;border:1px solid #7a1e2b">
+            <div style="color:#7a1e2b;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">מועד הראיון שבחרת</div>
+            <div style="font-size:18px;font-weight:bold;color:#3d0f14">📅 ${bookedSlot}</div>
+            <div style="font-size:13px;color:#666;margin-top:8px">נא להגיע במועד שנבחר. אם יש צורך לשנות — ניתן לפנות אלינו.</div>
+          </div>`
+        : `
+          <div style="background:#fff;border-radius:8px;padding:16px;margin:18px 0;border:1px solid #e8e0d5;line-height:1.65">
+            <p style="margin:0 0 8px;font-size:15px">מאחר ולא היו מועדי ראיון פנויים לבחירה בעת ההגשה, יש <strong>ליצור קשר ביוזמתך</strong> עם מנחה הפרקטיקום לתיאום מועד ראיון:</p>
+            <div style="font-size:15px;font-weight:bold">ד״ר יריב איצקוביץ · <a href="mailto:yarivi@ariel.ac.il" style="color:#7a1e2b">yarivi@ariel.ac.il</a></div>
+            <div style="font-size:13px;color:#666;margin-top:8px">בכל שאלה או בעיה אחרת ניתן לפנות לד״ר יריב איצקוביץ או לרחל שליו.</div>
+          </div>`;
+
       const confirmHtml = `
         <!DOCTYPE html><html dir="rtl" lang="he">
         <head><meta charset="UTF-8"></head>
@@ -66,9 +86,9 @@ Deno.serve(async (req) => {
           </div>
           <p style="font-size:15px;line-height:1.65">שלום ${candidateName},</p>
           <p style="font-size:15px;line-height:1.65">
-            טופס המועמדות שלך לפרקטיקום <strong>${record.course_name || record.courseId || ''}</strong> התקבל בהצלחה.
-            ניצור איתך קשר בהקדם לתיאום ראיון.
+            טופס המועמדות וקורות החיים שלך לפרקטיקום <strong>${course}</strong> נקלטו בהצלחה.
           </p>
+          ${interviewSection}
           ${cvPath || appPath ? `
           <div style="background:#fff;border-radius:8px;padding:14px 16px;margin:20px 0;border:1px solid #e8e0d5;font-size:13px">
             <div style="color:#888;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px">קבצים שהועלו</div>
@@ -76,9 +96,6 @@ Deno.serve(async (req) => {
             ${appPath ? `<div style="margin-top:4px">📋 טופס מועמדות — <a href="${storageUrl(appPath)}" style="color:#7a1e2b">צפייה</a></div>` : ''}
           </div>
           ` : ''}
-          <p style="font-size:14px;line-height:1.6;color:#666">
-            אם יש שאלות, ניתן לפנות אלינו בתשובה למייל זה.
-          </p>
           <div style="margin-top:28px;padding-top:14px;border-top:1px solid #ddd;font-size:13px;color:#555">
             בברכה,<br>
             <strong>רחל שליו</strong><br>
