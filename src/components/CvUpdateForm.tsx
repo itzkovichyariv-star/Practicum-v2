@@ -29,6 +29,12 @@ export default function CvUpdateForm() {
   const [sgNotes,   setSgNotes]   = useState('');
   const [status, setStatus] = useState<Status>('idle');
   const [err,    setErr]    = useState<string | null>(null);
+  const errRef = useRef<HTMLDivElement>(null);
+  // Whenever a validation error appears, bring it into view so the user sees
+  // exactly why the submit didn't go through (the button is at the bottom).
+  useEffect(() => {
+    if (err) errRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [err]);
 
   // Load approved organizations (with descriptions) so the candidate can state a preference.
   useEffect(() => {
@@ -64,8 +70,9 @@ export default function CvUpdateForm() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!email.trim()) { setErr('יש להזין מייל'); return; }
-    if (!file)         { setErr('יש לבחור קובץ'); return; }
+    if (!email.trim()) { setErr('יש להזין כתובת מייל'); return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setErr('כתובת המייל אינה תקינה'); return; }
+    if (!file)         { setErr('יש לצרף קובץ קורות חיים (PDF או Word)'); return; }
 
     // Build the suggested-org payload. Required fields apply only when suggesting.
     let suggestedOrg: Record<string, string> | null = null;
@@ -178,7 +185,7 @@ export default function CvUpdateForm() {
         לאחר סדנת קורות חיים — העלה/י את הגרסה המעודכנת כאן.
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div>
           <label className="block">
             <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>מייל *</span>
@@ -320,25 +327,34 @@ export default function CvUpdateForm() {
           )}
         </div>
 
-        {err && (
-          <div className="mono text-[11.5px] uppercase tracking-[0.14em] py-2" style={{ color: 'var(--accent)' }}>
-            {err}
-          </div>
-        )}
+        <div ref={errRef}>
+          {err && (
+            <div className="text-[13.5px] leading-[1.5] rounded-xl px-4 py-3 flex items-start gap-2"
+              style={{ background: 'rgba(122,30,43,0.08)', border: '1px solid var(--accent)', color: 'var(--accent)' }}>
+              <span aria-hidden>⚠️</span>
+              <span style={{ fontWeight: 600 }}>{err}</span>
+            </div>
+          )}
+        </div>
 
         <button
           type="submit"
-          disabled={busy || !file}
+          disabled={busy}
           style={{
             display: 'block', width: '100%', padding: '16px', fontSize: '15px', fontWeight: 600,
-            background: (busy || !file) ? 'var(--divider)' : 'var(--accent)',
+            background: busy ? 'var(--divider)' : 'var(--accent)',
             color: 'white', border: 'none', borderRadius: '12px',
-            cursor: (busy || !file) ? 'not-allowed' : 'pointer',
-            opacity: (busy || !file) ? 0.6 : 1,
+            cursor: busy ? 'not-allowed' : 'pointer',
+            opacity: busy ? 0.6 : 1,
           }}
         >
           {busy ? 'מעלה...' : 'שלח CV מעודכן ←'}
         </button>
+        {!file && (
+          <div className="text-[12px] text-center" style={{ color: 'var(--text-soft)', marginTop: '-8px' }}>
+            יש לצרף קובץ קורות חיים לפני השליחה
+          </div>
+        )}
       </form>
     </div>
   );

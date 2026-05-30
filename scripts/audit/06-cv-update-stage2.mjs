@@ -125,6 +125,42 @@ audit.log('CV-description-reveal: ⓘ תיאור reveals org description matchin
   });
 }
 
+// ─── CV-nofile-feedback ─────────────────────────────────────────────────
+// The submit button must RESPOND when no CV is attached (show a clear error),
+// not sit there as a silent disabled/dead button.
+audit.log('CV-nofile-feedback: submitting with no file shows a clear error (button responds)');
+{
+  await gotoForm();
+  await audit.page.waitForTimeout(300);
+  audit.observerMark();
+
+  const rowsBefore = await sbQuery('cv_updates', { filter: `email=eq.${encodeURIComponent(auditEmail)}`, select: 'id' }).catch(() => []);
+
+  const submit = audit.page.getByRole('button', { name: /שלח CV/ }).first();
+  const isDisabled = await submit.isDisabled().catch(() => null);
+  await submit.scrollIntoViewIfNeeded();
+  await submit.click().catch(() => {});
+  await audit.page.waitForTimeout(700);
+
+  const after = await audit.shot('CV-nofile-feedback-after');
+  const obs = audit.observerSnapshot();
+  const bodyText = await audit.page.evaluate(() => document.body.textContent || '');
+  const showsFileError = /יש לצרף קובץ קורות חיים/.test(bodyText);
+  const rowsAfter = await sbQuery('cv_updates', { filter: `email=eq.${encodeURIComponent(auditEmail)}`, select: 'id' }).catch(() => []);
+  const noRowCreated = rowsAfter.length === rowsBefore.length;
+
+  audit.recordCell({
+    id: 'CV-nofile-feedback',
+    tableRef: '/cv-update / submit with no file → visible error (not a dead button)',
+    expected: 'button is clickable (not disabled); clicking with no file shows "יש לצרף קובץ קורות חיים"; no row created',
+    observed: `disabledBeforeClick=${isDisabled}, fileError=${showsFileError}, rowDelta=${rowsAfter.length - rowsBefore.length}, errors=(${obs.pageErrors.length}p)`,
+    pass: isDisabled === false && showsFileError && noRowCreated && obs.pageErrors.length === 0,
+    after,
+    notes: isDisabled ? 'Submit button is still disabled with no file — it should be clickable and explain why.' :
+           !showsFileError ? 'No file-required error appeared after clicking — button felt unresponsive.' : '',
+  });
+}
+
 // ─── CV-suggestion-required ─────────────────────────────────────────────
 audit.log('CV-suggestion-required: empty suggestion submit shows error + creates NO cv_updates row');
 {
