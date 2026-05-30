@@ -12,6 +12,7 @@ import { randomId } from '../lib/dataApi';
 import { renderTemplate, buildWhatsAppUrl, buildMailtoUrl, openVacancies, reconcileEmployerCapacity } from '../lib/placement';
 import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
 import { showToast } from '../lib/toast';
+import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 
 type Props = {
   student: Student;
@@ -401,29 +402,21 @@ export default function PlacementPanel({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  data-dispatch="whatsapp"
                   onClick={() => handleDispatch(idx, pref, 'whatsapp')}
                   disabled={!hasCv}
-                  title={hasCv ? undefined : 'יש להזין קישור שיתוף לקו"ח לפני שליחה'}
-                  style={{
-                    ...btnSmall(!hasCv),
-                    background: hasCv ? '#25D366' : undefined,
-                    color: hasCv ? 'white' : undefined,
-                    borderColor: hasCv ? '#25D366' : undefined,
-                  }}>
-                  📱 WhatsApp
+                  title={hasCv ? 'שלח קו"ח ב‑WhatsApp' : 'יש להעלות קו"ח לפני שליחה'}
+                  style={dispatchChip(hasCv)}>
+                  <WhatsAppIcon /> WhatsApp
                 </button>
                 <button
                   type="button"
+                  data-dispatch="email"
                   onClick={() => handleDispatch(idx, pref, 'email')}
                   disabled={!hasCv}
-                  title={hasCv ? undefined : 'יש להזין קישור שיתוף לקו"ח לפני שליחה'}
-                  style={{
-                    ...btnSmall(!hasCv),
-                    background: hasCv ? '#2563eb' : undefined,
-                    color: hasCv ? 'white' : undefined,
-                    borderColor: hasCv ? '#2563eb' : undefined,
-                  }}>
-                  ✉ מייל
+                  title={hasCv ? 'שלח קו"ח במייל' : 'יש להעלות קו"ח לפני שליחה'}
+                  style={{ ...dispatchChip(hasCv), color: hasCv ? 'var(--accent)' : 'var(--text-soft)' }}>
+                  <MailIcon /> מייל
                 </button>
                 {pref.status === 'tentative' && (
                   <button type="button"

@@ -64,7 +64,8 @@ audit.log('PLACED-converges: dispatch → נקלט sets acceptedOrg + occupies t
 
       // Stub window.open so the WhatsApp dispatch doesn't launch a tab.
       await audit.page.evaluate(() => { window.open = () => null; });
-      const waBtn = audit.page.locator('button').filter({ hasText: '📱 WhatsApp' }).first();
+      // Dispatch WhatsApp button (stable test hook, unambiguous vs the pref-link one).
+      const waBtn = audit.page.locator('[data-dispatch="whatsapp"]').first();
       await waBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
       if (await waBtn.count() > 0) { await waBtn.scrollIntoViewIfNeeded(); await waBtn.click().catch(() => {}); dispatched = true; }
 

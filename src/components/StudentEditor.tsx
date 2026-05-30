@@ -10,6 +10,7 @@ import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import Modal from './Modal';
 import PlacementPanel from './PlacementPanel';
+import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 
 type PlacementExtras = {
   allStudents: Student[];
@@ -730,9 +731,13 @@ export default function StudentEditor({
               <div className="flex gap-2 flex-wrap">
                 <button type="button" onClick={copyPrefLink} style={{ ...btnSmall(), whiteSpace: 'nowrap' }}>📋 העתק קישור</button>
                 <button type="button" onClick={waPrefLink} disabled={!(form.phone || '').trim()}
-                  style={{ ...btnSmall(!(form.phone || '').trim()), background: (form.phone || '').trim() ? '#25D366' : undefined, color: (form.phone || '').trim() ? 'white' : undefined, borderColor: (form.phone || '').trim() ? '#25D366' : undefined, whiteSpace: 'nowrap' }}>💬 WhatsApp</button>
+                  style={dispatchChip(!!(form.phone || '').trim())}>
+                  <WhatsAppIcon /> WhatsApp
+                </button>
                 <button type="button" onClick={mailPrefLink} disabled={!(form.email || '').trim()}
-                  style={{ ...btnSmall(!(form.email || '').trim()), background: (form.email || '').trim() ? '#2563eb' : undefined, color: (form.email || '').trim() ? 'white' : undefined, borderColor: (form.email || '').trim() ? '#2563eb' : undefined, whiteSpace: 'nowrap' }}>✉ מייל</button>
+                  style={{ ...dispatchChip(!!(form.email || '').trim()), color: (form.email || '').trim() ? 'var(--accent)' : 'var(--text-soft)' }}>
+                  <MailIcon /> מייל
+                </button>
               </div>
             </div>
             {cvHistory.length > 0 && (() => {

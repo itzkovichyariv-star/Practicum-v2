@@ -66,7 +66,7 @@ audit.log('PREFLINK-copy: student card copies the personalized stage-2 link');
         clip = await audit.page.evaluate(() => navigator.clipboard?.readText?.().then(t => t).catch(() => '') ?? '');
       }
       hasWa = await audit.page.evaluate(() => [...document.querySelectorAll('button')].some(b => /WhatsApp/.test(b.textContent || '')));
-      hasMail = await audit.page.evaluate(() => [...document.querySelectorAll('button')].some(b => (b.textContent || '').trim() === '✉ מייל'));
+      hasMail = await audit.page.evaluate(() => [...document.querySelectorAll('button')].some(b => (b.textContent || '').trim() === 'מייל'));
     }
   }
 
