@@ -110,8 +110,11 @@ export class Audit {
     this.startMs = Date.now();
     mkdirSync(this.out, { recursive: true });
     this.log(`OUT = ${this.out}`);
-    this.log('Launching headed Chromium...');
-    this.browser = await chromium.launch({ headless: false, slowMo: this.slowMo });
+    // Headless by default so audit runs don't steal window focus / pop up windows.
+    // Opt into a visible browser with AUDIT_HEADED=1 when you want to watch.
+    const headed = process.env.AUDIT_HEADED === '1';
+    this.log(headed ? 'Launching headed Chromium...' : 'Launching headless Chromium (set AUDIT_HEADED=1 to watch)...');
+    this.browser = await chromium.launch({ headless: !headed, slowMo: headed ? this.slowMo : 0 });
     this.ctx = await this.browser.newContext({
       viewport: this.viewport,
       locale: 'he-IL',
@@ -135,14 +138,9 @@ export class Audit {
         if (/JSON object requested.*0 rows/.test(text)) return;
         if (/permission denied for/.test(text)) return;
         if (/PGRST116|PGRST204/.test(text)) return;                         // PostgREST "no rows" codes
-        // React duplicate-key warnings — KNOWN ISSUE in practicum v2 form
-        // rendering (Yariv 2026-05-28). Filed separately; filter so the
-        // audit doesn't fail on this until it's fixed. When fixed, REMOVE
-        // this filter so the audit catches any new instance.
-        if (/two children with the same key|same key/.test(text)) {
-          this._reactKeyWarnings = (this._reactKeyWarnings || 0) + 1;
-          return;
-        }
+        // React duplicate-key warnings — bug was fixed 2026-05-28 (Select
+        // component now deduplicates options + uses index keys). Filter
+        // removed so future regressions are caught as real failures.
         this._consoleErrors.push(text);
       }
     });
