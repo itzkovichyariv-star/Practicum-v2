@@ -42,23 +42,37 @@ export default function Modal({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Body-scroll-lock: the only reliable iOS Safari modal scroll technique
+  // Scroll-lock. The aggressive position:fixed body lock is ONLY needed on iOS
+  // Safari (its overflow-scroll-inside-fixed bug). On DESKTOP that same hack can
+  // strand the page after repeated open/close cycles — it felt "frozen". So on
+  // desktop we use a plain overflow:hidden (reliable, no scroll-position juggling),
+  // and keep the position:fixed technique only for touch / iOS devices.
   useEffect(() => {
-    const scrollY = window.scrollY;
     const body = document.body;
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
+    const isTouch = typeof window !== 'undefined' && (
+      window.matchMedia?.('(pointer: coarse)')?.matches ||
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) // iPadOS reports as Mac
+    );
+    if (isTouch) {
+      const scrollY = window.scrollY;
+      body.style.position = 'fixed';
+      body.style.top = `-${scrollY}px`;
+      body.style.left = '0';
+      body.style.right = '0';
+      body.style.overflow = 'hidden';
+      return () => {
+        body.style.position = '';
+        body.style.top = '';
+        body.style.left = '';
+        body.style.right = '';
+        body.style.overflow = '';
+        window.scrollTo(0, scrollY);
+      };
+    }
+    const prevOverflow = body.style.overflow;
     body.style.overflow = 'hidden';
-    return () => {
-      body.style.position = '';
-      body.style.top = '';
-      body.style.left = '';
-      body.style.right = '';
-      body.style.overflow = '';
-      window.scrollTo(0, scrollY);
-    };
+    return () => { body.style.overflow = prevOverflow; };
   }, []);
 
   return (
