@@ -8,6 +8,9 @@ import type {
   PlacementSettings,
   Employer,
   Course,
+  Student,
+  StudentPreference,
+  VacancySlot,
 } from './supabase';
 
 // ── Default Hebrew templates ──────────────────────────────────────────────────
@@ -260,6 +263,92 @@ export function buildWhatsAppUrl(rawPhone: string, message: string): string {
 
 export function buildMailtoUrl(email: string, subject: string, body: string): string {
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+// ── Build placement preferences from a candidate's chosen org names ───────────
+//
+// The bridge between the candidate's free-text org choices (org_pref_1/2/3 /
+// firstChoiceOrg strings) and the structured StudentPreference[] that
+// PlacementPanel needs to dispatch a CV to an employer. For each org name, in
+// order, it: resolves the name → an Employer, reserves an available VacancySlot
+// (generating slots from positionsTotal if the employer has none yet), and
+// pushes a tentative StudentPreference. Orgs that can't be matched or have no
+// open slot are returned in `unresolved` so the admin can swap them.
+//
+// Pure: inputs are never mutated; returns fresh student + employers arrays.
+export function buildPlacementPreferences(
+  student: Student,
+  orderedOrgNames: string[],
+  employers: Employer[],
+  opts: { actorId: string; now?: string },
+): {
+  updatedStudent: Student;
+  updatedEmployers: Employer[];
+  built: Array<{ rank: number; orgName: string; employerId: string }>;
+  unresolved: Array<{ orgName: string; reason: string }>;
+} {
+  const now = opts.now || new Date().toISOString();
+  const emps: Employer[] = employers.map(e => ({ ...e }));
+  const prefs: StudentPreference[] = [];
+  const built: Array<{ rank: number; orgName: string; employerId: string }> = [];
+  const unresolved: Array<{ orgName: string; reason: string }> = [];
+  const usedEmployerIds = new Set<string>();
+
+  for (const rawName of orderedOrgNames) {
+    const orgName = (rawName || '').trim();
+    if (!orgName) continue;
+
+    const empIdx = emps.findIndex(e => (e.name || '').trim().toLowerCase() === orgName.toLowerCase());
+    if (empIdx < 0) { unresolved.push({ orgName, reason: 'לא נמצא ברשימת הארגונים' }); continue; }
+
+    const emp = emps[empIdx];
+    if (usedEmployerIds.has(emp.id)) continue; // candidate listed the same org twice — keep one
+
+    const approval = (emp as any).approvalStatus ?? 'approved';
+    if (approval === 'rejected') { unresolved.push({ orgName, reason: 'הארגון נדחה' }); continue; }
+    const restricted = (emp as any).restrictedToStudentId;
+    if (restricted && restricted !== student.id) { unresolved.push({ orgName, reason: 'הארגון פרטי למועמד/ת אחר/ת' }); continue; }
+
+    // Ensure the employer has slots (lazily generate from positionsTotal).
+    let slots: VacancySlot[] = ((emp as any).vacancySlots || []).map((s: any) => ({ ...s }));
+    if (slots.length === 0) {
+      const total = Math.max(1, Number((emp as any).positionsTotal ?? emp.positions ?? 1) || 1);
+      const courseId = (emp.courseIds && emp.courseIds[0]) || student.courseId || '';
+      slots = Array.from({ length: total }, (_, i) => ({
+        id: `${emp.id}-s${i + 1}`, courseId, status: 'available', studentId: null, prefRank: null,
+        history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
+      }));
+    }
+
+    // Reuse a slot already held by this student here, else take an available one.
+    let slot = slots.find(s => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'))
+      || slots.find(s => s.status === 'available');
+    if (!slot) { unresolved.push({ orgName, reason: 'אין מקום פנוי' }); continue; }
+
+    const rank = built.length + 1;
+    if (slot.status === 'available') {
+      slot.status = 'tentative';
+      slot.studentId = student.id;
+      slot.prefRank = rank;
+      slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'tentative', by: 'admin', actorId: opts.actorId }];
+    } else {
+      slot.prefRank = rank;
+    }
+    (emp as any).vacancySlots = slots;
+    if ((emp as any).positionsTotal == null) (emp as any).positionsTotal = slots.length;
+
+    usedEmployerIds.add(emp.id);
+    prefs.push({ rank, employerId: emp.id, slotId: slot.id, status: 'tentative' });
+    built.push({ rank, orgName: emp.name, employerId: emp.id });
+  }
+
+  const updatedStudent: Student = {
+    ...student,
+    preferences: prefs,
+    // Mark "submitted" so the placement workflow is active (never downgrade a placed student).
+    submissionStatus: student.submissionStatus === 'placed' ? 'placed' : (prefs.length ? 'submitted' : student.submissionStatus),
+  };
+  return { updatedStudent, updatedEmployers: emps, built, unresolved };
 }
 
 // ── Availability logic ────────────────────────────────────────────────────────

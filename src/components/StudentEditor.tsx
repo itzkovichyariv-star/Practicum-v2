@@ -4,6 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
+import { buildPlacementPreferences } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
@@ -73,9 +74,15 @@ export default function StudentEditor({
     feedbackToken: student?.feedbackToken || '',
     feedbackSubmittedAt: student?.feedbackSubmittedAt || '',
     placedAt: student?.placedAt || '',
-    // Placement extension
+    // Placement extension — carried through the form so PlacementPanel (fed `form`)
+    // can see them and so a normal save never drops them.
     cvShareUrl: (student as any)?.cvShareUrl || '',
+    preferences: student?.preferences || [],
+    submissionStatus: student?.submissionStatus,
   });
+  // Result of the last "build placements" action (built rows + flagged orgs).
+  const [buildResult, setBuildResult] = useState<{ built: Array<{ rank: number; orgName: string }>; unresolved: Array<{ orgName: string; reason: string }> } | null>(null);
+  const [building, setBuilding] = useState(false);
 
   const prepPassed = !!form.preparation?.passed;
 
@@ -249,8 +256,8 @@ export default function StudentEditor({
 
   // Approve a candidate-suggested org: make it the student's 1st choice AND create it
   // as a private (restricted) approved employer so it's tracked for placement.
-  async function approveSuggestion() {
-    const o = pendingCv?.suggested_org;
+  async function approveSuggestion(suggested?: SuggestedOrg | null, cvRowId?: string) {
+    const o = suggested || pendingCv?.suggested_org;
     if (!o?.name) return;
     const emp: Employer = {
       id: randomId('emp'),
@@ -264,15 +271,21 @@ export default function StudentEditor({
       restrictedToStudentId: form.id,
       addedBy: form.email || 'candidate',
       courseIds: form.courseId ? [form.courseId] : [],
-    };
+      // A private org has one position for this candidate — gives the placement
+      // build a slot to reserve when it becomes the first choice.
+      positionsTotal: 1,
+    } as Employer;
     await onApproveSuggestion?.(emp);
     setForm(f => ({ ...f, firstChoiceOrg: o.name!, firstChoiceResult: 'pending' }));
-    if (pendingCv) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+    const rowId = cvRowId || pendingCv?.id;
+    if (rowId) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', rowId);
     setSuggestionDecided('approved');
+    showToast(`✓ הצעת "${o.name}" אושרה — הפכה לבחירה ראשונה`, 'success');
   }
 
-  async function rejectSuggestion() {
-    if (pendingCv) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+  async function rejectSuggestion(cvRowId?: string) {
+    const rowId = cvRowId || pendingCv?.id;
+    if (rowId) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', rowId);
     setSuggestionDecided('rejected');
   }
 
@@ -314,6 +327,46 @@ export default function StudentEditor({
     setForm(f => ({ ...f, preparation: { ...(f.preparation || {}), [k]: v } as any }));
   }
 
+  // One-click bridge: turn the candidate's chosen orgs (admin first/second choice
+  // + the candidate's submitted org_pref_1/2/3, in order) into structured
+  // placement preferences with reserved slots, so PlacementPanel can dispatch the
+  // CV to each employer. Flags orgs that are unmatched / full.
+  async function buildPlacements() {
+    if (!placementExtras) return;
+    const latest = cvHistory[0];
+    const ordered: string[] = [];
+    const push = (v?: string | null) => {
+      const t = (v || '').trim();
+      if (t && !ordered.some(o => o.toLowerCase() === t.toLowerCase())) ordered.push(t);
+    };
+    push(form.firstChoiceOrg);
+    push(form.secondChoiceOrg);
+    if (latest) { push(latest.org_pref_1); push(latest.org_pref_2); push(latest.org_pref_3); }
+
+    if (ordered.length === 0) {
+      showToast('אין העדפות ארגון לבנות — לא נבחרו ארגונים', 'error');
+      return;
+    }
+
+    setBuilding(true);
+    const base: Student = { ...((student || {}) as Student), ...form };
+    const { updatedStudent, updatedEmployers, built, unresolved } =
+      buildPlacementPreferences(base, ordered, employers, { actorId: placementExtras.userName });
+
+    setForm(f => ({ ...f, preferences: updatedStudent.preferences, submissionStatus: updatedStudent.submissionStatus }));
+    const nextStudents = placementExtras.allStudents.map(s => s.id === base.id ? updatedStudent : s);
+    try {
+      await placementExtras.onDataChange({ students: nextStudents, employers: updatedEmployers });
+      setBuildResult({ built: built.map(b => ({ rank: b.rank, orgName: b.orgName })), unresolved });
+      if (built.length) showToast(`✓ נבנו ${built.length} העדפות — ניתן לשלוח קו"ח למטה`, 'success');
+      else showToast('לא נבנו העדפות — אף ארגון לא זמין לשליחה', 'error');
+    } catch (e: any) {
+      showToast('שגיאה בבניית ההעדפות: ' + (e?.message || ''), 'error');
+    } finally {
+      setBuilding(false);
+    }
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) { alert('שם הסטודנט/ית חסר'); return; }
@@ -340,7 +393,9 @@ export default function StudentEditor({
       return;
     }
 
-    let saved = form;
+    // Merge over the original student so placement fields the form doesn't track
+    // (preferences, submissionStatus, vacancy data, …) are never clobbered on save.
+    let saved: Student = { ...((student || {}) as Student), ...form };
     // Auto-stamp placedAt the first time acceptedOrg is recorded
     if (saved.acceptedOrg && !student?.acceptedOrg && !saved.placedAt) {
       saved = { ...saved, placedAt: new Date().toISOString().slice(0, 10) };
@@ -565,11 +620,11 @@ export default function StudentEditor({
                   {pendingCv.suggested_org.notes && <div className="mt-1" style={{ opacity: 0.8, whiteSpace: 'pre-wrap' }}>{pendingCv.suggested_org.notes}</div>}
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <button type="button" onClick={approveSuggestion} style={{
+                  <button type="button" onClick={() => approveSuggestion(pendingCv?.suggested_org, pendingCv?.id)} style={{
                     padding: '7px 14px', fontSize: '12px', fontWeight: 600,
                     background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer',
                   }}>✓ אשר — צור ארגון פרטי וקבע כבחירה ראשונה</button>
-                  <button type="button" onClick={rejectSuggestion} style={{
+                  <button type="button" onClick={() => rejectSuggestion(pendingCv?.id)} style={{
                     padding: '7px 14px', fontSize: '12px', fontWeight: 600,
                     background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '999px', cursor: 'pointer',
                   }}>דחה</button>
@@ -626,11 +681,36 @@ export default function StudentEditor({
                       );
                     })}
                   </ol>
-                  {latest.suggested_org?.name && (
-                    <div className="mt-2 text-[12px]" style={{ color: 'var(--ink)' }}>
-                      🔆 הצעת ארגון מהמועמד/ת: <strong>{latest.suggested_org.name}</strong>
-                    </div>
-                  )}
+                  {latest.suggested_org?.name && (() => {
+                    const sg = latest.suggested_org;
+                    const approved = suggestionDecided === 'approved'
+                      || employers.some(e => (e as any).restrictedToStudentId === form.id && (e.name || '').trim() === (sg.name || '').trim());
+                    const rejected = suggestionDecided === 'rejected';
+                    return (
+                      <div className="mt-2 rounded-lg p-2.5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px dashed var(--accent)' }}>
+                        <div className="text-[12px]" style={{ color: 'var(--ink)' }}>
+                          🔆 הצעת ארגון מהמועמד/ת: <strong>{sg.name}</strong>
+                          {sg.contactName ? <span style={{ color: 'var(--text-soft)' }}> · {sg.contactName}{sg.contactRole ? ` (${sg.contactRole})` : ''}</span> : null}
+                        </div>
+                        {approved ? (
+                          <div className="mt-1 text-[11.5px] font-semibold" style={{ color: '#15803d' }}>✓ אושרה — נקבעה כבחירה ראשונה</div>
+                        ) : rejected ? (
+                          <div className="mt-1 text-[11.5px]" style={{ color: 'var(--text-soft)' }}>ההצעה נדחתה</div>
+                        ) : (
+                          <div className="flex gap-2 mt-2">
+                            <button type="button" onClick={() => approveSuggestion(sg, latest.id)}
+                              style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer' }}>
+                              ✓ אשר כבחירה ראשונה
+                            </button>
+                            <button type="button" onClick={() => rejectSuggestion(latest.id)}
+                              style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '999px', cursor: 'pointer' }}>
+                              דחה
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {cvHistory.length > 1 && (
                     <>
                       <button type="button" onClick={() => setShowHistory(s => !s)}
@@ -694,6 +774,37 @@ export default function StudentEditor({
                   { value: 'failed', label: 'לא עבר' },
                 ]}/>
             </Field>
+
+            {/* One-click: build placement preferences → activates CV dispatch below */}
+            {!isNew && placementExtras && (courses.find(c => c.id === form.courseId) as any)?.type === 'practicum' && (
+              <div className="col-span-full rounded-xl p-3.5 mt-1" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="text-[13px] leading-[1.5]" style={{ color: 'var(--ink)' }}>
+                    <span className="font-semibold">הכנת העדפות לשליחה למעסיקים</span>
+                    <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                      בונה את רשימת ההעדפות מבחירת המועמד/ת (וההצעה שאושרה), משריין מקום פנוי בכל ארגון, ומפעיל את שליחת הקו"ח למטה.
+                    </div>
+                  </div>
+                  <button type="button" onClick={buildPlacements} disabled={building}
+                    style={{ ...btnSmall(building), background: building ? undefined : 'var(--accent)', color: building ? undefined : 'white', borderColor: 'var(--accent)', whiteSpace: 'nowrap' }}>
+                    {building ? 'בונה…' : (form.preferences || []).length > 0 ? '↻ עדכן העדפות לשליחה' : '✓ אשר העדפות והכן לשליחה'}
+                  </button>
+                </div>
+                {buildResult && (
+                  <div className="mt-2.5 pt-2.5 text-[12.5px] space-y-1" style={{ borderTop: '1px dashed var(--divider)' }}>
+                    {buildResult.built.map(b => (
+                      <div key={b.rank} style={{ color: 'var(--ink)' }}>✓ העדפה {b.rank}: {b.orgName} — מוכן לשליחה</div>
+                    ))}
+                    {buildResult.unresolved.map((u, i) => (
+                      <div key={'u' + i} style={{ color: '#b45309' }}>⚠ {u.orgName} — {u.reason} (החלף/י ידנית למעלה ובנה/י שוב)</div>
+                    ))}
+                    {buildResult.built.length === 0 && buildResult.unresolved.length === 0 && (
+                      <div style={{ color: 'var(--text-soft)' }}>לא נבחרו ארגונים.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </SectionSub>
 
           <SectionSub title="ראיון שיבוץ (רחל — תיאום עם מעסיק)">
@@ -884,7 +995,14 @@ export default function StudentEditor({
                   approvalRequests={placementExtras.approvalRequests}
                   placementSettings={ps}
                   userName={placementExtras.userName}
-                  onDataChange={placementExtras.onDataChange}
+                  onDataChange={async (patch) => {
+                    await placementExtras.onDataChange(patch);
+                    // Keep the form in sync with PlacementPanel's own mutations
+                    // (dispatch → under_review, result → placed/…) so the panel,
+                    // which is fed `form`, reflects them without a reopen.
+                    const me = (patch.students || []).find(s => s.id === form.id) as Student | undefined;
+                    if (me) setForm(f => ({ ...f, preferences: me.preferences || [], submissionStatus: me.submissionStatus, acceptedOrg: me.acceptedOrg ?? f.acceptedOrg }));
+                  }}
                 />
               </div>
             );
