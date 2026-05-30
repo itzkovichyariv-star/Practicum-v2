@@ -6,7 +6,8 @@ import type { Student, Employer, Course, Dispatch } from '../lib/supabase';
 import { countSlotsByStatus } from '../lib/placement';
 
 type ReportKey = 'yoy' | 'timeline' | 'orgs' | 'students' | 'candidates' | 'lecturers'
-              | 'placement_vacancy' | 'placement_dispatches' | 'placement_employers' | 'placement_students';
+              | 'placement_vacancy' | 'placement_dispatches' | 'placement_employers' | 'placement_students'
+              | 'placement_by_org';
 
 const REPORTS: { key: ReportKey; title: string; desc: string }[] = [
   { key: 'yoy',        title: 'השוואה בין שנים', desc: 'מדדי מפתח לפי שנה אקדמית — מסוננים לפי הקשר הנבחר. כשלא נבחר קורס מוצגים כל הנתונים.' },
@@ -19,6 +20,7 @@ const REPORTS: { key: ReportKey; title: string; desc: string }[] = [
   { key: 'placement_dispatches', title: '📤 יומן שליחות',   desc: 'כל שליחויות המועמדות — סטודנט, מעסיק, ערוץ, תאריך, תוצאה ואורך המתנה.' },
   { key: 'placement_employers',  title: '🏢 מעסיקים — שיבוץ', desc: 'פירוט לפי מעסיק: כמה מועמדויות נשלחו, שובצו, ואחוז קבלה.' },
   { key: 'placement_students',   title: '👤 סטודנטים — שיבוץ', desc: 'פירוט לפי סטודנט: סטטוס, כמה שליחויות, ימי המתנה והעדפה נוכחית.' },
+  { key: 'placement_by_org',     title: '🏢 שיבוץ לפי ארגון — פירוט', desc: 'לכל ארגון: אילו סטודנטים נשלחו, הסטטוס, הערוץ והתאריך, וכמה מקומות נותרו פנויים. מקובץ לפי ארגון · להדפסה / CSV.' },
 ];
 
 export default function ReportsPage({ data, context }: PageProps & { data: any }) {
@@ -344,6 +346,45 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
           ];
         });
         return { headers: ['סטודנט', 'קורס', 'סטטוס', 'שליחויות', 'ימי המתנה', 'העדפה נוכחית'], rows };
+      }
+
+      /* ── Placement: per-organization detail (who was sent, status, remaining) ── */
+      case 'placement_by_org': {
+        const statusLabel = (st: string) => ({
+          tentative: 'ממתין לשליחה', under_review: 'בבדיקה אצל מעסיק',
+          placed: '✅ שובץ', rejected: '❌ נדחה', withdrawn: '🚫 בוטל',
+        } as Record<string, string>)[st] || st || '—';
+        const groups = allEmployers
+          .map(e => ({ e, studs: allStudents.filter(s => ((s as any).preferences || []).some((p: any) => p.employerId === e.id)) }))
+          .filter(g => g.studs.length > 0)
+          .sort((a, b) => (a.e.name || '').localeCompare(b.e.name || '', 'he'));
+        if (groups.length === 0) return { headers: [], rows: [] };
+        const rows: string[][] = [];
+        for (const { e, studs } of groups) {
+          const c = countSlotsByStatus(e as any);
+          const cap = `${c.available} / ${c.total}`;
+          const sorted = [...studs].sort((a, b) => {
+            const pa = ((a as any).preferences || []).find((p: any) => p.employerId === e.id)?.rank ?? 99;
+            const pb = ((b as any).preferences || []).find((p: any) => p.employerId === e.id)?.rank ?? 99;
+            return pa - pb;
+          });
+          for (const s of sorted) {
+            const pref = ((s as any).preferences || []).find((p: any) => p.employerId === e.id);
+            const ds = dispatches.filter(d => d.studentId === s.id && d.employerId === e.id)
+              .sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+            const last = ds[0];
+            rows.push([
+              e.name,
+              cap,
+              s.name || '',
+              pref ? `#${pref.rank}` : '—',
+              statusLabel(pref?.status),
+              last ? (last.channel === 'whatsapp' ? 'WhatsApp' : 'מייל') : '—',
+              last ? new Date(last.sentAt).toLocaleDateString('he-IL') : '—',
+            ]);
+          }
+        }
+        return { headers: ['ארגון', 'פנויים / סה"כ', 'סטודנט', 'העדפה', 'סטטוס', 'ערוץ אחרון', 'תאריך שליחה'], rows };
       }
 
       default: return null;
