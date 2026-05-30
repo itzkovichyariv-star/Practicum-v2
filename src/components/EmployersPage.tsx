@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { btnPrimary, btnSecondary, btnSmall, btnTab } from '../lib/design';
 import type { Employer, EmployerApprovalRequest, Student } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { normalizeYear } from './pageShared';
-import { saveSnapshot } from '../lib/dataApi';
+import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
@@ -44,6 +45,62 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const all: Employer[] = data.employers || [];
   const courses = data.courses || [];
   const students: Student[] = data.students || [];
+
+  // ── Pending candidate org-suggestions (from /cv-update) awaiting approval ──
+  type Suggestion = { id: string; email: string; name: string | null; suggested_org: any };
+  const [pendingSuggestions, setPendingSuggestions] = useState<Suggestion[]>([]);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('cv_updates')
+      .select('id, email, name, suggested_org')
+      .is('seen_at', null)
+      .not('suggested_org', 'is', null)
+      .order('uploaded_at', { ascending: false })
+      .then(({ data }) => { if (alive) setPendingSuggestions((data || []).filter((r: any) => r.suggested_org?.name)); });
+    return () => { alive = false; };
+  }, []);
+
+  async function approveSuggestion(sug: Suggestion) {
+    const o = sug.suggested_org || {};
+    const student = students.find(s => (s.email || '').trim().toLowerCase() === (sug.email || '').trim().toLowerCase());
+    const emp: Employer = {
+      id: randomId('emp'),
+      name: o.name,
+      contactPerson: o.contactName || '',
+      contactPhone: o.phone || '',
+      contactEmail: o.email || '',
+      location: o.location || '',
+      notes: [o.contactRole ? `תפקיד איש הקשר: ${o.contactRole}` : '', o.notes || '', `(הצעת מועמד/ת: ${sug.name || sug.email})`].filter(Boolean).join('\n'),
+      approvalStatus: 'approved',
+      restrictedToStudentId: student?.id || null,
+      addedBy: sug.email || 'candidate',
+      courseIds: student?.courseId ? [student.courseId] : [],
+    } as any;
+    const updatedEmps = [...all, emp];
+    const updatedStudents = student
+      ? students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: o.name, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student : s)
+      : students;
+    setSaving(true);
+    const res = await saveSnapshot(
+      { ...data, employers: updatedEmps, students: updatedStudents },
+      { name: userName },
+      { action: 'אישר הצעת ארגון', entity: 'ארגון', target: o.name }
+    );
+    setSaving(false);
+    if (!res.ok) { showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
+    (data.employers as any) = updatedEmps;
+    (data.students as any) = updatedStudents;
+    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id);
+    setPendingSuggestions(p => p.filter(x => x.id !== sug.id));
+    showToast(student ? '✓ אושר — נוסף כארגון פרטי ונקבע כבחירה ראשונה' : '✓ אושר — נוסף כארגון פרטי', 'success');
+    onRefresh();
+  }
+
+  async function dismissSuggestion(sug: Suggestion) {
+    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id);
+    setPendingSuggestions(p => p.filter(x => x.id !== sug.id));
+    showToast('הצעת הארגון נדחתה', 'success');
+  }
 
   const years = useMemo(() => {
     const set = new Set<string>();
@@ -247,6 +304,41 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                 }}>⊞</button>
             </div>
           </div>
+
+          {/* Pending candidate org-suggestions — review & approve here */}
+          {pendingSuggestions.length > 0 && (
+            <div className="mb-6 rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
+              <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-3" style={{ color: 'var(--accent)' }}>
+                ⚠ {pendingSuggestions.length} {pendingSuggestions.length === 1 ? 'הצעת ארגון מהמועמדים' : 'הצעות ארגון מהמועמדים'} — דרוש אישור
+              </div>
+              <div className="space-y-3">
+                {pendingSuggestions.map(sug => {
+                  const o = sug.suggested_org || {};
+                  return (
+                    <div key={sug.id} className="rounded-lg p-3" style={{ background: 'var(--bg)', border: '1px solid var(--divider)' }}>
+                      <div className="text-[14px] leading-[1.7]" style={{ color: 'var(--ink)' }}>
+                        <div><strong>{o.name}</strong>{o.location ? ` · ${o.location}` : ''}</div>
+                        <div style={{ fontSize: '12.5px', color: 'var(--text-soft)' }}>הוצע ע״י: {sug.name || sug.email}</div>
+                        <div style={{ fontSize: '12.5px' }}>איש/אשת קשר: {o.contactName || '—'}{o.contactRole ? ` (${o.contactRole})` : ''}</div>
+                        <div dir="ltr" style={{ textAlign: 'right', fontSize: '12.5px' }}>{[o.email, o.phone].filter(Boolean).join(' · ')}</div>
+                        {o.notes && <div style={{ fontSize: '12.5px', opacity: 0.85, whiteSpace: 'pre-wrap', marginTop: 4 }}>{o.notes}</div>}
+                      </div>
+                      <div className="flex gap-2 mt-3">
+                        <button type="button" onClick={() => approveSuggestion(sug)} disabled={saving}
+                          style={{ padding: '6px 13px', fontSize: '12px', fontWeight: 600, background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer' }}>
+                          ✓ אשר — צור ארגון פרטי למועמד/ת
+                        </button>
+                        <button type="button" onClick={() => dismissSuggestion(sug)} disabled={saving}
+                          style={{ padding: '6px 13px', fontSize: '12px', fontWeight: 600, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '999px', cursor: 'pointer' }}>
+                          דחה
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Legend — dot meanings + count not available to students */}
           {filtered.length > 0 && (

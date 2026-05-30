@@ -6,7 +6,7 @@
  *   ORG-loads        /organizations page renders without crash and shows
  *                    either employer cards or an empty-state message.
  *   ORG-count        The number of cards on screen matches the count shown
- *                    in the header badge ("N ארגונות").
+ *                    in the header badge ("N ארגונים").
  *   ORG-expand       Clicking an employer card with notes expands the
  *                    description panel (chevron flips, body text visible).
  *   ORG-search       Typing a search term filters the list — result count
@@ -27,8 +27,8 @@ audit.log('ORG-loads: /organizations page loads and renders');
   const before = await audit.shot('ORG-loads-before');
   audit.observerMark();
 
-  // Page heading should say "ארגונות לפרקטיקום"
-  const heading = audit.page.locator('text=ארגונות לפרקטיקום').first();
+  // Page heading should say "ארגונים לפרקטיקום"
+  const heading = audit.page.locator('text=ארגונים לפרקטיקום').first();
   const headingVisible = await heading.isVisible().catch(() => false);
 
   // Either employer cards or empty-state must be visible
@@ -40,7 +40,7 @@ audit.log('ORG-loads: /organizations page loads and renders');
   audit.recordCell({
     id: 'ORG-loads',
     tableRef: '/organizations / page heading',
-    expected: '"ארגונות לפרקטיקום" heading visible; search input rendered; no page errors',
+    expected: '"ארגונים לפרקטיקום" heading visible; search input rendered; no page errors',
     observed: `heading=${headingVisible}, search=${searchVisible}; errors=(${obs.consoleErrors.length}c/${obs.pageErrors.length}p/${obs.netFailures.length}n)`,
     pass: headingVisible && searchVisible && obs.pageErrors.length === 0,
     before, after,
@@ -60,8 +60,8 @@ audit.log('ORG-count: card count matches badge');
   // avoiding the ambiguity of filtering ancestor divs.
   const cardCount = await audit.page.locator('text=🏢').count();
 
-  // Read the count text from the page ("N ארגונות")
-  const countText = await audit.page.locator('text=/\\d+ ארגונות/').first().textContent().catch(() => '');
+  // Read the count text from the page ("N ארגונים")
+  const countText = await audit.page.locator('text=/\\d+ ארגונים/').first().textContent().catch(() => '');
   const match = countText.match(/(\d+)/);
   const badgeCount = match ? parseInt(match[1], 10) : -1;
 
@@ -76,7 +76,7 @@ audit.log('ORG-count: card count matches badge');
   audit.recordCell({
     id: 'ORG-count',
     tableRef: '/organizations / card count vs badge',
-    expected: 'Number of rendered employer cards equals the "N ארגונות" badge',
+    expected: 'Number of rendered employer cards equals the "N ארגונים" badge',
     observed: `cardCount=${cardCount}, badgeCount=${badgeCount}, dbActiveEmps=${dbEmps.length}`,
     pass,
     notes: !pass
@@ -211,7 +211,7 @@ audit.log('ORG-no-auth: page accessible without admin session');
   await freshPage.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
   await freshPage.waitForTimeout(1500);
 
-  const heading = freshPage.locator('text=ארגונות לפרקטיקום').first();
+  const heading = freshPage.locator('text=ארגונים לפרקטיקום').first();
   const headingVisible = await heading.isVisible().catch(() => false);
 
   // Must NOT show a password gate or auth wall

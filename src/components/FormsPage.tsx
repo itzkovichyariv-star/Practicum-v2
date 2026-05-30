@@ -378,7 +378,7 @@ function QuickLinksCard() {
     { title: '🌐 ציבורי', links: [
       { label: 'שלב 1 · טופס הרשמת מועמדים', url: `${base}/register/`, hash: null },
       { label: 'שלב 2 · עדכון קו״ח + בחירת ארגון', url: `${base}/cv-update/`, hash: null },
-      { label: 'שלב 2 · רשימת הארגונות', url: `${base}/organizations`, hash: null },
+      { label: 'שלב 2 · רשימת הארגונים', url: `${base}/organizations`, hash: null },
       { label: 'המערכת הישנה (v1)', url: 'https://itzkovichyariv-star.github.io/Practicum/', hash: null },
     ]},
     { title: '🛠 ניהול Supabase', links: [
@@ -546,7 +546,7 @@ function Stage2LinkCard() {
       </div>
       <div className="flex flex-col gap-5">
         <CopyOpenRow label="טופס עדכון קו״ח (שלב 2)" url={cvLink} />
-        <CopyOpenRow label="רשימת הארגונות לעיון" url={orgLink} />
+        <CopyOpenRow label="רשימת הארגונים לעיון" url={orgLink} />
       </div>
     </section>
   );

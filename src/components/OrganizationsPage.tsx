@@ -138,6 +138,8 @@ export default function OrganizationsPage() {
         // Filter: only approved (or unset) employers with at least a name
         const active = allEmps.filter(e => {
           if (!e.name) return false;
+          // Private (candidate-suggested) orgs are not shown in the public list.
+          if ((e as any).restrictedToStudentId) return false;
           // Only orgs ready for students: description + open places, not pending/rejected.
           if (!orgAvailability(e).available) return false;
           // If course filter provided, employer must serve that course
@@ -172,7 +174,7 @@ export default function OrganizationsPage() {
         textAlign: 'center',
       }}>
         <div style={{ fontSize: '22px', fontWeight: 800, letterSpacing: '-0.01em' }}>
-          ארגונות לפרקטיקום
+          ארגונים לפרקטיקום
         </div>
         <div style={{ fontSize: '13px', marginTop: '6px', opacity: 0.85 }}>
           אוניברסיטת אריאל · תכנית הפרקטיקום במשאבי אנוש
@@ -196,7 +198,7 @@ export default function OrganizationsPage() {
         />
         {!loading && (
           <div style={{ fontSize: '12px', color: 'var(--text-soft)', marginTop: '10px', marginBottom: '4px' }}>
-            {filtered.length} ארגונות
+            {filtered.length} ארגונים
             {search ? ` תואמים "${search}"` : ' זמינים לפרקטיקום'}
             {' · לחץ/י על ארגון לקריאת התיאור'}
           </div>
@@ -211,7 +213,7 @@ export default function OrganizationsPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', paddingTop: '60px', color: 'var(--text-soft)' }}>
-            {search ? 'לא נמצאו ארגונות תואמים' : 'אין ארגונות זמינים כרגע'}
+            {search ? 'לא נמצאו ארגונים תואמים' : 'אין ארגונים זמינים כרגע'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

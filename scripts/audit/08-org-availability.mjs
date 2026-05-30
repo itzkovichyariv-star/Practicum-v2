@@ -71,7 +71,7 @@ audit.log('STUDENT-hidden: /organizations hides incomplete orgs');
   const after = await audit.shot('STUDENT-hidden');
   // count cards on the public page
   const studentCount = await audit.page.evaluate(() => {
-    const m = (document.body.textContent || '').match(/(\d+)\s*ארגונות/);
+    const m = (document.body.textContent || '').match(/(\d+)\s*ארגונים/);
     return m ? Number(m[1]) : null;
   });
   const obs = audit.observerSnapshot();
@@ -85,6 +85,43 @@ audit.log('STUDENT-hidden: /organizations hides incomplete orgs');
     pass, after,
     notes: studentCount !== dbAvailable ? `Student count ${studentCount} != available ${dbAvailable}.` : '',
   });
+}
+
+// ─── ADMIN-suggestions ────────────────────────────────────────────────
+// Pending candidate org-suggestions (from /cv-update) must surface in the
+// Employers admin list for review/approval. (Presence only — never approves.)
+audit.log('ADMIN-suggestions: pending candidate org-suggestions appear in the Employers list');
+{
+  let pendingCount = 0;
+  try {
+    const sugs = await sbQuery('cv_updates', { select: 'id,suggested_org,seen_at', filter: 'seen_at=is.null&suggested_org=not.is.null' });
+    pendingCount = (sugs || []).filter(r => r.suggested_org?.name).length;
+  } catch (e) { audit.log(`cv_updates query (non-fatal): ${e.message.slice(0, 80)}`); }
+
+  await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));
+  await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1500);
+  audit.observerMark();
+  const after = await audit.shot('ADMIN-suggestions');
+  const sectionShown = await audit.page.evaluate(() => /ארגון מהמועמדים/.test(document.body.textContent || ''));
+  const obs = audit.observerSnapshot();
+
+  if (pendingCount === 0) {
+    audit.recordCell({
+      id: 'ADMIN-suggestions', tableRef: 'Employers / pending suggestions section',
+      expected: 'section shown when pending suggestions exist',
+      observed: 'no pending candidate suggestions in cv_updates', pass: null,
+      notes: 'Data-dependent: nothing pending to exercise.',
+    });
+  } else {
+    audit.recordCell({
+      id: 'ADMIN-suggestions', tableRef: 'Employers / pending suggestions section',
+      expected: `'הצעות ארגון מהמועמדים' section visible (${pendingCount} pending)`,
+      observed: `sectionShown=${sectionShown}, dbPending=${pendingCount}, errors=(${obs.pageErrors.length}p)`,
+      pass: sectionShown && obs.pageErrors.length === 0, after,
+      notes: !sectionShown ? 'Pending suggestions exist but the section is not shown.' : '',
+    });
+  }
 }
 
 await audit.teardown();

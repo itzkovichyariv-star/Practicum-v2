@@ -43,6 +43,8 @@ export default function CvUpdateForm() {
         const opts = all
           .filter(e => {
             if (!e?.name) return false;
+            // Private (candidate-suggested) orgs aren't offered as preferences here.
+            if (e.restrictedToStudentId) return false;
             // Only orgs ready for students: description + open places, not pending/rejected.
             if (!orgAvailability(e).available) return false;
             if (courseParam) {
