@@ -34,6 +34,14 @@ export default function Modal({
   children,
 }: Props) {
 
+  // Escape closes the editor — so you can always get out (e.g. to switch screens
+  // via the top nav, which an open modal otherwise covers).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   // Body-scroll-lock: the only reliable iOS Safari modal scroll technique
   useEffect(() => {
     const scrollY = window.scrollY;
@@ -65,6 +73,19 @@ export default function Modal({
         overscrollBehavior: 'contain',
       } as React.CSSProperties}
     >
+      {/* Always-visible close — fixed in the corner so you can exit at any scroll
+          position (the open modal otherwise covers the top nav). Esc also closes. */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="סגור"
+        title="סגור (Esc)"
+        className="fixed top-4 left-4 z-[210] w-9 h-9 rounded-full grid place-items-center"
+        style={{ background: 'var(--bg)', border: '1px solid var(--divider)', boxShadow: '0 2px 10px rgba(26,22,18,0.18)', color: 'var(--ink)', fontSize: '15px', cursor: 'pointer' }}
+      >
+        ✕
+      </button>
+
       {/* Centering wrapper — click outside card to close */}
       <div
         className="min-h-full py-6 px-4 flex items-start justify-center"
