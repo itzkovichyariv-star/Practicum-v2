@@ -109,23 +109,23 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
 
     const orgsLink = `${window.location.origin}/organizations`;
 
-    if (recipients.length === 1) {
-      // Single recipient — personalize {{שם}} with their name
-      const r = recipients[0];
+    // Every recipient gets their OWN draft (TO, not BCC) so their name and a
+    // personal cv-update link are prefilled. A single BCC email shares one body
+    // across everyone, so it physically can't carry per-person links — that's
+    // why group sends used to fall back to a placeholder. Sending individually
+    // fixes that AND is more private (no shared recipient list — each person
+    // only ever sees their own address).
+    if (recipients.length > 8 &&
+        !window.confirm(`ייפתחו ${recipients.length} טיוטות נפרדות (אחת לכל נמען, עם קישור אישי). להמשיך?`)) {
+      return;
+    }
+    for (const r of recipients) {
       const cvLink = `${window.location.origin}/cv-update/?email=${encodeURIComponent(r.email)}&name=${encodeURIComponent(r.name)}`;
       const personalBody = body
-        .replace(/\{\{שם\}\}/g, r.name)
+        .replace(/\{\{שם\}\}/g, r.name || '')
         .replace(/\{\{קישור_קוח\}\}/g, cvLink)
         .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
       openMailto(`mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`);
-    } else {
-      // Group — BCC all, replace {{שם}} with generic placeholder
-      const bcc = recipients.map(r => r.email).filter(Boolean).join(',');
-      const groupBody = body
-        .replace(/\{\{שם\}\}/g, '[שם הנמען]')
-        .replace(/\{\{קישור_קוח\}\}/g, '[קישור אישי לעדכון קו"ח ייושלח לכל אחד בנפרד]')
-        .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
-      openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(groupBody)}`);
     }
 
     // Optimistically mark as "email sent" so we don't re-prompt for the same person
@@ -135,9 +135,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       const i = next.findIndex(c => c.id === r.id);
       if (i >= 0) next[i] = { ...next[i], [field]: true };
     }
-    persistAndRefresh(next, `✉ Outlook נפתח ל‑${recipients.length} נמענים`);
+    const word = recipients.length === 1 ? 'טיוטה מותאמת אישית' : `${recipients.length} טיוטות מותאמות אישית`;
+    persistAndRefresh(next, `✉ נפתחו ${word} ב‑Outlook`);
     setEmailConfirm(null);
-    showToast(`✓ נפתח Outlook ל‑${recipients.length} נמענים`, 'success');
+    showToast(`✓ נפתחו ${word} ב‑Outlook (קישור אישי לכל נמען)`, 'success');
   }
 
   const all = data.candidates || [];
@@ -750,7 +751,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
               </div>
               {emailConfirm.recipients.length > 1 && (
                 <div className="mono text-[10.5px] mt-2" style={{ color: 'var(--text-soft)' }}>
-                  {'ⓘ שליחה קבוצתית — כולם ב‑BCC, ללא שם אישי ({{שם}} יוחלף ב‑[שם הנמען])'}
+                  {`ⓘ תיפתח טיוטה נפרדת לכל נמען — השם והקישור האישי לעדכון קו"ח ימולאו אוטומטית (${emailConfirm.recipients.length} טיוטות)`}
                 </div>
               )}
             </div>
@@ -778,7 +779,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
               />
             </label>
             <div className="mono text-[10.5px] mb-3" style={{ color: 'var(--text-soft)' }}>
-              {'ⓘ ניתן לערוך נושא ותוכן. לנמען יחיד — {{שם}} יוחלף בשמו האישי.'}
+              {'ⓘ ניתן לערוך נושא ותוכן. {{שם}} ו{{קישור_קוח}} מוחלפים פר נמען בשמו ובקישור האישי שלו.'}
             </div>
             {emailConfirm.type === 'acceptance' && emailConfirm.body.includes('⚠️ תאריך טרם נקבע') && (
               <div className="mono text-[11px] mb-4 px-3 py-2 rounded-lg" style={{ background: 'rgba(200,100,0,0.08)', border: '1px solid rgba(200,100,0,0.25)', color: '#b85c00' }}>
