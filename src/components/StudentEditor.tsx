@@ -4,7 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, generateFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildPlacementPreferences } from '../lib/placement';
+import { buildPlacementPreferences, addPlacementPreference } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
@@ -83,6 +83,7 @@ export default function StudentEditor({
   // Result of the last "build placements" action (built rows + flagged orgs).
   const [buildResult, setBuildResult] = useState<{ built: Array<{ rank: number; orgName: string }>; unresolved: Array<{ orgName: string; reason: string }> } | null>(null);
   const [building, setBuilding] = useState(false);
+  const [extraOrg, setExtraOrg] = useState(''); // ad-hoc "send to an employer outside the list"
 
   const prepPassed = !!form.preparation?.passed;
 
@@ -362,6 +363,55 @@ export default function StudentEditor({
       else showToast('לא נבנו העדפות — אף ארגון לא זמין לשליחה', 'error');
     } catch (e: any) {
       showToast('שגיאה בבניית ההעדפות: ' + (e?.message || ''), 'error');
+    } finally {
+      setBuilding(false);
+    }
+  }
+
+  // Open vacancies for an employer (available slots, or positionsTotal if no
+  // slots have been generated yet).
+  function openCapacity(e: Employer): number {
+    const slots = (e as any).vacancySlots || [];
+    if (slots.length) return slots.filter((s: any) => s.status === 'available').length;
+    return Math.max(0, Number((e as any).positionsTotal ?? e.positions ?? 0) || 0);
+  }
+
+  // Employers the admin can send this student to (full list, gated to ones with a
+  // free vacancy unless the bypass is on; excludes other students' private orgs
+  // and ones already on the dispatch list).
+  function dispatchableEmployerOptions() {
+    const alreadyIds = new Set((form.preferences || []).map(p => p.employerId));
+    return employers
+      .filter(e => {
+        if ((e as any).restrictedToStudentId && (e as any).restrictedToStudentId !== form.id) return false;
+        if (alreadyIds.has(e.id)) return false;
+        if ((e as any).approvalStatus === 'rejected') return false;
+        return showAllOrgs || openCapacity(e) > 0;
+      })
+      .map(e => {
+        const open = openCapacity(e);
+        return { value: e.name, label: open > 0 ? `${e.name} — ${open} מקומות פנויים` : `${e.name} — מלא` };
+      });
+  }
+
+  // Ad-hoc: send the CV to an employer outside the candidate's chosen list,
+  // reserving one of that employer's vacancies.
+  async function addExtraEmployer() {
+    if (!placementExtras || !extraOrg.trim()) return;
+    const emp = employers.find(e => (e.name || '').trim().toLowerCase() === extraOrg.trim().toLowerCase());
+    if (!emp) { showToast('ארגון לא נמצא ברשימה', 'error'); return; }
+    setBuilding(true);
+    const base: Student = { ...((student || {}) as Student), ...form };
+    const { updatedStudent, updatedEmployers, ok, reason } = addPlacementPreference(base, emp, employers, { actorId: placementExtras.userName });
+    if (!ok) { showToast(reason || 'לא ניתן להוסיף את הארגון', 'error'); setBuilding(false); return; }
+    setForm(f => ({ ...f, preferences: updatedStudent.preferences, submissionStatus: updatedStudent.submissionStatus }));
+    const nextStudents = placementExtras.allStudents.map(s => s.id === base.id ? updatedStudent : s);
+    try {
+      await placementExtras.onDataChange({ students: nextStudents, employers: updatedEmployers });
+      showToast(`✓ "${emp.name}" נוסף לשליחה — שוריין מקום`, 'success');
+      setExtraOrg('');
+    } catch (e: any) {
+      showToast('שגיאה: ' + (e?.message || ''), 'error');
     } finally {
       setBuilding(false);
     }
@@ -788,6 +838,22 @@ export default function StudentEditor({
                   <button type="button" onClick={buildPlacements} disabled={building}
                     style={{ ...btnSmall(building), background: building ? undefined : 'var(--accent)', color: building ? undefined : 'white', borderColor: 'var(--accent)', whiteSpace: 'nowrap' }}>
                     {building ? 'בונה…' : (form.preferences || []).length > 0 ? '↻ עדכן העדפות לשליחה' : '✓ אשר העדפות והכן לשליחה'}
+                  </button>
+                </div>
+
+                {/* Ad-hoc: send to an employer outside the candidate's chosen list (still reserves a vacancy) */}
+                <div className="mt-3 pt-3 flex items-end gap-2 flex-wrap" style={{ borderTop: '1px dashed var(--divider)' }}>
+                  <div className="flex-1 min-w-[220px]">
+                    <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>
+                      שליחה לארגון נוסף (מחוץ לרשימת ההעדפות)
+                    </span>
+                    <Select value={extraOrg} onChange={setExtraOrg}
+                      options={dispatchableEmployerOptions()}
+                      placeholder="בחר/י ארגון מהרשימה" />
+                  </div>
+                  <button type="button" onClick={addExtraEmployer} disabled={building || !extraOrg}
+                    style={{ ...btnSmall(building || !extraOrg), whiteSpace: 'nowrap' }}>
+                    ➕ הוסף לשליחה ושריין מקום
                   </button>
                 </div>
                 {buildResult && (

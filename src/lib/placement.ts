@@ -351,6 +351,59 @@ export function buildPlacementPreferences(
   return { updatedStudent, updatedEmployers: emps, built, unresolved };
 }
 
+// ── Add a single ad-hoc placement (employer outside the candidate's list) ─────
+//
+// Appends ONE employer to the student's dispatch list, reserving a vacancy slot,
+// WITHOUT touching existing preferences (so already-dispatched rows keep their
+// status). Used for "send a CV to an employer the candidate didn't choose — and
+// still occupy one of that employer's vacancies".
+export function addPlacementPreference(
+  student: Student,
+  employer: Employer,
+  employers: Employer[],
+  opts: { actorId: string; now?: string },
+): { updatedStudent: Student; updatedEmployers: Employer[]; ok: boolean; reason?: string } {
+  const now = opts.now || new Date().toISOString();
+  const prefs = student.preferences || [];
+  if (prefs.some(p => p.employerId === employer.id)) {
+    return { updatedStudent: student, updatedEmployers: employers, ok: false, reason: 'הארגון כבר ברשימת השליחה' };
+  }
+  const emps: Employer[] = employers.map(e => ({ ...e }));
+  const idx = emps.findIndex(e => e.id === employer.id);
+  if (idx < 0) return { updatedStudent: student, updatedEmployers: employers, ok: false, reason: 'הארגון לא נמצא ברשימה' };
+  const emp = emps[idx];
+
+  let slots: VacancySlot[] = ((emp as any).vacancySlots || []).map((s: any) => ({ ...s }));
+  if (slots.length === 0) {
+    const total = Math.max(1, Number((emp as any).positionsTotal ?? emp.positions ?? 1) || 1);
+    const courseId = (emp.courseIds && emp.courseIds[0]) || student.courseId || '';
+    slots = Array.from({ length: total }, (_, i) => ({
+      id: `${emp.id}-s${i + 1}`, courseId, status: 'available', studentId: null, prefRank: null,
+      history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
+    }));
+  }
+  const slot = slots.find(s => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'))
+    || slots.find(s => s.status === 'available');
+  if (!slot) return { updatedStudent: student, updatedEmployers: employers, ok: false, reason: 'אין מקום פנוי בארגון' };
+
+  const rank = prefs.reduce((m, p) => Math.max(m, p.rank), 0) + 1;
+  if (slot.status === 'available') {
+    slot.status = 'tentative';
+    slot.studentId = student.id;
+    slot.prefRank = rank;
+    slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'tentative', by: 'admin', actorId: opts.actorId }];
+  }
+  (emp as any).vacancySlots = slots;
+  if ((emp as any).positionsTotal == null) (emp as any).positionsTotal = slots.length;
+
+  const updatedStudent: Student = {
+    ...student,
+    preferences: [...prefs, { rank, employerId: emp.id, slotId: slot.id, status: 'tentative' }],
+    submissionStatus: student.submissionStatus === 'placed' ? 'placed' : 'submitted',
+  };
+  return { updatedStudent, updatedEmployers: emps, ok: true };
+}
+
 // ── Availability logic ────────────────────────────────────────────────────────
 
 /**

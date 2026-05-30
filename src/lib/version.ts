@@ -9,4 +9,4 @@
 //
 // Bump semver:  npm run bump:patch | bump:minor | bump:major  (these drop the SHA)
 // Build counter + SHA are stamped automatically via the `predeploy` hook in package.json.
-export const APP_VERSION = 'v1.7.0+build.16.82577d5b';
+export const APP_VERSION = 'v1.8.0+build.16';
