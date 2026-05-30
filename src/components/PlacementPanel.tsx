@@ -227,6 +227,13 @@ export default function PlacementPanel({
     }
 
     const updatedStudent = { ...student, preferences: updatedPrefs, submissionStatus: newSubmissionStatus } as any;
+    // Converge the two final-placement paths: a placement here also records the
+    // accepted org + placement date, so the rest of the app sees the student as
+    // placed (and the slot is already 'placed' above — one occupancy, not two).
+    if (result === 'placed') {
+      updatedStudent.acceptedOrg = emp.name;
+      if (!updatedStudent.placedAt) updatedStudent.placedAt = now.slice(0, 10);
+    }
 
     // Update matching dispatch record
     const updatedDispatches = dispatches.map(d => {
@@ -289,8 +296,8 @@ export default function PlacementPanel({
             <span className="text-[13px]" style={{ color: 'var(--ink)' }}>
               {student.cvUpdatedUrl ? '✓ קו"ח מעודכן (אחרי הכנה)' : '✓ קו"ח מקורי'}
             </span>
-            <button onClick={() => window.open(cvLink, '_blank')} style={btnSmall()}>פתח ↗</button>
-            <button onClick={copyCvLink} style={btnSmall()}>
+            <button type="button" onClick={() => window.open(cvLink, '_blank')} style={btnSmall()}>פתח ↗</button>
+            <button type="button" onClick={copyCvLink} style={btnSmall()}>
               {copyMsg || '📋 העתק קישור'}
             </button>
             <span className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
@@ -393,6 +400,7 @@ export default function PlacementPanel({
             {(pref.status === 'tentative' || (isOrphan && pref.status === 'under_review')) && !isPlaced && (
               <div className="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => handleDispatch(idx, pref, 'whatsapp')}
                   disabled={!hasCv}
                   title={hasCv ? undefined : 'יש להזין קישור שיתוף לקו"ח לפני שליחה'}
@@ -405,6 +413,7 @@ export default function PlacementPanel({
                   📱 WhatsApp
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleDispatch(idx, pref, 'email')}
                   disabled={!hasCv}
                   title={hasCv ? undefined : 'יש להזין קישור שיתוף לקו"ח לפני שליחה'}
@@ -417,7 +426,7 @@ export default function PlacementPanel({
                   ✉ מייל
                 </button>
                 {pref.status === 'tentative' && (
-                  <button
+                  <button type="button"
                     onClick={() => handleRelease(idx, pref)}
                     title="הסר העדפה זו ושחרר את המקום שהשתריין"
                     style={{ ...btnSmall(), color: 'var(--text-soft)' }}>
@@ -435,16 +444,19 @@ export default function PlacementPanel({
             {pref.status === 'under_review' && !isOrphan && (
               <div className="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => setConfirmDialog({ type: 'placed', prefIndex: idx, pref })}
                   style={{ ...btnSmall(), background: '#059669', color: 'white', borderColor: '#059669' }}>
                   ✅ נקלט
                 </button>
                 <button
+                  type="button"
                   onClick={() => setConfirmDialog({ type: 'rejected', prefIndex: idx, pref })}
                   style={{ ...btnSmall(), background: '#dc2626', color: 'white', borderColor: '#dc2626' }}>
                   ❌ נדחה
                 </button>
                 <button
+                  type="button"
                   onClick={() => setConfirmDialog({ type: 'withdrawn', prefIndex: idx, pref })}
                   style={btnSmall()}>
                   🚫 בטל מועמדות
@@ -456,16 +468,19 @@ export default function PlacementPanel({
             {isOrphan && (
               <div className="flex flex-wrap gap-2 mt-1">
                 <button
+                  type="button"
                   onClick={() => setConfirmDialog({ type: 'withdrawn', prefIndex: idx, pref })}
                   style={{ ...btnSmall(), background: 'rgba(217,119,6,0.1)', borderColor: '#b45309', color: '#92400e' }}>
                   📱 שלח הודעת ביטול — WhatsApp
                 </button>
                 <button
+                  type="button"
                   onClick={() => setConfirmDialog({ type: 'withdrawn', prefIndex: idx, pref })}
                   style={{ ...btnSmall(), background: 'rgba(217,119,6,0.1)', borderColor: '#b45309', color: '#92400e' }}>
                   ✉ שלח הודעת ביטול — Email
                 </button>
                 <button
+                  type="button"
                   onClick={() => setConfirmDialog({ type: 'mark_cancelled', prefIndex: idx, pref })}
                   style={btnSmall()}>
                   ✓ סמן כבוטל
@@ -528,12 +543,12 @@ export default function PlacementPanel({
               </div>
               {isWithdrawal && (
                 <div className="flex flex-col gap-2 mb-4">
-                  <button
+                  <button type="button"
                     onClick={() => handleResult(prefIndex, pref, 'withdrawn', 'whatsapp')}
                     style={{ ...btnPrimary(), background: '#25D366', width: '100%', textAlign: 'center' }}>
                     📱 פתח WhatsApp + סמן בוטל
                   </button>
-                  <button
+                  <button type="button"
                     onClick={() => handleResult(prefIndex, pref, 'withdrawn', 'email')}
                     style={{ ...btnPrimary(), background: '#2563eb', width: '100%', textAlign: 'center' }}>
                     ✉ פתח מייל + סמן בוטל
@@ -541,9 +556,9 @@ export default function PlacementPanel({
                 </div>
               )}
               <div className="flex gap-3 justify-between">
-                <button onClick={() => setConfirmDialog(null)} style={btnSecondary()}>ביטול</button>
+                <button type="button" onClick={() => setConfirmDialog(null)} style={btnSecondary()}>ביטול</button>
                 {!isWithdrawal && (
-                  <button
+                  <button type="button"
                     onClick={() => {
                       if (isMarkCancelled) handleResult(prefIndex, pref, 'withdrawn');
                       else handleResult(prefIndex, pref, type as 'placed' | 'rejected');

@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
+import { occupyAcceptedOrgSlot } from '../lib/placement';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
 import PlacementPanel from './PlacementPanel';
@@ -248,14 +249,13 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     if (idx >= 0) next[idx] = s;
     setEditing(null); setCreating(false);
 
-    // Auto-increment filledPositions when acceptedOrg is newly set
+    // Occupy a vacancy slot at the org when acceptedOrg is newly set (the unified
+    // capacity ledger — replaces the old bare filledPositions++).
     const orgJustSet = s.acceptedOrg && !previous?.acceptedOrg;
     if (orgJustSet) {
       const empIdx = employers.findIndex(e => e.name === s.acceptedOrg);
       if (empIdx >= 0) {
-        const updatedEmps = [...employers];
-        const emp = updatedEmps[empIdx];
-        updatedEmps[empIdx] = { ...emp, filledPositions: (emp.filledPositions || 0) + 1 };
+        const updatedEmps = occupyAcceptedOrgSlot(s, employers, { actorId: userName });
         setSaving(true); setSaveMsg(null);
         const res = await saveSnapshot(
           { ...data, students: next, employers: updatedEmps },

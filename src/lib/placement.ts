@@ -433,6 +433,56 @@ export function addPlacementPreference(
   return { updatedStudent, updatedEmployers: emps, ok: true };
 }
 
+// ── Occupy a slot when a student's final org is recorded (acceptedOrg) ────────
+//
+// Keeps the slot ledger the single source of truth: setting "ארגון מאכסן בפועל"
+// occupies one vacancy at that org (→ placed), instead of the old bare
+// filledPositions++. Idempotent — if the student already holds a slot there it
+// just ensures it's marked placed. Returns a fresh employers array.
+export function occupyAcceptedOrgSlot(
+  student: Student,
+  employers: Employer[],
+  opts: { actorId: string; now?: string },
+): Employer[] {
+  const orgName = ((student as any).acceptedOrg || '').trim();
+  if (!orgName) return employers;
+  const now = opts.now || new Date().toISOString();
+  const emps = employers.map(e => ({ ...e }));
+  const idx = emps.findIndex(e => (e.name || '').trim().toLowerCase() === orgName.toLowerCase());
+  if (idx < 0) return employers;
+  const emp: any = emps[idx];
+
+  let slots: VacancySlot[] = (emp.vacancySlots || []).map((s: any) => ({ ...s }));
+  const held = slots.find(s => s.studentId === student.id);
+  if (held) {
+    if (held.status !== 'placed') {
+      held.history = [...(held.history || []), { at: now, from: held.status, to: 'placed', by: 'admin', actorId: opts.actorId }];
+      held.status = 'placed';
+    }
+    emp.vacancySlots = slots;
+    emps[idx] = reconcileEmployerCapacity(emp);
+    return emps;
+  }
+  if (slots.length === 0) {
+    const total = Math.max(1, Number(emp.positionsTotal ?? emp.positions ?? 1) || 1);
+    const courseId = (emp.courseIds && emp.courseIds[0]) || student.courseId || '';
+    slots = Array.from({ length: total }, (_, i) => ({
+      id: `${emp.id}-s${i + 1}`, courseId, status: 'available', studentId: null, prefRank: null,
+      history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
+    }));
+  }
+  const slot = slots.find(s => s.status === 'available');
+  if (slot) {
+    slot.status = 'placed';
+    slot.studentId = student.id;
+    slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'placed', by: 'admin', actorId: opts.actorId }];
+  }
+  // No available slot → org is full; acceptedOrg still recorded, open stays 0.
+  emp.vacancySlots = slots;
+  emps[idx] = reconcileEmployerCapacity(emp);
+  return emps;
+}
+
 // ── Availability logic ────────────────────────────────────────────────────────
 
 /**
