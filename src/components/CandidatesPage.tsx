@@ -213,6 +213,20 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     setTimeout(() => setSaveMsg(null), 2500);
   }
 
+  // Silent debounced auto-save from the candidate editor (live interview notes).
+  // Persists without a toast or refresh so it doesn't disrupt the open card; the
+  // editor shows its own "נשמר ☁️" indicator. No auto-convert / validation — a
+  // plain draft persist (the explicit save still enforces the pipeline rules).
+  async function handleCandidateAutoSave(c: Candidate) {
+    const idx = all.findIndex(x => x.id === c.id);
+    if (idx < 0) return; // only existing candidates
+    const next = [...all];
+    next[idx] = c;
+    const res = await saveSnapshot({ ...data, candidates: next }, { name: userName });
+    if (!res.ok) throw new Error(res.error || 'save failed');
+    (data.candidates as Candidate[]) = next;
+  }
+
   async function handleSave(c: Candidate) {
     // Require interview summary before pass/fail
     if ((c.interviewResult === 'passed' || c.interviewResult === 'failed') && !c.interviewSummary?.trim()) {
@@ -856,6 +870,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
           defaultCourseId={context.courseId}
           defaultYear={context.year}
           onSave={handleSave}
+          onAutoSave={editing ? handleCandidateAutoSave : undefined}
           onDelete={editing ? handleDelete : undefined}
           onConvertToStudent={handleConvertToStudent}
           onClose={() => { setEditing(null); setCreating(false); }}

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Candidate, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
@@ -19,13 +19,15 @@ type Props = {
   defaultCourseId?: string;
   defaultYear?: string;
   onSave: (c: Candidate) => void;
+  /** Debounced silent persist so a live interview assessment is never lost. */
+  onAutoSave?: (c: Candidate) => Promise<void>;
   onDelete?: (id: string) => void;
   onConvertToStudent?: (c: Candidate) => void;
   onClose: () => void;
 };
 
 export default function CandidateEditor({
-  candidate, courses, years, defaultCourseId, defaultYear, onSave, onDelete, onConvertToStudent, onClose,
+  candidate, courses, years, defaultCourseId, defaultYear, onSave, onAutoSave, onDelete, onConvertToStudent, onClose,
 }: Props) {
   const isNew = !candidate;
   const [form, setForm] = useState<Candidate>({
@@ -54,6 +56,27 @@ export default function CandidateEditor({
     submittedAt: candidate?.submittedAt || '',
     convertedToStudentId: candidate?.convertedToStudentId || undefined,
   });
+
+  // ── Auto-save (debounced) — a live interview assessment is never lost ──
+  // Persists ~1.5s after you stop editing, silently. The pass/fail decision can
+  // stay "ממתין" — it's saved like any other field, no decision is forced.
+  const [autoSave, setAutoSave] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    if (!onAutoSave || !form.name.trim()) return;
+    // While the result is "ממתין" we auto-save freely (the whole point). Once a
+    // pass/fail is set we mirror the explicit-save rules so we never persist an
+    // invalid final state: passed/failed need a summary; failed also needs a reason.
+    if ((form.interviewResult === 'passed' || form.interviewResult === 'failed') && !form.interviewSummary?.trim()) return;
+    if (form.interviewResult === 'failed' && !form.rejectionReason?.trim()) return;
+    const t = setTimeout(async () => {
+      setAutoSave('saving');
+      try { await onAutoSave(form); setAutoSave('saved'); }
+      catch { setAutoSave('error'); }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [form]); // re-armed on every edit; the timeout debounces
 
   // Pipeline stage
   const hasDocs = !!form.cvUrl;
@@ -128,6 +151,11 @@ export default function CandidateEditor({
                 style={{ color: passed || alreadyConverted ? 'var(--accent)' : 'var(--text-soft)' }}>
                 שלב: {stage}
               </div>
+              {onAutoSave && !isNew && autoSave !== 'idle' && (
+                <div className="mono text-[11px] mt-1.5" style={{ color: autoSave === 'error' ? '#b91c1c' : autoSave === 'saving' ? 'var(--text-soft)' : '#15803d' }}>
+                  {autoSave === 'saving' ? 'שומר…' : autoSave === 'saved' ? '✓ נשמר אוטומטית ☁️' : '⚠ שמירה אוטומטית נכשלה — לחץ/י שמור'}
+                </div>
+              )}
             </div>
             <button type="button" onClick={onClose} className="mono text-[11px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">סגור ✕</button>
           </div>
