@@ -962,7 +962,7 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
   const [form, setForm] = useState({
     name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל',
     autoSendAcceptance: true, autoSendRejection: false,
-    type: 'other' as 'practicum' | 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '',
+    type: 'other' as 'practicum' | 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '', workshopDate: '',
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1007,13 +1007,14 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
       preferenceCount: form.type === 'practicum' ? form.preferenceCount : undefined,
       reviewAgingThresholdDays: form.type === 'practicum' ? form.reviewAgingThresholdDays : undefined,
       acceptanceNote: form.type === 'practicum' ? form.acceptanceNote : undefined,
+      workshopDate: form.type === 'practicum' ? form.workshopDate : undefined,
     };
     // Duplicate check
     const dup = courses.find(c => c.name === newCourse.name && normalizeYear(c.year || '') === newCourse.year);
     if (dup) { alert('קורס באותו שם ושנה כבר קיים'); return; }
     const ok = await saveCourse([...courses, newCourse], 'נוסף', newCourse.name);
     if (ok) {
-      setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל', autoSendAcceptance: true, autoSendRejection: false, type: 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '' });
+      setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל', autoSendAcceptance: true, autoSendRejection: false, type: 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '', workshopDate: '' });
       setAdding(false);
     }
   }
@@ -1568,6 +1569,7 @@ function CourseEditInline({ course, years, institutions, onSave, onCancel }: {
     preferenceCount: (course as any).preferenceCount ?? 3,
     reviewAgingThresholdDays: (course as any).reviewAgingThresholdDays ?? 14,
     acceptanceNote: (course as any).acceptanceNote || '',
+    workshopDate: (course as any).workshopDate || '',
   });
   return (
     <div className="flex-1 space-y-3">
@@ -1623,6 +1625,20 @@ function CourseEditInline({ course, years, institutions, onSave, onCancel }: {
             <textarea value={form.acceptanceNote}
               onChange={e => setForm({ ...form, acceptanceNote: e.target.value })}
               rows={2} className="input w-full" style={{ padding: '6px 10px', fontSize: '13px', resize: 'vertical' }} />
+          </label>
+          <label className="block">
+            <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>
+              תאריך סדנת הכנה לפרקטיקום
+              <span style={{ color: 'var(--accent)', marginInlineStart: 4 }}>← מוזן אוטומטית בהודעת הקבלה</span>
+            </span>
+            <input
+              type="text"
+              value={form.workshopDate}
+              onChange={e => setForm({ ...form, workshopDate: e.target.value })}
+              placeholder="לדוגמה: 15.07.2026"
+              className="input"
+              style={{ padding: '5px 10px', fontSize: '13px', width: 160 }}
+            />
           </label>
         </div>
       )}

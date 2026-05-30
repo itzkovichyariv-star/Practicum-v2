@@ -191,6 +191,7 @@ export type Course = {
   preferenceCount?: number;
   reviewAgingThresholdDays?: number;
   acceptanceNote?: string;
+  workshopDate?: string;   // תאריך סדנת הכנה לפרקטיקום — used in acceptance email {{תאריך_סדנה}}
 };
 export type Trainer = {
   id: string;
