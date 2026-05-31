@@ -514,11 +514,27 @@ export default function StudentEditor({
     return url;
   }
 
+  // Resolve the hosting employer from the student's free-text acceptedOrg. The
+  // name can drift from the employer's exact name (e.g. "Icon Group" vs
+  // "Icon Group/I digital"), which silently broke feedback sending. Match
+  // exact → case-insensitive → prefix (either direction) so near-misses resolve.
+  function resolveEmployerForOrg(orgName?: string) {
+    if (!orgName) return undefined;
+    const norm = (s?: string) => (s || '').trim().toLowerCase();
+    const n = norm(orgName);
+    return employers.find(e => e.name === orgName)
+      || employers.find(e => norm(e.name) === n)
+      || employers.find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+  }
+  // Pull the first valid email out of a possibly-messy contact field (some
+  // employers store "a@x.com/ b@y.com" or stray "mailto:" text).
+  const firstEmail = (s?: string) => (s || '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)?.[0] || '';
+
   async function handleSendFeedbackEmail() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר — מלא/י קודם את שדה "ארגון מאכסן בפועל".'); return; }
     const url = await ensureFeedbackUrl();
-    const emp = employers.find(e => e.name === form.acceptedOrg);
-    const empEmail = emp?.contactEmail || '';
+    const emp = resolveEmployerForOrg(form.acceptedOrg);
+    const empEmail = firstEmail(emp?.contactEmail);
     const greeting = emp?.contactPerson ? `${emp.contactPerson} שלום,` : 'שלום,';
     const subject = encodeURIComponent(`בקשה למשוב — ${form.name}`);
     const body = encodeURIComponent(
@@ -530,6 +546,9 @@ export default function StudentEditor({
     setShownFeedbackUrl(url);
     if (!empEmail) {
       if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      alert(emp
+        ? `לא הוגדר מייל למעסיק "${emp.name}". הקישור הועתק — שלחו ידנית או הוסיפו מייל בדף המעסיקים (או נסו WhatsApp).`
+        : `לא נמצא מעסיק בשם "${form.acceptedOrg}" ברשימת המעסיקים. ודאו שהשם תואם לרשומת המעסיק. הקישור הועתק.`);
       return;
     }
     window.open(`mailto:${empEmail}?subject=${subject}&body=${body}`, '_blank');
@@ -538,7 +557,7 @@ export default function StudentEditor({
   async function handleSendFeedbackWhatsApp() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר.'); return; }
     const url = await ensureFeedbackUrl();
-    const emp = employers.find(e => e.name === form.acceptedOrg);
+    const emp = resolveEmployerForOrg(form.acceptedOrg);
     const empPhone = emp?.contactPhone || '';
     const msg = encodeURIComponent(
       `שלום,\nבהמשך לפרקטיקום של ${form.name} בארגונכם,\n` +
@@ -547,6 +566,9 @@ export default function StudentEditor({
     setShownFeedbackUrl(url);
     if (!empPhone) {
       if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      alert(emp
+        ? `לא הוגדר טלפון למעסיק "${emp.name}". הקישור הועתק — שלחו ידנית או הוסיפו טלפון בדף המעסיקים (או נסו מייל).`
+        : `לא נמצא מעסיק בשם "${form.acceptedOrg}" ברשימת המעסיקים. הקישור הועתק.`);
       return;
     }
     let n = empPhone.replace(/[^\d]/g, '');
