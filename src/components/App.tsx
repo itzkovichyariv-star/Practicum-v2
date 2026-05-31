@@ -176,6 +176,48 @@ export default function App() {
     });
   }, [data, profile, refresh]);
 
+  // Self-healing backfill: the submitted application form (questionnaire) lives in
+  // candidate_submissions. Older candidates/students were intaked/converted before
+  // it was wired through, so they're missing it. On first load, pull the latest
+  // questionnaire per email from candidate_submissions onto any candidate/student
+  // that lacks one. Idempotent: once healed there are no changes → no write.
+  const qBackfilledRef = useRef(false);
+  useEffect(() => {
+    if (!data || !profile || qBackfilledRef.current) return;
+    qBackfilledRef.current = true;
+    (async () => {
+      const { data: subs } = await supabase
+        .from('candidate_submissions')
+        .select('email, questionnaire, submitted_at')
+        .order('submitted_at', { ascending: false });
+      if (!subs?.length) return;
+      const norm = (e?: string | null) => (e || '').trim().toLowerCase();
+      const qFilled = (q: any) => q && typeof q === 'object' && Object.keys(q).some(k => q[k] && String(q[k]).trim());
+      const byEmail = new Map<string, any>();
+      for (const s of subs as any[]) {
+        const e = norm(s.email);
+        if (e && qFilled(s.questionnaire) && !byEmail.has(e)) byEmail.set(e, s.questionnaire);
+      }
+      if (!byEmail.size) return;
+      let changed = false;
+      const candidates = (data.candidates || []).map((c: any) => {
+        if (c.questionnaire) return c;
+        const q = byEmail.get(norm(c.email));
+        if (!q) return c;
+        changed = true; return { ...c, questionnaire: q };
+      });
+      const students = (data.students || []).map((s: any) => {
+        if (s.questionnaire) return s;
+        const q = byEmail.get(norm(s.email));
+        if (!q) return s;
+        changed = true; return { ...s, questionnaire: q };
+      });
+      if (!changed) return;
+      const res = await saveSnapshot({ ...data, candidates, students }, { name: profile.name });
+      if (res.ok) refresh();
+    })();
+  }, [data, profile, refresh]);
+
   // Real-time sync: subscribe to changes in practicum_data and re-fetch when anyone
   // updates the snapshot. Also watches candidate_submissions and public_interview_slots
   // so the Inbox, Calendar, and Slots views update live.

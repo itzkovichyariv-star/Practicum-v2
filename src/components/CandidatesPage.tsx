@@ -400,6 +400,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         ...existingRecord,
         cvUrl: sub.cv_file_path ? `storage://candidate-uploads/${sub.cv_file_path}` : existingRecord.cvUrl,
         applicationUrl: sub.application_file_path ? `storage://candidate-uploads/${sub.application_file_path}` : existingRecord.applicationUrl,
+        // Carry the submitted application form (questionnaire) onto the existing
+        // record too — the new-candidate branch already does, but this update
+        // branch was dropping it, so a re-intake onto a matched candidate lost it.
+        questionnaire: sub.questionnaire || existingRecord.questionnaire || null,
         interviewDate: interviewDate || existingRecord.interviewDate,
         interviewTime: interviewTime || existingRecord.interviewTime,
         submittedAt: sub.submitted_at,
