@@ -62,12 +62,39 @@ Deno.serve(async (req) => {
       const slotMatch = note.match(/בחר מועד ראיון:\s*(.+)/);
       const bookedSlot = slotMatch ? slotMatch[1].trim() : '';
 
+      // Per-DAY Zoom link (same link for every candidate interviewing that day),
+      // stored in practicum_data.interviewZoomLinks, independent of the slot rows.
+      const dateMatch = bookedSlot.match(/(\d{4}-\d{2}-\d{2})/);
+      const bookedDate = dateMatch ? dateMatch[1] : '';
+      let zoomLink = '';
+      if (bookedDate) {
+        try {
+          const { data: pd } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
+          zoomLink = String(pd?.data?.interviewZoomLinks?.[bookedDate] || '').trim();
+        } catch (_) { /* non-fatal — fall back to the "link will be sent" note */ }
+      }
+
+      const zoomBlock = zoomLink
+        ? `
+            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e0c0c0">
+              <div style="font-size:14px;font-weight:bold;color:#3d0f14">🔗 קישור לראיון בזום:</div>
+              <div style="margin:6px 0"><a href="${zoomLink}" style="color:#7a1e2b;font-size:14px;word-break:break-all">${zoomLink}</a></div>
+              <div style="font-size:13px;color:#444;line-height:1.75;margin-top:6px">
+                הראיון יתקיים בזום. נא <strong>להתחבר כמה דקות לפני</strong> המועד שנבחר,
+                להגיע <strong>בזמינות מלאה, במקום שקט ועם מצלמה פתוחה</strong>,
+                ולהמתין בכניסה לפגישה <strong>עד שהמראיין/ת יכניס/תכניס אתכם</strong> לשיחת הזום.
+              </div>
+            </div>`
+        : `
+            <div style="font-size:13px;color:#666;margin-top:8px">הראיון יתקיים בזום — <strong>קישור ההצטרפות יישלח אליכם בסמוך למועד.</strong></div>`;
+
       const interviewSection = bookedSlot
         ? `
           <div style="background:#fff;border-radius:8px;padding:16px;margin:18px 0;border:1px solid #7a1e2b">
             <div style="color:#7a1e2b;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">מועד הראיון שבחרת</div>
             <div style="font-size:18px;font-weight:bold;color:#3d0f14">📅 ${bookedSlot}</div>
             <div style="font-size:13px;color:#666;margin-top:8px">נא להגיע במועד שנבחר. אם יש צורך לשנות — ניתן לפנות אלינו.</div>
+            ${zoomBlock}
           </div>`
         : `
           <div style="background:#fff;border-radius:8px;padding:16px;margin:18px 0;border:1px solid #e8e0d5;line-height:1.65">

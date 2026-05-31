@@ -496,9 +496,10 @@ function countSlots(d: DayConfig): number {
   return diff > 0 ? Math.floor(diff / step) : 0;
 }
 
-function SlotsSection({ data }: PageProps) {
+function SlotsSection({ data, userName, onRefresh }: PageProps) {
   const [slots, setSlots] = useState<SlotRow[]>([]);
   const [saving, setSaving] = useState(false);
+  const [zoomSavingDate, setZoomSavingDate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [days, setDays] = useState<DayConfig[]>([newDayConfig()]);
@@ -525,6 +526,20 @@ function SlotsSection({ data }: PageProps) {
   }
 
   useEffect(() => { load(); }, []);
+
+  // Zoom link per interview DAY — stored in practicum_data.interviewZoomLinks,
+  // INDEPENDENT of the slot rows (deleting slots never deletes the link). Pass an
+  // empty value to remove the link for that day (its own delete).
+  async function saveZoom(date: string, value: string) {
+    const map: Record<string, string> = { ...(data.interviewZoomLinks || {}) };
+    const v = value.trim();
+    if (v) map[date] = v; else delete map[date];
+    setZoomSavingDate(date);
+    const res = await saveSnapshot({ ...data, interviewZoomLinks: map }, { name: userName });
+    setZoomSavingDate(null);
+    if (res.ok) { showToast(v ? '✓ קישור הזום נשמר ליום זה' : '✓ קישור הזום הוסר', 'success'); onRefresh?.(); }
+    else showToast('שגיאה בשמירת קישור הזום', 'error');
+  }
 
   function updateDay(uid: string, patch: Partial<DayConfig>) {
     setDays(ds => ds.map(d => d.uid === uid ? { ...d, ...patch } : d));
@@ -876,6 +891,28 @@ th{background:#f5f0f0;font-weight:bold}
                 style={{ color: 'var(--text-soft)', borderBottom: '1px solid var(--divider)' }}>
                 {new Date(date).toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' })}
                 <span className="mr-2 opacity-60">· {daySlots.length} מועדים</span>
+              </div>
+              {/* Zoom link for this interview DAY — independent of the slots (deleting
+                  slots won't delete it); the same link goes to every candidate
+                  interviewing this day in their submission-confirmation email. */}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[13px]" title="קישור זום ליום זה">🔗</span>
+                <input
+                  type="url"
+                  dir="ltr"
+                  data-zoom-date={date}
+                  key={date + '|' + (data.interviewZoomLinks?.[date] || '')}
+                  defaultValue={data.interviewZoomLinks?.[date] || ''}
+                  placeholder="קישור זום ליום זה (אופציונלי) — כל המועמדים שמתראיינים ביום זה יקבלו אותו"
+                  onBlur={e => { const v = e.target.value.trim(); if (v !== (data.interviewZoomLinks?.[date] || '')) saveZoom(date, v); }}
+                  className="input flex-1 min-w-[180px]"
+                  style={{ fontSize: '12.5px', padding: '6px 10px', textAlign: 'left' }}
+                />
+                {zoomSavingDate === date && <span className="mono text-[10px] shrink-0" style={{ color: 'var(--text-soft)' }}>שומר…</span>}
+                {data.interviewZoomLinks?.[date] && (
+                  <button type="button" onClick={() => saveZoom(date, '')} title="מחק את קישור הזום ליום זה (לא מוחק את המועדים)"
+                    className="mono text-[11px] px-2 py-1 rounded-md border shrink-0" style={{ borderColor: 'var(--divider)', color: '#b03030' }}>✕ מחק קישור</button>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {daySlots.map(s => {

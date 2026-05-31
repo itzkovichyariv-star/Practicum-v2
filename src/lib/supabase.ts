@@ -236,6 +236,10 @@ export type PracticumData = {
   currentCourse?: string;
   currentYear?: string;
   interviewSlots?: InterviewSlot[];
+  // Zoom link per interview DAY (ISO date → join link). Stored independently of
+  // public_interview_slots so deleting/changing slots never deletes the link, and
+  // every candidate interviewing that day gets the same link in their confirmation.
+  interviewZoomLinks?: Record<string, string>;
   history?: { ts: string; who: string; action: string; entity: string; target: string }[];
   // System settings
   coordinatorEmail?: string;  // coordinator (Rachel) — receives employer feedback + candidate submissions
