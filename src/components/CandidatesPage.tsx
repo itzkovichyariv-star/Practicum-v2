@@ -624,9 +624,12 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
               openEmailConfirm(stage === 'passed' ? 'acceptance' : 'rejection', people);
             }}
             style={{
+              // Solid/subtle outline: green outline = acceptance, wine outline = rejection.
               display: 'inline-block', padding: '7px 14px', fontSize: '12px', fontWeight: 600,
-              background: stage === 'passed' ? '#16a34a' : '#dc2626',
-              color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
+              background: 'transparent',
+              color: stage === 'passed' ? '#15803d' : 'var(--accent)',
+              border: `1px solid ${stage === 'passed' ? '#15803d' : 'var(--accent)'}`,
+              borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
             }}>
             {stage === 'passed' ? '✉ שלח הודעת קבלה לקבוצה' : '✉ שלח הודעת דחייה לקבוצה'}
           </button>

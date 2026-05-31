@@ -442,17 +442,19 @@ export default function PlacementPanel({
 
             {pref.status === 'under_review' && !isOrphan && (
               <div className="flex flex-wrap gap-2">
+                {/* Solid/subtle outline style: green outline = accept (נקלט),
+                    wine outline = reject (נדחה). Marks inherit the border colour. */}
                 <button
                   type="button"
                   onClick={() => setConfirmDialog({ type: 'placed', prefIndex: idx, pref })}
-                  style={{ ...btnSmall(), background: '#059669', color: 'white', borderColor: '#059669' }}>
-                  ✅ נקלט
+                  style={{ ...btnSmall(), color: '#15803d', borderColor: '#15803d' }}>
+                  ✓ נקלט
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmDialog({ type: 'rejected', prefIndex: idx, pref })}
-                  style={{ ...btnSmall(), background: '#dc2626', color: 'white', borderColor: '#dc2626' }}>
-                  ❌ נדחה
+                  style={btnSmall()}>
+                  ✕ נדחה
                 </button>
                 <button
                   type="button"

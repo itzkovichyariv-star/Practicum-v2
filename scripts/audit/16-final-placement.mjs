@@ -69,8 +69,10 @@ audit.log('PLACED-converges: dispatch → נקלט sets acceptedOrg + occupies t
       await waBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
       if (await waBtn.count() > 0) { await waBtn.scrollIntoViewIfNeeded(); await waBtn.click().catch(() => {}); dispatched = true; }
 
-      // Wait for the row to transition to under_review (the "✅ נקלט" button appears).
-      const placedBtn = audit.page.locator('button').filter({ hasText: '✅ נקלט' }).first();
+      // Wait for the row to transition to under_review (the "✓ נקלט" button appears).
+      // Match the exact button text — a bare "נקלט" also matches the student
+      // editor's "סומן כנקלט/ה" control above the panel.
+      const placedBtn = audit.page.locator('button').filter({ hasText: '✓ נקלט' }).first();
       await placedBtn.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
       if (await placedBtn.count() > 0) {
         await placedBtn.scrollIntoViewIfNeeded();
