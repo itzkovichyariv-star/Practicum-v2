@@ -123,6 +123,7 @@ export default function StudentEditor({
       .select('id, uploaded_at, org_pref_1, org_pref_2, org_pref_3, suggested_org')
       .eq('email', email)
       .order('uploaded_at', { ascending: false })
+      .limit(40) // cap history — a heavily re-tested email can have dozens of rows
       .then(({ data }) => { if (alive) setCvHistory((data || []) as CvRow[]); });
     return () => { alive = false; };
   }, [student?.email]);
