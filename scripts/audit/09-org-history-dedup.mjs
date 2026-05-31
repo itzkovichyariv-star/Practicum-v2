@@ -71,7 +71,6 @@ audit.log(`DEDUP-suggestions: Employers shows latest-per-candidate suggestions (
   });
   const obs = audit.observerSnapshot();
   const uniqueProposers = new Set(ui.proposers).size;
-  const noDupes = ui.proposers.length === uniqueProposers;
 
   if (expectedCount === 0) {
     audit.recordCell({
@@ -85,16 +84,23 @@ audit.log(`DEDUP-suggestions: Employers shows latest-per-candidate suggestions (
         : 'Expected 0 suggestion rows but some rendered.',
     });
   } else {
-    const pass = ui.approveBtns === expectedCount && noDupes && obs.pageErrors.length === 0;
+    // The dedup invariant is per-CANDIDATE (per email): rendered must equal the
+    // latest-per-email suggestion count. That alone proves dedup — if a real
+    // duplicate leaked through, rendered would exceed expectedCount.
+    // NOTE: we do NOT assert unique proposer *display names*. Two distinct
+    // candidates (different emails) can legitimately share a name, which would
+    // make a name-uniqueness check a false negative. uniqueProposers is kept in
+    // `observed` for information only.
+    const pass = ui.approveBtns === expectedCount && obs.pageErrors.length === 0;
     audit.recordCell({
       id: 'DEDUP-suggestions',
       tableRef: 'Employers / pending suggestions — latest-per-candidate',
-      expected: `rendered == latest-per-candidate count (${expectedCount}); no duplicate proposer${naiveCount > expectedCount ? `; dedup collapses ${naiveCount}→${expectedCount}` : ''}`,
-      observed: `rendered=${ui.approveBtns}, expected=${expectedCount}, naive=${naiveCount}, proposers=${ui.proposers.length}, unique=${uniqueProposers}, errors=(${obs.pageErrors.length}p)`,
+      expected: `rendered == latest-per-candidate count (${expectedCount})${naiveCount > expectedCount ? `; dedup collapses ${naiveCount}→${expectedCount}` : ''}`,
+      observed: `rendered=${ui.approveBtns}, expected=${expectedCount}, naive=${naiveCount}, proposers=${ui.proposers.length}, unique=${uniqueProposers}${uniqueProposers < ui.proposers.length ? ' (same-name distinct candidates — OK)' : ''}, errors=(${obs.pageErrors.length}p)`,
       pass, after,
       notes: ui.approveBtns !== expectedCount
         ? `Rendered ${ui.approveBtns} ≠ expected ${expectedCount} latest-per-candidate.`
-        : !noDupes ? 'A candidate appears more than once — dedup not applied.' : '',
+        : '',
     });
   }
 }

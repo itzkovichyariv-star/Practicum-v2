@@ -4,6 +4,7 @@
  */
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   Student, Employer, Course, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData,
   StudentPreference, VacancySlot,
@@ -520,8 +521,13 @@ export default function PlacementPanel({
         const isWithdrawal = type === 'withdrawn';
         const isMarkCancelled = type === 'mark_cancelled';
 
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        // Portal to <body> with a z-index ABOVE the editor Modal (z-200/210).
+        // Rendered inline, this confirm dialog was trapped inside the Modal's
+        // stacking context and painted BEHIND the editor content — clicking
+        // "בטל מועמדות"/נקלט/נדחה opened a dialog you couldn't see or click, so
+        // the button read as dead. The portal lifts it clear of the modal.
+        return createPortal((
+          <div className="fixed inset-0 z-[300] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
             <div className="rounded-2xl border p-6 max-w-[420px] w-full mx-4"
               style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
               <div className="serif text-[20px] mb-3" style={{ color: 'var(--ink)' }}>
@@ -568,7 +574,7 @@ export default function PlacementPanel({
               </div>
             </div>
           </div>
-        );
+        ), document.body);
       })()}
     </div>
   );
