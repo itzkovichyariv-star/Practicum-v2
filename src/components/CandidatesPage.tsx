@@ -184,9 +184,12 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       const hasDocs = !!(c.cvUrl && c.applicationUrl);
       const result = c.interviewResult || 'pending';
       if (stage === 'submitted') return hasDocs;
-      if (stage === 'notsubmitted') return !hasDocs && result === 'pending';
+      if (stage === 'notsubmitted') return !hasDocs && result === 'pending' && !c.interviewConducted;
       // "ראיון בוצע" = the interview happened and a pass/fail decision is still pending.
       if (stage === 'conducted') return !!c.interviewConducted && result === 'pending';
+      // "ממתינים" = awaiting the interview — must EXCLUDE those already marked
+      // "ראיון בוצע" (conducted, decision pending), so the two are separate buckets.
+      if (stage === 'pending') return result === 'pending' && !c.interviewConducted;
       if (stage !== 'all' && result !== stage) return false;
       if (!q) return true;
       const hay = [c.name, c.phone, c.email].filter(Boolean).join(' ').toLowerCase();
@@ -196,7 +199,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
 
   const counts = useMemo(() => ({
     total: scoped.length,
-    pending: scoped.filter(c => !c.interviewResult || c.interviewResult === 'pending').length,
+    pending: scoped.filter(c => (!c.interviewResult || c.interviewResult === 'pending') && !c.interviewConducted).length,
     conducted: scoped.filter(c => c.interviewConducted && (!c.interviewResult || c.interviewResult === 'pending')).length,
     passed: scoped.filter(c => c.interviewResult === 'passed').length,
     failed: scoped.filter(c => c.interviewResult === 'failed').length,
