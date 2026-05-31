@@ -74,6 +74,9 @@ export default function RegistrationForm() {
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [slotErr, setSlotErr] = useState(false);
   const [notifyDiag, setNotifyDiag] = useState<string | null>(null);
+  // Per-day Zoom links (ISO date → link), so the on-screen confirmation can show
+  // the SAME Zoom block as the email (no gap between the two).
+  const [zoomLinks, setZoomLinks] = useState<Record<string, string>>({});
   const [courses, setCourses] = useState<{ name: string; year?: string }[]>([]);
   const [years, setYears] = useState<string[]>(['תשפ״ו', 'תשפ״ז']);
 
@@ -108,6 +111,11 @@ export default function RegistrationForm() {
         .select('*').gte('date', today).order('date').order('start_time');
       if (error) console.warn('slot fetch:', error);
       setAvailableSlots(((data || []) as PublicSlot[]).filter(s => s.booked_count < s.capacity));
+    })();
+    // Per-day Zoom links — for the on-screen confirmation (mirrors the email).
+    (async () => {
+      const { data: pd } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
+      setZoomLinks(((pd as any)?.data?.interviewZoomLinks) || {});
     })();
   }, []);
 
@@ -206,6 +214,7 @@ export default function RegistrationForm() {
 
   if (status === 'done') {
     const bookedSlot = availableSlots.find(s => s.id === selectedSlotId);
+    const zoom = bookedSlot ? (zoomLinks[bookedSlot.date] || '') : '';
     return (
       <div className="max-w-[560px] mx-auto p-10 text-center">
         <div className="chapter-mark mb-4">✓ נקלט/ה</div>
@@ -227,7 +236,25 @@ export default function RegistrationForm() {
               {bookedSlot.note && ` · ${bookedSlot.note}`}
             </div>
             <div className="text-[12px] mt-3" style={{ color: 'var(--text-soft)' }}>
-              נשלח אישור מפורט למייל שהזנת. אם צריך לשנות — צור קשר.
+              אם יש צורך לשנות את המועד — ניתן לפנות אלינו.
+            </div>
+            {/* Same Zoom block as the email — no gap between the two. */}
+            {zoom ? (
+              <div className="mt-3 pt-3" style={{ borderTop: '1px dashed rgba(122,30,43,0.3)' }}>
+                <div className="text-[13.5px] font-semibold mb-1.5" style={{ color: 'var(--ink)' }}>🔗 קישור לראיון בזום:</div>
+                <a href={zoom} target="_blank" rel="noopener noreferrer" dir="ltr"
+                  className="text-[13px]" style={{ color: 'var(--accent)', wordBreak: 'break-all', textDecoration: 'underline', display: 'inline-block' }}>{zoom}</a>
+                <div className="text-[12.5px] leading-[1.8] mt-2" style={{ color: 'var(--ink)' }}>
+                  הראיון יתקיים בזום. נא <strong>להתחבר כמה דקות לפני</strong> המועד, להיות <strong>בזמינות מלאה, במקום שקט ועם מצלמה פתוחה</strong>, ולהמתין <strong>בחדר ההמתנה בזום</strong> עד שהמראיין/ת יכניס/תכניס אתכם לשיחה.
+                </div>
+              </div>
+            ) : (
+              <div className="text-[12.5px] leading-[1.7] mt-2" style={{ color: 'var(--text-soft)' }}>
+                הראיון יתקיים בזום — קישור ההצטרפות יישלח אליכם בסמוך למועד.
+              </div>
+            )}
+            <div className="text-[11.5px] mt-3" style={{ color: 'var(--text-soft)' }}>
+              אישור מפורט נשלח גם למייל שהזנת.
             </div>
           </div>
         ) : (

@@ -242,6 +242,28 @@ audit.log('REG-happy-path: submit creates row with EXACT filled values');
     audit.log(`  KNOWN ISSUE: ${obs.reactKeyWarnings} React "duplicate key" warnings during submit. Filtered for now — fix and remove filter.`);
   }
 
+  // REG-onscreen-zoom: the success screen must mirror the email — the booked slot
+  // is on a day with a Zoom link, so the on-screen confirmation shows the Zoom
+  // block (link + instructions). Guards the "gap between on-screen and email" report.
+  if (successShown) {
+    const onScreen = await audit.page.evaluate(() => {
+      const t = document.body.innerText || '';
+      return {
+        hasZoomBlock: /קישור לראיון בזום/.test(t),
+        hasWaitingRoom: /חדר ההמתנה בזום/.test(t),
+        noStaleArrive: !/נא להגיע במועד שנבחר/.test(t), // the confusing "arrive" line is gone
+      };
+    });
+    audit.recordCell({
+      id: 'REG-onscreen-zoom',
+      tableRef: '/register success screen / Zoom block mirrors the email',
+      expected: 'the on-screen confirmation shows the Zoom link block + "חדר ההמתנה בזום", and not the stale "נא להגיע" wording',
+      observed: `hasZoomBlock=${onScreen.hasZoomBlock}, hasWaitingRoom=${onScreen.hasWaitingRoom}, noStaleArrive=${onScreen.noStaleArrive}`,
+      pass: onScreen.hasZoomBlock && onScreen.hasWaitingRoom && onScreen.noStaleArrive,
+      notes: !onScreen.hasZoomBlock ? 'No Zoom block on the success screen (gap vs email).' : !onScreen.hasWaitingRoom ? 'Missing the "חדר ההמתנה" wording.' : !onScreen.noStaleArrive ? 'Stale "נא להגיע במועד שנבחר" still shown.' : '',
+    });
+  }
+
   // Clean up our happy-path row so it doesn't leak into real data.
   try { await sbDelete('candidate_submissions', `email=eq.${encodeURIComponent(happyEmail)}`); }
   catch (e) { audit.log(`post-clean (non-fatal): ${e.message.slice(0, 100)}`); }

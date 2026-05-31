@@ -81,8 +81,8 @@ Deno.serve(async (req) => {
               <div style="margin:6px 0"><a href="${zoomLink}" style="color:#7a1e2b;font-size:14px;word-break:break-all">${zoomLink}</a></div>
               <div style="font-size:13px;color:#444;line-height:1.75;margin-top:6px">
                 הראיון יתקיים בזום. נא <strong>להתחבר כמה דקות לפני</strong> המועד שנבחר,
-                להגיע <strong>בזמינות מלאה, במקום שקט ועם מצלמה פתוחה</strong>,
-                ולהמתין בכניסה לפגישה <strong>עד שהמראיין/ת יכניס/תכניס אתכם</strong> לשיחת הזום.
+                להיות <strong>בזמינות מלאה, במקום שקט ועם מצלמה פתוחה</strong>,
+                ולהמתין <strong>בחדר ההמתנה בזום</strong> עד שהמראיין/ת יכניס/תכניס אתכם לשיחה.
               </div>
             </div>`
         : `
@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
           <div style="background:#fff;border-radius:8px;padding:16px;margin:18px 0;border:1px solid #7a1e2b">
             <div style="color:#7a1e2b;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:6px">מועד הראיון שבחרת</div>
             <div style="font-size:18px;font-weight:bold;color:#3d0f14">📅 ${bookedSlot}</div>
-            <div style="font-size:13px;color:#666;margin-top:8px">נא להגיע במועד שנבחר. אם יש צורך לשנות — ניתן לפנות אלינו.</div>
+            <div style="font-size:13px;color:#666;margin-top:8px">אם יש צורך לשנות את המועד — ניתן לפנות אלינו.</div>
             ${zoomBlock}
           </div>`
         : `
