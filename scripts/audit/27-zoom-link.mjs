@@ -93,6 +93,43 @@ audit.log('ZOOM-independent: deleting the day\'s slots keeps the Zoom link');
   });
 }
 
+// ─── ZOOM-recreate ──────────────────────────────────────────────────────
+// The reporter's real workflow: after deleting the test slots (link kept),
+// RE-CREATE slots for the same day → the existing link must re-associate and
+// still be picked up (both in the UI and by the email's date-keyed lookup).
+audit.log('ZOOM-recreate: new slots for the same day re-associate with the kept link');
+{
+  audit.observerMark();
+  let uiShowsLink = null, lookupResolves = null;
+  if (seedOk) {
+    // recreate a slot for the same date (slots were deleted in the previous step)
+    await fetch(`${SUPABASE_URL}/rest/v1/public_interview_slots`, {
+      method: 'POST', headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ date: TDATE, start_time: '11:00', end_time: '11:15', capacity: 1, booked_count: 0 }),
+    });
+    await P.evaluate(() => localStorage.setItem('practicum_v2_page', 'management'));
+    await P.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+    await P.waitForTimeout(1600);
+    uiShowsLink = await P.evaluate((d) => {
+      const i = document.querySelector(`input[data-zoom-date="${d}"]`);
+      return !!i && i.value && i.value.length > 0;
+    }, TDATE);
+    // email-side: parse a booked slot on the recreated day → link must resolve
+    const data = await loadData();
+    const note = `בחר מועד ראיון: ${TDATE} 11:00–11:15`;
+    const m = note.match(/(\d{4}-\d{2}-\d{2})/);
+    lookupResolves = !!m && (data.interviewZoomLinks || {})[m[1]] === LINK;
+  }
+  const obs = audit.observerSnapshot();
+  audit.recordCell({
+    id: 'ZOOM-recreate', tableRef: 'Zoom link re-associates with recreated slots',
+    expected: 'after deleting then recreating a day\'s slots, the kept link shows in the UI AND resolves for the email',
+    observed: `uiShowsLink=${uiShowsLink}, emailLookupResolves=${lookupResolves}`,
+    pass: seedOk ? (uiShowsLink === true && lookupResolves === true) : null,
+    notes: uiShowsLink === false ? 'Recreated day did not show the kept link.' : lookupResolves === false ? 'Email lookup did not resolve for the recreated day.' : '',
+  });
+}
+
 // Cleanup: remove the temp slot(s) + the temp Zoom link key.
 try {
   await delSlotsForDate(TDATE);
