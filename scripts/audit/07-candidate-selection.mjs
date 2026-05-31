@@ -82,7 +82,10 @@ audit.log('HOVER-vs-CLICK: hover does NOT open the card; click does');
   await row.hover();
   await audit.page.waitForTimeout(500);
   const onHover = await popoverVisible();
-  await row.click();
+  // Click the candidate NAME (line 1) — the intended preview trigger. Line 2
+  // (contact + edit buttons) deliberately stopPropagation, so clicking the row's
+  // geometric centre is not a reliable proxy for "the user clicked the row".
+  await row.locator('.serif').first().click();
   await audit.page.waitForTimeout(400);
   const onClick = await popoverVisible();
   const after = await audit.shot('HOVER-after');

@@ -1021,19 +1021,27 @@ export function RowActions({
     if (onCalendar) { onCalendar(); return; }
     if (calendarUrl) window.open(calendarUrl, '_blank');
   }
-  const btn = "w-7 h-7 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)]";
+  // Contact buttons: bumped from 28px → 32px for an easier mouse target.
+  const btn = "w-8 h-8 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)] shrink-0";
   const style = { borderColor: 'var(--divider)', color: 'var(--ink)' };
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2">
       {calendarUrl !== undefined && calendarUrl && (
         <button type="button" onClick={cal} title="פתח ב-Outlook" className={btn} style={style}>📅</button>
       )}
       {phone && <button type="button" onClick={call} title="התקשר" className={btn} style={style}>📞</button>}
       {phone && <button type="button" onClick={wa} title="WhatsApp" className={btn} style={style}>💬</button>}
       {email && <button type="button" onClick={mail} title="מייל" className={btn} style={style}>✉</button>}
-      <button type="button" onClick={onEdit} title="ערוך"
-        className={btn} style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {/* Edit = the PRIMARY action, and the one users reach for most. The old
+          28px outline circle was a small target that only "lit up" on hovering
+          its exact centre, so off-centre clicks felt dead and you had to click
+          several times to enter edit mode. Now: a 40px tap target, always tinted
+          (so it visibly reads as a button without needing hover), with a roomy
+          hit zone. title + aria-label keep selectors/accessibility intact. */}
+      <button type="button" onClick={onEdit} title="ערוך" aria-label="ערוך"
+        className="w-10 h-10 rounded-full border grid place-items-center transition-transform hover:brightness-95 active:scale-95 shrink-0"
+        style={{ borderColor: 'var(--accent)', color: 'var(--accent)', background: 'rgba(122,30,43,0.10)' }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </svg>

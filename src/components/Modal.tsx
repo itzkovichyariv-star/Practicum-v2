@@ -18,7 +18,7 @@
  * DO NOT remove the useEffect body lock without testing on a real iOS device.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 type Props = {
   onClose: () => void;
@@ -33,6 +33,25 @@ export default function Modal({
   zIndex = 'z-[200]',
   children,
 }: Props) {
+
+  // When the modal opened. Used to ignore backdrop clicks that arrive in the
+  // first moments after open (see backdropClose below).
+  const openedAt = useRef(0);
+  useEffect(() => { openedAt.current = (typeof performance !== 'undefined' ? performance.now() : Date.now()); }, []);
+
+  // Backdrop (click-outside) close, GUARDED against the just-opened race.
+  // The bug it fixes: a user who expects lag clicks the row's edit pencil 2–3×
+  // quickly. Click 1 opens this modal; the modal's full-screen backdrop now sits
+  // under the pointer, so click 2 lands on the backdrop and closes the editor.
+  // An even number of clicks nets CLOSED, 3 nets OPEN — the reported "sometimes
+  // I need 3 clicks to enter edit mode". Ignoring outside-clicks for a short
+  // window after open lets those buffered clicks pass harmlessly; a real
+  // click-to-dismiss (after the user has read the card) always comes much later.
+  const backdropClose = () => {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (now - openedAt.current < 500) return; // ~OS double-click interval
+    onClose();
+  };
 
   // Escape closes the editor — so you can always get out (e.g. to switch screens
   // via the top nav, which an open modal otherwise covers).
@@ -104,10 +123,11 @@ export default function Modal({
         ✕
       </button>
 
-      {/* Centering wrapper — click outside card to close */}
+      {/* Centering wrapper — click outside card to close (guarded against the
+          rapid-multi-click-after-open race; see backdropClose). */}
       <div
         className="min-h-full py-6 px-4 flex items-start justify-center"
-        onClick={onClose}
+        onClick={backdropClose}
       >
         {/* Card — stop click bubbling */}
         <div
