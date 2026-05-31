@@ -6,12 +6,6 @@ import { supabase } from '../lib/supabase';
 import { openMailto } from '../lib/openMailto';
 import Modal from './Modal';
 
-const RESULTS: Array<{ value: string; label: string }> = [
-  { value: 'pending', label: 'טרם רואיין' },
-  { value: 'passed',  label: 'עבר' },
-  { value: 'failed',  label: 'לא התקבל' },
-];
-
 type Props = {
   candidate: Candidate | null;
   courses: Course[];
@@ -111,6 +105,38 @@ export default function CandidateEditor({
       try { await onAutoSave(updated); setAutoSave('saved'); } catch { setAutoSave('error'); }
     }
   }
+
+  // Unified status selector behind the "תוצאה / סטטוס" dropdown. It maps the four
+  // user-facing states onto the two underlying fields, and keeps the "ראיון בוצע"
+  // checkbox + the candidates-page filter tab perfectly in sync:
+  //   pending   → not conducted, no result
+  //   conducted → interview happened, decision pending (immediate checkpoint save,
+  //               the same protection the checkbox gives)
+  //   passed/failed → a decision implies the interview was conducted
+  async function setStatus(status: string) {
+    if (status === 'conducted') { await setConducted(true); return; }
+    if (status === 'pending') {
+      setForm(f => ({ ...f, interviewResult: 'pending', interviewConducted: false }));
+      return;
+    }
+    // passed | failed
+    setForm(f => ({
+      ...f,
+      interviewResult: status as Candidate['interviewResult'],
+      interviewConducted: true,
+      interviewConductedAt: f.interviewConductedAt || new Date().toISOString(),
+    }));
+  }
+  const statusValue =
+    form.interviewResult === 'passed' ? 'passed' :
+    form.interviewResult === 'failed' ? 'failed' :
+    form.interviewConducted ? 'conducted' : 'pending';
+  const STATUS_OPTIONS = [
+    { value: 'pending',   label: 'טרם רואיין' },
+    { value: 'conducted', label: 'ראיון בוצע' },
+    { value: 'passed',    label: 'עבר' },
+    { value: 'failed',    label: 'לא התקבל' },
+  ];
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -281,8 +307,8 @@ export default function CandidateEditor({
               </label>
             </div>
 
-            <Field label="תוצאה סופית">
-              <Select value={form.interviewResult||'pending'} onChange={v=>update('interviewResult', v as any)} options={RESULTS}/>
+            <Field label="תוצאה / סטטוס">
+              <Select value={statusValue} onChange={v=>setStatus(v)} options={STATUS_OPTIONS}/>
             </Field>
             <div />
 
