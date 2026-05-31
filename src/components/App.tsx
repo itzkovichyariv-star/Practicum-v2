@@ -76,6 +76,15 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<string | undefined>();
   const [lastEditor, setLastEditor] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
+  // The last snapshot version we actually rendered. Used to drop redundant
+  // realtime events (identical updated_at → nothing changed → skip the re-render).
+  const lastUpdatedRef = useRef<string | undefined>(undefined);
+  // Debounce timer for realtime-driven refreshes. A burst of writes (e.g. the
+  // candidate editor's 1.5s auto-save, or several quick edits) would otherwise
+  // re-run the migration + re-render the whole app once PER write — that churn
+  // blocks the main thread and swallows clicks ("needed 3 clicks to open a card").
+  // Coalesce them into a single refresh that fires after activity settles.
+  const realtimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [page, setPage] = useState<Page>(() => {
     if (typeof localStorage === 'undefined') return 'dashboard';
     return (localStorage.getItem(PAGE_STORAGE) as Page) || 'dashboard';
@@ -111,6 +120,14 @@ export default function App() {
       setLoading(false);
       return;
     }
+    // Dedupe: if this is the exact version we already rendered, skip the
+    // migration + setData (which would re-render the whole tree for nothing).
+    // Realtime can deliver the same event more than once; this makes that free.
+    if (snap.updated_at && snap.updated_at === lastUpdatedRef.current) {
+      setLoading(false);
+      return;
+    }
+    lastUpdatedRef.current = snap.updated_at;
     const migratedData = migratePlacementData(snap.data);
     setData(migratedData);
     setLastUpdated(snap.updated_at);
@@ -164,20 +181,24 @@ export default function App() {
   // so the Inbox, Calendar, and Slots views update live.
   useEffect(() => {
     if (!profile || !cloudAuthed) return;
+    // Debounced refresh: coalesce a burst of DB writes into a single re-fetch
+    // ~700ms after the last one, so editing/auto-save doesn't trigger a
+    // re-render storm that blocks the main thread and drops clicks.
+    const bump = () => {
+      if (realtimeTimer.current) clearTimeout(realtimeTimer.current);
+      realtimeTimer.current = setTimeout(() => { realtimeTimer.current = null; refresh(); }, 700);
+    };
     const ch = supabase
       .channel('practicum-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'practicum_data' }, () => {
-        refresh();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidate_submissions' }, () => {
-        refresh();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_interview_slots' }, () => {
-        refresh();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'practicum_data' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'candidate_submissions' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'public_interview_slots' }, bump)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [profile]);
+    return () => {
+      if (realtimeTimer.current) { clearTimeout(realtimeTimer.current); realtimeTimer.current = null; }
+      supabase.removeChannel(ch);
+    };
+  }, [profile, cloudAuthed, refresh]);
 
   function handleContextChange(next: Context) {
     setCtx(next);
