@@ -494,7 +494,7 @@ const Q_ITEMS: { key: string; question: string }[] = [
   { key: 'expectations',  question: 'מה הציפיות שלך מהפרקטיקום?' },
 ];
 
-function QuestionnaireView({ q, candidateName }: { q: NonNullable<import('../lib/supabase').Candidate['questionnaire']>; candidateName?: string }) {
+export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import('../lib/supabase').Candidate['questionnaire']>; candidateName?: string }) {
   const [open, setOpen] = useState(false);
   const filled = Q_ITEMS.filter(item => (q as any)[item.key]?.trim());
   if (filled.length === 0) return null;

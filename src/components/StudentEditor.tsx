@@ -8,6 +8,7 @@ import { buildPlacementPreferences, addPlacementPreference, openVacancies, build
 import { openMailto } from '../lib/openMailto';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
+import { QuestionnaireView } from './CandidateEditor';
 import Modal from './Modal';
 import PlacementPanel from './PlacementPanel';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
@@ -65,6 +66,7 @@ export default function StudentEditor({
     cvUrl: student?.cvUrl || '',
     formUrl: student?.formUrl || '',
     cvUpdatedUrl: student?.cvUpdatedUrl || '',
+    questionnaire: student?.questionnaire ?? null,
     firstChoiceOrg: student?.firstChoiceOrg || '',
     firstChoiceResult: student?.firstChoiceResult || 'pending',
     secondChoiceOrg: student?.secondChoiceOrg || '',
@@ -1024,6 +1026,11 @@ export default function StudentEditor({
           <SectionSub title="מסמכים וחוו״ד (קישורי OneDrive / SharePoint)">
             <FileField label="CV — קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
             <FileField label="טופס הגשת מועמדות" value={form.formUrl||''} onChange={v=>update('formUrl',v)}/>
+            {form.questionnaire && (
+              <div className="col-span-full">
+                <QuestionnaireView q={form.questionnaire} candidateName={form.name} />
+              </div>
+            )}
             <div className="col-span-full">
               <div className="col-span-full">
                 <div className="flex items-center justify-between mb-1.5">

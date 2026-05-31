@@ -499,6 +499,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       year: c.year,
       cvUrl: c.cvUrl || '',
       formUrl: c.applicationUrl || '',
+      // Carry the submitted application form (questionnaire) so it travels with
+      // the person into the student record and renders with its original design.
+      questionnaire: c.questionnaire || null,
       preparation: { passed: false },
       fromCandidate: true,
       fromCandidateId: c.id,

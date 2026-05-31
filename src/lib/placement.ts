@@ -167,8 +167,19 @@ export function migratePlacementData(data: PracticumData): PracticumData {
 
   // 3. Extend students
   if (d.students) {
+    // For backfilling the submitted application form onto already-converted
+    // students whose linked candidate still carries the questionnaire.
+    const candById = new Map((d.candidates || []).map(c => [c.id, c] as const));
     d.students = d.students.map(s => {
       const st = { ...s };
+
+      // Carry the application form (questionnaire) from the linked candidate if
+      // this student was converted before it was wired through, so the original
+      // submitted form travels with the person.
+      if ((st as any).questionnaire == null && (st as any).fromCandidateId) {
+        const cand = candById.get((st as any).fromCandidateId);
+        if (cand?.questionnaire) { (st as any).questionnaire = cand.questionnaire; changed = true; }
+      }
 
       if (st.submissionStatus === undefined) {
         (st as any).submissionStatus = st.cvUrl ? 'submitted' : 'not_submitted';

@@ -94,6 +94,10 @@ export type Student = {
   hoursReported?: number; hoursApproved?: number;
   cvUrl?: string; formUrl?: string; feedbackText?: string;
   cvUpdatedUrl?: string;  // post-prep updated CV required before org placement
+  // The original application form (questionnaire) the candidate submitted via the
+  // public link — carried over on conversion so it travels with the person and is
+  // shown with its original design in the student card. Same shape as Candidate.
+  questionnaire?: Candidate['questionnaire'];
   // Organization preference flow (1st choice → if fails, try 2nd)
   firstChoiceOrg?: string;
   firstChoiceResult?: 'pending' | 'passed' | 'failed';
