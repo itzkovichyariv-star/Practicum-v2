@@ -34,6 +34,20 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /*
+   * Reserve the scrollbar gutter permanently. On macOS Safari with a MOUSE the
+   * vertical scrollbar takes real layout width; when a modal locks the body with
+   * overflow:hidden the scrollbar disappears and every control reflows sideways
+   * (~15px). A click aimed at the small edit pencil then lands just off it as the
+   * page snaps back on close — the "had to click the pencil 2–3 times" report.
+   * `scrollbar-gutter: stable` keeps the gutter reserved whether or not the
+   * scrollbar is shown, so nothing moves. It is direction-aware (RTL-correct:
+   * reserves on whichever side WebKit actually puts the scrollbar), unlike a
+   * hand-rolled padding hack. Ignored gracefully by browsers without support and
+   * by touch devices (overlay scrollbars, no layout shift to begin with).
+   */
+  html { scrollbar-gutter: stable; }
+
   * { box-sizing: border-box; }
   a { color: inherit; text-decoration: none; }
 
