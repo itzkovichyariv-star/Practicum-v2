@@ -191,7 +191,7 @@ export default function RegistrationForm() {
 
     try {
       const { data: sess } = await supabase.auth.getSession();
-      const token = sess.session?.access_token || 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+      const token = sess.session?.access_token || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwcWdtY21hdm5zemNuYWtoaWF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MDUxNzEsImV4cCI6MjA5MjA4MTE3MX0.t3yeODV4J96tUvfXzqzkhaIeJwJyfArzdJQtXHAQE1o' /* anon JWT: Edge fns enforce verify_jwt; the publishable key is rejected (401) for anonymous callers */;
       const r = await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-submission', {
         method: 'POST',
         headers: {
