@@ -245,6 +245,21 @@ audit.log('REG-happy-path: submit creates row with EXACT filled values');
   // Clean up our happy-path row so it doesn't leak into real data.
   try { await sbDelete('candidate_submissions', `email=eq.${encodeURIComponent(happyEmail)}`); }
   catch (e) { audit.log(`post-clean (non-fatal): ${e.message.slice(0, 100)}`); }
+
+  // CRITICAL: release any interview slot this run BOOKED. The happy-path picks a
+  // real available slot to verify booked_count increments — without releasing it,
+  // every gate run permanently consumes a real slot (they vanish from candidates'
+  // availability). All audit bookings are named "Audit User …", so reset those.
+  try {
+    const SUPA = 'https://vpqgmcmavnszcnakhiat.supabase.co';
+    const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+    await fetch(`${SUPA}/rest/v1/public_interview_slots?booked_by=like.Audit%20User*`, {
+      method: 'PATCH',
+      headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ booked_count: 0, booked_by: null }),
+    });
+    audit.log('Released audit-booked interview slot(s)');
+  } catch (e) { audit.log(`slot-release (non-fatal): ${e.message.slice(0, 100)}`); }
 }
 
 await audit.teardown();
