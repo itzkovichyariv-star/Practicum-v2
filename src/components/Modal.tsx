@@ -71,8 +71,17 @@ export default function Modal({
       };
     }
     const prevOverflow = body.style.overflow;
+    const prevPad = body.style.paddingRight;
+    // Reserve the space the (now-hidden) scrollbar occupied so locking the body
+    // doesn't reflow the page horizontally. On macOS Safari with a MOUSE the
+    // scrollbar takes real layout width, so hiding it shifts every control ~15px
+    // — a click aimed at a small icon (the row's edit pencil) can land just off
+    // it as the page snaps back on close, which reads as "the click did nothing,
+    // had to click again". Compensating padding keeps every control stationary.
+    const sbw = window.innerWidth - document.documentElement.clientWidth;
     body.style.overflow = 'hidden';
-    return () => { body.style.overflow = prevOverflow; };
+    if (sbw > 0) body.style.paddingRight = `${sbw}px`;
+    return () => { body.style.overflow = prevOverflow; body.style.paddingRight = prevPad; };
   }, []);
 
   return (

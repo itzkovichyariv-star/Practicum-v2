@@ -200,6 +200,44 @@ export default function App() {
     };
   }, [profile, cloudAuthed, refresh]);
 
+  // ── Click diagnostics (opt-in) ──────────────────────────────────────────
+  // Off by default. Enable with `localStorage.diagClicks='1'` or `?diag=clicks`.
+  // Logs every click on a row's edit pencil + whether the editor actually opened,
+  // what element the pointer really hit, and whether a popover/overlay was in the
+  // way — so a real "had to click 3 times" can be captured in the live browser.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const on = localStorage.getItem('diagClicks') === '1' || location.search.includes('diag=clicks');
+    if (!on) return;
+    console.log('%c[diagClicks] ON — reproduce the issue; each pencil click is logged below', 'color:#7a1e2b;font-weight:bold');
+    const onClick = (e: MouseEvent) => {
+      const tgt = e.target as HTMLElement | null;
+      const pencil = tgt?.closest?.('button[title="ערוך"]') as HTMLElement | null;
+      const topAtPoint = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const ctx = {
+        aimedTag: tgt?.tagName,
+        hitTopTag: topAtPoint?.tagName,
+        hitMatchesAim: !!topAtPoint && (topAtPoint === tgt || tgt?.contains(topAtPoint) || topAtPoint.contains(tgt as Node)),
+        popoverOpen: !!document.querySelector('[data-popover-open="true"]'),
+        modalOpen: !!document.querySelector('button[aria-label="סגור"]'),
+        bodyOverflow: getComputedStyle(document.body).overflow,
+        x: Math.round(e.clientX), y: Math.round(e.clientY),
+      };
+      if (!pencil) return; // only trace edit-pencil clicks
+      const t0 = performance.now();
+      setTimeout(() => {
+        const opened = !!document.querySelector('button[aria-label="סגור"]');
+        console.log(
+          `%c[diagClicks] pencil → editorOpened=${opened} in ${(performance.now() - t0).toFixed(0)}ms`,
+          opened ? 'color:#2e7d32' : 'color:#c62828;font-weight:bold',
+          ctx,
+        );
+      }, 280);
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, []);
+
   function handleContextChange(next: Context) {
     setCtx(next);
     persistContext(next);
