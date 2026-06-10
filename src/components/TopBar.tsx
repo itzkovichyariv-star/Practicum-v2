@@ -265,13 +265,23 @@ function ContextSelect({ label, value, onChange, options, grow }: {
 
 /* ── Theme toggle: Auto (clock) / Light (sun) / Dark (moon) ─────────── */
 const THEME_ICONS: Record<ThemeMode, string> = { auto: '🕐', light: '☀️', dark: '🌙' };
-const THEME_NEXT: Record<ThemeMode, ThemeMode> = { auto: 'dark', dark: 'light', light: 'auto' };
+// From 'auto' the next mode is the OPPOSITE of what's currently on screen, so the
+// first click always produces a visible change (auto→dark at night looked dead).
+function nextTheme(mode: ThemeMode): ThemeMode {
+  if (mode === 'auto') {
+    const effectiveDark = typeof document !== 'undefined' &&
+      document.documentElement.getAttribute('data-theme') === 'dark';
+    return effectiveDark ? 'light' : 'dark';
+  }
+  if (mode === 'dark') return 'light';
+  return 'auto'; // light → back to schedule
+}
 const THEME_LABELS: Record<ThemeMode, string> = { auto: 'אוטו', light: 'יום', dark: 'לילה' };
 
 function ThemeToggle({ mode, onChange }: { mode: ThemeMode; onChange: (m: ThemeMode) => void }) {
   return (
     <button
-      onClick={() => onChange(THEME_NEXT[mode])}
+      onClick={() => onChange(nextTheme(mode))}
       title={`תצוגה: ${THEME_LABELS[mode]} — לחץ לשינוי`}
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all"
       style={{
