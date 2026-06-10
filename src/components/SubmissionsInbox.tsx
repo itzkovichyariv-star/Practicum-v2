@@ -309,8 +309,8 @@ function SubmissionCard({ s, selected, onToggle, onDelete }: {
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 mt-1" style={{ color: 'var(--text-soft)' }}>
             {s.phone && <span dir="ltr">{s.phone}</span>}
             {s.email && <span>{s.email}</span>}
-            {s.questionnaire?.studyTracks && <span>· {s.questionnaire.studyTracks}</span>}
-            {s.questionnaire?.gpa && <span>· ממוצע {s.questionnaire.gpa}</span>}
+            {s.questionnaire?.studyTracks && <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>· {s.questionnaire.studyTracks}</span>}
+            {s.questionnaire?.gpa && <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>· ממוצע {s.questionnaire.gpa}</span>}
             {s.course_name && <span>· {s.course_name}</span>}
             {s.year && <span>· {s.year}</span>}
             <span>· {new Date(s.submitted_at).toLocaleDateString('he-IL')}</span>
