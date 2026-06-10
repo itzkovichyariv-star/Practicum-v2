@@ -592,11 +592,11 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
             {Q_ITEMS.map((item, idx) => {
               const answer = (q as any)[item.key]?.trim() || '';
               return (
-                <div key={item.key} className="px-6 py-5" style={{ background: idx % 2 === 0 ? 'white' : 'rgba(0,0,0,0.015)' }}>
+                <div key={item.key} className="px-6 py-5" style={{ background: idx % 2 === 0 ? 'var(--surface-1)' : 'var(--surface-2)' }}>
                   {/* Question */}
                   <div className="flex gap-3 mb-3">
                     <span className="mono text-[10px] font-semibold shrink-0 mt-0.5 w-5 text-center rounded-full h-5 flex items-center justify-center"
-                      style={{ background: answer ? 'rgba(122,30,43,0.1)' : 'rgba(0,0,0,0.06)', color: answer ? 'var(--accent)' : 'var(--text-soft)', lineHeight: 1 }}>
+                      style={{ background: answer ? 'rgba(122,30,43,0.1)' : 'var(--surface-1)', color: answer ? 'var(--accent)' : 'var(--text-soft)', lineHeight: 1 }}>
                       {idx + 1}
                     </span>
                     <span className="text-[13px] font-semibold leading-snug" style={{ color: 'var(--ink)' }}>{item.question}</span>
@@ -609,7 +609,7 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
                     </div>
                   ) : (
                     <div className="mr-8 px-4 py-2 rounded-lg text-[12.5px] italic"
-                      style={{ color: 'var(--text-soft)', background: 'rgba(0,0,0,0.03)' }}>
+                      style={{ color: 'var(--text-soft)', background: 'var(--surface-2)' }}>
                       לא מולא
                     </div>
                   )}
