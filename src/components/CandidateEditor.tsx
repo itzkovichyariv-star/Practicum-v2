@@ -514,7 +514,7 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
       @media print{body{margin:16px}}</style></head>
       <body>
         <h1>טופס הגשת מועמדות — פרקטיקום משאבי אנוש</h1>
-        <p>${candidateName || ''}${q.studyTracks ? ' · ' + q.studyTracks : ''}${q.gpa ? ' · ממוצע ' + q.gpa : ''}</p>
+        <p>${candidateName || ''}${q.studyTracks ? ' · <strong style="font-size:15px;color:#222">' + q.studyTracks + '</strong>' : ''}${q.gpa ? ' · <strong style="font-size:15px;color:#222">ממוצע ' + q.gpa + '</strong>' : ''}</p>
         ${rows}
       </body></html>`;
   }
@@ -576,7 +576,7 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
             <div>
               <div className="serif text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>טופס הגשת מועמדות — פרקטיקום משאבי אנוש</div>
               {q.studyTracks && (
-                <div className="mono text-[11px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                <div className="text-[15px] font-bold mt-0.5" style={{ color: 'var(--ink)' }}>
                   חוג: {q.studyTracks}{q.gpa ? ` · ממוצע: ${q.gpa}` : ''}
                 </div>
               )}
