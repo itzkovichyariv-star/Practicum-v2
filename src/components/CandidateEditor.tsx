@@ -358,7 +358,7 @@ export default function CandidateEditor({
             )}
             {!isNew && onDelete && (
               <button type="button"
-                onClick={() => { if (confirm('למחוק?')) onDelete(form.id); }}
+                onClick={() => { if (confirm(`למחוק את ${form.name || 'המועמד/ת'}?\n\n⚠️ כל נתוני הכרטיס — כולל סטטוס ראיון, ציוני הערכה וסיכום — יימחקו.\n(שחזור אפשרי מגיבויי המערכת — מסך ניהול → גרסאות)`)) onDelete(form.id); }}
                 className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold mr-auto hover:opacity-70"
                 style={{ color: 'var(--accent)', flexShrink: 0 }}>🗑 מחק</button>
             )}

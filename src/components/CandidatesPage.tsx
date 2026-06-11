@@ -207,9 +207,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     notsubmitted: scoped.filter(c => !(c.cvUrl && c.applicationUrl) && (!c.interviewResult || c.interviewResult === 'pending')).length,
   }), [scoped]);
 
-  async function persistAndRefresh(next: Candidate[], msg: string) {
+  async function persistAndRefresh(next: Candidate[], msg: string, activity?: { action: string; entity: string; target: string }) {
     setSaving(true); setSaveMsg(null);
-    const res = await saveSnapshot({ ...data, candidates: next }, { name: userName });
+    const res = await saveSnapshot({ ...data, candidates: next }, { name: userName }, activity);
     setSaving(false);
     if (!res.ok) { setSaveMsg('שגיאה: ' + (res.error || '')); showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
     setSaveMsg(msg);
@@ -344,8 +344,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   async function handleDelete(id: string) {
+    const c = all.find(x => x.id === id);
     setEditing(null);
-    await persistAndRefresh(all.filter(c => c.id !== id), '✓ נמחק');
+    await persistAndRefresh(all.filter(x => x.id !== id), '✓ נמחק',
+      { action: 'מחיקה', entity: 'מועמד', target: c?.name || id });
   }
 
   async function handleAcceptSubmissionIntoCandidates(sub: any) {
@@ -458,6 +460,22 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   async function handleRevertToSubmission(c: Candidate) {
+    // ── Safety guard (2026-06-11, after עינה נוימן's interview data was lost) ──
+    // Reverting DELETES the candidate card; re-intake rebuilds it from the bare
+    // submission, so anything entered since intake is gone. Spell out exactly
+    // what this candidate stands to lose and require explicit confirmation.
+    const lost: string[] = [];
+    if (c.interviewConducted) lost.push('סימון "ראיון בוצע"');
+    if (c.evalScore != null || c.evalEnglish || c.evalMotivation || c.evalCommunication || c.evalCommitment || c.evalAcquaintance) lost.push('ציוני ההערכה');
+    if (c.interviewSummary) lost.push('סיכום הראיון');
+    if (c.interviewResult === 'passed' || c.interviewResult === 'failed') lost.push('תוצאת הראיון');
+    if (c.preferredArea) lost.push('תחום מועדף');
+    const warning =
+      `להחזיר את ${c.name} לתיבת ההגשות?\n\n` +
+      `⚠️ פעולה זו מוחקת את כרטיס המועמד/ת. בקליטה מחדש ייווצר כרטיס חדש מטופס ההרשמה בלבד` +
+      (lost.length ? `, והנתונים הבאים יימחקו:\n• ${lost.join('\n• ')}` : '.') +
+      `\n\n(שחזור אפשרי מגיבויי המערכת — מסך ניהול → גרסאות)`;
+    if (!confirm(warning)) return;
     // Find the matching processed submission (by email first, then name)
     let subId: string | null = null;
     if (c.email) {
@@ -484,7 +502,8 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       await supabase.from('candidate_submissions').update({ processed: false }).eq('id', subId);
     }
     const nextCandidates = all.filter(x => x.id !== c.id);
-    await persistAndRefresh(nextCandidates, `↩ ${c.name} הוחזר לתיבת ההגשות`);
+    await persistAndRefresh(nextCandidates, `↩ ${c.name} הוחזר לתיבת ההגשות`,
+      { action: 'החזרה להגשות', entity: 'מועמד', target: c.name });
   }
 
   async function handleConvertToStudent(c: Candidate) {
