@@ -109,6 +109,10 @@ Deno.serve(async (req) => {
           <p style="font-size:13.5px;line-height:1.6;margin:14px 0 0;color:#666">
             תהליך השיבוץ יחל רק לאחר הגשת קורות החיים המעודכנים והעדפותיך — אנא הקפד/י לבצע זאת בסמוך לסיום הסדנה.
           </p>
+          <div style="background:#fdf3e0;border:1px solid #d4a04a;border-radius:6px;padding:12px 14px;margin:12px 0 0;font-size:13.5px;line-height:1.6;color:#3d0f14">
+            <strong style="display:block;margin-bottom:4px;color:#7a1e2b">⚠️ אנא אל תעשה שימוש בקישור לפני סיום סדנת ההכנה.</strong>
+            רשימת הארגונים הקיימת בקישור אינה מעודכנת בשלב זה. היא תתעדכן עד לסיום הסדנה.
+          </div>
           <p style="font-size:13.5px;line-height:1.6;margin:10px 0 0">
             לצפייה מראש ברשימת הארגונים ותיאוריהם: <a href="${orgsLink}" style="color:#7a1e2b;text-decoration:underline">${orgsLink}</a>
           </p>
