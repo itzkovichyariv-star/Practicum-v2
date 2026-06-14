@@ -11,8 +11,11 @@ import CandidateEditor from './CandidateEditor';
 import { RowActions, Popover, RefreshButton, StatusDot, type DotStatus } from './StudentsPage';
 import SubmissionsInbox from './SubmissionsInbox';
 import ExcelImport from './ExcelImport';
-// email sending is via Outlook (mailto:) — no direct API imports needed
+// Two acceptance-email channels:
+//   - Outlook draft (mailto:) — manual review, default for all courses
+//   - Resend HTML (Edge Function) — auto-send when course.autoSendAcceptance=true
 import { openMailto } from '../lib/openMailto';
+import { sendAcceptanceEmail } from '../lib/emailApi';
 
 export default function CandidatesPage({ data, context, userName, onRefresh }: PageProps) {
   const [search, setSearch] = useState('');
@@ -322,9 +325,37 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       setSaveMsg('✓ עבר ראיון והועבר לסטודנטים');
       setTimeout(() => setSaveMsg(null), 3500);
 
-      // Offer acceptance email — user must confirm before it sends
+      // Acceptance email — auto-send via Resend if the course opted in,
+      // otherwise open the Outlook-draft confirmation modal (default).
       if (c.email) {
-        openEmailConfirm('acceptance', [{ id: updatedCand.id, name: c.name, email: c.email }]);
+        const course = courses.find(co => co.id === c.courseId);
+        if (course?.autoSendAcceptance === true) {
+          showToast('שולח מייל קבלה אוטומטית…', 'info');
+          const result = await sendAcceptanceEmail({
+            name: c.name,
+            email: c.email,
+            courseId: c.courseId,
+          });
+          if (result.ok) {
+            // Persist acceptanceEmailSent: true so the candidate card shows the
+            // ✉ קבלה chip and we don't re-send on a subsequent edit.
+            const sentIdx = nextCandidates.findIndex(x => x.id === updatedCand.id);
+            if (sentIdx >= 0) {
+              const withSent = [...nextCandidates];
+              withSent[sentIdx] = { ...withSent[sentIdx], acceptanceEmailSent: true };
+              await persistAndRefresh(withSent, '✉ מייל קבלה נשלח אוטומטית');
+            } else {
+              showToast('✉ מייל קבלה נשלח אוטומטית', 'success');
+            }
+          } else {
+            // Resend send failed — fall back to manual Outlook draft so the
+            // candidate doesn't go without any notification.
+            showToast(`שליחה אוטומטית נכשלה (${result.error || 'תקלה'}) — נפתחה טיוטת Outlook`, 'error');
+            openEmailConfirm('acceptance', [{ id: updatedCand.id, name: c.name, email: c.email }]);
+          }
+        } else {
+          openEmailConfirm('acceptance', [{ id: updatedCand.id, name: c.name, email: c.email }]);
+        }
       }
       return;
     }

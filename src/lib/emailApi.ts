@@ -16,9 +16,11 @@ async function getToken(): Promise<string> {
   return sess.session?.access_token || ANON;
 }
 
-/** Send acceptance email + CV-update link to a candidate/student */
+/** Send acceptance email + CV-update link to a candidate/student.
+ * courseId is optional but recommended — the Edge Function uses it to
+ * substitute the workshop date from course.workshopDate. */
 export async function sendAcceptanceEmail(
-  person: { name?: string; email: string },
+  person: { name?: string; email: string; courseId?: string },
 ): Promise<{ ok: boolean; sent: boolean; error?: string }> {
   try {
     const token = await getToken();
