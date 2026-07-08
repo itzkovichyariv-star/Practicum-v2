@@ -53,8 +53,13 @@ export default function EmployerFeedback() {
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [hired, setHired] = useState(false);
 
+  // Accept the short `/f?t=` link and the legacy `/feedback?token=` link so
+  // links already sent to employers keep working. Trim to defend against a
+  // stray space a mail client might append.
   const token = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search).get('token') || ''
+    ? (new URLSearchParams(window.location.search).get('t')
+        || new URLSearchParams(window.location.search).get('token')
+        || '').trim()
     : '';
 
   useEffect(() => {

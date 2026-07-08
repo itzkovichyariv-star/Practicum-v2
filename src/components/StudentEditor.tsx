@@ -2,7 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
-import { randomId, generateFeedbackUrl } from '../lib/dataApi';
+import { randomId, ensureFeedbackToken } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
 import { buildPlacementPreferences, addPlacementPreference, openVacancies, buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
@@ -501,17 +501,47 @@ export default function StudentEditor({
     window.open(`https://wa.me/${n}`, '_blank');
   }
 
-  /** Returns the feedback URL, generating and auto-saving a new token if needed. */
-  async function ensureFeedbackUrl(): Promise<string> {
-    if (form.feedbackToken) {
-      return `${window.location.origin}/feedback?token=${encodeURIComponent(form.feedbackToken)}`;
+  /**
+   * Returns a STABLE, DB-verified feedback URL — or null if the token could not
+   * be confirmed saved (in which case the caller must NOT send anything).
+   *
+   * Delegates to ensureFeedbackToken, which reads the cloud fresh, reuses an
+   * existing token (never regenerates → links already out there stay valid), and
+   * reads the token back to confirm it landed before returning. This is what
+   * makes both the email and the copy-link paths reliable instead of flaky.
+   */
+  async function ensureFeedbackUrl(): Promise<string | null> {
+    const editorName = placementExtras?.userName || 'צוות הפרקטיקום';
+    setCheckingFeedback(true);
+    try {
+      const res = await ensureFeedbackToken(form.id, editorName);
+      if (!res.ok || !res.token || !res.url) {
+        showToast('לא ניתן ליצור קישור משוב תקין — ' + (res.error || 'נסה/י שוב'), 'error');
+        return null;
+      }
+      // Reflect the confirmed token in the form + parent so the UI shows it and
+      // no later save can revert it.
+      if (res.token !== form.feedbackToken) {
+        const updated = { ...form, feedbackToken: res.token };
+        setForm(updated);
+        if (onAutoSave) await onAutoSave(updated);
+      }
+      return res.url;
+    } finally {
+      setCheckingFeedback(false);
     }
-    const { token, url } = generateFeedbackUrl(form.id, window.location.origin);
-    const updated = { ...form, feedbackToken: token };
-    setForm(updated);
-    // Auto-save immediately so the token is persisted before the email is sent
-    if (onAutoSave) await onAutoSave(updated);
-    return url;
+  }
+
+  /**
+   * Format a link for a plain-text (mailto) body so it can't break in transit:
+   *  • U+200E (LRM) forces the URL to render left-to-right inside the RTL body,
+   *    so the client can't reorder or clip the `?t=…` query.
+   *  • The link sits alone on its own line, and a "copy this if it doesn't open"
+   *    fallback repeats the raw URL — belt-and-suspenders across unknown clients.
+   */
+  function feedbackUrlBlock(u: string): string {
+    const LRM = '\u200E';
+    return `${LRM}${u}\n\nאם הקישור אינו נפתח בלחיצה — העתיקו את הכתובת הבאה והדביקו בדפדפן:\n${LRM}${u}`;
   }
 
   // Resolve the hosting employer from the student's free-text acceptedOrg. The
@@ -533,6 +563,7 @@ export default function StudentEditor({
   async function handleSendFeedbackEmail() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר — מלא/י קודם את שדה "ארגון מאכסן בפועל".'); return; }
     const url = await ensureFeedbackUrl();
+    if (!url) return; // token could not be verified in the DB — never send a dead link
     const emp = resolveEmployerForOrg(form.acceptedOrg);
     const empEmail = firstEmail(emp?.contactEmail);
     const greeting = emp?.contactPerson ? `${emp.contactPerson} שלום,` : 'שלום,';
@@ -540,7 +571,7 @@ export default function StudentEditor({
     const body = encodeURIComponent(
       `${greeting}\n\n` +
       `בהמשך לפרקטיקום של ${form.name} בארגונכם, נשמח לקבל את משובכם.\n\n` +
-      `לחצו על הקישור הבא למילוי טופס קצר (כ‑2 דקות):\n${url}\n\n` +
+      `למילוי טופס קצר (כ‑2 דקות) לחצו על הקישור:\n${feedbackUrlBlock(url)}\n\n` +
       `בתודה,\nצוות הפרקטיקום · אוניברסיטת אריאל`
     );
     setShownFeedbackUrl(url);
@@ -557,6 +588,7 @@ export default function StudentEditor({
   async function handleSendFeedbackWhatsApp() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר.'); return; }
     const url = await ensureFeedbackUrl();
+    if (!url) return; // token could not be verified in the DB — never send a dead link
     const emp = resolveEmployerForOrg(form.acceptedOrg);
     const empPhone = emp?.contactPhone || '';
     const msg = encodeURIComponent(
@@ -578,6 +610,7 @@ export default function StudentEditor({
 
   async function handleCopyFeedbackLink() {
     const url = await ensureFeedbackUrl();
+    if (!url) return; // token could not be verified in the DB — never copy a dead link
     setShownFeedbackUrl(url);
     // Try modern clipboard API; fall back to execCommand for iOS Safari
     let copied = false;
@@ -1112,27 +1145,30 @@ export default function StudentEditor({
               <button type="button" onClick={() => setShowEval(true)} style={btnSecondary()}>🖨 טופס הערכה</button>
             )}
             {!isNew && !form.feedbackSubmittedAt && (
-              <button type="button" onClick={handleSendFeedbackEmail}
+              <button type="button" onClick={handleSendFeedbackEmail} disabled={checkingFeedback}
                 title="שלח למעסיק קישור למילוי משוב — פותח Outlook" style={{
                 display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
                 background: 'var(--accent)', color: 'white', border: 'none',
-                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-              }}>📧 שלח משוב למעסיק</button>
+                borderRadius: '999px', cursor: checkingFeedback ? 'wait' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                opacity: checkingFeedback ? 0.6 : 1,
+              }}>{checkingFeedback ? '⏳ מכין קישור…' : '📧 שלח משוב למעסיק'}</button>
             )}
             {!isNew && !form.feedbackSubmittedAt && (
-              <button type="button" onClick={handleSendFeedbackWhatsApp}
+              <button type="button" onClick={handleSendFeedbackWhatsApp} disabled={checkingFeedback}
                 title="שלח קישור משוב ב‑WhatsApp" style={{
                 display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
                 background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                borderRadius: '999px', cursor: checkingFeedback ? 'wait' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                opacity: checkingFeedback ? 0.6 : 1,
               }}>💬 WhatsApp למעסיק</button>
             )}
             {!isNew && (
-              <button type="button" onClick={handleCopyFeedbackLink}
+              <button type="button" onClick={handleCopyFeedbackLink} disabled={checkingFeedback}
                 title="העתק קישור משוב ללוח" style={{
                 display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
                 background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-                borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                borderRadius: '999px', cursor: checkingFeedback ? 'wait' : 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                opacity: checkingFeedback ? 0.6 : 1,
               }}>🔗 העתק קישור</button>
             )}
             {!isNew && onDelete && (
@@ -1145,6 +1181,29 @@ export default function StudentEditor({
               className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100"
               style={{ flexShrink: 0 }}>בטל</button>
           </div>
+
+          {/* Always-visible feedback link — the guaranteed fallback if the
+              clipboard copy fails (the copy toast points here). Rendered LTR so
+              the URL is readable/selectable and can be hand-copied intact. */}
+          {shownFeedbackUrl && (
+            <div style={{ marginTop: '14px', padding: '12px 14px', borderRadius: '10px', background: 'rgba(122,30,43,0.05)', border: '1px solid var(--divider)' }}>
+              <div className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold mb-2" style={{ color: 'var(--text-soft)' }}>
+                קישור המשוב למעסיק · אם ההעתקה נכשלה — סמנ/י והעתק/י מכאן
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  readOnly
+                  dir="ltr"
+                  value={shownFeedbackUrl}
+                  data-feedback-url
+                  onFocus={(e) => e.currentTarget.select()}
+                  style={{ flex: 1, fontSize: '12.5px', fontFamily: 'monospace', padding: '8px 10px', borderRadius: '7px', border: '1px solid var(--divider)', background: '#fff', color: 'var(--ink)', direction: 'ltr', textAlign: 'left' }}
+                />
+                <button type="button" onClick={handleCopyFeedbackLink} disabled={checkingFeedback}
+                  className="mono text-[11px] font-semibold" style={{ padding: '8px 12px', borderRadius: '7px', border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: checkingFeedback ? 'wait' : 'pointer', flexShrink: 0 }}>העתק</button>
+              </div>
+            </div>
+          )}
 
         </form>
 

@@ -13,66 +13,97 @@ export async function saveSnapshot(
   editor: { name: string },
   activity?: { action: string; entity: string; target: string },
 ): Promise<{ ok: boolean; updated_at?: string; error?: string }> {
-  const now = new Date().toISOString();
+  const MAX_ATTEMPTS = 5;
 
-  // ── Safety merge: always read current cloud state first ──────────────────
-  // This prevents partial saves (e.g. { lectures } only) from wiping other
-  // fields (students, employers, courses…) that weren't included in `data`.
-  const { data: currentRow } = await supabase
+  // Build the write payload from a freshly-read cloud row: merge (cloud is the
+  // base, incoming `data` wins per key) + regression guard + history append.
+  // Returns { blocked } if the regression guard trips.
+  const build = (currentRow: any):
+    | { blocked: string }
+    | { now: string; currentVersion: number; version: number; payload: any; dataWithHistory: PracticumData } => {
+    const now = new Date().toISOString();
+    const cloudData: PracticumData = currentRow?.data || {};
+    const currentVersion: number = currentRow?.version || 0;
+
+    // Merge: cloud state is the base, incoming data wins for any key it provides.
+    // Arrays/objects in `data` fully replace their cloud counterparts (no deep merge).
+    const merged: PracticumData = { ...cloudData, ...data };
+
+    // ── Regression guard ── block any save where a key that had ≥ REGRESSION_FLOOR
+    // records in the cloud would be reduced to 0 (catches accidental full-wipes).
+    for (const key of GUARDED_KEYS) {
+      const cloudCount = ((cloudData as any)[key] as any[] | undefined)?.length ?? 0;
+      const mergedCount = ((merged as any)[key] as any[] | undefined)?.length ?? 0;
+      if (cloudCount >= REGRESSION_FLOOR && mergedCount === 0) {
+        const msg = `[Regression guard] Blocked save: "${key}" would drop from ${cloudCount} → 0. Pass the full array or omit the key.`;
+        console.error(msg);
+        return { blocked: msg };
+      }
+    }
+
+    const historyEntry = activity
+      ? { ts: now, who: editor.name, action: activity.action, entity: activity.entity, target: activity.target }
+      : null;
+    const existingHistory: any[] = (merged as any).history || [];
+    const history = historyEntry ? [historyEntry, ...existingHistory].slice(0, 200) : existingHistory;
+    const version = currentVersion + 1;
+    const payload = { data: { ...merged, history }, updated_at: now, last_editor_name: editor.name, version };
+    const dataWithHistory: PracticumData = { ...merged, history };
+    return { now, currentVersion, version, payload, dataWithHistory };
+  };
+
+  let lastError: string | undefined;
+
+  // ── Optimistic-concurrency loop (compare-and-swap on `version`) ───────────
+  // Read → merge → write guarded by the exact version we read. If another
+  // writer committed in between, the `.eq('version', …)` matches 0 rows; we
+  // re-read and retry so a concurrent save can NEVER silently revert a field it
+  // didn't touch (the lost-update that dropped feedback tokens — 2026-07-08).
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const { data: currentRow, error: readErr } = await supabase
+      .from('practicum_data')
+      .select('data, version')
+      .eq('org_id', 'default')
+      .single();
+    if (readErr) { lastError = readErr.message; break; }
+
+    const built = build(currentRow);
+    if ('blocked' in built) return { ok: false, error: built.blocked };
+
+    const { data: updatedRows, error } = await supabase
+      .from('practicum_data')
+      .update(built.payload)
+      .eq('org_id', 'default')
+      .eq('version', built.currentVersion)
+      .select('version');
+    if (error) { lastError = error.message; break; }
+
+    if (updatedRows && updatedRows.length > 0) {
+      writeVersionedSnapshot(built.dataWithHistory, editor, activity, built.version);
+      return { ok: true, updated_at: built.now };
+    }
+    // 0 rows updated → version moved under us; loop re-reads fresh and retries.
+    lastError = 'concurrent update';
+  }
+
+  // ── Safety floor ─────────────────────────────────────────────────────────
+  // CAS retries exhausted (heavy contention) or a transient read glitch. Fall
+  // back to ONE unguarded last-writer-wins write so a save NEVER fails where it
+  // would have succeeded before this fix. Worst case = pre-fix behavior.
+  const { data: fallbackRow } = await supabase
     .from('practicum_data')
     .select('data, version')
     .eq('org_id', 'default')
     .single();
-
-  const cloudData: PracticumData = (currentRow as any)?.data || {};
-
-  // Merge: cloud state is the base, incoming data wins for any key it provides.
-  // Arrays/objects in `data` fully replace their cloud counterparts (no deep merge).
-  const merged: PracticumData = { ...cloudData, ...data };
-
-  // ── Regression guard ─────────────────────────────────────────────────────
-  // Block any save where a key that had ≥ REGRESSION_FLOOR records in the cloud
-  // would be reduced to 0. This catches accidental full-wipes.
-  for (const key of GUARDED_KEYS) {
-    const cloudCount = ((cloudData as any)[key] as any[] | undefined)?.length ?? 0;
-    const mergedCount = ((merged as any)[key] as any[] | undefined)?.length ?? 0;
-    if (cloudCount >= REGRESSION_FLOOR && mergedCount === 0) {
-      const msg = `[Regression guard] Blocked save: "${key}" would drop from ${cloudCount} → 0. Pass the full array or omit the key.`;
-      console.error(msg);
-      return { ok: false, error: msg };
-    }
-  }
-
-  // Append history entry
-  const historyEntry = activity
-    ? { ts: now, who: editor.name, action: activity.action, entity: activity.entity, target: activity.target }
-    : null;
-
-  const existingHistory: any[] = (merged as any).history || [];
-  const history = historyEntry
-    ? [historyEntry, ...existingHistory].slice(0, 200)
-    : existingHistory;
-
-  const version = ((currentRow as any)?.version || 0) + 1;
-
-  const payload = {
-    data: { ...merged, history },
-    updated_at: now,
-    last_editor_name: editor.name,
-    version,
-  };
-
-  const dataWithHistory: PracticumData = { ...merged, history };
-
+  const built = build(fallbackRow);
+  if ('blocked' in built) return { ok: false, error: built.blocked };
   const { error } = await supabase
     .from('practicum_data')
-    .update(payload)
+    .update(built.payload)
     .eq('org_id', 'default');
-
-  if (error) return { ok: false, error: error.message };
-  // Write versioned snapshot (fire-and-forget, silent failure)
-  writeVersionedSnapshot(dataWithHistory, editor, activity, payload.version);
-  return { ok: true, updated_at: now };
+  if (error) return { ok: false, error: error.message || lastError };
+  writeVersionedSnapshot(built.dataWithHistory, editor, activity, built.version);
+  return { ok: true, updated_at: built.now };
 }
 
 /* ── randomId ──────────────────────────────────────────────────────────── */
@@ -81,20 +112,99 @@ export function randomId(prefix = 'id'): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
 }
 
-/* ── generateFeedbackUrl ───────────────────────────────────────────────── */
+/* ── Employer-feedback links ────────────────────────────────────────────── */
 
 /**
- * Generates a unique opaque token and returns the public feedback URL
- * for an employer to fill out a feedback form for a given student.
- * Usage:
- *   const { token, url } = generateFeedbackUrl(student.id, window.location.origin);
- *   // Store token on student: update({ feedbackToken: token })
- *   // Share url with employer (email/WhatsApp)
+ * Canonical production host for employer-feedback links. Hardcoded (NOT
+ * window.location.origin) so a link sent to an employer always points at prod
+ * even when the admin is on a preview/localhost build — an employer can never
+ * receive a dead localhost/preview link.
+ */
+export const FEEDBACK_BASE_URL = 'https://practicum.yarivitzkovich.org';
+
+/**
+ * Build the shortest possible feedback URL from a token: `/f?t=<token>`.
+ * The short route + short query keep the whole URL well under every mail-client
+ * line-wrap threshold, so the `?t=…` can't be split off in a plain-text email.
+ * The legacy `/feedback?token=…` route still resolves for already-sent links.
+ */
+export function buildFeedbackUrl(token: string): string {
+  return `${FEEDBACK_BASE_URL}/f?t=${encodeURIComponent(token)}`;
+}
+
+/**
+ * @deprecated Use ensureFeedbackToken (stable + DB-verified) + buildFeedbackUrl.
+ * Kept only so any old caller still compiles. Generates a fresh token/URL but
+ * does NOT persist — do not use for new code.
  */
 export function generateFeedbackUrl(studentId: string, baseUrl: string): { token: string; url: string } {
-  const token = `fb-${studentId}-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`;
+  const token = `fb-${studentId}-${Math.random().toString(36).slice(2, 8)}`;
   const url = `${baseUrl}/feedback?token=${encodeURIComponent(token)}`;
   return { token, url };
+}
+
+/**
+ * Return a STABLE, database-verified feedback token + URL for a student.
+ *
+ * Robustness contract (the whole point of this function):
+ *  1. Reads the student's CURRENT token from the cloud (not stale UI state), so
+ *     an existing token is NEVER regenerated — a link already sent to an
+ *     employer stays valid forever.
+ *  2. If no token exists, it creates one, persists it via the CAS-guarded
+ *     saveSnapshot, then READS IT BACK to confirm it actually landed. A URL is
+ *     only ever returned once its token is verified live in the DB.
+ *  3. Retries the create+verify loop on the rare concurrent-write miss.
+ *
+ * Callers must treat `ok === false` as "do not send a link".
+ */
+export async function ensureFeedbackToken(
+  studentId: string,
+  editorName: string,
+): Promise<{ ok: boolean; token?: string; url?: string; error?: string }> {
+  const MAX_ATTEMPTS = 4;
+  let lastError = 'שמירת קישור המשוב נכשלה';
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // 1. Read the freshest cloud state.
+    const { data: row, error: readErr } = await supabase
+      .from('practicum_data')
+      .select('data')
+      .eq('org_id', 'default')
+      .single();
+    if (readErr || !row) { lastError = readErr?.message || 'קריאת הנתונים מהענן נכשלה'; continue; }
+
+    const d = ((row as any).data || {}) as PracticumData;
+    const students = (d.students || []) as any[];
+    const idx = students.findIndex((s) => s.id === studentId);
+    if (idx < 0) return { ok: false, error: 'הסטודנט/ית לא נמצא/ה בענן — רענן/י ונסה/י שוב' };
+
+    // 2. An existing token always wins — never mint a second one.
+    const existing = students[idx].feedbackToken;
+    if (existing) return { ok: true, token: existing, url: buildFeedbackUrl(existing) };
+
+    // 3. Mint, persist (CAS-guarded), then verify by read-back.
+    const token = `fb-${studentId}-${Math.random().toString(36).slice(2, 8)}`;
+    const nextStudents = students.map((s, i) => (i === idx ? { ...s, feedbackToken: token } : s));
+    const res = await saveSnapshot(
+      { ...d, students: nextStudents },
+      { name: editorName },
+      { action: 'נוצר קישור משוב מעסיק', entity: 'סטודנט', target: students[idx].name || studentId },
+    );
+    if (!res.ok) { lastError = res.error || lastError; continue; }
+
+    const { data: verifyRow } = await supabase
+      .from('practicum_data')
+      .select('data')
+      .eq('org_id', 'default')
+      .single();
+    const confirmed = (((verifyRow as any)?.data?.students || []) as any[])
+      .find((s) => s.id === studentId)?.feedbackToken;
+    if (confirmed === token) return { ok: true, token, url: buildFeedbackUrl(token) };
+    // Read-back didn't match (a concurrent writer landed) — loop and retry.
+    lastError = 'אימות שמירת הקישור נכשל';
+  }
+
+  return { ok: false, error: lastError };
 }
 
 /* ── Versioned snapshots ────────────────────────────────────────────────

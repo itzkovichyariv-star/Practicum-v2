@@ -1,0 +1,11 @@
+---
+// Short alias for the employer-feedback form: /f?t=<token>
+// Kept intentionally tiny — the shorter URL survives plain-text email line-wrap
+// where the full /feedback?token=… link was being split. EmployerFeedback reads
+// both `t` and the legacy `token` param, so old links still resolve at /feedback.
+import Layout from '../layouts/Layout.astro';
+import EmployerFeedback from '../components/EmployerFeedback.tsx';
+---
+<Layout title="משוב מעסיק — פרקטיקום">
+  <EmployerFeedback client:only="react" />
+</Layout>
