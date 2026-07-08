@@ -92,7 +92,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [showImport, setShowImport] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<Student | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectMode, setSelectMode] = useState(false);
   const [showMailModal, setShowMailModal] = useState(false);
   const [mailSubject, setMailSubject] = useState('');
   const [mailBody, setMailBody] = useState('');
@@ -168,7 +167,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     }
     persistAndRefresh(next, `✉ Outlook נפתח ל‑${recipients.length} נמענים`);
     setEmailConfirm(null);
-    setSelectedIds(new Set()); setSelectMode(false);
+    setSelectedIds(new Set());
     showToast(`✓ נפתח Outlook ל‑${recipients.length} נמענים`, 'success');
   }
 
@@ -425,23 +424,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                 style={btnSecondary()}>✉ מייל לקבוצה</button>
             )}
             <div className="flex gap-2 flex-wrap justify-end">
-              <button
-                onClick={() => { setSelectMode(s => !s); if (selectMode) setSelectedIds(new Set()); }}
-                className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
-                style={{ color: selectMode ? 'var(--accent)' : 'var(--text-soft)' }}>
-                {selectMode ? '✕ בטל מצב בחירה' : '☑ בחר מספר'}
-              </button>
-              {selectMode && (
-                <button
-                  onClick={() => {
-                    const allSelected = filtered.every(s => selectedIds.has(s.id));
-                    setSelectedIds(allSelected ? new Set() : new Set(filtered.map(s => s.id)));
-                  }}
-                  className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
-                  style={{ color: filtered.every(s => selectedIds.has(s.id)) && filtered.length > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
-                  {filtered.every(s => selectedIds.has(s.id)) && filtered.length > 0 ? '✕ בטל הכל' : '☑ בחר הכל'}
-                </button>
-              )}
               <button onClick={() => setShowImport(s => !s)}
                 className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
                 style={{ color: 'var(--accent)' }}>
@@ -535,6 +517,44 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         })}
       </div>
 
+      {/* Selection + group-mail action row (Candidates-style) — always above the
+          list. Checkboxes on each row select individuals; "בחר הכל" grabs the
+          whole current filter; the actions send to whoever is ticked. */}
+      {filtered.length > 0 && (
+        <div className="mb-6 flex gap-3 items-center flex-wrap">
+          <button
+            onClick={() => {
+              const allSelected = filtered.every(s => selectedIds.has(s.id));
+              setSelectedIds(allSelected ? new Set() : new Set(filtered.map(s => s.id)));
+            }}
+            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+            style={{ color: filtered.every(s => selectedIds.has(s.id)) && filtered.length > 0 ? 'var(--accent)' : 'var(--text-soft)', whiteSpace: 'nowrap' }}>
+            {filtered.every(s => selectedIds.has(s.id)) && filtered.length > 0 ? '✕ בטל הכל' : `☑ בחר הכל (${filtered.length})`}
+          </button>
+          {selectedIds.size > 0 && (
+            <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent)' }}>{selectedIds.size} נבחרו</span>
+          )}
+          {selectedIds.size > 0 && (
+            <button onClick={() => { setMailMode('selected'); setMailSubject(''); setMailBody(''); setShowMailModal(true); }} style={btnSmall()}>📧 מייל Outlook</button>
+          )}
+          {selectedIds.size > 0 && (
+            <button style={btnSmall()} onClick={() => {
+              const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
+              openEmailConfirm('acceptance', people.filter(s => s.email).map(s => ({ id: s.id, name: s.name, email: s.email! })));
+            }}>✓ הודעת קבלה ({selectedIds.size})</button>
+          )}
+          {selectedIds.size > 0 && (
+            <button style={{ ...btnSmall(), borderColor: 'var(--accent)', color: 'var(--accent)' }} onClick={() => {
+              const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
+              openEmailConfirm('rejection', people.filter(s => s.email).map(s => ({ id: s.id, name: s.name, email: s.email! })));
+            }}>✗ הודעת דחייה ({selectedIds.size})</button>
+          )}
+          {selectedIds.size > 0 && (
+            <button onClick={() => setSelectedIds(new Set())} className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70" style={{ color: 'var(--text-soft)' }}>ביטול בחירה</button>
+          )}
+        </div>
+      )}
+
       {/* List */}
       <section>
         {filtered.length === 0 ? (
@@ -551,7 +571,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                   <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
                     pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                     onRevert={() => handleRevertToCandidate(s)}
-                    selectMode={selectMode}
                     selected={selectedIds.has(s.id)}
                     onToggleSelect={() => {
                       const next = new Set(selectedIds);
@@ -568,7 +587,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
                 pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                 onRevert={() => handleRevertToCandidate(s)}
-                selectMode={selectMode}
                 selected={selectedIds.has(s.id)}
                 onToggleSelect={() => {
                   const next = new Set(selectedIds);
@@ -579,48 +597,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           </ul>
         )}
       </section>
-
-      {/* Floating bulk-email action bar */}
-      {selectMode && selectedIds.size > 0 && (
-        <div
-          className="fixed bottom-6 left-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl"
-          style={{
-            transform: 'translateX(-50%)',
-            background: 'var(--ink)',
-            color: 'white',
-            minWidth: 360,
-          }}
-        >
-          <span className="mono text-[12px] uppercase tracking-[0.14em] font-semibold opacity-70 shrink-0">
-            {selectedIds.size} נבחרו
-          </span>
-          <span style={{ opacity: 0.3 }}>·</span>
-          <button
-            style={{ ...btnSmall(), background: 'white', color: 'var(--ink)', border: 'none', fontSize: '11.5px' }}
-            onClick={() => {
-              const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
-              openEmailConfirm('acceptance', people.filter(s => s.email).map(s => ({ id: s.id, name: s.name, email: s.email! })));
-            }}
-          >✓ הודעת קבלה</button>
-          <button
-            style={{ ...btnSmall(), background: 'transparent', color: 'rgba(255,255,255,0.8)', borderColor: 'rgba(255,255,255,0.35)', fontSize: '11.5px' }}
-            onClick={() => {
-              const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
-              openEmailConfirm('rejection', people.filter(s => s.email).map(s => ({ id: s.id, name: s.name, email: s.email! })));
-            }}
-          >✗ הודעת דחייה</button>
-          <button
-            style={{ ...btnSmall(), background: 'transparent', color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.35)', fontSize: '11.5px' }}
-            onClick={() => { setMailMode('selected'); setShowMailModal(true); }}
-          >📧 מייל Outlook</button>
-          <button
-            onClick={() => { setSelectedIds(new Set()); setSelectMode(false); }}
-            className="mono text-[10.5px] uppercase tracking-[0.14em] opacity-50 hover:opacity-100"
-            style={{ color: 'white' }}>
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Outlook group email modal — works in two modes:
           • bucket  = email a whole division (course+year scoped), chosen here
@@ -700,7 +676,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                   showToast(`✓ נפתח Outlook ל‑${emails.length} נמענים`, 'success');
                   setShowMailModal(false);
                   setMailSubject(''); setMailBody('');
-                  if (!isBucket) { setSelectedIds(new Set()); setSelectMode(false); }
+                  if (!isBucket) { setSelectedIds(new Set()); }
                 }}
                 style={{ ...btnPrimary(), opacity: withEmail.length === 0 ? 0.5 : 1, cursor: withEmail.length === 0 ? 'not-allowed' : 'pointer' }}
               >📧 פתח ב‑Outlook →</button>
@@ -874,9 +850,9 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
-function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selectMode, selected, onToggleSelect }: {
+function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onToggleSelect }: {
   s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void; onRevert?: () => void;
-  selectMode?: boolean; selected?: boolean; onToggleSelect?: () => void;
+  selected?: boolean; onToggleSelect?: () => void;
 }) {
   const placed = !!s.acceptedOrg;
   const hired = !!s.hired;
@@ -900,24 +876,25 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selectMode, sele
   return (
     <li className="relative group" data-info-row>
       <div
-        onClick={selectMode ? onToggleSelect : onTogglePin}
+        onClick={onTogglePin}
         className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
         style={{ borderColor: 'var(--divider)', background: selected ? 'rgba(122,30,43,0.04)' : undefined }}
       >
-        {/* Line 1: checkbox (selectMode) · dot · name · tags */}
+        {/* Line 1: checkbox (always) · dot · name · tags */}
         <div className="flex items-center gap-2 min-w-0 mb-1.5">
-          {selectMode && (
-            <span
-              onClick={e => { e.stopPropagation(); onToggleSelect?.(); }}
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                border: `2px solid ${selected ? 'var(--accent)' : 'var(--divider)'}`,
-                background: selected ? 'var(--accent)' : 'transparent',
-                color: 'white', fontSize: 11, cursor: 'pointer',
-              }}
-            >{selected ? '✓' : ''}</span>
-          )}
+          <span
+            role="checkbox"
+            aria-checked={selected}
+            title="בחר/י לשליחת מייל קבוצתי"
+            onClick={e => { e.stopPropagation(); onToggleSelect?.(); }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+              border: `2px solid ${selected ? 'var(--accent)' : 'var(--divider)'}`,
+              background: selected ? 'var(--accent)' : 'transparent',
+              color: 'white', fontSize: 11, cursor: 'pointer',
+            }}
+          >{selected ? '✓' : ''}</span>
           <StatusDot status={dotStatus} size={9} />
           <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
             {s.name || 'ללא שם'}

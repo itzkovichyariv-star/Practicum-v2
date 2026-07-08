@@ -107,6 +107,33 @@ if (opened) {
   });
 }
 
+// ── Candidates-parity: always-visible checkboxes + select-all + inline mail ──
+let checkboxAlways = false, inlineMailShown = false, inlineModalOpened = false;
+if (opened) {
+  // Close the bucket modal first.
+  await audit.page.locator('[data-mail-modal] button').filter({ hasText: 'ביטול' }).first().click().catch(() => {});
+  await audit.page.locator('[data-mail-modal]').first().waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+}
+if (seedOk) {
+  // Row checkboxes exist with NO select-mode toggle (they're always rendered).
+  checkboxAlways = await audit.page.locator('li[data-info-row] [role="checkbox"]').count() > 0;
+  // "בחר הכל" selects the current filter → the inline "📧 מייל Outlook" appears.
+  await audit.page.locator('button').filter({ hasText: 'בחר הכל' }).first().click().catch(() => {});
+  await audit.page.waitForTimeout(400);
+  const inlineMail = audit.page.locator('button').filter({ hasText: 'מייל Outlook' }).first();
+  inlineMailShown = await inlineMail.count() > 0;
+  await inlineMail.click().catch(() => {});
+  await audit.page.waitForTimeout(500);
+  inlineModalOpened = await audit.page.locator('[data-mail-recipients]').count() > 0;
+}
+audit.recordCell({
+  id: 'GROUP-MAIL-checkbox', tableRef: 'StudentsPage / always-visible checkboxes + inline select-all mail',
+  expected: 'row checkboxes always shown; "בחר הכל" selects → inline "📧 מייל Outlook" opens the compose modal',
+  observed: `checkboxAlways=${checkboxAlways}, inlineMailShown=${inlineMailShown}, modalOpened=${inlineModalOpened}`,
+  pass: seedOk ? (checkboxAlways && inlineMailShown && inlineModalOpened) : null,
+  notes: !seedOk ? 'seed failed' : (checkboxAlways && inlineMailShown && inlineModalOpened) ? '' : 'candidates-style selection UI missing',
+});
+
 // ── Cleanup ─────────────────────────────────────────────────────────────────
 try {
   const data = await loadData();
