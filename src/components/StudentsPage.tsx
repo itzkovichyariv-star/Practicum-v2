@@ -21,6 +21,24 @@ type Filters = {
 
 const emptyFilters: Filters = { search: '', stage: 'all', dotFilter: 'all' };
 
+// Divisions for the group-email tool. Each is a predicate over a student; the
+// recipient set is the current course+year context filtered by the chosen one.
+type MailBucketKey = 'all' | 'placed' | 'notplaced' | 'hired' | 'completed' | 'prep' | 'feedback_pending';
+const MAIL_BUCKETS: { key: MailBucketKey; label: string; test: (s: Student) => boolean }[] = [
+  { key: 'all',              label: 'כולם',              test: () => true },
+  { key: 'placed',           label: 'שובצו בארגון',       test: s => !!s.acceptedOrg },
+  { key: 'notplaced',        label: 'טרם שובצו',          test: s => !s.acceptedOrg && !s.hired && !s.practicumCompleted },
+  { key: 'hired',            label: 'נקלטו לעבודה',        test: s => !!s.hired },
+  { key: 'completed',        label: 'סיימו פרקטיקום',      test: s => !!s.practicumCompleted },
+  { key: 'prep',             label: 'עברו הכנה',          test: s => !!s.preparation?.passed },
+  { key: 'feedback_pending', label: 'משוב מעסיק חסר',      test: s => !!s.acceptedOrg && !s.feedbackSubmittedAt },
+];
+// Map the active stage tab → the matching mail bucket, so opening the group-mail
+// tool defaults to whatever the coordinator is already looking at.
+const STAGE_TO_BUCKET: Record<Filters['stage'], MailBucketKey> = {
+  all: 'all', prep: 'prep', placed: 'placed', hired: 'hired', completed: 'completed', notplaced: 'notplaced',
+};
+
 // In-app alert: candidate-suggested organizations awaiting the coordinator's approval.
 function PendingSuggestionsBanner() {
   const [pending, setPending] = useState<Array<{ id: string; name: string | null; email: string; org: string }>>([]);
@@ -78,6 +96,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [showMailModal, setShowMailModal] = useState(false);
   const [mailSubject, setMailSubject] = useState('');
   const [mailBody, setMailBody] = useState('');
+  // 'bucket' = email a whole division (course+year scoped); 'selected' = the
+  // manually-ticked rows. mailBucket is the active division in bucket mode.
+  const [mailMode, setMailMode] = useState<'selected' | 'bucket'>('selected');
+  const [mailBucket, setMailBucket] = useState<MailBucketKey>('all');
 
   // Email confirmation state — mandatory before any API send
   type EmailConfirm = {
@@ -227,6 +249,18 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     completed: scoped.filter(s => s.practicumCompleted).length,
     notplaced: scoped.filter(s => !s.acceptedOrg && !s.hired && !s.practicumCompleted).length,
   }), [scoped]);
+
+  // Recipients for the group-email modal: in bucket mode = everyone in the
+  // current course+year context matching the chosen division; in selected mode
+  // = the manually-ticked rows.
+  const mailRecipients = useMemo<Student[]>(() => {
+    if (mailMode === 'bucket') {
+      const b = MAIL_BUCKETS.find(x => x.key === mailBucket) || MAIL_BUCKETS[0];
+      return scoped.filter(b.test).sort((a, b2) => (a.name || '').localeCompare(b2.name || '', 'he'));
+    }
+    return (Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[])
+      .sort((a, b2) => (a.name || '').localeCompare(b2.name || '', 'he'));
+  }, [mailMode, mailBucket, scoped, selectedIds, all]);
 
   async function persistAndRefresh(next: Student[], msg: string) {
     setSaving(true);
@@ -379,6 +413,17 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           </div>
           <div className="flex flex-row md:flex-col gap-2 items-start md:items-end flex-wrap">
             <button onClick={() => setCreating(true)} style={btnPrimary()}>+ חדש/ה →</button>
+            {counts.total > 0 && (
+              <button
+                title="שליחת מייל לקבוצת סטודנטים לפי חלוקה — נפתח ב‑Outlook שלך"
+                onClick={() => {
+                  setMailMode('bucket');
+                  setMailBucket(STAGE_TO_BUCKET[filters.stage]);
+                  setMailSubject(''); setMailBody('');
+                  setShowMailModal(true);
+                }}
+                style={btnSecondary()}>✉ מייל לקבוצה</button>
+            )}
             <div className="flex gap-2 flex-wrap justify-end">
               <button
                 onClick={() => { setSelectMode(s => !s); if (selectMode) setSelectedIds(new Set()); }}
@@ -566,7 +611,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           >✗ הודעת דחייה</button>
           <button
             style={{ ...btnSmall(), background: 'transparent', color: 'rgba(255,255,255,0.85)', borderColor: 'rgba(255,255,255,0.35)', fontSize: '11.5px' }}
-            onClick={() => setShowMailModal(true)}
+            onClick={() => { setMailMode('selected'); setShowMailModal(true); }}
           >📧 מייל Outlook</button>
           <button
             onClick={() => { setSelectedIds(new Set()); setSelectMode(false); }}
@@ -577,27 +622,64 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         </div>
       )}
 
-      {/* Outlook group email modal */}
-      {showMailModal && (
+      {/* Outlook group email modal — works in two modes:
+          • bucket  = email a whole division (course+year scoped), chosen here
+          • selected = the rows ticked via "בחר מספר" */}
+      {showMailModal && (() => {
+        const isBucket = mailMode === 'bucket';
+        const recipients = mailRecipients;
+        const withEmail = recipients.filter(s => s.email);
+        const noEmail = recipients.filter(s => !s.email);
+        const ctxCourse = context.courseId && context.courseId !== '__all__'
+          ? (courses.find(c => c.id === context.courseId)?.name || 'קורס נבחר')
+          : 'כל הקורסים';
+        const ctxYear = context.year && context.year !== '__all__' ? context.year : 'כל השנים';
+        return (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.55)' }}>
-          <div className="rounded-2xl border p-8 max-w-[520px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)' }}>
-            <div className="flex items-baseline justify-between mb-5">
-              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>מייל קבוצתי ב‑Outlook</div>
+          <div data-mail-modal className="rounded-2xl border p-8 max-w-[560px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)', maxHeight: '92vh', overflowY: 'auto' }}>
+            <div className="flex items-baseline justify-between mb-1">
+              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>{isBucket ? 'מייל לקבוצת סטודנטים' : 'מייל קבוצתי ב‑Outlook'}</div>
               <button onClick={() => setShowMailModal(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
             </div>
-            {/* Selected names */}
-            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)', color: 'var(--ink)' }}>
-              {Array.from(selectedIds).map(id => all.find(s => s.id === id)?.name).filter(Boolean).join(' · ')}
+            <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-4" style={{ color: 'var(--text-soft)' }}>
+              {isBucket ? `${ctxCourse} · ${ctxYear} · נפתח ב‑Outlook שלך` : 'הנבחרים · נפתח ב‑Outlook שלך'}
             </div>
-            {/* Warn about missing emails */}
-            {(() => {
-              const noEmail = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(s => s && !s.email).map(s => s!.name);
-              return noEmail.length > 0 ? (
-                <div className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
-                  ⚠ ללא מייל (לא ייכלל/ו): {noEmail.join(', ')}
-                </div>
-              ) : null;
-            })()}
+
+            {/* Division selector (bucket mode only) */}
+            {isBucket && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {MAIL_BUCKETS.map(b => {
+                  const n = scoped.filter(b.test).length;
+                  const active = mailBucket === b.key;
+                  return (
+                    <button key={b.key} onClick={() => setMailBucket(b.key)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border mono text-[11px] font-semibold transition-colors"
+                      style={{
+                        borderColor: active ? 'var(--accent)' : 'var(--divider)',
+                        color: active ? 'white' : 'var(--text-soft)',
+                        background: active ? 'var(--accent)' : 'transparent',
+                      }}>
+                      {b.label}<span style={{ opacity: 0.7 }}>{n}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Recipient summary */}
+            <div className="mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)' }}>
+              <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-1.5" style={{ color: 'var(--accent)' }}>
+                {withEmail.length} נמענים
+              </div>
+              <div data-mail-recipients className="text-[12.5px] leading-[1.7]" style={{ color: 'var(--ink)', maxHeight: 120, overflowY: 'auto' }}>
+                {recipients.length === 0 ? 'אין סטודנטים בקבוצה זו.' : recipients.map(s => s.name).filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            {noEmail.length > 0 && (
+              <div className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
+                ⚠ ללא מייל (לא ייכללו): {noEmail.map(s => s.name).join(', ')}
+              </div>
+            )}
             <label className="block mb-3">
               <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
               <input value={mailSubject} onChange={e => setMailSubject(e.target.value)} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} placeholder="נושא ההודעה..." />
@@ -609,23 +691,24 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowMailModal(false)} className="btn">ביטול</button>
               <button
+                disabled={withEmail.length === 0}
                 onClick={() => {
-                  const people = Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[];
-                  const emails = people.map(s => s.email).filter(Boolean) as string[];
-                  if (emails.length === 0) { showToast('לאף אחד מהנבחרים אין מייל רשום', 'error'); return; }
+                  const emails = withEmail.map(s => s.email).filter(Boolean) as string[];
+                  if (emails.length === 0) { showToast('לאף אחד בקבוצה זו אין מייל רשום', 'error'); return; }
                   const bcc = emails.join(',');
                   openMailto(`mailto:?bcc=${encodeURIComponent(bcc)}&subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`);
                   showToast(`✓ נפתח Outlook ל‑${emails.length} נמענים`, 'success');
                   setShowMailModal(false);
                   setMailSubject(''); setMailBody('');
-                  setSelectedIds(new Set()); setSelectMode(false);
+                  if (!isBucket) { setSelectedIds(new Set()); setSelectMode(false); }
                 }}
-                style={btnPrimary()}
+                style={{ ...btnPrimary(), opacity: withEmail.length === 0 ? 0.5 : 1, cursor: withEmail.length === 0 ? 'not-allowed' : 'pointer' }}
               >📧 פתח ב‑Outlook →</button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Email confirmation modal ── */}
       {emailConfirm && (
