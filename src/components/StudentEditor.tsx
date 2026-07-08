@@ -2,7 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
-import { randomId, ensureFeedbackToken } from '../lib/dataApi';
+import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
 import { buildPlacementPreferences, addPlacementPreference, openVacancies, buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
@@ -502,15 +502,25 @@ export default function StudentEditor({
   }
 
   /**
-   * Returns a STABLE, DB-verified feedback URL — or null if the token could not
-   * be confirmed saved (in which case the caller must NOT send anything).
-   *
-   * Delegates to ensureFeedbackToken, which reads the cloud fresh, reuses an
-   * existing token (never regenerates → links already out there stay valid), and
-   * reads the token back to confirm it landed before returning. This is what
-   * makes both the email and the copy-link paths reliable instead of flaky.
+   * SYNCHRONOUS feedback URL when a verified token is already on the student —
+   * returns it with zero awaiting so the caller can copy / open mail WITHIN the
+   * click's user-gesture. (Browsers block clipboard writes and mailto popups if
+   * they run after an async gap — the cause of "email doesn't respond / can't
+   * copy" once token creation became an async DB round-trip.)
    */
-  async function ensureFeedbackUrl(): Promise<string | null> {
+  function readyFeedbackUrl(): string | null {
+    return form.feedbackToken ? buildFeedbackUrl(form.feedbackToken) : null;
+  }
+
+  /**
+   * Create + DB-verify a feedback token the FIRST time (student has none yet).
+   * ensureFeedbackToken reads the cloud fresh, never regenerates an existing
+   * token, and reads it back to confirm before returning. Because this awaits,
+   * callers must NOT try to copy / open mail off its result in the same tick —
+   * they reveal the link box and ask for a second click instead.
+   * Returns the URL (also stored on the form + synced to the parent) or null.
+   */
+  async function createFeedbackUrl(): Promise<string | null> {
     const editorName = placementExtras?.userName || 'צוות הפרקטיקום';
     setCheckingFeedback(true);
     try {
@@ -519,8 +529,8 @@ export default function StudentEditor({
         showToast('לא ניתן ליצור קישור משוב תקין — ' + (res.error || 'נסה/י שוב'), 'error');
         return null;
       }
-      // Reflect the confirmed token in the form + parent so the UI shows it and
-      // no later save can revert it.
+      // Persist the confirmed token into the form + parent so every later click
+      // is the synchronous (gesture-safe) path and no stale save can revert it.
       if (res.token !== form.feedbackToken) {
         const updated = { ...form, feedbackToken: res.token };
         setForm(updated);
@@ -560,10 +570,25 @@ export default function StudentEditor({
   // employers store "a@x.com/ b@y.com" or stray "mailto:" text).
   const firstEmail = (s?: string) => (s || '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)?.[0] || '';
 
+  /**
+   * First-ever feedback action on a student (no token yet): create + verify the
+   * token, reveal the link in the box, and ask for a second click. We CANNOT
+   * copy/open-mail here — createFeedbackUrl awaited, so the click's user-gesture
+   * is spent and the browser would block the clipboard write / mailto popup. The
+   * second click hits the synchronous (gesture-safe) path.
+   */
+  async function prepareLinkThenPrompt(againLabel: string) {
+    const url = await createFeedbackUrl();
+    if (!url) return;
+    setShownFeedbackUrl(url);
+    showToast(`✓ קישור המשוב מוכן והוצג למטה — לחצו שוב על "${againLabel}"`, 'success');
+  }
+
   async function handleSendFeedbackEmail() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר — מלא/י קודם את שדה "ארגון מאכסן בפועל".'); return; }
-    const url = await ensureFeedbackUrl();
-    if (!url) return; // token could not be verified in the DB — never send a dead link
+    const url = readyFeedbackUrl();
+    if (!url) { await prepareLinkThenPrompt('שלח משוב למעסיק'); return; }
+    setShownFeedbackUrl(url);
     const emp = resolveEmployerForOrg(form.acceptedOrg);
     const empEmail = firstEmail(emp?.contactEmail);
     const greeting = emp?.contactPerson ? `${emp.contactPerson} שלום,` : 'שלום,';
@@ -574,7 +599,6 @@ export default function StudentEditor({
       `למילוי טופס קצר (כ‑2 דקות) לחצו על הקישור:\n${feedbackUrlBlock(url)}\n\n` +
       `בתודה,\nצוות הפרקטיקום · אוניברסיטת אריאל`
     );
-    setShownFeedbackUrl(url);
     if (!empEmail) {
       if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
       alert(emp
@@ -582,20 +606,21 @@ export default function StudentEditor({
         : `לא נמצא מעסיק בשם "${form.acceptedOrg}" ברשימת המעסיקים. ודאו שהשם תואם לרשומת המעסיק. הקישור הועתק.`);
       return;
     }
+    // In-gesture (url came back synchronously) so the mail client actually opens.
     window.open(`mailto:${empEmail}?subject=${subject}&body=${body}`, '_blank');
   }
 
   async function handleSendFeedbackWhatsApp() {
     if (!form.acceptedOrg) { alert('לסטודנט/ית אין ארגון מאכסן מוגדר.'); return; }
-    const url = await ensureFeedbackUrl();
-    if (!url) return; // token could not be verified in the DB — never send a dead link
+    const url = readyFeedbackUrl();
+    if (!url) { await prepareLinkThenPrompt('WhatsApp למעסיק'); return; }
+    setShownFeedbackUrl(url);
     const emp = resolveEmployerForOrg(form.acceptedOrg);
     const empPhone = emp?.contactPhone || '';
     const msg = encodeURIComponent(
       `שלום,\nבהמשך לפרקטיקום של ${form.name} בארגונכם,\n` +
       `נשמח לקבל משוב קצר בקישור הבא:\n${url}`
     );
-    setShownFeedbackUrl(url);
     if (!empPhone) {
       if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
       alert(emp
@@ -609,16 +634,24 @@ export default function StudentEditor({
   }
 
   async function handleCopyFeedbackLink() {
-    const url = await ensureFeedbackUrl();
-    if (!url) return; // token could not be verified in the DB — never copy a dead link
+    const url = readyFeedbackUrl();
+    if (!url) {
+      // First time: create the token, reveal the link box (the box itself is the
+      // copy target); a second click copies within its own gesture.
+      const created = await createFeedbackUrl();
+      if (!created) return;
+      setShownFeedbackUrl(created);
+      showToast('✓ קישור המשוב מוכן והוצג למטה — לחצו "העתק"', 'success');
+      return;
+    }
     setShownFeedbackUrl(url);
-    // Try modern clipboard API; fall back to execCommand for iOS Safari
+    // In-gesture clipboard write (url is synchronous — no await before this).
     let copied = false;
     if (navigator.clipboard?.writeText) {
       try { await navigator.clipboard.writeText(url); copied = true; } catch {}
     }
     if (!copied) {
-      // iOS fallback: create a temporary input, select and copy
+      // iOS/Safari fallback: temporary input, select, execCommand copy.
       const el = document.createElement('input');
       el.value = url;
       el.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
@@ -627,12 +660,7 @@ export default function StudentEditor({
       try { copied = document.execCommand('copy'); } catch {}
       document.body.removeChild(el);
     }
-    if (copied) {
-      showToast('✓ קישור המשוב הועתק ללוח', 'success');
-    } else {
-      // Clipboard not available — just show the URL so user can copy manually
-      showToast('לא ניתן להעתיק — העתק ידנית מהתיבה למטה', 'warn');
-    }
+    showToast(copied ? '✓ קישור המשוב הועתק ללוח' : 'לא ניתן להעתיק — העתק ידנית מהתיבה למטה', copied ? 'success' : 'warn');
   }
 
   return (
