@@ -21,6 +21,15 @@ type Filters = {
 
 const emptyFilters: Filters = { search: '', stage: 'all', dotFilter: 'all' };
 
+// A student "has employer feedback" when either the public employer form was
+// submitted (feedbackSubmittedAt) or feedback text was recorded manually in the
+// editor. Single source of truth for the "✓ משוב" card pill AND the group-email
+// "משוב מעסיק חסר" bucket, so a quick scan and the mail tool always agree.
+// Course-agnostic on purpose — it lights up wherever feedback exists (HR
+// practicum תשפ״ו today, every course automatically as their feedback arrives).
+export const hasEmployerFeedback = (s: Student): boolean =>
+  !!s.feedbackSubmittedAt || !!(s.feedbackText && s.feedbackText.trim());
+
 // Divisions for the group-email tool. Each is a predicate over a student; the
 // recipient set is the current course+year context filtered by the chosen one.
 type MailBucketKey = 'all' | 'placed' | 'notplaced' | 'hired' | 'completed' | 'prep' | 'feedback_pending';
@@ -31,7 +40,7 @@ const MAIL_BUCKETS: { key: MailBucketKey; label: string; test: (s: Student) => b
   { key: 'hired',            label: 'נקלטו לעבודה',        test: s => !!s.hired },
   { key: 'completed',        label: 'סיימו פרקטיקום',      test: s => !!s.practicumCompleted },
   { key: 'prep',             label: 'עברו הכנה',          test: s => !!s.preparation?.passed },
-  { key: 'feedback_pending', label: 'משוב מעסיק חסר',      test: s => !!s.acceptedOrg && !s.feedbackSubmittedAt },
+  { key: 'feedback_pending', label: 'משוב מעסיק חסר',      test: s => !!s.acceptedOrg && !hasEmployerFeedback(s) },
 ];
 // Map the active stage tab → the matching mail bucket, so opening the group-mail
 // tool defaults to whatever the coordinator is already looking at.
@@ -907,6 +916,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onTogg
             {placed && !hired && !completed && <Tag label="שובץ/ה" />}
             {hired && !completed && <Tag label="נקלט/ה" solid />}
             {completed && <Tag label="✓ סיים" color="#b45309" />}
+            {hasEmployerFeedback(s) && <Tag label="✓ משוב" color="#15803d" />}
             {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
             {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
           </div>
