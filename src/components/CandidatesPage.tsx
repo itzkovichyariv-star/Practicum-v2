@@ -1073,7 +1073,7 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
 function PersonalLinksC({ email, name }: { email?: string | null; name?: string | null }) {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const cvLink = `${origin}/cv-update/?email=${encodeURIComponent(email || '')}&name=${encodeURIComponent(name || '')}`;
-  const orgsLink = `${origin}/organizations`;
+  const orgsLink = `${origin}/organizations?email=${encodeURIComponent(email || '')}`;
 
   async function copy(url: string, label: string) {
     try {

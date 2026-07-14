@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
     const name: string = candidate.name || 'מועמד/ת';
     const firstName = name.split(' ')[0] || name;
     const cvUpdateLink = `${BASE_URL}/cv-update/?email=${encodeURIComponent(candidate.email)}&name=${encodeURIComponent(name)}`;
-    const orgsLink = `${BASE_URL}/organizations`;
+    const orgsLink = `${BASE_URL}/organizations?email=${encodeURIComponent(candidate.email)}`;
 
     const dateValue = workshopDate || '⚠️ תאריך טרם נקבע';
 

@@ -351,6 +351,59 @@ export function buildWhatsAppUrl(rawPhone: string, message: string): string {
   return `https://wa.me/${normalizeIsraeliPhone(rawPhone)}?text=${encodeURIComponent(message)}`;
 }
 
+// ── Student self-service: request an org → temporary hold ──────────────────────
+//
+// The student, from the acceptance-email /organizations link, requests a specific
+// employer. This flips ONE course-matched `available` slot to `tentative`
+// (by:'student') — the place is HELD for them and drops out of the available count
+// everywhere — until the coordinator resolves it (accept → placed, reject →
+// released). Guards: the student must exist and have a course, must not already be
+// placed, and may hold only ONE org at a time. Pure: returns a new data blob.
+export function studentCurrentPlacement(data: any, email: string): { orgName: string; status: VacancySlotStatus | 'placed' } | null {
+  const e = String(email || '').trim().toLowerCase();
+  const student = (data?.students || []).find((s: any) => String(s.email || '').trim().toLowerCase() === e);
+  if (!student) return null;
+  for (const emp of (data?.employers || [])) {
+    const slot = (emp.vacancySlots || []).find((s: any) => s.studentId === student.id && s.status !== 'available');
+    if (slot) return { orgName: emp.name, status: slot.status };
+  }
+  if (student.acceptedOrg) return { orgName: student.acceptedOrg, status: 'placed' };
+  return null;
+}
+
+export function studentRequestHold(
+  data: any,
+  studentEmail: string,
+  employerId: string,
+  now?: string,
+): { ok: boolean; error?: string; data?: any; employerName?: string } {
+  const ts = now || new Date().toISOString();
+  const email = String(studentEmail || '').trim().toLowerCase();
+  if (!email) return { ok: false, error: 'לא זוהה מייל.' };
+  const students: any[] = data?.students || [];
+  const employers: any[] = data?.employers || [];
+  const student = students.find(s => String(s.email || '').trim().toLowerCase() === email);
+  if (!student) return { ok: false, error: 'המייל לא נמצא ברשימת הסטודנטים. פנה/י לרכזת הפרקטיקום.' };
+  const courseId = student.courseId;
+  if (!courseId) return { ok: false, error: 'לא הוגדר קורס עבורך במערכת. פנה/י לרכזת.' };
+  if (student.acceptedOrg || employers.some(e => (e.vacancySlots || []).some((s: any) => s.studentId === student.id && s.status === 'placed')))
+    return { ok: false, error: 'כבר שובצת לארגון. לשינוי פנה/י לרכזת.' };
+  const active = employers.find(e => (e.vacancySlots || []).some((s: any) => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review')));
+  if (active) return { ok: false, error: `כבר יש לך בקשה פעילה ל"${active.name}". יש להמתין לתשובה לפני בקשה נוספת.` };
+  const empIdx = employers.findIndex(e => e.id === employerId);
+  if (empIdx < 0) return { ok: false, error: 'הארגון לא נמצא.' };
+  const emp = employers[empIdx];
+  const slots: any[] = emp.vacancySlots || [];
+  const slotIdx = slots.findIndex(s => s.courseId === courseId && s.status === 'available');
+  if (slotIdx < 0) return { ok: false, error: 'אין כרגע מקום פנוי בארגון זה עבור הקורס שלך.' };
+  const nextSlots = slots.map((s, i) => i === slotIdx
+    ? { ...s, status: 'tentative', studentId: student.id, prefRank: 1, history: [...(s.history || []), { at: ts, from: 'available', to: 'tentative', by: 'student' as const, actorId: student.id, reason: 'student-request' }] }
+    : s);
+  const nextEmployers = employers.map((e, i) => i === empIdx ? reconcileEmployerCapacity({ ...emp, vacancySlots: nextSlots }) : e);
+  const nextStudents = students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: emp.name, firstChoiceResult: s.firstChoiceResult || 'pending' } : s);
+  return { ok: true, data: { ...data, employers: nextEmployers, students: nextStudents }, employerName: emp.name };
+}
+
 export function buildMailtoUrl(email: string, subject: string, body: string): string {
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
