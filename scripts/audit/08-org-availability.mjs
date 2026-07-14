@@ -129,8 +129,14 @@ audit.log('ADMIN-suggestions: pending candidate org-suggestions appear in the Em
 {
   let pendingCount = 0;
   try {
-    const sugs = await sbQuery('cv_updates', { select: 'id,suggested_org,seen_at', filter: 'seen_at=is.null&suggested_org=not.is.null' });
-    pendingCount = (sugs || []).filter(r => r.suggested_org?.name).length;
+    const rows = await sbQuery('practicum_data', { select: 'data', filter: 'org_id=eq.default' });
+    const dismissed = new Set((rows?.[0]?.data?.dismissedSuggestionIds) || []);
+    // Replicate the app EXACTLY: latest cv_updates submission per email, kept only if
+    // it carries an unhandled suggestion (has org name, not seen, not dismissed).
+    const all = await sbQuery('cv_updates', { select: 'id,email,suggested_org,seen_at,uploaded_at', filter: 'order=uploaded_at.desc' });
+    const latestByEmail = new Map();
+    for (const r of (all || [])) { const k = (r.email || '').trim().toLowerCase(); if (!k || latestByEmail.has(k)) continue; latestByEmail.set(k, r); }
+    pendingCount = [...latestByEmail.values()].filter(r => r.suggested_org?.name && !r.seen_at && !dismissed.has(r.id)).length;
   } catch (e) { audit.log(`cv_updates query (non-fatal): ${e.message.slice(0, 80)}`); }
 
   await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));

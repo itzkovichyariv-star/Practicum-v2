@@ -33,9 +33,12 @@ try {
     filter: 'order=uploaded_at.desc',
   });
 } catch (e) { audit.log(`cv_updates preload failed (non-fatal): ${e.message.slice(0, 100)}`); }
+let dismissedSuggestions = new Set();
 try {
   const pd = await sbQuery('practicum_data', { filter: 'org_id=eq.default', select: 'data' });
   students = (pd?.[0]?.data?.students || []).filter((s) => s?.email);
+  // Handled suggestions live in the data blob (dismissedSuggestionIds), not seen_at.
+  dismissedSuggestions = new Set(pd?.[0]?.data?.dismissedSuggestionIds || []);
 } catch (e) { audit.log(`practicum_data preload failed (non-fatal): ${e.message.slice(0, 100)}`); }
 
 // Latest submission per candidate (rows already sorted uploaded_at desc).
@@ -45,11 +48,11 @@ for (const r of cvRows) {
   if (!key || latestByEmail.has(key)) continue; // first seen = latest
   latestByEmail.set(key, r);
 }
-const expectedSuggestions = [...latestByEmail.values()].filter((r) => r.suggested_org?.name && !r.seen_at);
+const expectedSuggestions = [...latestByEmail.values()].filter((r) => r.suggested_org?.name && !r.seen_at && !dismissedSuggestions.has(r.id));
 const expectedCount = expectedSuggestions.length;
-// Naive (pre-dedup) count: every unseen row with a suggestion. If this exceeds
-// expectedCount, dedup is actively collapsing duplicates — strong validation.
-const naiveCount = cvRows.filter((r) => r.suggested_org?.name && !r.seen_at).length;
+// Naive (pre-dedup) count: every unseen, non-dismissed row with a suggestion. If
+// this exceeds expectedCount, dedup is actively collapsing duplicates.
+const naiveCount = cvRows.filter((r) => r.suggested_org?.name && !r.seen_at && !dismissedSuggestions.has(r.id)).length;
 
 // ─── DEDUP-suggestions ────────────────────────────────────────────────
 audit.log(`DEDUP-suggestions: Employers shows latest-per-candidate suggestions (expect ${expectedCount}, naive ${naiveCount})`);

@@ -67,12 +67,20 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           if (!key || latestByEmail.has(key)) continue; // desc order → first seen = latest
           latestByEmail.set(key, r);
         }
+        // Raw list from cv_updates; the "handled" filter (dismissedSuggestionIds
+        // from the data blob) is applied at RENDER time — `data` may still be
+        // loading when this one-shot effect runs, so we must re-filter live.
         setPendingSuggestions(
           [...latestByEmail.values()].filter((r: any) => r.suggested_org?.name && !r.seen_at),
         );
       });
     return () => { alive = false; };
   }, []);
+
+  // Filter out handled suggestions at render time using the CURRENT data blob
+  // (dismissedSuggestionIds), so a dismiss persists across reloads/tab-switches.
+  const dismissedSuggestionSet = new Set(((data as any).dismissedSuggestionIds || []) as string[]);
+  const visibleSuggestions = pendingSuggestions.filter(s => !dismissedSuggestionSet.has(s.id));
 
   async function approveSuggestion(sug: Suggestion) {
     const o = sug.suggested_org || {};
@@ -94,9 +102,10 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     const updatedStudents = student
       ? students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: o.name, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student : s)
       : students;
+    const dismissed = Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), sug.id]));
     setSaving(true);
     const res = await saveSnapshot(
-      { ...data, employers: updatedEmps, students: updatedStudents },
+      { ...data, employers: updatedEmps, students: updatedStudents, dismissedSuggestionIds: dismissed },
       { name: userName },
       { action: 'אישר הצעת ארגון', entity: 'ארגון', target: o.name }
     );
@@ -104,16 +113,26 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     if (!res.ok) { showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
     (data.employers as any) = updatedEmps;
     (data.students as any) = updatedStudents;
-    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id);
+    (data as any).dismissedSuggestionIds = dismissed;
+    supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id).then(() => {});
     setPendingSuggestions(p => p.filter(x => x.id !== sug.id));
     showToast(student ? '✓ אושר — נוסף כארגון פרטי ונקבע כבחירה ראשונה' : '✓ אושר — נוסף כארגון פרטי', 'success');
     onRefresh();
   }
 
   async function dismissSuggestion(sug: Suggestion) {
-    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id);
+    const dismissed = Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), sug.id]));
+    setSaving(true);
+    const res = await saveSnapshot({ ...data, dismissedSuggestionIds: dismissed }, { name: userName },
+      { action: 'דחה הצעת ארגון', entity: 'הצעה', target: sug.suggested_org?.name || sug.email });
+    setSaving(false);
+    if (!res.ok) { showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
+    (data as any).dismissedSuggestionIds = dismissed;
+    // Best-effort: also mark the cv_updates row seen (succeeds once the anon policy exists).
+    supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id).then(() => {});
     setPendingSuggestions(p => p.filter(x => x.id !== sug.id));
     showToast('הצעת הארגון נדחתה', 'success');
+    onRefresh();
   }
 
   const years = useMemo(() => {
@@ -161,19 +180,21 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
   }, [scoped, search, posFilter, courseFilter]);
 
-  // The course to scope places to: the in-page course picker, else a specific
-  // course chosen in the top bar (which may carry a course id OR name).
-  const selectedCourseId = useMemo(() => {
-    if (courseFilter) return courseFilter;
-    if (context.courseId && context.courseId !== '__all__') {
-      const c = courses.find((c: any) => c.id === context.courseId || c.name === context.courseId);
-      if (c) return c.id;
-    }
-    return '';
-  }, [courseFilter, context.courseId, courses]);
+  // Scope status + places to the SELECTED year (top bar), defaulting to the LATEST
+  // year — so we never sum in irrelevant past years (1 this year + 1 next year must
+  // not read as 2). An explicit in-page course pick narrows to just that course.
+  const selectedYear = useMemo(() => {
+    if (context.year && context.year !== '__all__') return normalizeYear(context.year);
+    return years[0] || ''; // `years` is sorted desc → the latest
+  }, [context.year, years]);
+  const yearCourseIds = useMemo<string[] | undefined>(() => {
+    if (courseFilter) return [courseFilter];
+    if (!selectedYear) return undefined; // no year info → fall back to all-courses
+    return courses.filter((c: any) => normalizeYear(c.year || '') === selectedYear).map((c: any) => c.id);
+  }, [courseFilter, selectedYear, courses]);
 
-  const totalPositions = scoped.reduce((s, e) => s + (selectedCourseId ? countSlotsByStatus(e, selectedCourseId).total : totalVacancies(e)), 0);
-  const openPositions = scoped.reduce((s, e) => s + (selectedCourseId ? countSlotsByStatus(e, selectedCourseId).available : openVacancies(e)), 0);
+  const totalPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).total, 0);
+  const openPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).open, 0);
   const filledPositions = Math.max(0, totalPositions - openPositions);
 
   async function persistAndRefresh(next: Employer[], msg: string) {
@@ -347,13 +368,13 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           </div>
 
           {/* Pending candidate org-suggestions — review & approve here */}
-          {pendingSuggestions.length > 0 && (
+          {visibleSuggestions.length > 0 && (
             <div className="mb-6 rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--accent)' }}>
               <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-3" style={{ color: 'var(--accent)' }}>
-                ⚠ {pendingSuggestions.length} {pendingSuggestions.length === 1 ? 'הצעת ארגון מהמועמדים' : 'הצעות ארגון מהמועמדים'} — דרוש אישור
+                ⚠ {visibleSuggestions.length} {visibleSuggestions.length === 1 ? 'הצעת ארגון מהמועמדים' : 'הצעות ארגון מהמועמדים'} — דרוש אישור
               </div>
               <div className="space-y-3">
-                {pendingSuggestions.map(sug => {
+                {visibleSuggestions.map(sug => {
                   const o = sug.suggested_org || {};
                   return (
                     <div key={sug.id} className="rounded-lg p-3" style={{ background: 'var(--bg)', border: '1px solid var(--divider)' }}>
@@ -425,7 +446,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     hiredNames={hiredHere.map(s => s.name)}
                     linkedCourses={linkedCourses}
                     isLast={idx === filtered.length - 1}
-                    scopeCourseId={selectedCourseId || undefined}
+                    scopeCourseIds={yearCourseIds}
                     onEdit={() => setEditing(e)}
                     onDelete={() => handleDelete(e.id)}
                   />
@@ -444,7 +465,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     hiredCount={hiredHere.length}
                     hiredNames={hiredHere.map(s => s.name)}
                     linkedCourses={linkedCourses}
-                    scopeCourseId={selectedCourseId || undefined}
+                    scopeCourseIds={yearCourseIds}
                     onEdit={() => setEditing(e)}
                     onDelete={() => handleDelete(e.id)}
                   />
@@ -472,15 +493,15 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
 }
 
 /* ── Employer card (grid view) ── */
-function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseId, onEdit, onDelete }: {
+function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseIds, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
-  scopeCourseId?: string;
+  scopeCourseIds?: string[];
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const av = orgAvailability(emp);
-  const st = employerStatus(emp);
+  const av = orgAvailability(emp, scopeCourseIds);
+  const st = employerStatus(emp, scopeCourseIds);
   const { total, filled, open, isPending } = av;
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
@@ -575,18 +596,18 @@ function StatBox({ label, value, accent }: { label: string; value: number; accen
 }
 
 /* ── Employer row (collapsible) ── */
-function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scopeCourseId, onEdit, onDelete }: {
+function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scopeCourseIds, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
   isLast: boolean;
-  scopeCourseId?: string;
+  scopeCourseIds?: string[];
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
-  const av = orgAvailability(emp);
-  const st = employerStatus(emp);
+  const av = orgAvailability(emp, scopeCourseIds);
+  const st = employerStatus(emp, scopeCourseIds);
   const { total, filled, isPending } = av;
   const available = av.open; // open-places count — keeps the row's existing references working
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;

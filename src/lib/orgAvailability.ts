@@ -15,12 +15,20 @@ export type OrgAvailability = {
   dotColor: string;
 };
 
-export function orgAvailability(emp: any, courseId?: string): OrgAvailability {
+export function orgAvailability(emp: any, courseIds?: string[]): OrgAvailability {
   // Capacity from the vacancySlots ledger (single source of truth), falling back
   // to legacy positions/filledPositions when an employer has no slots yet. When a
-  // courseId is given, scope the counts to THAT course's slots (per-course view).
-  const total = courseId ? countSlotsByStatus(emp, courseId).total : totalVacancies(emp);
-  const open = courseId ? countSlotsByStatus(emp, courseId).available : openVacancies(emp);
+  // `courseIds` set is given (e.g. all the courses of the SELECTED year), scope the
+  // counts to only those courses' slots — so we never sum in irrelevant past years.
+  let total: number, open: number;
+  if (courseIds) {
+    const slots = (emp?.vacancySlots || []).filter((s: any) => courseIds.includes(s.courseId));
+    total = slots.length;
+    open = slots.filter((s: any) => s.status === 'available').length;
+  } else {
+    total = totalVacancies(emp);
+    open = openVacancies(emp);
+  }
   const filled = Math.max(0, total - open);
   const hasDesc = !!(emp?.notes && String(emp.notes).trim());
   const isRejected = emp?.approvalStatus === 'rejected';
@@ -76,9 +84,9 @@ export type EmployerStatus = {
   missing: string[]; // what's missing to turn green (תיאור / מקומות פנויים)
 };
 
-export function employerStatus(emp: any, courseId?: string): EmployerStatus {
+export function employerStatus(emp: any, courseIds?: string[]): EmployerStatus {
   const note = String(emp?.statusNote || '').trim();
-  const av = orgAvailability(emp, courseId);
+  const av = orgAvailability(emp, courseIds);
   const missing: string[] = [];
   if (!av.hasDesc) missing.push('תיאור');
   if (av.open === 0) missing.push('מקומות פנויים');
