@@ -1003,6 +1003,7 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [filterYear, setFilterYear] = useState<string>('');
 
   async function saveCourse(next: Course[], action: string, target: string) {
     setSaving(true); setMsg(null);
@@ -1072,10 +1073,32 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
     await saveCourse(courses.filter(x => x.id !== c.id), 'נמחק', c.name);
   }
 
+  const shownCourses = filterYear ? courses.filter(c => normalizeYear(c.year || '') === filterYear) : courses;
+
   return (
     <Section title="קורסים" count={courses.length}>
+      {years.length > 0 && (
+        <div className="flex gap-2 flex-wrap mb-4">
+          <span className="small-caps self-center ml-1" style={{ letterSpacing: '0.1em', color: 'var(--text-soft)' }}>שנה:</span>
+          <button type="button" onClick={() => setFilterYear('')}
+            className="text-[12px] font-semibold px-3 py-1.5 rounded-full border"
+            style={{ borderColor: filterYear === '' ? 'var(--accent)' : 'var(--divider)', background: filterYear === '' ? 'rgba(122,30,43,0.06)' : 'transparent', color: filterYear === '' ? 'var(--accent)' : 'var(--text-soft)', cursor: 'pointer' }}>
+            כל השנים ({courses.length})
+          </button>
+          {[...new Set(years.map((y: string) => normalizeYear(y)))].sort().reverse().map((yy: string) => {
+            const n = courses.filter(c => normalizeYear(c.year || '') === yy).length;
+            return (
+              <button key={yy} type="button" onClick={() => setFilterYear(yy)}
+                className="text-[12px] font-semibold px-3 py-1.5 rounded-full border"
+                style={{ borderColor: filterYear === yy ? 'var(--accent)' : 'var(--divider)', background: filterYear === yy ? 'rgba(122,30,43,0.06)' : 'transparent', color: filterYear === yy ? 'var(--accent)' : 'var(--text-soft)', cursor: 'pointer' }}>
+                {yy} ({n})
+              </button>
+            );
+          })}
+        </div>
+      )}
       <ul>
-        {courses.map(c => (
+        {shownCourses.map(c => (
           <li key={c.id} className="py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
             {editing === c.id ? (
               <div className="flex items-baseline gap-4">

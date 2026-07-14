@@ -9,7 +9,7 @@ import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
-import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
 
@@ -161,8 +161,19 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
   }, [scoped, search, posFilter, courseFilter]);
 
-  const totalPositions = scoped.reduce((s, e) => s + totalVacancies(e), 0);
-  const openPositions = scoped.reduce((s, e) => s + openVacancies(e), 0);
+  // The course to scope places to: the in-page course picker, else a specific
+  // course chosen in the top bar (which may carry a course id OR name).
+  const selectedCourseId = useMemo(() => {
+    if (courseFilter) return courseFilter;
+    if (context.courseId && context.courseId !== '__all__') {
+      const c = courses.find((c: any) => c.id === context.courseId || c.name === context.courseId);
+      if (c) return c.id;
+    }
+    return '';
+  }, [courseFilter, context.courseId, courses]);
+
+  const totalPositions = scoped.reduce((s, e) => s + (selectedCourseId ? countSlotsByStatus(e, selectedCourseId).total : totalVacancies(e)), 0);
+  const openPositions = scoped.reduce((s, e) => s + (selectedCourseId ? countSlotsByStatus(e, selectedCourseId).available : openVacancies(e)), 0);
   const filledPositions = Math.max(0, totalPositions - openPositions);
 
   async function persistAndRefresh(next: Employer[], msg: string) {
@@ -185,7 +196,24 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     await persistAndRefresh(next, idx >= 0 ? '✓ עודכן' : '✓ נוסף');
   }
 
+  async function handleArchive(id: string) {
+    setEditing(null);
+    await persistAndRefresh(all.map(e => e.id === id ? { ...e, approvalStatus: 'rejected' } as Employer : e), '✓ סומן כנדחה (בארכיון)');
+  }
+
   async function handleDelete(id: string) {
+    const emp = all.find(e => e.id === id);
+    if (!emp) return;
+    const c = countSlotsByStatus(emp);
+    const occ = c.tentative + c.under_review + c.placed;
+    if (occ > 0) {
+      // Guard: never orphan students. Offer archive (🔴 נדחה) instead of hard-delete.
+      if (confirm(`ל"${emp.name}" יש ${occ} מקומות תפוסים (מועמדים/משובצים) — מחיקה תמחוק את ההיסטוריה שלהם.\n\nלחצו "אישור" כדי לסמן אותו כ«נדחה» (מוסתר משיבוץ, ההיסטוריה נשמרת), או "ביטול" כדי להשאיר ללא שינוי.`)) {
+        await handleArchive(id);
+      }
+      return;
+    }
+    if (!confirm(`למחוק לצמיתות את "${emp.name}"? פעולה זו אינה הפיכה.`)) return;
     setEditing(null);
     await persistAndRefresh(all.filter(e => e.id !== id), '✓ נמחק');
   }
@@ -394,7 +422,9 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     hiredNames={hiredHere.map(s => s.name)}
                     linkedCourses={linkedCourses}
                     isLast={idx === filtered.length - 1}
+                    scopeCourseId={selectedCourseId || undefined}
                     onEdit={() => setEditing(e)}
+                    onDelete={() => handleDelete(e.id)}
                   />
                 );
               })}
@@ -411,7 +441,9 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     hiredCount={hiredHere.length}
                     hiredNames={hiredHere.map(s => s.name)}
                     linkedCourses={linkedCourses}
+                    scopeCourseId={selectedCourseId || undefined}
                     onEdit={() => setEditing(e)}
+                    onDelete={() => handleDelete(e.id)}
                   />
                 );
               })}
@@ -437,16 +469,19 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
 }
 
 /* ── Employer card (grid view) ── */
-function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, onEdit }: {
+function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseId, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
+  scopeCourseId?: string;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
-  const av = orgAvailability(emp);
+  const av = orgAvailability(emp, scopeCourseId);
+  const st = employerStatus(emp, scopeCourseId);
   const { total, filled, open, isPending } = av;
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
-  const dotColor = av.dotColor;
-  const dotLabel = av.reason;
+  const dotColor = st.color;
+  const dotLabel = st.detail ? `${st.label} · ${st.detail}` : st.label;
   const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
 
   function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
@@ -464,11 +499,12 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, onEdit }: {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
             <div style={{ flexShrink: 0, width: '9px', height: '9px', borderRadius: '50%', background: dotColor }} title={dotLabel} />
             <div className="serif text-[17px] leading-tight" style={{ color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
-            {!av.available && av.badge && (
-              <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.05em', padding: '2px 7px', borderRadius: '999px', background: 'rgba(147,51,234,0.12)', color: ORG_PURPLE, whiteSpace: 'nowrap' }}>{av.badge}</span>
-            )}
+            <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }}>{st.label}</span>
           </div>
-          <button type="button" onClick={onEdit} style={{ flexShrink: 0, padding: '4px 10px', fontSize: '11px', fontWeight: 600, background: 'transparent', color: 'var(--text-soft)', border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em' }}>עריכה</button>
+          <div style={{ display: 'flex', gap: '5px', flexShrink: 0 }}>
+            <button type="button" onClick={onEdit} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 600, background: 'transparent', color: 'var(--text-soft)', border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em' }}>עריכה</button>
+            <button type="button" onClick={onDelete} title="מחק / ארכב" style={{ padding: '4px 8px', fontSize: '11px', fontWeight: 600, background: 'transparent', color: STATUS_COLORS.rejected, border: `1px solid ${STATUS_COLORS.rejected}55`, borderRadius: '999px', cursor: 'pointer' }}>🗑</button>
+          </div>
         </div>
         {emp.location && <div style={{ fontSize: '12px', color: 'var(--text-soft)', paddingRight: '17px' }}>📍 {emp.location}</div>}
         <div style={{ fontSize: '10.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em', color: dotColor, paddingRight: '17px', marginTop: '2px', textTransform: 'uppercase' }}>{dotLabel}</div>
@@ -536,16 +572,18 @@ function StatBox({ label, value, accent }: { label: string; value: number; accen
 }
 
 /* ── Employer row (collapsible) ── */
-function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdit }: {
+function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scopeCourseId, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
   isLast: boolean;
+  scopeCourseId?: string;
   onEdit: () => void;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
-  const av = orgAvailability(emp);
-  const st = employerStatus(emp);
+  const av = orgAvailability(emp, scopeCourseId);
+  const st = employerStatus(emp, scopeCourseId);
   const { total, filled, isPending } = av;
   const available = av.open; // open-places count — keeps the row's existing references working
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
@@ -708,6 +746,12 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdi
               <div style={{ fontSize: '12.5px', color: 'var(--text-soft)', lineHeight: 1.6 }}>{emp.notes}</div>
             </div>
           )}
+
+          {/* Manage: edit + delete/archive (guarded — won't orphan placed students) */}
+          <div style={{ gridColumn: '1 / -1', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--divider)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button type="button" onClick={onEdit} style={{ fontSize: '11.5px', fontWeight: 600, padding: '5px 12px', borderRadius: '999px', border: '1px solid var(--divider)', background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>✎ ערוך פרטים</button>
+            <button type="button" onClick={onDelete} style={{ fontSize: '11.5px', fontWeight: 600, padding: '5px 12px', borderRadius: '999px', border: `1px solid ${STATUS_COLORS.rejected}55`, background: 'transparent', color: STATUS_COLORS.rejected, cursor: 'pointer' }}>🗑 מחק / ארכב</button>
+          </div>
         </div>
       )}
     </li>

@@ -2,7 +2,7 @@
 // Rule: it needs a description (notes) AND open places (positions defined and not
 // all filled) and must not be pending/rejected.
 //   Green dot = available · Purple dot = not available (see `reason`).
-import { openVacancies, totalVacancies } from './placement';
+import { openVacancies, totalVacancies, countSlotsByStatus } from './placement';
 
 export const ORG_PURPLE = '#9333ea';
 
@@ -15,11 +15,12 @@ export type OrgAvailability = {
   dotColor: string;
 };
 
-export function orgAvailability(emp: any): OrgAvailability {
+export function orgAvailability(emp: any, courseId?: string): OrgAvailability {
   // Capacity from the vacancySlots ledger (single source of truth), falling back
-  // to legacy positions/filledPositions when an employer has no slots yet.
-  const total = totalVacancies(emp);
-  const open = openVacancies(emp);
+  // to legacy positions/filledPositions when an employer has no slots yet. When a
+  // courseId is given, scope the counts to THAT course's slots (per-course view).
+  const total = courseId ? countSlotsByStatus(emp, courseId).total : totalVacancies(emp);
+  const open = courseId ? countSlotsByStatus(emp, courseId).available : openVacancies(emp);
   const filled = Math.max(0, total - open);
   const hasDesc = !!(emp?.notes && String(emp.notes).trim());
   const isRejected = emp?.approvalStatus === 'rejected';
@@ -74,11 +75,11 @@ export type EmployerStatus = {
   missing: string[]; // what's missing to turn green (תיאור / מקומות פנויים)
 };
 
-export function employerStatus(emp: any): EmployerStatus {
+export function employerStatus(emp: any, courseId?: string): EmployerStatus {
   if (emp?.approvalStatus === 'rejected') {
     return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note: String(emp?.statusNote || '').trim(), missing: [] };
   }
-  const av = orgAvailability(emp);
+  const av = orgAvailability(emp, courseId);
   if (av.available) {
     return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note: '', missing: [] };
   }
