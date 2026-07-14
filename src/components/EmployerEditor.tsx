@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
@@ -151,12 +151,11 @@ export default function EmployerEditor({
                               </label>
                               {attached && (
                                 <>
-                                  <label className="flex items-center gap-2 shrink-0">
+                                  <div className="flex items-center gap-2 shrink-0">
                                     <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>מקומות</span>
-                                    <input type="number" min={occupied} value={String(cnt.total)}
-                                      onChange={e => setForm(setCourseCapacity(form, c.id, Number(e.target.value) || 0))}
-                                      className="input" style={{ padding: '8px 10px', fontSize: '14px', width: '64px' }} />
-                                  </label>
+                                    <CapacityStepper value={cnt.total} min={occupied}
+                                      onChange={n => setForm(f => setCourseCapacity(f, c.id, n))} />
+                                  </div>
                                   <span className="mono text-[11px] shrink-0" style={{ color: cnt.available > 0 ? '#15803d' : 'var(--text-soft)' }}>
                                     {cnt.available} פנויים{occupied > 0 ? ` · ${occupied} תפוסים` : ''}
                                   </span>
@@ -275,6 +274,43 @@ export default function EmployerEditor({
           </div>
         </form>
     </Modal>
+  );
+}
+
+// Mobile-friendly places editor: − / + tap targets plus a clearable field. A raw
+// controlled <input type="number"> is painful on iPhone — you can't clear the "0"
+// to type a new value (it snaps back), and the caret fights you. The steppers let
+// you set a count with taps alone; the field keeps a LOCAL string while editing so
+// it can be emptied, and commits (clamped to ≥ min = occupied) on change/blur.
+function CapacityStepper({ value, min, onChange }: { value: number; min: number; onChange: (n: number) => void }) {
+  const [text, setText] = useState(String(value));
+  // A ref holds the latest committed value so successive taps accumulate even
+  // within one React batch (reading the `value` prop alone would be stale).
+  const latest = useRef(value);
+  useEffect(() => { setText(String(value)); latest.current = value; }, [value]);
+  const commit = (raw: string | number) => {
+    const n = Math.max(min, Math.floor(Number(raw) || 0));
+    latest.current = n;
+    onChange(n);
+    setText(String(n));
+  };
+  const btn = (label: string, onClick: () => void, disabled: boolean) => (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label}
+      style={{
+        width: 34, height: 34, borderRadius: 8, border: '1px solid var(--divider)',
+        background: disabled ? 'transparent' : 'rgba(122,30,43,0.06)', color: disabled ? 'var(--text-soft)' : 'var(--accent)',
+        fontSize: 18, fontWeight: 700, lineHeight: 1, cursor: disabled ? 'not-allowed' : 'pointer', flexShrink: 0,
+      }}>{label}</button>
+  );
+  return (
+    <div className="flex items-center gap-1.5">
+      {btn('−', () => commit(latest.current - 1), value <= min)}
+      <input inputMode="numeric" pattern="[0-9]*" value={text}
+        onChange={e => { const t = e.target.value.replace(/[^\d]/g, ''); setText(t); if (t !== '') commit(t); }}
+        onBlur={() => commit(text === '' ? min : text)}
+        className="input" style={{ padding: '8px 4px', fontSize: '15px', width: 52, textAlign: 'center' }} />
+      {btn('+', () => commit(value + 1), false)}
+    </div>
   );
 }
 
