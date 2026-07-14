@@ -277,8 +277,14 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       if (!emp) continue;
       const slots: any[] = (emp.vacancySlots = emp.vacancySlots || []);
       if (slots.some(s => s.studentId === st.id)) continue; // already reflected
-      const slot = slots.find(s => s.status === 'available');
-      if (!slot) continue; // org at/over capacity — open stays 0, which is correct
+      // Occupy an available slot of the student's OWN course/year. NEVER steal a
+      // slot that belongs to a different (course×year) — grabbing any open slot
+      // mis-tags the placement and pollutes the other year's availability (the
+      // TLVtech/שגיא bug). If nothing matches the student's course, skip (leave the
+      // count honest); do NOT fabricate a placement — capacity is added per course.
+      const stCourse = String((st as any).courseId || '');
+      const slot = slots.find(s => s.status === 'available' && (!stCourse || s.courseId === stCourse));
+      if (!slot) continue; // no open slot for this student's course — open stays 0
       slot.status = 'placed';
       slot.studentId = st.id;
       slot.prefRank = slot.prefRank ?? null;
@@ -287,6 +293,42 @@ export function migratePlacementData(data: PracticumData): PracticumData {
     }
     const mirrored = d.employers.map(e => reconcileEmployerCapacity(e as Employer));
     if (JSON.stringify(mirrored) !== JSON.stringify(d.employers)) { d.employers = mirrored as any; changed = true; }
+  }
+
+  // 5b. REPAIR year-mismatched occupied slots (self-healing, idempotent). A slot's
+  //     courseId is the (course×year) key — a course row is per-year. A year-blind
+  //     legacy reconcile could occupy a slot whose course/YEAR doesn't match the
+  //     placed student (e.g. שגיא, a תשפ״ו student, on TLVtech's תשפ״ז slot),
+  //     which then reads as "מלא" for the OTHER year and blocks editing it. Re-tag
+  //     each such slot to the student's OWN course, attach that course to the
+  //     employer, and keep the original course attached (0 slots) so the freed year
+  //     stays plannable. Only fires on a genuine YEAR change — a same-year, different
+  //     course-name slot is left alone.
+  if (d.students && d.employers && d.courses) {
+    const stById = new Map(d.students.filter(s => s?.id != null).map(s => [String(s.id), s as any]));
+    const yearOf = new Map((d.courses || []).map(c => [c.id, (c as any).year]));
+    let repaired = false;
+    d.employers = d.employers.map((e: any) => {
+      let touched = false;
+      const slots = (e.vacancySlots || []).map((s: any) => {
+        if (!s.studentId || s.status === 'available') return s;
+        const stu = stById.get(String(s.studentId));
+        const stc = stu?.courseId;
+        if (!stc || stc === s.courseId) return s;           // no course, or already correct
+        const sy = yearOf.get(s.courseId), ty = yearOf.get(stc);
+        if (sy && ty && sy === ty) return s;                // same year, different name → leave
+        touched = true;
+        return {
+          ...s, courseId: stc,
+          history: [...(s.history || []), { at: now, from: s.status, to: s.status, by: 'system', actorId: 'repair-year-mismatch', reason: `course ${s.courseId}→${stc}` }],
+        };
+      });
+      if (!touched) return e;
+      const courseIds = Array.from(new Set([...(e.courseIds || []), ...slots.map((s: any) => s.courseId)]));
+      repaired = true;
+      return reconcileEmployerCapacity({ ...e, vacancySlots: slots, courseIds });
+    });
+    if (repaired) changed = true;
   }
 
   return changed ? d : data;
@@ -579,21 +621,31 @@ export function occupyAcceptedOrgSlot(
     emps[idx] = reconcileEmployerCapacity(emp);
     return emps;
   }
+  // Prefer the student's OWN course/year when materializing a fresh employer.
+  const stCourse = String((student as any).courseId || '');
   if (slots.length === 0) {
     const total = Math.max(1, Number(emp.positionsTotal ?? emp.positions ?? 1) || 1);
-    const courseId = (emp.courseIds && emp.courseIds[0]) || student.courseId || '';
+    const courseId = stCourse || (emp.courseIds && emp.courseIds[0]) || '';
     slots = Array.from({ length: total }, (_, i) => ({
       id: `${emp.id}-s${i + 1}`, courseId, status: 'available', studentId: null, prefRank: null,
       history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
     }));
   }
-  const slot = slots.find(s => s.status === 'available');
+  // Occupy a slot of the student's course/year — never another year's slot. If the
+  // org has none for that course, materialize one and attach the course.
+  let slot: any = slots.find(s => s.status === 'available' && (!stCourse || s.courseId === stCourse));
+  if (!slot && stCourse) {
+    slot = { id: `${emp.id}-${stCourse}-p${student.id}`, courseId: stCourse, status: 'available', studentId: null, prefRank: null,
+      history: [{ at: now, from: null, to: 'available', by: 'admin', actorId: opts.actorId }] };
+    slots.push(slot);
+    emp.courseIds = Array.from(new Set([...(emp.courseIds || []), stCourse]));
+  }
   if (slot) {
     slot.status = 'placed';
     slot.studentId = student.id;
     slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'placed', by: 'admin', actorId: opts.actorId }];
   }
-  // No available slot → org is full; acceptedOrg still recorded, open stays 0.
+  // No available slot for the student's course → org full for that year; open stays 0.
   emp.vacancySlots = slots;
   emps[idx] = reconcileEmployerCapacity(emp);
   return emps;
