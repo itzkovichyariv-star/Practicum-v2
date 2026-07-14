@@ -19,6 +19,19 @@ function empCourseIds(e: Employer): string[] {
   return [];
 }
 
+// Detail line under an employer's name. The status pill is OVERALL (any year),
+// but this chip describes the SELECTED year specifically.
+function cardStatusChip(st: any, yearAv: any): string {
+  if (st.key === 'rejected') return 'לא רלוונטי';
+  if (st.key === 'approved') {
+    return yearAv.open > 0 ? `${yearAv.open} מקומות פנויים`
+      : (yearAv.total > 0 ? 'מלא בשנה הנבחרת' : 'פנוי בשנה אחרת');
+  }
+  if (st.key === 'full') return 'כל המקומות אוישו';
+  if (st.key === 'in_process') return st.note || 'בתהליך מול הארגון';
+  return st.missing && st.missing.length ? `חסר ${st.missing.join(' ו')}` : '';
+}
+
 type PosFilter = 'all' | 'open' | 'full' | 'none';
 
 type ViewMode = 'list' | 'grid';
@@ -500,12 +513,15 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseI
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const av = orgAvailability(emp, scopeCourseIds);
-  const st = employerStatus(emp, scopeCourseIds);
-  const { total, filled, open, isPending } = av;
+  // Pill/color = OVERALL status (green if open places in ANY year); count = selected year.
+  const st = employerStatus(emp);
+  const av = orgAvailability(emp);
+  const yearAv = orgAvailability(emp, scopeCourseIds);
+  const { total, filled, isPending } = av;
+  const open = yearAv.open;
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
-  const dotLabel = st.detail ? `${st.label} · ${st.detail}` : st.label;
+  const dotLabel = cardStatusChip(st, yearAv);
   const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
 
   function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
@@ -606,14 +622,17 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scope
 }) {
   const [open, setOpen] = useState(false);
 
-  const av = orgAvailability(emp, scopeCourseIds);
-  const st = employerStatus(emp, scopeCourseIds);
+  // Pill/color = OVERALL employer status (green if it has open places in ANY year).
+  // Count/detail = the SELECTED year only (no cross-year summing).
+  const st = employerStatus(emp);
+  const av = orgAvailability(emp);
+  const yearAv = orgAvailability(emp, scopeCourseIds);
   const { total, filled, isPending } = av;
-  const available = av.open; // open-places count — keeps the row's existing references working
+  const available = yearAv.open; // selected-year open count for display
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
-  const posLabel = st.detail ? `${st.label} · ${st.detail}` : st.label;
-  const statusChip = st.detail || (st.missing.length ? `חסר ${st.missing.join(' ו')}` : '');
+  const posLabel = st.label;
+  const statusChip = cardStatusChip(st, yearAv);
 
   function callEmployer() {
     if (!emp.contactPhone) return;
