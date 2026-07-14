@@ -58,10 +58,11 @@ export function orgAvailability(emp: any, courseId?: string): OrgAvailability {
 //   ⚪ טרם פניתי — contactStatus 'not_contacted' (default for a new employer).
 //   🔴 נדחה     — approvalStatus 'rejected' (contacted and ruled out / declined).
 export const STATUS_COLORS = {
-  approved: '#15803d',       // green
-  in_process: '#d97706',     // amber
-  not_contacted: '#9ca3af',  // gray
-  rejected: '#b91c1c',       // red
+  approved: '#15803d',       // green  — has a description + open places
+  in_process: '#d97706',     // amber  — contacted, in negotiation
+  not_contacted: '#9ca3af',  // gray   — not contacted / no capacity set
+  full: '#64748b',           // slate  — has places but all are taken
+  rejected: '#b91c1c',       // red    — ruled out
 } as const;
 
 export type EmployerStatusKey = keyof typeof STATUS_COLORS;
@@ -76,20 +77,25 @@ export type EmployerStatus = {
 };
 
 export function employerStatus(emp: any, courseId?: string): EmployerStatus {
-  if (emp?.approvalStatus === 'rejected') {
-    return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note: String(emp?.statusNote || '').trim(), missing: [] };
-  }
+  const note = String(emp?.statusNote || '').trim();
   const av = orgAvailability(emp, courseId);
-  if (av.available) {
-    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note: '', missing: [] };
-  }
   const missing: string[] = [];
   if (!av.hasDesc) missing.push('תיאור');
   if (av.open === 0) missing.push('מקומות פנויים');
-  const note = String(emp?.statusNote || '').trim();
-  const contacted = emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending';
-  if (contacted) {
+  // Precedence: an EXPLICIT manual status (נדחה / בתהליך) wins over the auto-green,
+  // so the coordinator can always set it — even for an org that already has places.
+  if (emp?.approvalStatus === 'rejected') {
+    return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note, missing: [] };
+  }
+  if (emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending') {
     return { key: 'in_process', label: 'בתהליך', color: STATUS_COLORS.in_process, detail: note || 'בתהליך מול הארגון', note, missing };
+  }
+  if (av.available) {
+    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note: '', missing: [] };
+  }
+  // Has capacity (slots/positions) but all are taken → FULL, not "not contacted".
+  if (av.total > 0 && av.hasDesc) {
+    return { key: 'full', label: 'מלא', color: STATUS_COLORS.full, detail: 'כל המקומות אוישו', note, missing: [] };
   }
   return { key: 'not_contacted', label: 'טרם פניתי', color: STATUS_COLORS.not_contacted, detail: '', note: '', missing };
 }

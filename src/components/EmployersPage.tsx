@@ -395,6 +395,9 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.not_contacted, flexShrink: 0 }} /> טרם פניתי
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.full, flexShrink: 0 }} /> מלא
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.rejected, flexShrink: 0 }} /> נדחה
               </span>
               {(() => { const na = filtered.filter(e => !orgAvailability(e).available && e.approvalStatus !== 'rejected').length; return na > 0
@@ -476,8 +479,8 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseI
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const av = orgAvailability(emp, scopeCourseId);
-  const st = employerStatus(emp, scopeCourseId);
+  const av = orgAvailability(emp);
+  const st = employerStatus(emp);
   const { total, filled, open, isPending } = av;
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
@@ -582,8 +585,8 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scope
 }) {
   const [open, setOpen] = useState(false);
 
-  const av = orgAvailability(emp, scopeCourseId);
-  const st = employerStatus(emp, scopeCourseId);
+  const av = orgAvailability(emp);
+  const st = employerStatus(emp);
   const { total, filled, isPending } = av;
   const available = av.open; // open-places count — keeps the row's existing references working
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
