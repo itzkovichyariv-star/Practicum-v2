@@ -74,26 +74,26 @@ audit.log('ADMIN-legend: Employers list shows legend + purple incomplete badges'
   const before = await audit.shot('ADMIN-legend');
   const info = await audit.page.evaluate(() => {
     const body = document.body.textContent || '';
+    const STATUSES = ['מאושר', 'בתהליך', 'טרם פניתי', 'נדחה'];
+    const statusPills = [...document.querySelectorAll('span')].filter(s => STATUSES.includes((s.textContent || '').trim())).length;
     return {
       hasLegend: body.includes('מקרא'),
-      hasGreenMeaning: body.includes('זמין לסטודנטים'),
-      hasNotAvailableMeaning: /לא זמין/.test(body),
-      purpleBadges: [...document.querySelectorAll('span')].filter(s => /⚠ חסר|⏳ ממתין|✕ נדחה/.test(s.textContent || '')).length,
+      hasApprovedMeaning: body.includes('מאושר'),
+      hasNotContactedMeaning: body.includes('טרם פניתי'),
+      statusPills,
     };
   });
   const obs = audit.observerSnapshot();
-  // If the DB has incomplete orgs, we expect at least one purple badge.
-  const expectBadges = (dbTotal - dbAvailable) > 0;
-  const pass = info.hasLegend && info.hasGreenMeaning && info.hasNotAvailableMeaning &&
-    (!expectBadges || info.purpleBadges > 0) && obs.pageErrors.length === 0;
+  // Every employer row shows a ramzor status pill, so we always expect ≥1.
+  const pass = info.hasLegend && info.hasApprovedMeaning && info.hasNotContactedMeaning &&
+    info.statusPills > 0 && obs.pageErrors.length === 0;
   audit.recordCell({
     id: 'ADMIN-legend',
-    tableRef: 'Employers admin / legend + incomplete badges',
-    expected: `legend present; green+not-available meanings; ≥1 purple badge if incomplete orgs exist (db: ${dbTotal - dbAvailable} incomplete)`,
-    observed: `legend=${info.hasLegend}, greenMeaning=${info.hasGreenMeaning}, notAvailMeaning=${info.hasNotAvailableMeaning}, purpleBadges=${info.purpleBadges}, errors=(${obs.pageErrors.length}p)`,
+    tableRef: 'Employers admin / ramzor legend + status pills',
+    expected: `legend present; ramzor meanings (מאושר / טרם פניתי); ≥1 status pill rendered`,
+    observed: `legend=${info.hasLegend}, approvedMeaning=${info.hasApprovedMeaning}, notContactedMeaning=${info.hasNotContactedMeaning}, statusPills=${info.statusPills}, errors=(${obs.pageErrors.length}p)`,
     pass, before,
-    notes: !info.hasLegend ? 'Legend (מקרא) missing.' :
-           (expectBadges && info.purpleBadges === 0) ? 'Expected purple incomplete badges but found none.' : '',
+    notes: !info.hasLegend ? 'Legend (מקרא) missing.' : (info.statusPills === 0 ? 'No status pills rendered.' : ''),
   });
 }
 

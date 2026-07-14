@@ -3,6 +3,7 @@ import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
 import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity } from '../lib/placement';
+import { employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
 import Modal from './Modal';
 
 type Props = {
@@ -185,6 +186,51 @@ export default function EmployerEditor({
                 <textarea value={form.notes||''} onChange={e=>update('notes', e.target.value)}
                   rows={2} className="input w-full" style={{ padding:'10px 14px', fontSize:'14px', resize:'vertical' }} />
               </Field>
+            </div>
+
+            <div className="col-span-full">
+              <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>סטטוס מעסיק (רמזור)</span>
+              {(() => {
+                const st = employerStatus(form);
+                const isRejected = form.approvalStatus === 'rejected';
+                const isInProcess = !isRejected && form.contactStatus === 'in_process';
+                const isNotContacted = !isRejected && !isInProcess;
+                const setStatus = (which: 'not_contacted' | 'in_process' | 'rejected') => {
+                  if (which === 'rejected') { setForm(f => ({ ...f, approvalStatus: 'rejected' })); return; }
+                  setForm(f => ({ ...f, contactStatus: which, approvalStatus: f.approvalStatus === 'rejected' ? 'approved' : f.approvalStatus }));
+                };
+                const chip = (active: boolean, color: string, label: string, onClick: () => void) => (
+                  <button type="button" onClick={onClick}
+                    className="text-[12.5px] font-semibold px-3 py-2 rounded-lg border"
+                    style={{ borderColor: active ? color : 'var(--divider)', background: active ? color + '18' : 'transparent', color: active ? color : 'var(--text-soft)', cursor: 'pointer' }}>
+                    {label}
+                  </button>
+                );
+                return (
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg" style={{ background: st.color + '12' }}>
+                      <span style={{ width: 11, height: 11, borderRadius: '50%', background: st.color, flexShrink: 0 }} />
+                      <span className="text-[14px] font-semibold" style={{ color: st.color }}>{st.label}</span>
+                      {st.detail && <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>· {st.detail}</span>}
+                      {st.missing.length > 0 && <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>⚠ חסר {st.missing.join(' ו')}</span>}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {chip(isNotContacted, STATUS_COLORS.not_contacted, '⚪ טרם פניתי', () => setStatus('not_contacted'))}
+                      {chip(isInProcess, STATUS_COLORS.in_process, '🟠 בתהליך', () => setStatus('in_process'))}
+                      {chip(isRejected, STATUS_COLORS.rejected, '🔴 נדחה', () => setStatus('rejected'))}
+                    </div>
+                    <div className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>
+                      🟢 «מאושר» נקבע אוטומטית כשיש תיאור למעלה וגם מקומות פנויים (מעל 0).
+                    </div>
+                    <label className="block">
+                      <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הערת סטטוס (מוצגת בכרטיס)</span>
+                      <textarea value={form.statusNote || ''} onChange={e => update('statusNote', e.target.value)} rows={2}
+                        className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical' }}
+                        placeholder="למשל: ממתין לאישור מנהל · בודקים תקציב · נשלח מייל 12/7…" />
+                    </label>
+                  </div>
+                );
+              })()}
             </div>
 
           </div>

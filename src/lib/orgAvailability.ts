@@ -47,3 +47,48 @@ export function orgAvailability(emp: any): OrgAvailability {
     dotColor: available ? 'var(--tl-green)' : ORG_PURPLE,
   };
 }
+
+// ── Employer workflow status (traffic light / רמזור) ──────────────────────────
+// A single per-employer status the coordinator tracks:
+//   🟢 מאושר    — DERIVED: has a description AND open places (> 0). Auto — set the
+//                 per-course places and add a description and it turns green.
+//   🟠 בתהליך   — contactStatus 'in_process' (reached out, no place secured yet) OR
+//                 approvalStatus 'pending'. Carries a free-text statusNote.
+//   ⚪ טרם פניתי — contactStatus 'not_contacted' (default for a new employer).
+//   🔴 נדחה     — approvalStatus 'rejected' (contacted and ruled out / declined).
+export const STATUS_COLORS = {
+  approved: '#15803d',       // green
+  in_process: '#d97706',     // amber
+  not_contacted: '#9ca3af',  // gray
+  rejected: '#b91c1c',       // red
+} as const;
+
+export type EmployerStatusKey = keyof typeof STATUS_COLORS;
+
+export type EmployerStatus = {
+  key: EmployerStatusKey;
+  label: string;
+  color: string;
+  detail: string;    // short secondary line (e.g. "3 מקומות פנויים")
+  note: string;      // free-text statusNote (shown for בתהליך)
+  missing: string[]; // what's missing to turn green (תיאור / מקומות פנויים)
+};
+
+export function employerStatus(emp: any): EmployerStatus {
+  if (emp?.approvalStatus === 'rejected') {
+    return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note: String(emp?.statusNote || '').trim(), missing: [] };
+  }
+  const av = orgAvailability(emp);
+  if (av.available) {
+    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note: '', missing: [] };
+  }
+  const missing: string[] = [];
+  if (!av.hasDesc) missing.push('תיאור');
+  if (av.open === 0) missing.push('מקומות פנויים');
+  const note = String(emp?.statusNote || '').trim();
+  const contacted = emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending';
+  if (contacted) {
+    return { key: 'in_process', label: 'בתהליך', color: STATUS_COLORS.in_process, detail: note || 'בתהליך מול הארגון', note, missing };
+  }
+  return { key: 'not_contacted', label: 'טרם פניתי', color: STATUS_COLORS.not_contacted, detail: '', note: '', missing };
+}

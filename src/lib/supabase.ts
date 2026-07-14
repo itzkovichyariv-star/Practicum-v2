@@ -142,6 +142,13 @@ export type Employer = {
   addedBy?: 'admin' | string;
   approvalStatus?: 'approved' | 'pending' | 'rejected';
   restrictedToStudentId?: string | null;
+  // Admin workflow status (traffic light — see employerStatus()):
+  //   🟢 מאושר   = derived: has a description AND open places (> 0)
+  //   🟠 בתהליך  = contactStatus 'in_process' (contacted, no place yet) + statusNote
+  //   ⚪ טרם פניתי = contactStatus 'not_contacted' (default)
+  //   🔴 נדחה    = approvalStatus 'rejected'
+  contactStatus?: 'not_contacted' | 'in_process';
+  statusNote?: string;
 };
 export type Candidate = {
   id: string; name: string; phone?: string; email?: string;

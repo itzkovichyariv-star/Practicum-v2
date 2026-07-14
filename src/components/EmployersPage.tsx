@@ -11,7 +11,7 @@ import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
 import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
-import { orgAvailability, ORG_PURPLE } from '../lib/orgAvailability';
+import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
 
 function empCourseIds(e: Employer): string[] {
   if (e.courseIds && e.courseIds.length > 0) return e.courseIds;
@@ -358,14 +358,20 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '12px', padding: '9px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)', fontSize: '12px', color: 'var(--text-soft)' }}>
               <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '11px' }}>מקרא</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--tl-green)', flexShrink: 0 }} /> זמין לסטודנטים (תיאור + מקומות פנויים)
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.approved, flexShrink: 0 }} /> מאושר (תיאור + מקומות פנויים)
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: ORG_PURPLE, flexShrink: 0 }} /> לא זמין — חסר תיאור / מקומות, או ממתין לאישור
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.in_process, flexShrink: 0 }} /> בתהליך
               </span>
-              {(() => { const na = filtered.filter(e => !orgAvailability(e).available).length; return na > 0
-                ? <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: ORG_PURPLE }}>⚠ {na} ארגונים אינם זמינים לסטודנטים</span>
-                : <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: '#15803d' }}>✓ כל הארגונים זמינים</span>; })()}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.not_contacted, flexShrink: 0 }} /> טרם פניתי
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.rejected, flexShrink: 0 }} /> נדחה
+              </span>
+              {(() => { const na = filtered.filter(e => !orgAvailability(e).available && e.approvalStatus !== 'rejected').length; return na > 0
+                ? <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.in_process }}>⚠ {na} מעסיקים טרם מוכנים לשיבוץ</span>
+                : <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.approved }}>✓ כל המעסיקים מאושרים</span>; })()}
             </div>
           )}
 
@@ -542,11 +548,13 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdi
   const [open, setOpen] = useState(false);
 
   const av = orgAvailability(emp);
+  const st = employerStatus(emp);
   const { total, filled, isPending } = av;
   const available = av.open; // open-places count — keeps the row's existing references working
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
-  const dotColor = av.dotColor;
-  const posLabel = av.reason;
+  const dotColor = st.color;
+  const posLabel = st.detail ? `${st.label} · ${st.detail}` : st.label;
+  const statusChip = st.detail || (st.missing.length ? `חסר ${st.missing.join(' ו')}` : '');
 
   function callEmployer() {
     if (!emp.contactPhone) return;
@@ -586,9 +594,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdi
           }}>
             {emp.name}
           </div>
-          {!av.available && av.badge && (
-            <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.05em', padding: '2px 7px', borderRadius: '999px', background: 'rgba(147,51,234,0.12)', color: ORG_PURPLE, whiteSpace: 'nowrap' }}>{av.badge}</span>
-          )}
+          <span style={{ flexShrink: 0, fontSize: '9.5px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 8px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }} title={st.note || st.label}>{st.label}</span>
         </div>
 
         {/* Contact person — wide screens only (also in the expanded detail) */}
@@ -606,15 +612,16 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdi
 
         {/* Trailing group: availability + actions — wraps to its own line on mobile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginInlineStart: 'auto' }}>
-          <div style={{
-            flexShrink: 0, fontSize: '11px', fontFamily: 'var(--font-mono,monospace)',
-            fontWeight: 600, letterSpacing: '0.06em', padding: '2px 9px', borderRadius: '999px',
-            background: available > 0 ? 'rgba(21,128,61,0.1)' : total > 0 ? 'rgba(0,0,0,0.06)' : 'transparent',
-            color: available > 0 ? '#15803d' : 'var(--text-soft)',
-            whiteSpace: 'nowrap',
-          }}>
-            {posLabel}
-          </div>
+          {statusChip && (
+            <div style={{
+              flexShrink: 1, minWidth: 0, fontSize: '11px', fontFamily: 'var(--font-mono,monospace)',
+              fontWeight: 600, letterSpacing: '0.04em', padding: '2px 9px', borderRadius: '999px',
+              background: st.color + '14', color: st.color,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '190px',
+            }} title={statusChip}>
+              {statusChip}
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             <ActionBtn icon="📞" active={!!emp.contactPhone} title={emp.contactPhone || 'אין טלפון'} color="var(--accent)" bg="rgba(122,30,43,0.07)" border="rgba(122,30,43,0.25)" onClick={callEmployer} />
