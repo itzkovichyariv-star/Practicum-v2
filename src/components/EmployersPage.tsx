@@ -633,71 +633,39 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scope
       background: open ? 'rgba(0,0,0,0.015)' : 'var(--bg)',
       transition: 'background 0.15s',
     }}>
-      {/* ── Collapsed row (wraps: name keeps line 1, controls drop to line 2 on mobile) ── */}
-      <div
-        style={{
-          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 10px',
-          padding: '11px 16px', cursor: 'pointer', userSelect: 'none',
-        }}
-        onClick={() => setOpen(o => !o)}
-      >
-        {/* Primary: dot + name + badge — always gets line priority so the name is never squeezed out */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 190px', minWidth: 0 }}>
-          <div style={{ flexShrink: 0, width: '8px', height: '8px', borderRadius: '50%', background: dotColor }} title={posLabel} />
-          <div className="serif" style={{
-            flex: '1 1 auto', minWidth: 0, fontSize: '15px', fontWeight: 500,
-            color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
+      {/* ── Collapsed row: stacked so nothing is ever cut off on mobile ── */}
+      <div style={{ padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(o => !o)}>
+        {/* Line 1: dot + name + status pill + chevron */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+          <div style={{ flexShrink: 0, width: '9px', height: '9px', borderRadius: '50%', background: dotColor }} title={posLabel} />
+          <div className="serif" style={{ flex: 1, minWidth: 0, fontSize: '15.5px', fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {emp.name}
           </div>
-          <span style={{ flexShrink: 0, fontSize: '9.5px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 8px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }} title={st.note || st.label}>{st.label}</span>
+          <span style={{ flexShrink: 0, fontSize: '9.5px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 9px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }} title={st.note || st.label}>{st.label}</span>
+          <div style={{ flexShrink: 0, fontSize: '12px', color: 'var(--text-soft)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>▾</div>
         </div>
 
-        {/* Contact person — wide screens only (also in the expanded detail) */}
-        {emp.contactPerson && (
-          <div className="hidden xl:block" style={{ flex: '0 1 140px', minWidth: 0, fontSize: '12.5px', color: 'var(--text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {emp.contactPerson}
+        {/* Line 2: status detail / what's missing */}
+        {statusChip && (
+          <div style={{ marginTop: '4px', paddingInlineStart: '18px', fontSize: '11.5px', fontFamily: 'var(--font-mono,monospace)', fontWeight: 600, color: st.color, opacity: 0.92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statusChip}>
+            {statusChip}
           </div>
         )}
-        {/* Location — wide screens only */}
-        {emp.location && (
-          <div className="hidden xl:block" style={{ flex: '0 1 110px', minWidth: 0, fontSize: '12px', color: 'var(--text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            📍 {emp.location}
+        {(emp.contactPerson || emp.location) && (
+          <div className="hidden md:block" style={{ marginTop: '3px', paddingInlineStart: '18px', fontSize: '12px', color: 'var(--text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {[emp.contactPerson, emp.location && `📍 ${emp.location}`].filter(Boolean).join(' · ')}
           </div>
         )}
 
-        {/* Trailing group: availability + actions — wraps to its own line on mobile */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginInlineStart: 'auto' }}>
-          {statusChip && (
-            <div style={{
-              flexShrink: 1, minWidth: 0, fontSize: '11px', fontFamily: 'var(--font-mono,monospace)',
-              fontWeight: 600, letterSpacing: '0.04em', padding: '2px 9px', borderRadius: '999px',
-              background: st.color + '14', color: st.color,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '190px',
-            }} title={statusChip}>
-              {statusChip}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            <ActionBtn icon="📞" active={!!emp.contactPhone} title={emp.contactPhone || 'אין טלפון'} color="var(--accent)" bg="rgba(122,30,43,0.07)" border="rgba(122,30,43,0.25)" onClick={callEmployer} />
-            <ActionBtn icon="📱" active={!!emp.contactPhone} title="WhatsApp" color="#15803d" bg="rgba(37,211,102,0.08)" border="rgba(37,211,102,0.4)" onClick={whatsappEmployer} />
-            <ActionBtn icon="✉" active={!!emp.contactEmail} title={emp.contactEmail || 'אין מייל'} color="#1d4ed8" bg="rgba(37,99,235,0.07)" border="rgba(37,99,235,0.3)" onClick={emailEmployer} />
-          </div>
-
+        {/* Line 3: actions — wrap, never cut off; edit is a prominent filled button */}
+        <div style={{ marginTop: '10px', paddingInlineStart: '18px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+          <ActionBtn icon="📞" active={!!emp.contactPhone} title={emp.contactPhone || 'אין טלפון'} color="var(--accent)" bg="rgba(122,30,43,0.07)" border="rgba(122,30,43,0.25)" onClick={callEmployer} />
+          <ActionBtn icon="📱" active={!!emp.contactPhone} title="WhatsApp" color="#15803d" bg="rgba(37,211,102,0.08)" border="rgba(37,211,102,0.4)" onClick={whatsappEmployer} />
+          <ActionBtn icon="✉" active={!!emp.contactEmail} title={emp.contactEmail || 'אין מייל'} color="#1d4ed8" bg="rgba(37,99,235,0.07)" border="rgba(37,99,235,0.3)" onClick={emailEmployer} />
           <button type="button" onClick={e => { e.stopPropagation(); onEdit(); }}
-            style={{
-              flexShrink: 0, padding: '3px 10px', fontSize: '10.5px', fontWeight: 600,
-              background: 'transparent', color: 'var(--text-soft)',
-              border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer',
-              fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.08em',
-            }}>
-            עריכה
+            style={{ padding: '6px 15px', fontSize: '12px', fontWeight: 700, background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer', letterSpacing: '0.03em' }}>
+            ✎ עריכה
           </button>
-
-          <div style={{ flexShrink: 0, fontSize: '11px', color: 'var(--text-soft)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
-            ▾
-          </div>
         </div>
       </div>
 
