@@ -29,7 +29,7 @@ function cardStatusChip(st: any, yearAv: any): string {
   }
   if (st.key === 'full') return yearAv.total > 0 ? 'מלא בשנה הנבחרת' : 'טרם הוגדרו מקומות לשנה זו';
   if (st.key === 'in_process') return st.note || 'בתהליך מול הארגון';
-  return st.missing && st.missing.length ? `חסר ${st.missing.join(' ו')}` : '';
+  return st.detail || (st.missing && st.missing.length ? `חסר ${st.missing.join(' ו')}` : '');
 }
 
 type PosFilter = 'all' | 'open' | 'full' | 'none';
@@ -523,7 +523,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
   onDelete: () => void;
 }) {
   // Pill/color = OVERALL status (green if open places in ANY year); count = selected year.
-  const st = employerStatus(emp);
+  const st = employerStatus(emp, scopeCourseIds);
   const av = orgAvailability(emp);
   const yearAv = orgAvailability(emp, scopeCourseIds);
   const { total, filled, isPending } = av;
@@ -640,7 +640,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
 
   // Pill/color = OVERALL employer status (green if it has open places in ANY year).
   // Count/detail = the SELECTED year only (no cross-year summing).
-  const st = employerStatus(emp);
+  const st = employerStatus(emp, scopeCourseIds);
   const av = orgAvailability(emp);
   const yearAv = orgAvailability(emp, scopeCourseIds);
   const { total, filled, isPending } = av;

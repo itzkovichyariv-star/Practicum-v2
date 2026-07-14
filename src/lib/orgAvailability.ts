@@ -101,9 +101,16 @@ export function employerStatus(emp: any, courseIds?: string[]): EmployerStatus {
   if (av.available) {
     return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note: '', missing: [] };
   }
-  // Has capacity (slots/positions) but all are taken → FULL, not "not contacted".
-  if (av.total > 0 && av.hasDesc) {
+  // FULL — this (year × course) has places and they're ALL taken. Year-scoped: a
+  // student belongs to one course+year and occupies exactly one vacancy, so a
+  // past-year placement (e.g. שגיא in תשפ״ו) NEVER makes another year read full.
+  if (av.total > 0 && av.open === 0) {
     return { key: 'full', label: 'מלא', color: STATUS_COLORS.full, detail: 'כל המקומות אוישו', note, missing: [] };
+  }
+  // Year-scoped and NO places defined for this year yet — needs setup, NOT "full"
+  // and NOT "never contacted": the org may be active in another year.
+  if (courseIds && av.total === 0) {
+    return { key: 'not_contacted', label: 'טרם הוגדר לשנה', color: STATUS_COLORS.not_contacted, detail: 'הוסף/י מקומות לשנה זו', note: '', missing: av.hasDesc ? ['מקומות'] : ['תיאור', 'מקומות'] };
   }
   return { key: 'not_contacted', label: 'טרם פניתי', color: STATUS_COLORS.not_contacted, detail: '', note: '', missing };
 }
