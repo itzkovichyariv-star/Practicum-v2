@@ -457,7 +457,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           ) : viewMode === 'list' ? (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--divider)', borderRadius: '14px', overflow: 'hidden' }}>
               {filtered.map((e, idx) => {
-                const hiredHere = students.filter(s => s.acceptedOrg === e.name);
+                const hiredHere = students.filter(s => s.acceptedOrg === e.name && (!yearCourseIds || yearCourseIds.includes(s.courseId)));
                 const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
                 const privateFor = (e as any).restrictedToStudentId ? (students.find(s => s.id === (e as any).restrictedToStudentId)?.name || null) : null;
                 return (
@@ -479,7 +479,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '16px' }}>
               {filtered.map(e => {
-                const hiredHere = students.filter(s => s.acceptedOrg === e.name);
+                const hiredHere = students.filter(s => s.acceptedOrg === e.name && (!yearCourseIds || yearCourseIds.includes(s.courseId)));
                 const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
                 const privateFor = (e as any).restrictedToStudentId ? (students.find(s => s.id === (e as any).restrictedToStudentId)?.name || null) : null;
                 return (
@@ -531,7 +531,8 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
   const st = employerStatus(emp, scopeCourseIds);
   const av = orgAvailability(emp);
   const yearAv = orgAvailability(emp, scopeCourseIds);
-  const { total, filled, isPending } = av;
+  const { isPending } = av;
+  const { total, filled } = yearAv; // capacity bar is per (year × course), like 'open'
   const open = yearAv.open;
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
@@ -648,7 +649,8 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
   const st = employerStatus(emp, scopeCourseIds);
   const av = orgAvailability(emp);
   const yearAv = orgAvailability(emp, scopeCourseIds);
-  const { total, filled, isPending } = av;
+  const { isPending } = av;
+  const { total, filled } = yearAv; // capacity bar is per (year × course), like 'open'
   const available = yearAv.open; // selected-year open count for display
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;

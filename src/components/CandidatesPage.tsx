@@ -389,8 +389,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     const nameMatch = (c: typeof courses[0]) =>
       (c.name || '').replace(/\s+/g, '').toLowerCase() === (sub.course_name || '').replace(/\s+/g, '').toLowerCase();
     const course =
-      courses.find(c => nameMatch(c) && c.year === subYear) ||
+      courses.find(c => nameMatch(c) && normalizeYear(c.year || '') === normalizeYear(subYear)) ||
       courses.find(c => nameMatch(c));
+    if (!course && sub.course_name) console.warn('[intake] no course match for', sub.course_name, sub.year, '→ defaulting to', courses[0]?.name);
     // Parse booked slot out of notes (format: "בחר מועד ראיון: YYYY-MM-DD HH:MM–HH:MM")
     const slotMatch = (sub.notes || '').match(/בחר מועד ראיון:\s*(\d{4}-\d{2}-\d{2})\s*(\d{1,2}:\d{2}(?:[–\-]\d{1,2}:\d{2})?)/);
     const interviewDate = slotMatch?.[1] || '';
@@ -463,7 +464,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         email: sub.email || '',
         city: sub.city || '',
         courseId: course?.id || (courses[0]?.id || ''),
-        year: sub.year || normalizeYear('תשפ״ז'),
+        // Year comes from the RESOLVED course (never the submission independently),
+        // so courseId and year can't drift apart.
+        year: normalizeYear((course || courses[0])?.year || sub.year || 'תשפ״ז'),
         applicationDate: sub.submitted_at?.slice(0, 10) || '',
         cvUrl: sub.cv_file_path ? `storage://candidate-uploads/${sub.cv_file_path}` : '',
         applicationUrl: sub.application_file_path ? `storage://candidate-uploads/${sub.application_file_path}` : '',

@@ -498,17 +498,18 @@ export function buildPlacementPreferences(
     let slots: VacancySlot[] = ((emp as any).vacancySlots || []).map((s: any) => ({ ...s }));
     if (slots.length === 0) {
       const total = Math.max(1, Number((emp as any).positionsTotal ?? emp.positions ?? 1) || 1);
-      const courseId = (emp.courseIds && emp.courseIds[0]) || student.courseId || '';
+      const courseId = student.courseId || (emp.courseIds && emp.courseIds[0]) || '';
       slots = Array.from({ length: total }, (_, i) => ({
         id: `${emp.id}-s${i + 1}`, courseId, status: 'available', studentId: null, prefRank: null,
         history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
       }));
     }
 
-    // Reuse a slot already held by this student here, else take an available one.
+    // Reuse a slot already held by this student here, else take an available slot
+    // of the STUDENT'S own course/year — never another year's slot.
     let slot = slots.find(s => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'))
-      || slots.find(s => s.status === 'available');
-    if (!slot) { unresolved.push({ orgName, reason: 'אין מקום פנוי' }); continue; }
+      || slots.find(s => s.status === 'available' && s.courseId === student.courseId);
+    if (!slot) { unresolved.push({ orgName, reason: 'אין מקום פנוי בקורס שלך' }); continue; }
 
     const rank = built.length + 1;
     if (slot.status === 'available') {
@@ -563,15 +564,16 @@ export function addPlacementPreference(
   let slots: VacancySlot[] = ((emp as any).vacancySlots || []).map((s: any) => ({ ...s }));
   if (slots.length === 0) {
     const total = Math.max(1, Number((emp as any).positionsTotal ?? emp.positions ?? 1) || 1);
-    const courseId = (emp.courseIds && emp.courseIds[0]) || student.courseId || '';
+    const courseId = student.courseId || (emp.courseIds && emp.courseIds[0]) || '';
     slots = Array.from({ length: total }, (_, i) => ({
       id: `${emp.id}-s${i + 1}`, courseId, status: 'available', studentId: null, prefRank: null,
       history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
     }));
   }
+  // Take a slot of the STUDENT'S own course/year — never another year's slot.
   const slot = slots.find(s => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'))
-    || slots.find(s => s.status === 'available');
-  if (!slot) return { updatedStudent: student, updatedEmployers: employers, ok: false, reason: 'אין מקום פנוי בארגון' };
+    || slots.find(s => s.status === 'available' && s.courseId === student.courseId);
+  if (!slot) return { updatedStudent: student, updatedEmployers: employers, ok: false, reason: 'אין מקום פנוי בקורס של הסטודנט/ית' };
 
   const rank = prefs.reduce((m, p) => Math.max(m, p.rank), 0) + 1;
   if (slot.status === 'available') {

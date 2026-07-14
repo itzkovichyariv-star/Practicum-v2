@@ -39,7 +39,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
   /* ── For YoY: when a course is selected, gather all courses with same name (cross-year) ── */
   const yoyStudents = useMemo(() => {
     if (!context.courseId) return data.students || [];
-    const sel = courses.find(c => c.id === context.courseId);
+    const sel = courses.find(c => c.id === context.courseId || c.name === context.courseId);
     if (!sel) return data.students || [];
     const sameIds = new Set(courses.filter(c => c.name === sel.name).map(c => c.id));
     return (data.students || []).filter(s => sameIds.has(s.courseId));
@@ -47,7 +47,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
 
   const yoyCandidates = useMemo(() => {
     if (!context.courseId) return data.candidates || [];
-    const sel = courses.find(c => c.id === context.courseId);
+    const sel = courses.find(c => c.id === context.courseId || c.name === context.courseId);
     if (!sel) return data.candidates || [];
     const sameIds = new Set(courses.filter(c => c.name === sel.name).map(c => c.id));
     return (data.candidates || []).filter(c => sameIds.has(c.courseId));
@@ -55,7 +55,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
 
   const yoyLectures = useMemo(() => {
     if (!context.courseId) return data.lectures || [];
-    const sel = courses.find(c => c.id === context.courseId);
+    const sel = courses.find(c => c.id === context.courseId || c.name === context.courseId);
     if (!sel) return data.lectures || [];
     const sameIds = new Set(courses.filter(c => c.name === sel.name).map(c => c.id));
     return (data.lectures || []).filter(l => sameIds.has(l.courseId || ''));
