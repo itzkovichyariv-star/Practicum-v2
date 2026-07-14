@@ -10,6 +10,7 @@ type Props = {
   employer: Employer | null;
   courses: Course[];
   years: string[];
+  students?: any[];
   defaultCourseId?: string;
   defaultYear?: string;
   onSave: (e: Employer) => void;
@@ -18,9 +19,23 @@ type Props = {
 };
 
 export default function EmployerEditor({
-  employer, courses, years, defaultCourseId, defaultYear, onSave, onDelete, onClose,
+  employer, courses, years, students = [], defaultCourseId, defaultYear, onSave, onDelete, onClose,
 }: Props) {
   const isNew = !employer;
+
+  // Courses grouped by academic year (newest first) — the (year × course) grain the
+  // coordinator manages capacity at. A course row is per-year, so its id already
+  // encodes the year; grouping just makes that explicit and keeps past-year
+  // placements visually separate from the year being planned.
+  const coursesByYear = (() => {
+    const map = new Map<string, Course[]>();
+    for (const c of courses) {
+      const y = c.year || '—';
+      if (!map.has(y)) map.set(y, []);
+      map.get(y)!.push(c);
+    }
+    return Array.from(map.keys()).sort().reverse().map(y => [y, map.get(y)!] as const);
+  })();
 
   // Resolve courseIds: prefer new field, fall back to legacy courseId
   const initialCourseIds: string[] = employer?.courseIds
@@ -98,84 +113,76 @@ export default function EmployerEditor({
             <Field label="מייל איש קשר"><Input type="email" value={form.contactEmail||''} onChange={v=>update('contactEmail',v)}/></Field>
 
             <div className="col-span-full">
-              <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>קורסים משויכים</span>
-              <div className="flex flex-wrap gap-3">
-                {courses.map(c => {
-                  const checked = (form.courseIds || []).includes(c.id);
-                  return (
-                    <label key={c.id}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-[13.5px] transition-colors"
-                      style={{
-                        borderColor: checked ? 'var(--accent)' : 'var(--divider)',
-                        background: checked ? 'rgba(122,30,43,0.06)' : 'transparent',
-                        color: 'var(--ink)',
-                      }}>
-                      <input type="checkbox" checked={checked}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            // Attach the course — capacity starts at 0 (no carry-over).
-                            update('courseIds', [...(form.courseIds || []), c.id]);
-                            return;
-                          }
-                          const cnt = countSlotsByStatus(form, c.id);
-                          const occupied = cnt.tentative + cnt.under_review + cnt.placed;
-                          if (occupied > 0) {
-                            alert(`לא ניתן לבטל שיוך ל"${c.name}" — ${occupied} מקומות תפוסים בקורס זה. שחרר/י אותם קודם.`);
-                            return;
-                          }
-                          setForm(f => reconcileEmployerCapacity({
-                            ...f,
-                            courseIds: (f.courseIds || []).filter(id => id !== c.id),
-                            vacancySlots: (f.vacancySlots || []).filter((s: any) => s.courseId !== c.id),
-                          }));
-                        }}
-                        style={{ accentColor: 'var(--accent)' }}
-                      />
-                      <span>{c.name}</span>
-                      <span className="mono text-[11px] opacity-60">{c.year}</span>
-                    </label>
-                  );
-                })}
+              <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>מקומות התנסות — לפי שנה וקורס</span>
+              <div className="text-[11.5px] mb-3" style={{ color: 'var(--text-soft)', lineHeight: 1.5 }}>
+                כל שנה וכל קורס נספרים בנפרד. שיוך קורס פותח שדה מקומות (מתחיל מ‑0). מקום תפוס מוצג עם שם המשובץ ונשמר כהיסטוריה — אפשר לערוך בחופשיות את המקומות של שנה אחרת מבלי לפגוע בשיבוץ קיים.
               </div>
-            </div>
-
-            <div className="col-span-full">
-              <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>מקומות התנסות — לפי קורס</span>
-              {(form.courseIds || []).length === 0 ? (
-                <div className="text-[13px] px-3 py-3 rounded-lg border" style={{ color: 'var(--text-soft)', borderColor: 'var(--divider)', background: 'rgba(0,0,0,0.02)' }}>
-                  שייך/י קורס למעלה כדי להגדיר מספר מקומות.
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {(form.courseIds || []).map(cid => {
-                    const c = courses.find(x => x.id === cid);
-                    if (!c) return null;
-                    const cnt = countSlotsByStatus(form, cid);
-                    const occupied = cnt.tentative + cnt.under_review + cnt.placed;
-                    return (
-                      <div key={cid} className="flex items-center gap-3 flex-wrap px-3 py-2.5 rounded-lg border"
-                        style={{ borderColor: 'var(--divider)' }}>
-                        <div style={{ flex: '1 1 150px', minWidth: 0 }}>
-                          <div className="text-[13.5px] font-medium truncate" style={{ color: 'var(--ink)' }}>{c.name}</div>
-                          <div className="mono text-[11px] opacity-60">{c.year}</div>
-                        </div>
-                        <label className="flex items-center gap-2 shrink-0">
-                          <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>מקומות</span>
-                          <input type="number" min={occupied} value={String(cnt.total)}
-                            onChange={e => setForm(setCourseCapacity(form, cid, Number(e.target.value) || 0))}
-                            className="input" style={{ padding: '8px 10px', fontSize: '14px', width: '68px' }} />
-                        </label>
-                        <div className="mono text-[11px] shrink-0" style={{ color: cnt.available > 0 ? '#15803d' : 'var(--text-soft)' }}>
-                          {cnt.available} פנויים{occupied > 0 ? ` · ${occupied} תפוסים` : ''}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="mono text-[11px]" style={{ color: 'var(--text-soft)' }}>
-                    כל קורס נשמר בנפרד. קורס חדש מתחיל מ‑0. לא ניתן להוריד מתחת למספר המקומות התפוסים.
+              <div className="flex flex-col gap-4">
+                {coursesByYear.map(([year, yearCourses]) => (
+                  <div key={year}>
+                    <div className="mono text-[11px] font-bold mb-2 pb-1 border-b" style={{ color: 'var(--ink)', letterSpacing: '0.1em', borderColor: 'var(--divider)' }}>
+                      {year}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {yearCourses.map(c => {
+                        const attached = (form.courseIds || []).includes(c.id);
+                        const cnt = countSlotsByStatus(form, c.id);
+                        const occupied = cnt.tentative + cnt.under_review + cnt.placed;
+                        const occupants = (form.vacancySlots || []).filter((s: any) => s.courseId === c.id && s.status !== 'available');
+                        return (
+                          <div key={c.id} className="rounded-lg border px-3 py-2.5"
+                            style={{ borderColor: attached ? 'var(--accent)' : 'var(--divider)', background: attached ? 'rgba(122,30,43,0.04)' : 'transparent' }}>
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <label className="flex items-center gap-2 cursor-pointer" style={{ flex: '1 1 150px', minWidth: 0 }}>
+                                <input type="checkbox" checked={attached} style={{ accentColor: 'var(--accent)' }}
+                                  onChange={e => {
+                                    if (e.target.checked) { update('courseIds', [...(form.courseIds || []), c.id]); return; }
+                                    if (occupied > 0) {
+                                      alert(`לא ניתן לבטל שיוך ל"${c.name}" (${year}) — ${occupied} מקומות תפוסים. זהו שיבוץ קיים שנשמר כהיסטוריה. לעריכת המקומות של שנה אחרת השתמש/י בשורה של אותה שנה.`);
+                                      return;
+                                    }
+                                    setForm(f => reconcileEmployerCapacity({
+                                      ...f,
+                                      courseIds: (f.courseIds || []).filter(id => id !== c.id),
+                                      vacancySlots: (f.vacancySlots || []).filter((s: any) => s.courseId !== c.id),
+                                    }));
+                                  }} />
+                                <span className="text-[13.5px] font-medium truncate" style={{ color: 'var(--ink)' }}>{c.name}</span>
+                              </label>
+                              {attached && (
+                                <>
+                                  <label className="flex items-center gap-2 shrink-0">
+                                    <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>מקומות</span>
+                                    <input type="number" min={occupied} value={String(cnt.total)}
+                                      onChange={e => setForm(setCourseCapacity(form, c.id, Number(e.target.value) || 0))}
+                                      className="input" style={{ padding: '8px 10px', fontSize: '14px', width: '64px' }} />
+                                  </label>
+                                  <span className="mono text-[11px] shrink-0" style={{ color: cnt.available > 0 ? '#15803d' : 'var(--text-soft)' }}>
+                                    {cnt.available} פנויים{occupied > 0 ? ` · ${occupied} תפוסים` : ''}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                            {attached && occupants.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-2" style={{ paddingInlineStart: '26px' }}>
+                                {occupants.map((s: any, i: number) => {
+                                  const stu = students.find((x: any) => String(x.id) === String(s.studentId));
+                                  const label = s.status === 'placed' ? 'משובץ' : s.status === 'under_review' ? 'בבדיקה' : 'מועמד';
+                                  return (
+                                    <span key={i} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,0,0,0.05)', color: 'var(--text-soft)' }}>
+                                      👤 {stu?.name || `#${s.studentId}`} · {label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                ))}
+              </div>
             </div>
 
             <div className="col-span-full">

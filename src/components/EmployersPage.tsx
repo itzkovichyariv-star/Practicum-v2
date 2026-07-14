@@ -27,7 +27,7 @@ function cardStatusChip(st: any, yearAv: any): string {
     return yearAv.open > 0 ? `${yearAv.open} מקומות פנויים`
       : (yearAv.total > 0 ? 'מלא בשנה הנבחרת' : 'פנוי בשנה אחרת');
   }
-  if (st.key === 'full') return 'כל המקומות אוישו';
+  if (st.key === 'full') return yearAv.total > 0 ? 'מלא בשנה הנבחרת' : 'טרם הוגדרו מקומות לשנה זו';
   if (st.key === 'in_process') return st.note || 'בתהליך מול הארגון';
   return st.missing && st.missing.length ? `חסר ${st.missing.join(' ו')}` : '';
 }
@@ -494,6 +494,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           employer={editing}
           courses={courses}
           years={years}
+          students={students}
           defaultCourseId={context.courseId}
           defaultYear={context.year}
           onSave={handleSave}
