@@ -9,7 +9,7 @@ import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
-import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
 
@@ -111,7 +111,10 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
       addedBy: sug.email || 'candidate',
       courseIds: student?.courseId ? [student.courseId] : [],
     } as any;
-    const updatedEmps = [...all, emp];
+    // Reserve one place for the affiliated student's course so the org shows as an
+    // open vacancy in THEIR list (their first-priority org). Coordinator adjusts later.
+    const empWithPlace = student?.courseId ? setCourseCapacity(emp, student.courseId, 1) : emp;
+    const updatedEmps = [...all, empWithPlace];
     const updatedStudents = student
       ? students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: o.name, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student : s)
       : students;
@@ -451,6 +454,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
               {filtered.map((e, idx) => {
                 const hiredHere = students.filter(s => s.acceptedOrg === e.name);
                 const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
+                const privateFor = (e as any).restrictedToStudentId ? (students.find(s => s.id === (e as any).restrictedToStudentId)?.name || null) : null;
                 return (
                   <EmployerRow
                     key={e.id}
@@ -458,6 +462,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     hiredCount={hiredHere.length}
                     hiredNames={hiredHere.map(s => s.name)}
                     linkedCourses={linkedCourses}
+                    privateFor={privateFor}
                     isLast={idx === filtered.length - 1}
                     scopeCourseIds={yearCourseIds}
                     onEdit={() => setEditing(e)}
@@ -471,6 +476,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
               {filtered.map(e => {
                 const hiredHere = students.filter(s => s.acceptedOrg === e.name);
                 const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
+                const privateFor = (e as any).restrictedToStudentId ? (students.find(s => s.id === (e as any).restrictedToStudentId)?.name || null) : null;
                 return (
                   <EmployerCard
                     key={e.id}
@@ -478,6 +484,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     hiredCount={hiredHere.length}
                     hiredNames={hiredHere.map(s => s.name)}
                     linkedCourses={linkedCourses}
+                    privateFor={privateFor}
                     scopeCourseIds={yearCourseIds}
                     onEdit={() => setEditing(e)}
                     onDelete={() => handleDelete(e.id)}
@@ -507,9 +514,10 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
 }
 
 /* ── Employer card (grid view) ── */
-function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseIds, onEdit, onDelete }: {
+function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, scopeCourseIds, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
+  privateFor?: string | null;
   scopeCourseIds?: string[];
   onEdit: () => void;
   onDelete: () => void;
@@ -548,6 +556,12 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, scopeCourseI
           </div>
         </div>
         {emp.location && <div style={{ fontSize: '12px', color: 'var(--text-soft)', paddingRight: '17px' }}>📍 {emp.location}</div>}
+        {privateFor && (
+          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent)', paddingRight: '17px', marginTop: '3px' }}
+            title={`ארגון פרטי — גלוי רק ל${privateFor} כבחירה ראשונה`}>
+            🔒 פרטי ל{privateFor}
+          </div>
+        )}
         <div style={{ fontSize: '10.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em', color: dotColor, paddingRight: '17px', marginTop: '2px', textTransform: 'uppercase' }}>{dotLabel}</div>
       </div>
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
@@ -613,9 +627,10 @@ function StatBox({ label, value, accent }: { label: string; value: number; accen
 }
 
 /* ── Employer row (collapsible) ── */
-function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scopeCourseIds, onEdit, onDelete }: {
+function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, isLast, scopeCourseIds, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
+  privateFor?: string | null;
   isLast: boolean;
   scopeCourseIds?: string[];
   onEdit: () => void;
@@ -669,6 +684,12 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, scope
         {statusChip && (
           <div style={{ marginTop: '4px', paddingInlineStart: '18px', fontSize: '11.5px', fontFamily: 'var(--font-mono,monospace)', fontWeight: 600, color: st.color, opacity: 0.92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statusChip}>
             {statusChip}
+          </div>
+        )}
+        {privateFor && (
+          <div style={{ marginTop: '4px', paddingInlineStart: '18px', fontSize: '11px', fontWeight: 600, color: 'var(--accent)' }}
+            title={`ארגון פרטי — גלוי רק ל${privateFor} כבחירה ראשונה`}>
+            🔒 פרטי ל{privateFor}
           </div>
         )}
         {(emp.contactPerson || emp.location) && (

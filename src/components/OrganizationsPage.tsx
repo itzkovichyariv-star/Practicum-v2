@@ -105,7 +105,10 @@ export default function OrganizationsPage() {
   const employers: Employer[] = data?.employers || [];
   const active = employers.filter(e => {
     if (!e.name) return false;
-    if ((e as any).restrictedToStudentId) return false;
+    // Private orgs (a student's OWN approved suggestion) are visible only to THAT
+    // student — their reserved first-priority org — and hidden from everyone else.
+    const restrictedTo = (e as any).restrictedToStudentId;
+    if (restrictedTo && restrictedTo !== student?.id) return false;
     if (!orgAvailability(e).available) return false;
     const ids = e.courseIds || ((e as any).courseId ? [(e as any).courseId] : []);
     // When we know the student's course, only show orgs that SERVE it AND have an
