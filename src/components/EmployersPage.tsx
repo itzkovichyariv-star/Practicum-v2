@@ -9,7 +9,7 @@ import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
-import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
 
@@ -451,10 +451,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, onEdit }: {
 
   function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
   function whatsappEmployer() {
-    if (!emp.contactPhone) return;
-    let n = emp.contactPhone.replace(/[^\d]/g, '');
-    if (n.startsWith('0')) n = '972' + n.slice(1);
-    window.open(`https://wa.me/${n}`, '_blank');
+    openWhatsApp(emp.contactPhone || '', { name: emp.name });
   }
   function emailEmployer() {
     if (emp.contactEmail) openMailto(`mailto:${encodeURIComponent(emp.contactEmail)}?subject=${encodeURIComponent(`פרקטיקום — ${emp.name}`)}&body=${encodeURIComponent(`שלום ${emp.contactPerson || ''},\n\n`)}`);
@@ -561,10 +558,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, isLast, onEdi
     window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`;
   }
   function whatsappEmployer() {
-    if (!emp.contactPhone) return;
-    let n = emp.contactPhone.replace(/[^\d]/g, '');
-    if (n.startsWith('0')) n = '972' + n.slice(1);
-    window.open(`https://wa.me/${n}`, '_blank');
+    openWhatsApp(emp.contactPhone || '', { name: emp.name });
   }
   function emailEmployer() {
     if (!emp.contactEmail) return;

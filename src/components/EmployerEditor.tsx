@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
-import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity } from '../lib/placement';
+import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity, openWhatsApp as waOpen } from '../lib/placement';
 import { employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
 import Modal from './Modal';
 
@@ -71,10 +71,7 @@ export default function EmployerEditor({
   }
 
   function openWhatsApp() {
-    if (!form.contactPhone) { alert('אין טלפון איש קשר'); return; }
-    let n = form.contactPhone.replace(/[^\d]/g, '');
-    if (n.startsWith('0')) n = '972' + n.slice(1);
-    window.open(`https://wa.me/${n}`, '_blank');
+    waOpen(form.contactPhone || '', { name: form.name });
   }
 
   return (

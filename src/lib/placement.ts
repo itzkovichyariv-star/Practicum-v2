@@ -311,10 +311,44 @@ export function renderTemplate(
 
 // ── Channel URL builders ──────────────────────────────────────────────────────
 
+/** Normalize a raw phone to an international wa.me number (972… for Israel). */
+export function normalizeIsraeliPhone(raw: string): string {
+  let n = String(raw || '').replace(/[^\d]/g, '');
+  if (!n) return '';
+  if (n.startsWith('00')) n = n.slice(2);            // drop the international 00 prefix
+  if (n.startsWith('972')) return n;                 // already international
+  if (n.startsWith('0')) return '972' + n.slice(1);  // local 0XX… → 972XX…
+  if (n.length === 9) return '972' + n;              // bare local without a leading 0
+  return n;                                          // assume already international
+}
+
+/**
+ * True when the number can actually be dialed. Israeli numbers must be a full
+ * 10-digit local (972 + 9-digit mobile `5X…`, or 972 + 8-digit landline). This
+ * catches a number with a missing digit (e.g. "054446580" → not dialable) BEFORE
+ * we send the user to WhatsApp's misleading "not on WhatsApp" page.
+ */
+export function isDialablePhone(raw: string): boolean {
+  const n = normalizeIsraeliPhone(raw);
+  if (n.startsWith('972')) return /^972(5\d{8}|[2-489]\d{7})$/.test(n);
+  return /^\d{10,15}$/.test(n);
+}
+
+/** Open WhatsApp for a number, warning clearly (not via WhatsApp) if it's malformed. */
+export function openWhatsApp(rawPhone: string, opts: { message?: string; name?: string } = {}): boolean {
+  const raw = String(rawPhone || '').trim();
+  if (!raw) { alert('לא הוזן מספר טלפון.'); return false; }
+  if (!isDialablePhone(raw)) {
+    alert(`מספר הטלפון "${raw}"${opts.name ? ` של ${opts.name}` : ''} אינו תקין — ייתכן שחסרה ספרה. עדכן/י את המספר בכרטיס המעסיק ונסה/י שוב.`);
+    return false;
+  }
+  const n = normalizeIsraeliPhone(raw);
+  window.open(opts.message ? `https://wa.me/${n}?text=${encodeURIComponent(opts.message)}` : `https://wa.me/${n}`, '_blank');
+  return true;
+}
+
 export function buildWhatsAppUrl(rawPhone: string, message: string): string {
-  let intl = rawPhone.replace(/[^\d]/g, '');
-  if (intl.startsWith('0')) intl = '972' + intl.slice(1);
-  return `https://wa.me/${intl}?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${normalizeIsraeliPhone(rawPhone)}?text=${encodeURIComponent(message)}`;
 }
 
 export function buildMailtoUrl(email: string, subject: string, body: string): string {
