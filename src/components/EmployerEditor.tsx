@@ -4,6 +4,7 @@ import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
 import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity, openWhatsApp as waOpen } from '../lib/placement';
 import { employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
+import { normalizeYear } from './pageShared';
 import Modal from './Modal';
 
 type Props = {
@@ -22,20 +23,6 @@ export default function EmployerEditor({
   employer, courses, years, students = [], defaultCourseId, defaultYear, onSave, onDelete, onClose,
 }: Props) {
   const isNew = !employer;
-
-  // Courses grouped by academic year (newest first) — the (year × course) grain the
-  // coordinator manages capacity at. A course row is per-year, so its id already
-  // encodes the year; grouping just makes that explicit and keeps past-year
-  // placements visually separate from the year being planned.
-  const coursesByYear = (() => {
-    const map = new Map<string, Course[]>();
-    for (const c of courses) {
-      const y = c.year || '—';
-      if (!map.has(y)) map.set(y, []);
-      map.get(y)!.push(c);
-    }
-    return Array.from(map.keys()).sort().reverse().map(y => [y, map.get(y)!] as const);
-  })();
 
   // Resolve courseIds: prefer new field, fall back to legacy courseId
   const initialCourseIds: string[] = employer?.courseIds
@@ -66,6 +53,34 @@ export default function EmployerEditor({
   function update<K extends keyof Employer>(k: K, v: Employer[K]) {
     setForm(f => ({ ...f, [k]: v }));
   }
+
+  const [showAllCourses, setShowAllCourses] = useState(false);
+
+  // Which courses to SHOW in the capacity control. Places are per (course × year),
+  // so we surface only the (year × course) the coordinator is working on — driven by
+  // the top-bar year+course context — plus any course this employer is already
+  // attached to (so existing placements/history stay visible). `showAllCourses`
+  // reveals every course, to attach a new one.
+  const scopeYear = defaultYear && defaultYear !== '__all__' ? normalizeYear(defaultYear) : null;
+  const scopeCourse = defaultCourseId && defaultCourseId !== '__all__' ? defaultCourseId : null;
+  const hasScope = !!(scopeYear || scopeCourse);
+  const attachedIds = new Set(form.courseIds || []);
+  const inScope = (c: Course) =>
+    (!scopeCourse || c.id === scopeCourse || c.name === scopeCourse) &&
+    (!scopeYear || normalizeYear(c.year || '') === scopeYear);
+  const visibleCourses = courses.filter(c =>
+    showAllCourses || attachedIds.has(c.id) || (hasScope && inScope(c)),
+  );
+  const hiddenCount = courses.length - visibleCourses.length;
+  const coursesByYear = (() => {
+    const map = new Map<string, Course[]>();
+    for (const c of visibleCourses) {
+      const y = c.year || '—';
+      if (!map.has(y)) map.set(y, []);
+      map.get(y)!.push(c);
+    }
+    return Array.from(map.keys()).sort().reverse().map(y => [y, map.get(y)!] as const);
+  })();
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -182,6 +197,17 @@ export default function EmployerEditor({
                   </div>
                 ))}
               </div>
+              {coursesByYear.length === 0 && (
+                <div className="text-[13px] px-3 py-3 rounded-lg border" style={{ color: 'var(--text-soft)', borderColor: 'var(--divider)', background: 'rgba(0,0,0,0.02)' }}>
+                  אין קורסים להצגה בהקשר הנוכחי. לחצ/י «הצג את כל הקורסים» כדי לשייך קורס.
+                </div>
+              )}
+              {(hiddenCount > 0 || showAllCourses) && (
+                <button type="button" onClick={() => setShowAllCourses(v => !v)}
+                  className="mono text-[11px] mt-3" style={{ color: 'var(--accent)', letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  {showAllCourses ? '▴ הצג רק את הקורס/שנה שנבחרו' : `▾ הצג את כל הקורסים (עוד ${hiddenCount})`}
+                </button>
+              )}
             </div>
 
             <div className="col-span-full">

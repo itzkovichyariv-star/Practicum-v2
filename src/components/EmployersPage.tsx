@@ -204,10 +204,15 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     return years[0] || ''; // `years` is sorted desc → the latest
   }, [context.year, years]);
   const yearCourseIds = useMemo<string[] | undefined>(() => {
-    if (courseFilter) return [courseFilter];
-    if (!selectedYear) return undefined; // no year info → fall back to all-courses
-    return courses.filter((c: any) => normalizeYear(c.year || '') === selectedYear).map((c: any) => c.id);
-  }, [courseFilter, selectedYear, courses]);
+    // Places are counted PER (course × year) — NEVER summed across courses. Scope to
+    // the selected year, and narrow further to the selected course when one is chosen
+    // (the in-page course filter, or the top-bar course context).
+    let cs = courses as any[];
+    if (selectedYear) cs = cs.filter((c: any) => normalizeYear(c.year || '') === selectedYear);
+    if (courseFilter) cs = cs.filter((c: any) => c.id === courseFilter);
+    else if (context.courseId && context.courseId !== '__all__') cs = cs.filter((c: any) => c.name === context.courseId || c.id === context.courseId);
+    return cs.length ? cs.map((c: any) => c.id) : undefined;
+  }, [courseFilter, context.courseId, selectedYear, courses]);
 
   const totalPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).total, 0);
   const openPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).open, 0);
