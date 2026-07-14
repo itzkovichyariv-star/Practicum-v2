@@ -244,6 +244,24 @@ export function migratePlacementData(data: PracticumData): PracticumData {
     if (settingsChanged) changed = true;
   }
 
+  // 4b. Materialize legacy global `positions`/`positionsTotal` into per-course
+  //     vacancySlots for employers that carry a number but have NO slots yet AND
+  //     are attached to exactly ONE course (unambiguous). This self-heals the
+  //     "positions:N but 0 slots → per-course views show 0 places / never green"
+  //     class of bug. Multi-course legacy employers are left untouched (can't split
+  //     one number across courses) and are set up manually per course.
+  if (d.employers) {
+    const materialized = d.employers.map((e: any) => {
+      if ((e.vacancySlots || []).length) return e;
+      const cids = (e.courseIds && e.courseIds.length) ? e.courseIds : (e.courseId ? [e.courseId] : []);
+      if (cids.length !== 1) return e;
+      const n = Math.max(0, Number(e.positionsTotal ?? e.positions ?? 0) || 0);
+      if (n <= 0) return e;
+      return setCourseCapacity(e, cids[0], n, 'migrate-legacy-positions', now);
+    });
+    if (JSON.stringify(materialized) !== JSON.stringify(d.employers)) { d.employers = materialized as any; changed = true; }
+  }
+
   // 5. Reconcile legacy `acceptedOrg` placements into the vacancySlots ledger
   //    (idempotent). Until now, marking a student placed via acceptedOrg bumped
   //    `filledPositions` but never occupied a slot, so the slot ledger (now the
@@ -567,6 +585,53 @@ export function reconcileEmployerCapacity<T extends Employer>(emp: T): T {
     positions: slots.length,
     filledPositions: occupied,
   } as T;
+}
+
+/**
+ * Set the number of vacancy slots for ONE course on an employer — the per-course
+ * capacity primitive (single source of truth). Growing appends fresh `available`
+ * slots; shrinking removes `available` slots only, and never below the number of
+ * occupied (tentative/under_review/placed) slots for that course — an occupied
+ * place can't be dropped by lowering the number. Pure: returns a new employer and
+ * mirrors the legacy global scalars via reconcileEmployerCapacity so old readers
+ * stay correct. `n` is clamped to >= occupied.
+ */
+export function setCourseCapacity<T extends Employer>(
+  emp: T,
+  courseId: string,
+  n: number,
+  actorId = 'admin',
+  now?: string,
+): T {
+  const ts = now || new Date().toISOString();
+  const all: any[] = ((emp as any).vacancySlots || []).map((s: any) => ({ ...s }));
+  const mine = all.filter(s => s.courseId === courseId);
+  const others = all.filter(s => s.courseId !== courseId);
+  const occupied = mine.filter(s => s.status !== 'available');
+  const available = mine.filter(s => s.status === 'available');
+  const target = Math.max(occupied.length, Math.max(0, Math.floor(Number(n) || 0)));
+  let next: any[];
+  if (target >= mine.length) {
+    const add = target - mine.length;
+    const extra = Array.from({ length: add }, (_, i) => ({
+      id: `${(emp as any).id}-${courseId}-s${mine.length + i + 1}-${Math.floor(Math.random() * 1e6).toString(36)}`,
+      courseId,
+      status: 'available' as const,
+      studentId: null,
+      prefRank: null,
+      history: [{ at: ts, from: null, to: 'available', by: 'admin' as const, actorId }],
+    }));
+    next = [...mine, ...extra];
+  } else {
+    const keepAvail = Math.max(0, target - occupied.length);
+    next = [...occupied, ...available.slice(0, keepAvail)];
+  }
+  return reconcileEmployerCapacity({ ...(emp as any), vacancySlots: [...others, ...next] }) as T;
+}
+
+/** Total vacancy slots for one course (per-course "total places"). */
+export function courseCapacity(emp: Employer, courseId: string): number {
+  return countSlotsByStatus(emp, courseId).total;
 }
 
 /**

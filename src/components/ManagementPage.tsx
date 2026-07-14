@@ -8,7 +8,7 @@ import { saveSnapshot, randomId, loadSnapshots, restoreSnapshot, type SnapshotMe
 import { CONTACT_PATCHES } from '../lib/contactPatches';
 import { showToast } from '../lib/toast';
 import * as fs from '../lib/folderCreation';
-import { countSlotsByStatus } from '../lib/placement';
+import { countSlotsByStatus, setCourseCapacity } from '../lib/placement';
 import EmployerEditor from './EmployerEditor';
 
 export default function ManagementPage(props: PageProps) {
@@ -1300,31 +1300,11 @@ function EmployerAttachSection({ course, data, userName, onRefresh }: {
       return;
     }
     setSaving(true);
-    const existingSlots: any[] = (emp as any).vacancySlots || [];
-    const courseSlots = existingSlots.filter((s: any) => s.courseId === course.id);
-    const otherSlots = existingSlots.filter((s: any) => s.courseId !== course.id);
-    const now = new Date().toISOString();
-
-    // Resize slots array
-    let newCourseSlots = [...courseSlots];
-    if (newTotal > courseSlots.length) {
-      // Add new available slots
-      for (let i = courseSlots.length; i < newTotal; i++) {
-        newCourseSlots.push({
-          id: `${emp.id}-${course.id}-s${i + 1}`,
-          courseId: course.id,
-          status: 'available',
-          studentId: null,
-          prefRank: null,
-          history: [{ at: now, from: null, to: 'available', by: 'admin', actorId: userName }],
-        });
-      }
-    } else if (newTotal < courseSlots.length) {
-      // Remove available slots from the end
-      newCourseSlots = courseSlots.slice(0, newTotal);
-    }
-
-    const updatedEmp = { ...emp, positionsTotal: newTotal, vacancySlots: [...otherSlots, ...newCourseSlots] };
+    // Per-course slot resize via the shared primitive (grows/shrinks only this
+    // course's `available` slots; mirrors the global scalars without clobbering
+    // other courses' contribution — the old inline code set a global positionsTotal
+    // to just this course's count).
+    const updatedEmp = setCourseCapacity(emp, course.id, newTotal, userName);
     const nextEmployers = allEmployers.map(e => e.id === emp.id ? updatedEmp : e);
     const res = await saveSnapshot({ ...data, employers: nextEmployers }, { name: userName },
       { action: 'עודכן מספר מקומות', entity: 'מעסיק', target: emp.name });

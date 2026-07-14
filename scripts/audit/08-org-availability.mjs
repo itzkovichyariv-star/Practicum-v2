@@ -28,6 +28,17 @@ try {
   // Replicate the acceptedOrg → slot reconciliation on a clone.
   const slotsByName = {};
   for (const e of emps) slotsByName[e.name] = (e.vacancySlots || []).map(s => ({ ...s }));
+  // Step 4b mirror: materialize legacy positions into per-course slots for
+  // single-course employers with a number but no slots (matches migratePlacementData,
+  // so an org whose only place is taken by a placed student is correctly full).
+  for (const e of emps) {
+    if ((slotsByName[e.name] || []).length) continue;
+    const cids = (e.courseIds && e.courseIds.length) ? e.courseIds : (e.courseId ? [e.courseId] : []);
+    if (cids.length !== 1) continue;
+    const n = Math.max(0, Number(e.positionsTotal ?? e.positions ?? 0) || 0);
+    if (n <= 0) continue;
+    slotsByName[e.name] = Array.from({ length: n }, (_, i) => ({ id: `${e.id}-${cids[0]}-s${i + 1}`, courseId: cids[0], status: 'available', studentId: null }));
+  }
   for (const st of students) {
     const org = st.acceptedOrg; if (!org) continue;
     const slots = slotsByName[org]; if (!slots) continue;

@@ -4,6 +4,7 @@ import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear } from './pageShared';
 import { RefreshButton } from './StudentsPage';
 import { openMailto } from '../lib/openMailto';
+import { openVacancies, totalVacancies } from '../lib/placement';
 
 function hebDate(d: Date) {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -67,9 +68,9 @@ export default function Dashboard({
   const placementRate  = scopedStudents.length
     ? Math.round((hiredCount / scopedStudents.length) * 100)
     : 0;
-  const totalPositions = scopedEmployers.reduce((sum, e) => sum + (Number(e.positions) || 0), 0);
-  const filledPositions = scopedEmployers.reduce((sum, e) => sum + (Number(e.filledPositions) || 0), 0);
-  const openPositions = Math.max(0, totalPositions - filledPositions);
+  const totalPositions = scopedEmployers.reduce((sum, e) => sum + totalVacancies(e), 0);
+  const openPositions = scopedEmployers.reduce((sum, e) => sum + openVacancies(e), 0);
+  const filledPositions = Math.max(0, totalPositions - openPositions);
 
   // Upcoming lectures (next 14 days, scoped, sorted)
   const now = new Date();

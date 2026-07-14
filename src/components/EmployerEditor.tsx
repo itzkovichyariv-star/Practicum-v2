@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
+import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity } from '../lib/placement';
 import Modal from './Modal';
 
 type Props = {
@@ -29,18 +30,22 @@ export default function EmployerEditor({
         ? [defaultCourseId]
         : [];
 
+  // Spread the whole employer FIRST so fields the editor doesn't surface
+  // (vacancySlots, approvalStatus, positionsTotal, restrictedToStudentId, addedBy,
+  // legacy courseId/year) are preserved on save — otherwise editing here wipes the
+  // per-course slot ledger.
   const [form, setForm] = useState<Employer>({
+    ...(employer || {}),
     id: employer?.id || randomId('emp'),
     name: employer?.name || '',
     contactPerson: employer?.contactPerson || '',
     contactPhone: employer?.contactPhone || '',
     contactEmail: employer?.contactEmail || '',
     location: employer?.location || '',
-    positions: employer?.positions || 0,
-    filledPositions: employer?.filledPositions || 0,
     notes: employer?.notes || '',
     courseIds: initialCourseIds,
-  });
+    vacancySlots: employer?.vacancySlots || [],
+  } as Employer);
 
   function update<K extends keyof Employer>(k: K, v: Employer[K]) {
     setForm(f => ({ ...f, [k]: v }));
@@ -70,8 +75,6 @@ export default function EmployerEditor({
     if (n.startsWith('0')) n = '972' + n.slice(1);
     window.open(`https://wa.me/${n}`, '_blank');
   }
-
-  const openPositions = Math.max(0, (Number(form.positions) || 0) - (Number(form.filledPositions) || 0));
 
   return (
     <Modal onClose={onClose} maxWidth="max-w-[780px]">
@@ -111,10 +114,22 @@ export default function EmployerEditor({
                       }}>
                       <input type="checkbox" checked={checked}
                         onChange={e => {
-                          const next = e.target.checked
-                            ? [...(form.courseIds || []), c.id]
-                            : (form.courseIds || []).filter(id => id !== c.id);
-                          update('courseIds', next);
+                          if (e.target.checked) {
+                            // Attach the course — capacity starts at 0 (no carry-over).
+                            update('courseIds', [...(form.courseIds || []), c.id]);
+                            return;
+                          }
+                          const cnt = countSlotsByStatus(form, c.id);
+                          const occupied = cnt.tentative + cnt.under_review + cnt.placed;
+                          if (occupied > 0) {
+                            alert(`לא ניתן לבטל שיוך ל"${c.name}" — ${occupied} מקומות תפוסים בקורס זה. שחרר/י אותם קודם.`);
+                            return;
+                          }
+                          setForm(f => reconcileEmployerCapacity({
+                            ...f,
+                            courseIds: (f.courseIds || []).filter(id => id !== c.id),
+                            vacancySlots: (f.vacancySlots || []).filter((s: any) => s.courseId !== c.id),
+                          }));
                         }}
                         style={{ accentColor: 'var(--accent)' }}
                       />
@@ -126,8 +141,44 @@ export default function EmployerEditor({
               </div>
             </div>
 
-            <Field label="סה״כ משרות"><Input type="number" value={String(form.positions||0)} onChange={v=>update('positions', Number(v)||0)}/></Field>
-            <Field label="משרות מאוישות"><Input type="number" value={String(form.filledPositions||0)} onChange={v=>update('filledPositions', Number(v)||0)}/></Field>
+            <div className="col-span-full">
+              <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>מקומות התנסות — לפי קורס</span>
+              {(form.courseIds || []).length === 0 ? (
+                <div className="text-[13px] px-3 py-3 rounded-lg border" style={{ color: 'var(--text-soft)', borderColor: 'var(--divider)', background: 'rgba(0,0,0,0.02)' }}>
+                  שייך/י קורס למעלה כדי להגדיר מספר מקומות.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {(form.courseIds || []).map(cid => {
+                    const c = courses.find(x => x.id === cid);
+                    if (!c) return null;
+                    const cnt = countSlotsByStatus(form, cid);
+                    const occupied = cnt.tentative + cnt.under_review + cnt.placed;
+                    return (
+                      <div key={cid} className="flex items-center gap-3 flex-wrap px-3 py-2.5 rounded-lg border"
+                        style={{ borderColor: 'var(--divider)' }}>
+                        <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+                          <div className="text-[13.5px] font-medium truncate" style={{ color: 'var(--ink)' }}>{c.name}</div>
+                          <div className="mono text-[11px] opacity-60">{c.year}</div>
+                        </div>
+                        <label className="flex items-center gap-2 shrink-0">
+                          <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>מקומות</span>
+                          <input type="number" min={occupied} value={String(cnt.total)}
+                            onChange={e => setForm(setCourseCapacity(form, cid, Number(e.target.value) || 0))}
+                            className="input" style={{ padding: '8px 10px', fontSize: '14px', width: '68px' }} />
+                        </label>
+                        <div className="mono text-[11px] shrink-0" style={{ color: cnt.available > 0 ? '#15803d' : 'var(--text-soft)' }}>
+                          {cnt.available} פנויים{occupied > 0 ? ` · ${occupied} תפוסים` : ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="mono text-[11px]" style={{ color: 'var(--text-soft)' }}>
+                    כל קורס נשמר בנפרד. קורס חדש מתחיל מ‑0. לא ניתן להוריד מתחת למספר המקומות התפוסים.
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="col-span-full">
               <Field label="הערות">
@@ -136,11 +187,6 @@ export default function EmployerEditor({
               </Field>
             </div>
 
-            <div className="col-span-full py-3 border-t mt-3" style={{ borderColor: 'var(--divider)' }}>
-              <div className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold" style={{ color: openPositions > 0 ? 'var(--accent)' : 'var(--text-soft)' }}>
-                {openPositions > 0 ? `${openPositions} משרות פתוחות` : 'אין משרות פתוחות'}
-              </div>
-            </div>
           </div>
 
           <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
