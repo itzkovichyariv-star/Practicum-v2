@@ -72,14 +72,14 @@ function mentorEmailHtml(r: Rec): string {
 <body style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;padding:28px;color:#3d0f14;background:#f4efe6;direction:rtl">
   <div style="border-bottom:2px solid #7a1e2b;padding-bottom:14px;margin-bottom:22px">
     <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#7a1e2b;margin-bottom:5px">פרקטיקום · אוניברסיטת אריאל</div>
-    <h1 style="font-family:Georgia,serif;font-size:24px;margin:0;color:#3d0f14">תזכורת עדינה — משוב מעסיק</h1>
+    <h1 style="font-family:Georgia,serif;font-size:24px;margin:0;color:#3d0f14">תזכורת — משוב מעסיק</h1>
   </div>
   <p style="font-size:15px;line-height:1.75;margin:0 0 14px">${greet}</p>
   <p style="font-size:15px;line-height:1.75;margin:0 0 14px">
     הסטודנט/ית <strong>${esc(r.studentName)}</strong> ביצע/ה את הפרקטיקום ב<strong>${esc(r.orgName)}</strong> בהנחייתך. נשמח מאוד לקבל את חוות דעתך.
   </p>
   <p style="font-size:15px;line-height:1.75;margin:0 0 18px">
-    זוהי תזכורת עדינה — המשוב טרם התקבל אצלנו, והוא חשוב להשלמת הערכת הסטודנט/ית. המילוי לוקח רק כמה דקות:
+    המשוב טרם התקבל אצלנו, והוא חשוב להשלמת הערכת הסטודנט/ית. המילוי לוקח רק כמה דקות:
   </p>
   <p style="margin:0 0 20px">
     <a href="${esc(r.link)}" style="display:inline-block;background:#7a1e2b;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 26px;border-radius:999px">מילוי המשוב ›</a>
