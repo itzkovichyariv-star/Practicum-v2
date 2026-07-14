@@ -55,12 +55,13 @@ export default function EmployerEditor({
   }
 
   const [showAllCourses, setShowAllCourses] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   // Which courses to SHOW in the capacity control. Places are per (course × year),
-  // so we surface only the (year × course) the coordinator is working on — driven by
-  // the top-bar year+course context — plus any course this employer is already
-  // attached to (so existing placements/history stay visible). `showAllCourses`
-  // reveals every course, to attach a new one.
+  // so by DEFAULT we surface ONLY the (year × course) the coordinator is working on
+  // — driven by the top-bar year+course context. Placements from PAST years (an
+  // attached course in a different year) are history: hidden until `showHistory` is
+  // on. `showAllCourses` reveals every course, to attach a new one.
   const scopeYear = defaultYear && defaultYear !== '__all__' ? normalizeYear(defaultYear) : null;
   const scopeCourse = defaultCourseId && defaultCourseId !== '__all__' ? defaultCourseId : null;
   const hasScope = !!(scopeYear || scopeCourse);
@@ -68,9 +69,14 @@ export default function EmployerEditor({
   const inScope = (c: Course) =>
     (!scopeCourse || c.id === scopeCourse || c.name === scopeCourse) &&
     (!scopeYear || normalizeYear(c.year || '') === scopeYear);
-  const visibleCourses = courses.filter(c =>
-    showAllCourses || attachedIds.has(c.id) || (hasScope && inScope(c)),
-  );
+  // An attached course OUTSIDE the selected scope = a past/other-year record (history).
+  const isPast = (c: Course) => attachedIds.has(c.id) && !inScope(c);
+  const hasHistory = hasScope && courses.some(isPast);
+  const visibleCourses = courses.filter(c => {
+    if (showAllCourses) return true;
+    if (hasScope) return inScope(c) || (showHistory && attachedIds.has(c.id));
+    return attachedIds.has(c.id); // no context selected → show attached (all years)
+  });
   const hiddenCount = courses.length - visibleCourses.length;
   const coursesByYear = (() => {
     const map = new Map<string, Course[]>();
@@ -202,12 +208,20 @@ export default function EmployerEditor({
                   אין קורסים להצגה בהקשר הנוכחי. לחצ/י «הצג את כל הקורסים» כדי לשייך קורס.
                 </div>
               )}
-              {(hiddenCount > 0 || showAllCourses) && (
-                <button type="button" onClick={() => setShowAllCourses(v => !v)}
-                  className="mono text-[11px] mt-3" style={{ color: 'var(--accent)', letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  {showAllCourses ? '▴ הצג רק את הקורס/שנה שנבחרו' : `▾ הצג את כל הקורסים (עוד ${hiddenCount})`}
-                </button>
-              )}
+              <div className="flex flex-wrap items-center gap-4 mt-3">
+                {hasHistory && !showAllCourses && (
+                  <button type="button" onClick={() => setShowHistory(v => !v)}
+                    className="mono text-[11px]" style={{ color: 'var(--text-soft)', letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    {showHistory ? '▴ הסתר היסטוריה' : '🕐 הצג היסטוריה (שנים קודמות)'}
+                  </button>
+                )}
+                {(hiddenCount > 0 || showAllCourses) && (
+                  <button type="button" onClick={() => setShowAllCourses(v => !v)}
+                    className="mono text-[11px]" style={{ color: 'var(--accent)', letterSpacing: '0.06em', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    {showAllCourses ? '▴ הצג רק את הקורס/שנה שנבחרו' : `▾ הצג את כל הקורסים (עוד ${hiddenCount})`}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="col-span-full">
