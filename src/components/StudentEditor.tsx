@@ -687,7 +687,8 @@ export default function StudentEditor({
 
           <SectionSub title="הקשר — קורס ושנה">
             <Field label="קורס">
-              <Select value={form.courseId||''} onChange={v=>update('courseId',v)}
+              <Select value={form.courseId||''}
+                onChange={v=>{ const c=courses.find(x=>x.id===v); setForm(f=>({ ...f, courseId: v, ...(c?.year ? { year: c.year } : {}) })); }}
                 options={courses.map(c=>({value:c.id,label:c.year?`${c.name} · ${c.year}`:c.name}))} placeholder="בחר קורס"/>
             </Field>
             <Field label="שנה אקדמית">

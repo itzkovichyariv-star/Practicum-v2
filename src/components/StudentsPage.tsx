@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
-import { occupyAcceptedOrgSlot } from '../lib/placement';
+import { occupyAcceptedOrgSlot, releaseStudentSlots } from '../lib/placement';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
 import PlacementPanel from './PlacementPanel';
@@ -270,16 +270,17 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       .sort((a, b2) => (a.name || '').localeCompare(b2.name || '', 'he'));
   }, [mailMode, mailBucket, scoped, selectedIds, all]);
 
-  async function persistAndRefresh(next: Student[], msg: string) {
+  async function persistAndRefresh(next: Student[], msg: string, nextEmployers?: any[]) {
     setSaving(true);
     setSaveMsg(null);
-    const nextData = { ...data, students: next };
+    const nextData = nextEmployers ? { ...data, students: next, employers: nextEmployers } : { ...data, students: next };
     const res = await saveSnapshot(nextData, { name: userName });
     setSaving(false);
     if (!res.ok) { setSaveMsg('שגיאה: ' + (res.error || '')); showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
     setSaveMsg(msg);
     showToast(msg + ' · נשמר בענן ☁️', 'success');
     (data.students as Student[]) = next;
+    if (nextEmployers) (data.employers as any) = nextEmployers;
     onRefresh();
     setTimeout(() => setSaveMsg(null), 2500);
   }
@@ -343,9 +344,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       : candidates.find(c => (c.email || '').toLowerCase() === (student.email || '').toLowerCase());
     const nextStudents = all.filter(s => s.id !== student.id);
     const nextCandidates = linked ? candidates.filter(c => c.id !== linked.id) : candidates;
+    const nextEmployers = releaseStudentSlots((data.employers as any) || [], student.id);
     setSaving(true);
     const res = await saveSnapshot(
-      { ...data, students: nextStudents, candidates: nextCandidates },
+      { ...data, students: nextStudents, candidates: nextCandidates, employers: nextEmployers },
       { name: userName },
       { action: 'נמחק לחלוטין', entity: 'סטודנט', target: student.name }
     );
@@ -353,6 +355,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     if (res.ok) {
       (data.students as Student[]) = nextStudents;
       (data.candidates as Candidate[]) = nextCandidates;
+      (data.employers as any) = nextEmployers;
       onRefresh();
       showToast(`✓ ${student.name} נמחק/ה לחלוטין (כולל מועמדות)`, 'success');
     } else {
@@ -362,7 +365,8 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
   async function confirmKeepAsCandidate(student: Student) {
     setDeleteDialog(null);
-    await persistAndRefresh(all.filter(s => s.id !== student.id), `✓ ${student.name} הוסר/ה כסטודנט, נשמר/ה כמועמד`);
+    const nextEmployers = releaseStudentSlots((data.employers as any) || [], student.id);
+    await persistAndRefresh(all.filter(s => s.id !== student.id), `✓ ${student.name} הוסר/ה כסטודנט, נשמר/ה כמועמד`, nextEmployers);
   }
 
   async function handleRevertToCandidate(s: Student) {
@@ -385,9 +389,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     };
     const nextStudents = all.filter(x => x.id !== s.id);
     const nextCandidates = [...(data.candidates as Candidate[] || []), newCandidate];
+    const nextEmployers = releaseStudentSlots((data.employers as any) || [], s.id);
     setSaving(true);
     const res = await saveSnapshot(
-      { ...data, students: nextStudents, candidates: nextCandidates },
+      { ...data, students: nextStudents, candidates: nextCandidates, employers: nextEmployers },
       { name: userName },
       { action: 'הוחזר למועמד', entity: 'סטודנט', target: s.name }
     );
@@ -395,6 +400,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     if (res.ok) {
       (data.students as Student[]) = nextStudents;
       (data.candidates as Candidate[]) = nextCandidates;
+      (data.employers as any) = nextEmployers;
       setEditing(null);
       onRefresh();
       showToast(`✓ ${s.name} הועבר/ה בחזרה לרשימת המועמדים`, 'success');

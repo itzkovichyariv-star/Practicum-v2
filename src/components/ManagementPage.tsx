@@ -1064,7 +1064,7 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
 
   async function deleteCourse(c: Course) {
     const students = (data.students || []).filter(s => s.courseId === c.id).length;
-    const employers = (data.employers || []).filter(e => e.courseId === c.id).length;
+    const employers = (data.employers || []).filter(e => ((e as any).courseIds || ((e as any).courseId ? [(e as any).courseId] : [])).includes(c.id)).length;
     if (students > 0 || employers > 0) {
       if (!confirm(`לקורס "${c.name}" יש ${students} סטודנטים ו‑${employers} מעסיקים. למחוק בכל זאת? (הרשומות יישארו במערכת אך ללא קורס משויך)`)) return;
     } else {

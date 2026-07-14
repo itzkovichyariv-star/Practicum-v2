@@ -653,6 +653,27 @@ export function occupyAcceptedOrgSlot(
   return emps;
 }
 
+// ── Free a removed student's slots (prevents dangling slot→student refs) ───────
+//
+// When a student is deleted / reverted to candidate, any vacancy slot they held
+// (tentative/under_review/placed) must be freed — otherwise the slot keeps a
+// studentId that resolves to nobody, which inflates occupancy, understates open
+// places, and blocks course-detach/capacity edits. Flips each such slot back to
+// 'available' with studentId cleared. Pure: returns a fresh employers array; only
+// employers that actually held a slot for this student change.
+export function releaseStudentSlots(employers: Employer[], studentId: string, now?: string): Employer[] {
+  const sid = String(studentId);
+  const ts = now || new Date().toISOString();
+  return employers.map(e => {
+    const slots: any[] = (e as any).vacancySlots || [];
+    if (!slots.some(s => String(s.studentId) === sid)) return e;
+    const next = slots.map(s => String(s.studentId) === sid
+      ? { ...s, status: 'available', studentId: null, prefRank: null, history: [...(s.history || []), { at: ts, from: s.status, to: 'available', by: 'admin', actorId: 'student-deleted', reason: 'student-deleted' }] }
+      : s);
+    return reconcileEmployerCapacity({ ...(e as any), vacancySlots: next } as Employer);
+  });
+}
+
 // ── Availability logic ────────────────────────────────────────────────────────
 
 /**

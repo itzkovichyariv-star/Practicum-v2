@@ -176,26 +176,6 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     return true;
   }), [all, context, courses]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return scoped.filter(e => {
-      const total = totalVacancies(e);
-      const open = openVacancies(e);
-      if (posFilter === 'open' && open === 0) return false;
-      if (posFilter === 'full' && (open > 0 || total === 0)) return false;
-      if (posFilter === 'none' && total > 0) return false;
-      if (courseFilter) {
-        const ids = empCourseIds(e);
-        if (!ids.includes(courseFilter)) return false;
-      }
-      if (q) {
-        const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
-  }, [scoped, search, posFilter, courseFilter]);
-
   // Scope status + places to the SELECTED year (top bar), defaulting to the LATEST
   // year — so we never sum in irrelevant past years (1 this year + 1 next year must
   // not read as 2). An explicit in-page course pick narrows to just that course.
@@ -213,6 +193,28 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     else if (context.courseId && context.courseId !== '__all__') cs = cs.filter((c: any) => c.name === context.courseId || c.id === context.courseId);
     return cs.length ? cs.map((c: any) => c.id) : undefined;
   }, [courseFilter, context.courseId, selectedYear, courses]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return scoped.filter(e => {
+      // open/full/none chips are per (year × course), consistent with the status pill.
+      const yav = orgAvailability(e, yearCourseIds);
+      const total = yav.total;
+      const open = yav.open;
+      if (posFilter === 'open' && open === 0) return false;
+      if (posFilter === 'full' && (open > 0 || total === 0)) return false;
+      if (posFilter === 'none' && total > 0) return false;
+      if (courseFilter) {
+        const ids = empCourseIds(e);
+        if (!ids.includes(courseFilter)) return false;
+      }
+      if (q) {
+        const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+  }, [scoped, search, posFilter, courseFilter, yearCourseIds]);
 
   const totalPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).total, 0);
   const openPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).open, 0);
