@@ -8,7 +8,7 @@ import { saveSnapshot, randomId, loadSnapshots, restoreSnapshot, type SnapshotMe
 import { CONTACT_PATCHES } from '../lib/contactPatches';
 import { showToast } from '../lib/toast';
 import * as fs from '../lib/folderCreation';
-import { countSlotsByStatus, setCourseCapacity } from '../lib/placement';
+import { countSlotsByStatus, setCourseCapacity, reconcileEmployerCapacity } from '../lib/placement';
 import EmployerEditor from './EmployerEditor';
 
 export default function ManagementPage(props: PageProps) {
@@ -1339,24 +1339,19 @@ function EmployerAttachSection({ course, data, userName, onRefresh }: {
 
   async function handleNewEmployerSave(emp: Employer) {
     setSaving(true);
-    const newEmp = {
+    // TRUST the shared editor's output: it already carries the per-(course×year)
+    // courseIds + vacancySlots the user set in the year-grouped control. Only
+    // guarantee THIS course is attached (the section is scoped to a course) and set
+    // admin defaults — never rebuild slots from a global `positions`, which threw
+    // away the user's per-course capacity and forced every slot onto one course.
+    const courseIds = Array.from(new Set([...((emp as any).courseIds || []), course.id]));
+    const newEmp = reconcileEmployerCapacity({
       ...emp,
-      courseIds: [...((emp as any).courseIds || []), course.id],
-      addedBy: 'admin',
-      approvalStatus: 'approved',
-      restrictedToStudentId: null,
-      positionsTotal: emp.positions || 1,
-    };
-    // Build vacancy slots
-    const now = new Date().toISOString();
-    (newEmp as any).vacancySlots = Array.from({ length: newEmp.positionsTotal }, (_, i) => ({
-      id: `${newEmp.id}-s${i + 1}`,
-      courseId: course.id,
-      status: 'available',
-      studentId: null,
-      prefRank: null,
-      history: [{ at: now, from: null, to: 'available', by: 'admin', actorId: userName }],
-    }));
+      courseIds,
+      addedBy: (emp as any).addedBy || 'admin',
+      approvalStatus: (emp as any).approvalStatus || 'approved',
+      restrictedToStudentId: (emp as any).restrictedToStudentId ?? null,
+    } as any);
     const nextEmployers = [...allEmployers, newEmp];
     const res = await saveSnapshot({ ...data, employers: nextEmployers }, { name: userName },
       { action: 'נוסף', entity: 'מעסיק', target: newEmp.name });
@@ -1486,6 +1481,7 @@ function EmployerAttachSection({ course, data, userName, onRefresh }: {
           employer={null}
           courses={courses}
           years={[]}
+          students={data.students || []}
           defaultCourseId={course.id}
           onSave={handleNewEmployerSave}
           onClose={() => setShowNewEmployer(false)}
