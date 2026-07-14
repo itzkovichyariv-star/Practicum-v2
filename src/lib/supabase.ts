@@ -112,6 +112,7 @@ export type Student = {
   placementInterviewOrg?: string;   // employer visited (may differ from firstChoiceOrg during process)
   // Employer feedback
   feedbackToken?: string;        // opaque token sent to employer for the feedback form URL
+  feedbackRequestedAt?: string;  // ISO timestamp when the feedback link was FIRST generated/sent — anchors the weekly reminder clock (see feedback-reminders Edge Function)
   feedbackSubmittedAt?: string;  // ISO timestamp when employer submitted feedback
   // Email tracking
   acceptanceEmailSent?: boolean; // true after acceptance email was sent

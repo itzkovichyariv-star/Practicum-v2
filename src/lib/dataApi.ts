@@ -183,8 +183,13 @@ export async function ensureFeedbackToken(
     if (existing) return { ok: true, token: existing, url: buildFeedbackUrl(existing) };
 
     // 3. Mint, persist (CAS-guarded), then verify by read-back.
+    //    Stamp feedbackRequestedAt at the SAME moment the first token is minted — this
+    //    is the single choke-point every send path (email/WhatsApp/copy-link) funnels
+    //    through, so it anchors the weekly feedback-reminders clock for free. Preserve
+    //    any pre-existing value so the "first request" time never drifts.
     const token = `fb-${studentId}-${Math.random().toString(36).slice(2, 8)}`;
-    const nextStudents = students.map((s, i) => (i === idx ? { ...s, feedbackToken: token } : s));
+    const requestedAt = students[idx].feedbackRequestedAt || new Date().toISOString();
+    const nextStudents = students.map((s, i) => (i === idx ? { ...s, feedbackToken: token, feedbackRequestedAt: requestedAt } : s));
     const res = await saveSnapshot(
       { ...d, students: nextStudents },
       { name: editorName },
