@@ -713,7 +713,12 @@ export function setCourseCapacity<T extends Employer>(
     const keepAvail = Math.max(0, target - occupied.length);
     next = [...occupied, ...available.slice(0, keepAvail)];
   }
-  return reconcileEmployerCapacity({ ...(emp as any), vacancySlots: [...others, ...next] }) as T;
+  // Always sync the legacy mirrors to the ACTUAL slot count — including 0. (The
+  // reconcile helper bails on empty, which would leave positions=1 after a course
+  // is zeroed, and the migration/fallback could then re-materialize a phantom slot.)
+  const nextSlots = [...others, ...next];
+  const occ = nextSlots.filter((s: any) => s.status !== 'available').length;
+  return { ...(emp as any), vacancySlots: nextSlots, positionsTotal: nextSlots.length, positions: nextSlots.length, filledPositions: occ } as T;
 }
 
 /** Total vacancy slots for one course (per-course "total places"). */

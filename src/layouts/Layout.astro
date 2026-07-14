@@ -15,6 +15,7 @@ const { title = 'פרקטיקום · Ariel University' } = Astro.props;
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>{title} · {VERSION}</title>
+    <meta name="app-version" content={VERSION} />
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#7a1e2b" media="(prefers-color-scheme: light)" />
@@ -40,12 +41,47 @@ const { title = 'פרקטיקום · Ariel University' } = Astro.props;
         document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
       })();
     </script>
-    <script>
+    <script define:vars={{ BUILD: VERSION }}>
+      // ── Auto-update: never let a device get stuck on an old build ──────────
+      // 1) Register the SW, force an update check on load + periodically, and
+      //    reload as soon as a new SW takes control (new deploy → fresh app).
       if ('serviceWorker' in navigator) {
+        let reloaded = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloaded) return; reloaded = true; location.reload();
+        });
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+          navigator.serviceWorker.register('/sw.js').then((reg) => {
+            reg.update();
+            setInterval(() => reg.update(), 60000);
+          }).catch(() => {});
         });
       }
+      // 2) Belt-and-suspenders: on load AND every time the app is re-focused,
+      //    fetch the live HTML (cache-busted) and compare its build to ours. If
+      //    the server is newer, purge caches + SW and hard-reload. This rescues
+      //    even a stubborn iOS PWA that's serving a stale shell.
+      async function checkFreshBuild() {
+        try {
+          const res = await fetch('/?_v=' + Date.now(), { cache: 'no-store' });
+          const html = await res.text();
+          const m = html.match(/name="app-version" content="([^"]+)"/);
+          const live = m && m[1];
+          if (live && live !== BUILD) {
+            if ('serviceWorker' in navigator) {
+              const regs = await navigator.serviceWorker.getRegistrations();
+              await Promise.all(regs.map((r) => r.unregister()));
+            }
+            if (window.caches) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+            location.reload();
+          }
+        } catch (_) {}
+      }
+      window.addEventListener('load', () => setTimeout(checkFreshBuild, 1500));
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) checkFreshBuild(); });
     </script>
   </head>
   <body class="min-h-screen">

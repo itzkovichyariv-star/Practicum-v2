@@ -1,5 +1,5 @@
 // Bump CACHE on every meaningful change so old caches are purged on activate.
-const CACHE = 'practicum-v2-cache-4';
+const CACHE = 'practicum-v2-cache-5';
 const PRECACHE = ['/'];
 
 self.addEventListener('install', e => {
@@ -37,7 +37,7 @@ self.addEventListener('fetch', e => {
   // fresh so a new deploy is picked up immediately (no stale build after a deploy).
   if (e.request.mode === 'navigate' || e.request.destination === 'document') {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'reload' })
         .then(res => {
           const clone = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
