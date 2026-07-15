@@ -32,6 +32,30 @@ function cardStatusChip(st: any, yearAv: any): string {
   return st.detail || (st.missing && st.missing.length ? `חסר ${st.missing.join(' ו')}` : '');
 }
 
+// Per-(course×year) rollup: counts of each ramzor status + open places, ALL scoped to
+// ONE courseId (a legitimate sum WITHIN a single unit — never across courses/years).
+function unitRollup(items: { emp: Employer; courseId: string }[]) {
+  const c = { approved: 0, in_process: 0, not_contacted: 0, full: 0, rejected: 0, open: 0, total: 0 };
+  for (const { emp, courseId } of items) {
+    const scope = [courseId];
+    const k = employerStatus(emp, scope).key as keyof typeof c;
+    if (k in c) (c as any)[k] += 1;
+    const av = orgAvailability(emp, scope);
+    c.open += av.open; c.total += av.total;
+  }
+  return c;
+}
+function rollupParts(r: ReturnType<typeof unitRollup>): { label: string; color: string }[] {
+  const parts: { label: string; color: string }[] = [];
+  if (r.approved) parts.push({ label: `${r.approved} מאושרים`, color: STATUS_COLORS.approved });
+  if (r.in_process) parts.push({ label: `${r.in_process} בתהליך`, color: STATUS_COLORS.in_process });
+  if (r.not_contacted) parts.push({ label: `${r.not_contacted} טרם`, color: STATUS_COLORS.not_contacted });
+  if (r.full) parts.push({ label: `${r.full} מלא`, color: STATUS_COLORS.full });
+  if (r.rejected) parts.push({ label: `${r.rejected} נדחו`, color: STATUS_COLORS.rejected });
+  parts.push({ label: `${r.open} מקומות פנויים`, color: 'var(--ink)' });
+  return parts;
+}
+
 type PosFilter = 'all' | 'open' | 'full' | 'none';
 type StatusFilter = 'all' | 'approved' | 'in_process' | 'rejected' | 'not_contacted';
 
@@ -42,7 +66,10 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState<PosFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [courseFilter, setCourseFilter] = useState('');
+  // Extra (course × year) units pinned for side-by-side comparison, beyond the top-bar
+  // context. Empty = show only what the top bar selects. Yariv: "you should only see the
+  // org within this year and course UNLESS you add a second view of year+course."
+  const [compareUnits, setCompareUnits] = useState<string[]>([]);
   const [editing, setEditing] = useState<Employer | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -160,68 +187,81 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     return Array.from(set).sort().reverse();
   }, [courses, data.academicYears]);
 
-  const scoped = useMemo(() => all.filter(e => {
-    const ids = empCourseIds(e);
-    if (context.courseId !== '__all__') {
-      const allowedIds = new Set(
-        courses.filter((c: any) => c.name === context.courseId || c.id === context.courseId).map((c: any) => c.id)
-      );
-      if (!ids.some(id => allowedIds.has(id))) return false;
-    }
-    if (context.year !== '__all__') {
-      const matches = ids.some(cid => {
-        const course = courses.find((c: any) => c.id === cid);
-        return course && normalizeYear(course.year) === normalizeYear(context.year);
-      });
-      if (!matches) return false;
-    }
-    return true;
-  }), [all, context, courses]);
-
-  // Scope status + places to the SELECTED year (top bar), defaulting to the LATEST
-  // year — so we never sum in irrelevant past years (1 this year + 1 next year must
-  // not read as 2). An explicit in-page course pick narrows to just that course.
-  const selectedYear = useMemo(() => {
-    if (context.year && context.year !== '__all__') return normalizeYear(context.year);
-    return years[0] || ''; // `years` is sorted desc → the latest
-  }, [context.year, years]);
-  const yearCourseIds = useMemo<string[] | undefined>(() => {
-    // Places are counted PER (course × year) — NEVER summed across courses. Scope to
-    // the selected year, and narrow further to the selected course when one is chosen
-    // (the in-page course filter, or the top-bar course context).
-    let cs = courses as any[];
-    if (selectedYear) cs = cs.filter((c: any) => normalizeYear(c.year || '') === selectedYear);
-    if (courseFilter) cs = cs.filter((c: any) => c.id === courseFilter);
-    else if (context.courseId && context.courseId !== '__all__') cs = cs.filter((c: any) => c.name === context.courseId || c.id === context.courseId);
-    return cs.length ? cs.map((c: any) => c.id) : undefined;
-  }, [courseFilter, context.courseId, selectedYear, courses]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return scoped.filter(e => {
-      // open/full/none chips are per (year × course), consistent with the status pill.
-      const yav = orgAvailability(e, yearCourseIds);
-      const total = yav.total;
-      const open = yav.open;
-      if (posFilter === 'open' && open === 0) return false;
-      if (posFilter === 'full' && (open > 0 || total === 0)) return false;
-      if (posFilter === 'none' && total > 0) return false;
-      if (statusFilter !== 'all' && employerStatus(e, yearCourseIds).key !== statusFilter) return false;
-      if (courseFilter) {
-        const ids = empCourseIds(e);
-        if (!ids.includes(courseFilter)) return false;
-      }
-      if (q) {
-        const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
+  // ── (course × year) UNITS in scope ──────────────────────────────────────────
+  // The whole page is organized by UNITS = one course-row (course-name × year).
+  // The top-bar context resolves to a set of course-row ids; `compareUnits` pins extra
+  // ones for a side-by-side view. Capacity/status are ALWAYS counted per single unit —
+  // never summed across courses or years.
+  const contextUnitIds = useMemo<string[]>(() => (courses as any[])
+    .filter((c: any) => {
+      if (!c.id) return false;
+      if (context.courseId !== '__all__' && !(c.name === context.courseId || c.id === context.courseId)) return false;
+      if (context.year !== '__all__' && normalizeYear(c.year || '') !== normalizeYear(context.year)) return false;
       return true;
-    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
-  }, [scoped, search, posFilter, statusFilter, courseFilter, yearCourseIds]);
+    })
+    .map((c: any) => c.id), [courses, context.courseId, context.year]);
 
-  const totalPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).total, 0);
-  const openPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).open, 0);
-  const filledPositions = Math.max(0, totalPositions - openPositions);
+  const unitIds = useMemo<string[]>(() => {
+    const set = new Set<string>(contextUnitIds);
+    compareUnits.forEach(id => set.add(id));
+    return Array.from(set);
+  }, [contextUnitIds, compareUnits]);
+
+  // Fan out: ONE entry per (employer × unit it serves that is in scope). An org serving
+  // HR + Counseling in the same year yields TWO entries → two rows under two sections.
+  const entries = useMemo(() => {
+    const unitSet = new Set(unitIds);
+    const q = search.trim().toLowerCase();
+    const out: { emp: Employer; courseId: string; year: string }[] = [];
+    for (const e of all) {
+      for (const cid of empCourseIds(e)) {
+        if (!unitSet.has(cid)) continue;
+        const scope = [cid];
+        const av = orgAvailability(e, scope);
+        if (posFilter === 'open' && av.open === 0) continue;
+        if (posFilter === 'full' && (av.open > 0 || av.total === 0)) continue;
+        if (posFilter === 'none' && av.total > 0) continue;
+        if (statusFilter !== 'all' && employerStatus(e, scope).key !== statusFilter) continue;
+        if (q) {
+          const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(q)) continue;
+        }
+        out.push({ emp: e, courseId: cid, year: normalizeYear((courses.find((c: any) => c.id === cid) || {}).year || '') });
+      }
+    }
+    return out;
+  }, [all, unitIds, courses, search, posFilter, statusFilter]);
+
+  // Group entries into (course × year) sections. A specifically-selected unit stays
+  // visible even when empty (so you see the unit exists); in a multi-unit overview,
+  // empty units are dropped to avoid clutter.
+  const sections = useMemo(() => {
+    const byUnit = new Map<string, { courseId: string; year: string; courseName: string; items: typeof entries }>();
+    for (const cid of unitIds) {
+      const c = courses.find((x: any) => x.id === cid);
+      byUnit.set(cid, { courseId: cid, year: normalizeYear(c?.year || ''), courseName: c?.name || cid, items: [] });
+    }
+    for (const en of entries) byUnit.get(en.courseId)?.items.push(en);
+    let arr = Array.from(byUnit.values());
+    // Keep a section even when empty if it was EXPLICITLY targeted — a fully-specified
+    // (course × year) context, or a pinned comparison unit — so the user always sees
+    // what they selected. Only a BROAD overview (all courses / all years) drops empties.
+    const explicit = new Set<string>([
+      ...(context.courseId !== '__all__' && context.year !== '__all__' ? contextUnitIds : []),
+      ...compareUnits,
+    ]);
+    if (unitIds.length > 1) arr = arr.filter(u => u.items.length > 0 || explicit.has(u.courseId));
+    arr.forEach(u => u.items.sort((x, y) => (x.emp.name || '').localeCompare(y.emp.name || '', 'he')));
+    return arr.sort((a, b) => a.year !== b.year ? b.year.localeCompare(a.year, 'he') : a.courseName.localeCompare(b.courseName, 'he'));
+  }, [entries, unitIds, courses, context.courseId, context.year, contextUnitIds, compareUnits]);
+
+  const distinctEmployers = useMemo(() => new Set(entries.map(e => e.emp.id)).size, [entries]);
+  const multiUnit = sections.length > 1;
+  // Course-rows NOT already in the top-bar context — offered as "add a comparison unit".
+  const addableUnits = useMemo(() => (courses as any[])
+    .filter((c: any) => c.id && !contextUnitIds.includes(c.id))
+    .sort((a: any, b: any) => normalizeYear(b.year || '').localeCompare(normalizeYear(a.year || ''), 'he') || (a.name || '').localeCompare(b.name || '', 'he')),
+    [courses, contextUnitIds]);
 
   async function persistAndRefresh(next: Employer[], msg: string) {
     setSaving(true); setSaveMsg(null);
@@ -278,10 +318,16 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           <div>
             <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-4" style={{ color: 'var(--ink)' }}>מעסיקים</h1>
             <div className="flex gap-8 flex-wrap">
-              <StatBox label="ארגונים" value={scoped.length} />
-              <StatBox label="משרות" value={totalPositions} />
-              <StatBox label="פתוחות" value={openPositions} accent={openPositions > 0} />
-              <StatBox label="מאוישות" value={filledPositions} />
+              {/* Only a distinct-employer count at the top — capacity numbers live in each
+                  (course×year) section/health-card, so nothing is ever summed across units. */}
+              <StatBox label="ארגונים" value={distinctEmployers} />
+              {!multiUnit && sections[0] && (() => {
+                const r = unitRollup(sections[0].items);
+                return (<>
+                  <StatBox label="פתוחות" value={r.open} accent={r.open > 0} />
+                  <StatBox label="מאוישות" value={Math.max(0, r.total - r.open)} />
+                </>);
+              })()}
             </div>
           </div>
           <div className="flex gap-2 flex-wrap">
@@ -294,7 +340,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
       {/* Sub-tabs */}
       <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(0,0,0,0.05)', display: 'inline-flex' }}>
         <button onClick={() => setTab('employers')} style={btnTab(tab === 'employers')}>
-          מעסיקים ({scoped.length})
+          מעסיקים ({distinctEmployers})
         </button>
         <button onClick={() => setTab('approvals')} style={btnTab(tab === 'approvals')}>
           תור אישורים
@@ -343,17 +389,22 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
               className="input"
               style={{ padding: '9px 14px', fontSize: '14px', flex: '1 1 180px', minWidth: '0' }}
             />
-            <select
-              value={courseFilter}
-              onChange={e => setCourseFilter(e.target.value)}
-              className="input"
-              style={{ padding: '9px 14px', fontSize: '13px', flex: '0 1 auto', minWidth: '130px' }}
-            >
-              <option value="">כל הקורסים</option>
-              {courses.map((c: any) => (
-                <option key={c.id} value={c.id}>{c.name}{c.year ? ` · ${c.year}` : ''}</option>
-              ))}
-            </select>
+            {/* Add another (course × year) to view side by side. Empty context selection
+                (all courses / all years) already shows every unit as its own section. */}
+            {addableUnits.length > 0 && (
+              <select
+                value=""
+                onChange={e => { const v = e.target.value; if (v) setCompareUnits(u => u.includes(v) ? u : [...u, v]); }}
+                className="input"
+                style={{ padding: '9px 14px', fontSize: '13px', flex: '0 1 auto', minWidth: '150px' }}
+                title="הצג קורס/שנה נוספים להשוואה"
+              >
+                <option value="">➕ הוסף קורס/שנה להשוואה</option>
+                {addableUnits.map((c: any) => (
+                  <option key={c.id} value={c.id} disabled={compareUnits.includes(c.id)}>{c.name}{c.year ? ` · ${c.year}` : ''}</option>
+                ))}
+              </select>
+            )}
             <div className="flex gap-1 p-1 rounded-lg flex-wrap" style={{ background: 'rgba(0,0,0,0.05)' }}>
               {([
                 ['all', 'הכל'] as const,
@@ -445,80 +496,120 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
             </div>
           )}
 
-          {/* Legend — dot meanings + count not available to students */}
-          {filtered.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '12px', padding: '9px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)', fontSize: '12px', color: 'var(--text-soft)' }}>
+          {/* Pinned comparison units (removable) */}
+          {compareUnits.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono,monospace)', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-soft)' }}>השוואה:</span>
+              {compareUnits.map(cid => {
+                const c = courses.find((x: any) => x.id === cid); if (!c) return null;
+                return (
+                  <span key={cid} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, padding: '4px 8px 4px 11px', borderRadius: '999px', background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                    {c.name}{c.year ? ` · ${c.year}` : ''}
+                    <button type="button" onClick={() => setCompareUnits(u => u.filter(x => x !== cid))} title="הסר" style={{ border: 'none', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: '15px', lineHeight: 1, padding: 0 }}>×</button>
+                  </span>
+                );
+              })}
+              <button type="button" onClick={() => setCompareUnits([])} style={{ fontSize: '11px', color: 'var(--text-soft)', background: 'transparent', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>נקה</button>
+            </div>
+          )}
+
+          {/* Health board — one summary card per (course × year) when several are in view */}
+          {multiUnit && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '22px' }}>
+              {sections.map(sec => {
+                const r = unitRollup(sec.items);
+                return (
+                  <button key={sec.courseId} type="button"
+                    onClick={() => document.getElementById(`unit-${sec.courseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    style={{ textAlign: 'start', cursor: 'pointer', background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)', borderRadius: '12px', padding: '12px 14px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--ink)', marginBottom: '7px' }}>
+                      {sec.courseName} <span style={{ fontSize: '11px', color: 'var(--accent)' }}>· {sec.year}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', fontSize: '12px' }}>
+                      {rollupParts(r).map((p, i) => <span key={i} style={{ color: p.color, fontWeight: 600 }}>{p.label}</span>)}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Legend — ramzor dot meanings */}
+          {entries.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '16px', padding: '9px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)', fontSize: '12px', color: 'var(--text-soft)' }}>
               <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '11px' }}>מקרא</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.approved, flexShrink: 0 }} /> מאושר (תיאור + מקומות פנויים)
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.in_process, flexShrink: 0 }} /> בתהליך
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.not_contacted, flexShrink: 0 }} /> טרם פניתי
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.full, flexShrink: 0 }} /> מלא
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.rejected, flexShrink: 0 }} /> נדחה
-              </span>
-              {(() => { const na = filtered.filter(e => !orgAvailability(e).available && e.approvalStatus !== 'rejected').length; return na > 0
-                ? <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.in_process }}>⚠ {na} מעסיקים טרם מוכנים לשיבוץ</span>
+              {([['approved', 'מאושר'], ['in_process', 'בתהליך'], ['not_contacted', 'טרם פניתי'], ['full', 'מלא'], ['rejected', 'נדחה']] as const).map(([k, label]) => (
+                <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ width: 11, height: 11, borderRadius: '50%', background: (STATUS_COLORS as any)[k], flexShrink: 0 }} /> {label}
+                </span>
+              ))}
+              {(() => { const na = entries.filter(en => { const k = employerStatus(en.emp, [en.courseId]).key; return k !== 'approved' && k !== 'rejected'; }).length; return na > 0
+                ? <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.in_process }}>⚠ {na} טרם מוכנים לשיבוץ</span>
                 : <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.approved }}>✓ כל המעסיקים מאושרים</span>; })()}
             </div>
           )}
 
-          {/* Employer list / grid */}
-          {filtered.length === 0 ? (
+          {/* Employer sections — one per (course × year), never summed across units */}
+          {sections.length === 0 || sections.every(s => s.items.length === 0) && unitIds.length !== 1 ? (
             <div className="py-24 text-center">
               <div className="serif text-[26px]" style={{ color: 'var(--ink)' }}>אין מעסיקים להצגה</div>
-              <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>שנה סינון או הוסף חדש.</div>
+              <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>שנה סינון, בחר/י קורס ושנה, או הוסף/י מעסיק חדש.</div>
             </div>
-          ) : viewMode === 'list' ? (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--divider)', borderRadius: '14px', overflow: 'hidden' }}>
-              {filtered.map((e, idx) => {
-                const hiredHere = students.filter(s => s.acceptedOrg === e.name && (!yearCourseIds || yearCourseIds.includes(s.courseId)));
-                const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
-                const privateFor = (e as any).restrictedToStudentId ? (students.find(s => s.id === (e as any).restrictedToStudentId)?.name || null) : null;
-                return (
-                  <EmployerRow
-                    key={e.id}
-                    emp={e}
-                    hiredCount={hiredHere.length}
-                    hiredNames={hiredHere.map(s => s.name)}
-                    linkedCourses={linkedCourses}
-                    privateFor={privateFor}
-                    isLast={idx === filtered.length - 1}
-                    scopeCourseIds={yearCourseIds}
-                    onEdit={() => setEditing(e)}
-                    onDelete={() => handleDelete(e.id)}
-                  />
-                );
-              })}
-            </ul>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '16px' }}>
-              {filtered.map(e => {
-                const hiredHere = students.filter(s => s.acceptedOrg === e.name && (!yearCourseIds || yearCourseIds.includes(s.courseId)));
-                const linkedCourses = empCourseIds(e).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
-                const privateFor = (e as any).restrictedToStudentId ? (students.find(s => s.id === (e as any).restrictedToStudentId)?.name || null) : null;
-                return (
-                  <EmployerCard
-                    key={e.id}
-                    emp={e}
-                    hiredCount={hiredHere.length}
-                    hiredNames={hiredHere.map(s => s.name)}
-                    linkedCourses={linkedCourses}
-                    privateFor={privateFor}
-                    scopeCourseIds={yearCourseIds}
-                    onEdit={() => setEditing(e)}
-                    onDelete={() => handleDelete(e.id)}
-                  />
-                );
-              })}
-            </div>
+            sections.map(sec => {
+              const r = unitRollup(sec.items);
+              return (
+                <section key={sec.courseId} id={`unit-${sec.courseId}`} style={{ marginBottom: '30px', scrollMarginTop: '96px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingTop: '6px', paddingBottom: '8px', borderBottom: '2px solid var(--divider)', marginBottom: '9px' }}>
+                    <span className="serif" style={{ fontSize: '19px', color: 'var(--ink)' }}>{sec.courseName}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 10px', borderRadius: '999px', background: 'var(--accent-soft)', color: 'var(--accent)' }}>{sec.year || '—'}</span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-soft)' }}>· {sec.items.length} מעסיקים</span>
+                    {compareUnits.includes(sec.courseId) && (
+                      <button type="button" onClick={() => setCompareUnits(u => u.filter(x => x !== sec.courseId))} title="הסר מההשוואה"
+                        style={{ marginInlineStart: 'auto', fontSize: '11px', color: 'var(--text-soft)', background: 'transparent', border: '1px solid var(--divider)', borderRadius: '999px', padding: '2px 10px', cursor: 'pointer' }}>× הסר</button>
+                    )}
+                  </div>
+                  {sec.items.length > 0 && (
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '12.5px', marginBottom: '11px' }}>
+                      {rollupParts(r).map((p, i) => <span key={i} style={{ color: p.color, fontWeight: 600 }}>{p.label}</span>)}
+                    </div>
+                  )}
+                  {sec.items.length === 0 ? (
+                    <div style={{ padding: '22px', textAlign: 'center', color: 'var(--text-soft)', fontSize: '13px', border: '1px dashed var(--divider)', borderRadius: '12px' }}>אין מעסיקים ל(קורס × שנה) זה עדיין.</div>
+                  ) : viewMode === 'list' ? (
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, border: '1px solid var(--divider)', borderRadius: '14px', overflow: 'hidden' }}>
+                      {sec.items.map((en, idx) => {
+                        const hiredHere = students.filter(s => s.acceptedOrg === en.emp.name && s.courseId === en.courseId);
+                        const linkedCourses = empCourseIds(en.emp).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
+                        const privateFor = (en.emp as any).restrictedToStudentId ? (students.find(s => s.id === (en.emp as any).restrictedToStudentId)?.name || null) : null;
+                        return (
+                          <EmployerRow key={en.emp.id + '|' + en.courseId} emp={en.emp}
+                            hiredCount={hiredHere.length} hiredNames={hiredHere.map(s => s.name)}
+                            linkedCourses={linkedCourses} privateFor={privateFor}
+                            isLast={idx === sec.items.length - 1} scopeCourseIds={[en.courseId]}
+                            onEdit={() => setEditing(en.emp)} onDelete={() => handleDelete(en.emp.id)} />
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '16px' }}>
+                      {sec.items.map(en => {
+                        const hiredHere = students.filter(s => s.acceptedOrg === en.emp.name && s.courseId === en.courseId);
+                        const linkedCourses = empCourseIds(en.emp).map(cid => courses.find((c: any) => c.id === cid)).filter(Boolean) as any[];
+                        const privateFor = (en.emp as any).restrictedToStudentId ? (students.find(s => s.id === (en.emp as any).restrictedToStudentId)?.name || null) : null;
+                        return (
+                          <EmployerCard key={en.emp.id + '|' + en.courseId} emp={en.emp}
+                            hiredCount={hiredHere.length} hiredNames={hiredHere.map(s => s.name)}
+                            linkedCourses={linkedCourses} privateFor={privateFor}
+                            scopeCourseIds={[en.courseId]}
+                            onEdit={() => setEditing(en.emp)} onDelete={() => handleDelete(en.emp.id)} />
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })
           )}
         </>
       )}
@@ -549,9 +640,10 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  // Pill/color = OVERALL status (green if open places in ANY year); count = selected year.
+  // Every row is scoped to ONE (course × year) unit (scopeCourseIds is a single-id array),
+  // so dot + pill + capacity all describe THAT unit — never summed across courses/years.
   const st = employerStatus(emp, scopeCourseIds);
-  const av = orgAvailability(emp);
+  const av = orgAvailability(emp);               // unscoped — only for the `isPending` flag
   const yearAv = orgAvailability(emp, scopeCourseIds);
   const { isPending } = av;
   const { total, filled } = yearAv; // capacity bar is per (year × course), like 'open'
@@ -673,10 +765,10 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
 }) {
   const [open, setOpen] = useState(false);
 
-  // Pill/color = OVERALL employer status (green if it has open places in ANY year).
-  // Count/detail = the SELECTED year only (no cross-year summing).
+  // Scoped to ONE (course × year) unit (scopeCourseIds is a single-id array): dot + pill +
+  // capacity + detail all describe THAT unit only — never summed across courses/years.
   const st = employerStatus(emp, scopeCourseIds);
-  const av = orgAvailability(emp);
+  const av = orgAvailability(emp);               // unscoped — only for the `isPending` flag
   const yearAv = orgAvailability(emp, scopeCourseIds);
   const { isPending } = av;
   const { total, filled } = yearAv; // capacity bar is per (year × course), like 'open'
