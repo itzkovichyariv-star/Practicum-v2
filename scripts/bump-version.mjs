@@ -30,6 +30,10 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VERSION_FILE = join(__dirname, '..', 'src', 'lib', 'version.ts');
+// The service worker's cache name is stamped with the version on every bump, so sw.js is
+// byte-different each deploy → the browser detects a NEW worker → skipWaiting + clients.claim
+// + controllerchange → auto-reload to the fresh build (a 2nd trigger beside checkFreshBuild).
+const SW_FILE = join(__dirname, '..', 'public', 'sw.js');
 // Captures semver + build; optional trailing ".<sha>" is matched but not captured (it gets replaced).
 const RE = /v(\d+)\.(\d+)\.(\d+)\+build\.(\d+)(?:\.[0-9a-f]+)?/;
 
@@ -119,3 +123,17 @@ switch (arg) {
 const nextStr = format(next);
 writeFileSync(VERSION_FILE, v.src.replace(v.matched, nextStr), 'utf8');
 console.log(`version: ${current}  ->  ${nextStr}`);
+
+// Stamp the SW cache name with this exact version so a new deploy = a new worker.
+try {
+  const sw = readFileSync(SW_FILE, 'utf8');
+  const stamped = sw.replace(/const CACHE = '[^']*';/, `const CACHE = 'practicum-v2-cache-${nextStr}';`);
+  if (stamped !== sw) {
+    writeFileSync(SW_FILE, stamped, 'utf8');
+    console.log(`sw.js CACHE -> practicum-v2-cache-${nextStr}`);
+  } else {
+    console.warn('sw.js CACHE line not found — SW cache name NOT stamped (auto-update weakened).');
+  }
+} catch (e) {
+  console.warn(`sw.js not stamped (${e.message}) — auto-update relies on checkFreshBuild only.`);
+}
