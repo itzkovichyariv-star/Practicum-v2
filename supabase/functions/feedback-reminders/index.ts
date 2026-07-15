@@ -84,8 +84,9 @@ function mentorEmailHtml(r: Rec): string {
   <p style="margin:0 0 20px">
     <a href="${esc(r.link)}" style="display:inline-block;background:#7a1e2b;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 26px;border-radius:999px">מילוי המשוב ›</a>
   </p>
-  <p style="font-size:13px;line-height:1.7;margin:0 0 4px;color:#6b5b52">אם כבר מילאת לאחרונה — אפשר להתעלם מההודעה, ותודה על הסבלנות 🙏</p>
-  <p style="font-size:12px;color:#8a7a70;margin:2px 0 0;word-break:break-all">&#8206;${esc(r.link)}</p>
+  <p style="font-size:13px;line-height:1.7;margin:0 0 14px;color:#6b5b52">אם כבר מילאת לאחרונה — אפשר להתעלם מההודעה, ותודה על הסבלנות 🙏</p>
+  <p style="font-size:13px;line-height:1.7;margin:0 0 4px;color:#3d0f14">אם הכפתור לא נפתח — העתק/י את הקישור והדבק/י בשורת הכתובת בדפדפן:</p>
+  <p style="font-size:13px;color:#7a1e2b;margin:2px 0 0;word-break:break-all"><a href="${esc(r.link)}" style="color:#7a1e2b">&#8206;${esc(r.link)}</a></p>
   <div style="margin-top:30px;padding-top:16px;border-top:1px solid #ddd;font-size:13px;line-height:1.7;color:#3d0f14">
     בברכה,<br>צוות הפרקטיקום — משאבי אנוש, אוניברסיטת אריאל<br>יריב ורחל
   </div>
