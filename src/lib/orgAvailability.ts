@@ -95,6 +95,12 @@ export function employerStatus(emp: any, courseIds?: string[]): EmployerStatus {
   if (emp?.approvalStatus === 'rejected') {
     return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note, missing: [] };
   }
+  // Explicit manual APPROVAL — the coordinator confirmed the org (מאושר). Wins over
+  // 'in_process', so you can advance בתהליך → מאושר. Green independent of the place
+  // count (the org agreed; capacity is a separate dimension shown in the detail).
+  if (emp?.contactStatus === 'approved') {
+    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: av.open > 0 ? `${av.open} מקומות פנויים` : (av.total > 0 ? 'מלא · אושר' : 'אושר — הוסף/י מקומות'), note, missing: av.open === 0 ? ['מקומות פנויים'] : [] };
+  }
   if (emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending') {
     return { key: 'in_process', label: 'בתהליך', color: STATUS_COLORS.in_process, detail: note || 'בתהליך מול הארגון', note, missing };
   }

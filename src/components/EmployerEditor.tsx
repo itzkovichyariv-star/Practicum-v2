@@ -236,12 +236,22 @@ export default function EmployerEditor({
               {(() => {
                 const st = employerStatus(form);
                 const isRejected = form.approvalStatus === 'rejected';
-                const isInProcess = !isRejected && form.contactStatus === 'in_process';
-                const isNotContacted = !isRejected && !isInProcess;
-                const setStatus = (which: 'not_contacted' | 'in_process' | 'rejected') => {
-                  if (which === 'rejected') { setForm(f => ({ ...f, approvalStatus: 'rejected' })); return; }
-                  setForm(f => ({ ...f, contactStatus: which, approvalStatus: f.approvalStatus === 'rejected' ? 'approved' : f.approvalStatus }));
-                };
+                const isApproved = !isRejected && (form as any).contactStatus === 'approved';
+                const isInProcess = !isRejected && !isApproved && (form.contactStatus === 'in_process' || form.approvalStatus === 'pending');
+                const isNotContacted = !isRejected && !isApproved && !isInProcess;
+                const STATUS_LABELS: Record<string, string> = { not_contacted: 'טרם פניתי', in_process: 'בתהליך', approved: 'מאושר', rejected: 'נדחה' };
+                // Setting a status LOGS a dated entry to statusHistory (only on a real
+                // change), so the בתהליך↔מאושר ping-pong is preserved with its notes.
+                const setStatus = (which: 'not_contacted' | 'in_process' | 'approved' | 'rejected') => setForm(f => {
+                  const cur = f.approvalStatus === 'rejected' ? 'rejected'
+                    : (f as any).contactStatus === 'approved' ? 'approved'
+                    : (f.contactStatus === 'in_process' || f.approvalStatus === 'pending') ? 'in_process' : 'not_contacted';
+                  if (which === cur) return f;
+                  const statusHistory = [...((f as any).statusHistory || []), { at: new Date().toISOString(), status: which, note: String(f.statusNote || '').trim() }];
+                  if (which === 'rejected') return { ...f, approvalStatus: 'rejected', statusHistory } as any;
+                  if (which === 'approved') return { ...f, contactStatus: 'approved', approvalStatus: 'approved', statusHistory } as any;
+                  return { ...f, contactStatus: which, approvalStatus: f.approvalStatus === 'rejected' ? 'approved' : f.approvalStatus, statusHistory } as any;
+                });
                 const chip = (active: boolean, color: string, label: string, onClick: () => void) => (
                   <button type="button" onClick={onClick}
                     className="text-[12.5px] font-semibold px-3 py-2 rounded-lg border"
@@ -249,6 +259,7 @@ export default function EmployerEditor({
                     {label}
                   </button>
                 );
+                const history = [...((form as any).statusHistory || [])].reverse();
                 return (
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg" style={{ background: st.color + '12' }}>
@@ -260,10 +271,11 @@ export default function EmployerEditor({
                     <div className="flex gap-2 flex-wrap">
                       {chip(isNotContacted, STATUS_COLORS.not_contacted, '⚪ טרם פניתי', () => setStatus('not_contacted'))}
                       {chip(isInProcess, STATUS_COLORS.in_process, '🟠 בתהליך', () => setStatus('in_process'))}
+                      {chip(isApproved, STATUS_COLORS.approved, '🟢 מאושר', () => setStatus('approved'))}
                       {chip(isRejected, STATUS_COLORS.rejected, '🔴 נדחה', () => setStatus('rejected'))}
                     </div>
                     <div className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>
-                      🟢 «מאושר» נקבע אוטומטית כשיש תיאור למעלה וגם מקומות פנויים (מעל 0).
+                      🟢 «מאושר» — לחצ/י כדי לאשר ידנית (גובר על «בתהליך»). נקבע גם אוטומטית כשיש תיאור + מקומות פנויים.
                     </div>
                     <label className="block">
                       <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הערת סטטוס (מוצגת בכרטיס)</span>
@@ -271,6 +283,23 @@ export default function EmployerEditor({
                         className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical' }}
                         placeholder="למשל: ממתין לאישור מנהל · בודקים תקציב · נשלח מייל 12/7…" />
                     </label>
+                    {history.length > 0 && (
+                      <div>
+                        <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em', color: 'var(--text-soft)' }}>היסטוריית סטטוס</span>
+                        <div className="flex flex-col gap-1" style={{ maxHeight: 140, overflowY: 'auto' }}>
+                          {history.map((h: any, i: number) => {
+                            const c = STATUS_COLORS[(h.status === 'approved' || h.status === 'in_process' || h.status === 'rejected' || h.status === 'not_contacted') ? h.status : 'not_contacted'];
+                            return (
+                              <div key={i} className="text-[11.5px] flex items-center gap-2" style={{ color: 'var(--text-soft)' }}>
+                                <span className="mono" style={{ minWidth: 96, flexShrink: 0 }}>{new Date(h.at).toLocaleDateString('he-IL')} {new Date(h.at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                <span style={{ fontWeight: 600, color: c, flexShrink: 0 }}>{STATUS_LABELS[h.status] || h.status}</span>
+                                {h.note && <span className="truncate">· {h.note}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
