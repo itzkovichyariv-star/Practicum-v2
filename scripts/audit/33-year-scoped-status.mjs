@@ -72,8 +72,9 @@ async function pillFor(year) {
   return audit.page.evaluate((name) => {
     const row = [...document.querySelectorAll('li')].find(li => li.querySelector('.serif')?.textContent?.trim() === name);
     if (!row) return '(row not found)';
-    const pill = [...row.querySelectorAll('span')].find(s => /מלא|מאושר|טרם|בתהליך|נדחה/.test(s.textContent) && s.textContent.length < 20);
-    return pill ? pill.textContent.trim() : '(no pill)';
+    // the status pill is now a <button> (one-tap toggle) with a trailing " ▾" affordance.
+    const pill = [...row.querySelectorAll('button, span')].find(s => /מלא|מאושר|טרם|בתהליך|נדחה/.test(s.textContent) && s.textContent.replace(/[▾\s]+/g, '').length < 18);
+    return pill ? pill.textContent.replace(/▾/g, '').trim() : '(no pill)';
   }, EMP_NAME);
 }
 

@@ -11,7 +11,7 @@ import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
 import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
-import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
+import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS, applyEmployerStatus, type ManualStatusKey } from '../lib/orgAvailability';
 
 function empCourseIds(e: Employer): string[] {
   if (e.courseIds && e.courseIds.length > 0) return e.courseIds;
@@ -54,6 +54,38 @@ function rollupParts(r: ReturnType<typeof unitRollup>): { label: string; color: 
   if (r.rejected) parts.push({ label: `${r.rejected} נדחו`, color: STATUS_COLORS.rejected });
   parts.push({ label: `${r.open} מקומות פנויים`, color: 'var(--ink)' });
   return parts;
+}
+
+// One-tap status control shared by the list row + the grid card. The "current" highlight
+// reflects the MANUAL status the coordinator set (not the derived auto-green), so re-picking
+// is predictable. Picking writes immediately via onSetStatus (parent → saveSnapshot).
+const STATUS_OPTIONS: { key: ManualStatusKey; label: string }[] = [
+  { key: 'not_contacted', label: '⚪ טרם' },
+  { key: 'in_process', label: '🟠 בתהליך' },
+  { key: 'approved', label: '🟢 מאושר' },
+  { key: 'rejected', label: '🔴 נדחה' },
+];
+function manualStatusKey(emp: any): ManualStatusKey {
+  if (emp?.approvalStatus === 'rejected') return 'rejected';
+  if (emp?.contactStatus === 'approved') return 'approved';
+  if (emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending') return 'in_process';
+  return 'not_contacted';
+}
+function StatusChips({ current, onPick }: { current: ManualStatusKey; onPick: (k: ManualStatusKey) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginTop: '7px' }} onClick={e => e.stopPropagation()}>
+      {STATUS_OPTIONS.map(o => {
+        const active = o.key === current; const color = (STATUS_COLORS as any)[o.key];
+        return (
+          <button key={o.key} type="button" onClick={e => { e.stopPropagation(); onPick(o.key); }}
+            style={{ fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px', cursor: 'pointer', border: `1px solid ${active ? color : color + '55'}`, background: active ? color + '22' : 'transparent', color, whiteSpace: 'nowrap' }}>
+            {o.label}
+          </button>
+        );
+      })}
+      <span style={{ fontSize: '10px', color: 'var(--text-soft)' }}>נשמר מיד ✓</span>
+    </div>
+  );
 }
 
 type PosFilter = 'all' | 'open' | 'full' | 'none';
@@ -281,6 +313,19 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     if (idx >= 0) next[idx] = e;
     setEditing(null); setCreating(false);
     await persistAndRefresh(next, idx >= 0 ? '✓ עודכן' : '✓ נוסף');
+  }
+
+  // Persist WITHOUT closing the editor (auto-save on a status-chip click inside the sheet).
+  async function handleQuickSave(e: Employer) {
+    const idx = all.findIndex(x => x.id === e.id);
+    const next = idx >= 0 ? all.map(x => x.id === e.id ? e : x) : [...all, e];
+    setEditing(cur => (cur && cur.id === e.id ? e : cur)); // keep the open sheet in sync
+    await persistAndRefresh(next, '✓ נשמר');
+  }
+
+  // One-tap status change from a list row (no editor) — writes identically to the editor chip.
+  async function handleSetStatus(empId: string, which: ManualStatusKey) {
+    await persistAndRefresh(all.map(e => e.id === empId ? applyEmployerStatus(e, which) as Employer : e), '✓ סטטוס עודכן');
   }
 
   async function handleArchive(id: string) {
@@ -587,6 +632,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                             hiredCount={hiredHere.length} hiredNames={hiredHere.map(s => s.name)}
                             linkedCourses={linkedCourses} privateFor={privateFor}
                             isLast={idx === sec.items.length - 1} scopeCourseIds={[en.courseId]}
+                            onSetStatus={handleSetStatus}
                             onEdit={() => setEditing(en.emp)} onDelete={() => handleDelete(en.emp.id)} />
                         );
                       })}
@@ -602,6 +648,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                             hiredCount={hiredHere.length} hiredNames={hiredHere.map(s => s.name)}
                             linkedCourses={linkedCourses} privateFor={privateFor}
                             scopeCourseIds={[en.courseId]}
+                            onSetStatus={handleSetStatus}
                             onEdit={() => setEditing(en.emp)} onDelete={() => handleDelete(en.emp.id)} />
                         );
                       })}
@@ -623,6 +670,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           defaultCourseId={context.courseId}
           defaultYear={context.year}
           onSave={handleSave}
+          onQuickSave={handleQuickSave}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
         />
@@ -632,14 +680,16 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
 }
 
 /* ── Employer card (grid view) ── */
-function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, scopeCourseIds, onEdit, onDelete }: {
+function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, scopeCourseIds, onSetStatus, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
   privateFor?: string | null;
   scopeCourseIds?: string[];
+  onSetStatus?: (id: string, k: ManualStatusKey) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [statusOpen, setStatusOpen] = useState(false);
   // Every row is scoped to ONE (course × year) unit (scopeCourseIds is a single-id array),
   // so dot + pill + capacity all describe THAT unit — never summed across courses/years.
   const st = employerStatus(emp, scopeCourseIds);
@@ -675,7 +725,11 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
             <div style={{ flexShrink: 0, width: '22px', height: '22px', borderRadius: '50%', background: dotFill, boxShadow: dotGlow }} title={dotLabel} />
             <div className="serif text-[17px] leading-tight" style={{ color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
-            <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '3px 9px', borderRadius: '999px', background: st.color + '1f', color: st.color, border: `1px solid ${st.color}3a`, whiteSpace: 'nowrap' }}>{st.label}</span>
+            <button type="button" onClick={onSetStatus ? () => setStatusOpen(o => !o) : undefined}
+              title={onSetStatus ? 'שנה סטטוס' : undefined}
+              style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '3px 9px', borderRadius: '999px', background: st.color + '1f', color: st.color, border: `1px solid ${st.color}3a`, whiteSpace: 'nowrap', cursor: onSetStatus ? 'pointer' : 'default' }}>
+              {st.label}{onSetStatus && <span style={{ fontSize: '8px', opacity: 0.7 }}> ▾</span>}
+            </button>
           </div>
           <div style={{ display: 'flex', gap: '5px', flexShrink: 0 }}>
             <button type="button" onClick={onEdit} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 600, background: 'transparent', color: 'var(--text-soft)', border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em' }}>עריכה</button>
@@ -690,6 +744,9 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
           </div>
         )}
         <div style={{ fontSize: '10.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em', color: dotColor, paddingRight: '17px', marginTop: '2px', textTransform: 'uppercase' }}>{dotLabel}</div>
+        {onSetStatus && statusOpen && (
+          <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} />
+        )}
       </div>
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
         {emp.contactPerson
@@ -754,16 +811,18 @@ function StatBox({ label, value, accent }: { label: string; value: number; accen
 }
 
 /* ── Employer row (collapsible) ── */
-function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, isLast, scopeCourseIds, onEdit, onDelete }: {
+function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, isLast, scopeCourseIds, onSetStatus, onEdit, onDelete }: {
   emp: Employer; hiredCount: number; hiredNames: string[];
   linkedCourses: { name: string; year?: string; id?: string }[];
   privateFor?: string | null;
   isLast: boolean;
   scopeCourseIds?: string[];
+  onSetStatus?: (id: string, k: ManualStatusKey) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
 
   // Scoped to ONE (course × year) unit (scopeCourseIds is a single-id array): dot + pill +
   // capacity + detail all describe THAT unit only — never summed across courses/years.
@@ -811,9 +870,20 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
           <div className="serif" style={{ flex: 1, minWidth: 0, fontSize: '15.5px', fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {emp.name}
           </div>
-          <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '3px 10px', borderRadius: '999px', background: st.color + '1f', color: st.color, border: `1px solid ${st.color}3a`, whiteSpace: 'nowrap' }} title={st.note || st.label}>{st.label}</span>
+          <button type="button" onClick={onSetStatus ? (e) => { e.stopPropagation(); setStatusOpen(o => !o); } : undefined}
+            title={onSetStatus ? 'שנה סטטוס' : (st.note || st.label)}
+            style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '3px 10px', borderRadius: '999px', background: st.color + '1f', color: st.color, border: `1px solid ${st.color}3a`, whiteSpace: 'nowrap', cursor: onSetStatus ? 'pointer' : 'default' }}>
+            {st.label}{onSetStatus && <span style={{ fontSize: '8px', opacity: 0.7 }}> ▾</span>}
+          </button>
           <div style={{ flexShrink: 0, fontSize: '12px', color: 'var(--text-soft)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>▾</div>
         </div>
+
+        {/* One-tap status picker (inline, no clipping) */}
+        {onSetStatus && statusOpen && (
+          <div style={{ paddingInlineStart: '31px' }}>
+            <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} />
+          </div>
+        )}
 
         {/* Line 2: status detail / what's missing */}
         {statusChip && (

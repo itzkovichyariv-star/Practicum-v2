@@ -3,7 +3,7 @@ import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
 import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity, openWhatsApp as waOpen } from '../lib/placement';
-import { employerStatus, STATUS_COLORS } from '../lib/orgAvailability';
+import { employerStatus, STATUS_COLORS, applyEmployerStatus } from '../lib/orgAvailability';
 import { normalizeYear } from './pageShared';
 import Modal from './Modal';
 
@@ -17,10 +17,12 @@ type Props = {
   onSave: (e: Employer) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
+  // Persist a status change IMMEDIATELY without closing the sheet (auto-save on chip click).
+  onQuickSave?: (e: Employer) => void;
 };
 
 export default function EmployerEditor({
-  employer, courses, years, students = [], defaultCourseId, defaultYear, onSave, onDelete, onClose,
+  employer, courses, years, students = [], defaultCourseId, defaultYear, onSave, onDelete, onClose, onQuickSave,
 }: Props) {
   const isNew = !employer;
 
@@ -251,18 +253,18 @@ export default function EmployerEditor({
                 const isInProcess = !isRejected && !isApproved && (form.contactStatus === 'in_process' || form.approvalStatus === 'pending');
                 const isNotContacted = !isRejected && !isApproved && !isInProcess;
                 const STATUS_LABELS: Record<string, string> = { not_contacted: 'טרם פניתי', in_process: 'בתהליך', approved: 'מאושר', rejected: 'נדחה' };
-                // Setting a status LOGS a dated entry to statusHistory (only on a real
-                // change), so the בתהליך↔מאושר ping-pong is preserved with its notes.
-                const setStatus = (which: 'not_contacted' | 'in_process' | 'approved' | 'rejected') => setForm(f => {
-                  const cur = f.approvalStatus === 'rejected' ? 'rejected'
-                    : (f as any).contactStatus === 'approved' ? 'approved'
-                    : (f.contactStatus === 'in_process' || f.approvalStatus === 'pending') ? 'in_process' : 'not_contacted';
-                  if (which === cur) return f;
-                  const statusHistory = [...((f as any).statusHistory || []), { at: new Date().toISOString(), status: which, note: String(f.statusNote || '').trim() }];
-                  if (which === 'rejected') return { ...f, approvalStatus: 'rejected', statusHistory } as any;
-                  if (which === 'approved') return { ...f, contactStatus: 'approved', approvalStatus: 'approved', statusHistory } as any;
-                  return { ...f, contactStatus: which, approvalStatus: f.approvalStatus === 'rejected' ? 'approved' : f.approvalStatus, statusHistory } as any;
-                });
+                // Setting a status LOGS a dated statusHistory entry AND saves immediately
+                // (no separate שמור) — the sheet stays open. Preserves the בתהליך↔מאושר
+                // ping-pong with its notes.
+                const setStatus = (which: 'not_contacted' | 'in_process' | 'approved' | 'rejected') => {
+                  const cur = form.approvalStatus === 'rejected' ? 'rejected'
+                    : (form as any).contactStatus === 'approved' ? 'approved'
+                    : (form.contactStatus === 'in_process' || form.approvalStatus === 'pending') ? 'in_process' : 'not_contacted';
+                  if (which === cur) return;
+                  const next = applyEmployerStatus(form, which) as Employer;
+                  setForm(next);
+                  onQuickSave?.(next); // persist now, keep the sheet open
+                };
                 const chip = (active: boolean, color: string, label: string, onClick: () => void) => (
                   <button type="button" onClick={onClick}
                     className="text-[12.5px] font-semibold px-3 py-2 rounded-lg border"
@@ -286,7 +288,7 @@ export default function EmployerEditor({
                       {chip(isRejected, STATUS_COLORS.rejected, '🔴 נדחה', () => setStatus('rejected'))}
                     </div>
                     <div className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>
-                      🟢 «מאושר» — לחצ/י כדי לאשר ידנית (גובר על «בתהליך»). נקבע גם אוטומטית כשיש תיאור + מקומות פנויים.
+                      לחיצה על סטטוס נשמרת מיד ✓ · 🟢 «מאושר» נקבע גם אוטומטית ברגע שיש תיאור + מקומות פנויים (גם אם היה «בתהליך»).
                     </div>
                     <label className="block">
                       <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הערת סטטוס (מוצגת בכרטיס)</span>

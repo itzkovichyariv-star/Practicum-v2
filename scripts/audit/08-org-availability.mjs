@@ -58,11 +58,12 @@ try {
   dbAvailable = emps.filter(e => {
     if (e.restrictedToStudentId) return false; // public page hides private orgs
     if (e.approvalStatus === 'rejected') return false;
-    const hasDesc = !!(e.notes && String(e.notes).trim());
-    // The public list now shows ONLY 🟢 מאושר orgs — mirror employerStatus(e).key==='approved':
-    // manual-approved wins; in_process/pending are hidden; else auto-green (desc + open place).
+    // The public list shows ONLY 🟢 מאושר orgs — mirror employerStatus(e).key==='approved':
+    // manual-approved wins; then AUTO-GREEN once ready (desc + open place), which now beats
+    // in_process; pending never auto-greens; a NOT-ready in_process org stays hidden.
     if (e.contactStatus === 'approved') return true;
-    if (e.contactStatus === 'in_process' || e.approvalStatus === 'pending') return false;
+    if (e.approvalStatus === 'pending') return false;
+    const hasDesc = !!(e.notes && String(e.notes).trim());
     return hasDesc && totalVac(e) > 0 && openVac(e) > 0;
   }).length;
 } catch (e) {

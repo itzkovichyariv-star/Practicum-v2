@@ -32,7 +32,9 @@ try {
   if (!course) throw new Error('no course'); year = course.year;
   const mk = (id, name, cs) => ({ id, name, addedBy: 'admin', restrictedToStudentId: null, notes: 'audit', contactPhone: '0500000000', contactEmail: 'a@b.local', courseIds: [course.id], vacancySlots: [{ id: `${id}-s1`, courseId: course.id, status: 'available', studentId: null, prefRank: null, history: [] }], ...cs });
   const approved = mk(A_ID, A_NAME, { contactStatus: 'approved', approvalStatus: 'approved' });
-  const inproc = mk(P_ID, P_NAME, { contactStatus: 'in_process', approvalStatus: 'approved' });
+  // NOT-ready (no description) so it genuinely stays בתהליך — a ready in_process org would
+  // now auto-green (auto-green beats in_process) and drop out of the בתהליך filter.
+  const inproc = mk(P_ID, P_NAME, { contactStatus: 'in_process', approvalStatus: 'approved', notes: '' });
   await sbPatchData({ ...data, employers: [...(data.employers || []), approved, inproc] });
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }

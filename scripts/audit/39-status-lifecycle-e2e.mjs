@@ -4,10 +4,9 @@
  *
  * Walks the real coordinator workflow and asserts the student-facing link reflects it:
  *
- *   E2E-inprocess-hidden  An employer in 'בתהליך' (contactStatus:'in_process') is HIDDEN
- *                         from the matching student's /organizations?email= link, even
- *                         though it has a description + an open place (in_process is not
- *                         yet offerable).
+ *   E2E-inprocess-hidden  A NOT-ready employer in 'בתהליך' (in_process, NO description) is
+ *                         HIDDEN from the matching student's /organizations?email= link —
+ *                         it hasn't qualified for auto-green yet, so it is not offerable.
  *   E2E-approved-shown    PATCHing that SAME employer to מאושר (contactStatus:'approved')
  *                         makes it APPEAR on that student's link — the whole point of the
  *                         approve workflow: green ⇒ visible to the student.
@@ -77,10 +76,12 @@ try {
   courseA = sorted[sorted.length - 1]; courseB = sorted[0]; // A = latest, B = earliest
   yearA = courseA.year; yearB = courseB.year;
 
-  // Employer attached to BOTH years, description + ONE OPEN slot only in year A, none in year B.
+  // Employer attached to BOTH years, ONE OPEN slot only in year A, none in year B. Starts
+  // NOT-ready (NO description) so its in_process state stays בתהליך + hidden — a ready
+  // in_process org would now auto-green and show. The 'approve' step then makes it visible.
   const emp = {
     id: EMP_ID, name: EMP_NAME, contactStatus: 'in_process', approvalStatus: 'approved',
-    addedBy: 'admin', restrictedToStudentId: null, notes: 'E2E — ארגון בדיקת מחזור סטטוס',
+    addedBy: 'admin', restrictedToStudentId: null, notes: '',
     contactPhone: '0500000000', contactEmail: 'a@b.local',
     courseIds: [courseA.id, courseB.id], positionsTotal: 1, positions: 1, filledPositions: 0,
     vacancySlots: [{ id: `${EMP_ID}-a1`, courseId: courseA.id, status: 'available', studentId: null, prefRank: null, history: [] }],
@@ -108,7 +109,7 @@ try {
   audit.log(`בתהליך: year-A student sees it = ${inproc.visible}`);
   audit.recordCell({
     id: 'E2E-inprocess-hidden', tableRef: 'OrganizationsPage active filter (employerStatus !== approved)',
-    expected: `an in_process employer (with desc + open place) is HIDDEN from the ${yearA} student`,
+    expected: `a NOT-ready in_process employer (no description) is HIDDEN from the ${yearA} student`,
     observed: `visibleWhileInProcess=${inproc.visible}`,
     pass: inproc.visible === false,
     notes: inproc.visible ? 'בתהליך employer leaked to the student link.' : '',

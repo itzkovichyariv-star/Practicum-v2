@@ -93,22 +93,28 @@ export function employerStatus(emp: any, courseIds?: string[]): EmployerStatus {
   const missing: string[] = [];
   if (!av.hasDesc) missing.push('תיאור');
   if (av.open === 0) missing.push('מקומות פנויים');
-  // Precedence: an EXPLICIT manual status (נדחה / בתהליך) wins over the auto-green,
-  // so the coordinator can always set it — even for an org that already has places.
+  // Precedence: 🔴 נדחה blocks everything; then a manual 🟢 מאושר; then AUTO-GREEN once the
+  // org is READY (description + open places for this course×year) — which now beats בתהליך,
+  // so a ready org is never stuck orange; only then the not-yet-ready בתהליך state.
   if (emp?.approvalStatus === 'rejected') {
     return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note, missing: [] };
   }
-  // Explicit manual APPROVAL — the coordinator confirmed the org (מאושר). Wins over
-  // 'in_process', so you can advance בתהליך → מאושר. Green independent of the place
-  // count (the org agreed; capacity is a separate dimension shown in the detail).
+  // Explicit manual APPROVAL — the coordinator confirmed the org (מאושר). Green independent
+  // of the place count (the org agreed; capacity is a separate dimension shown in detail).
   if (emp?.contactStatus === 'approved') {
     return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: av.open > 0 ? `${av.open} מקומות פנויים` : (av.total > 0 ? 'מלא · אושר' : 'אושר — הוסף/י מקומות'), note, missing: av.open === 0 ? ['מקומות פנויים'] : [] };
   }
+  // AUTO-GREEN when READY — a description AND open places in THIS (course × year) makes it
+  // מאושר automatically, EVEN IF it was marked בתהליך. Yariv: בתהליך must not hold against a
+  // ready org — once it qualifies it advances on its own; only 🔴 נדחה blocks it. Runs BEFORE
+  // the in_process check so a ready org is never stuck orange.
+  if (av.available) {
+    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note, missing: [] };
+  }
+  // Contacted but NOT yet ready (missing a description or open places for this unit), or
+  // awaiting approval — stays בתהליך until it qualifies (then the auto-green above takes over).
   if (emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending') {
     return { key: 'in_process', label: 'בתהליך', color: STATUS_COLORS.in_process, detail: note || 'בתהליך מול הארגון', note, missing };
-  }
-  if (av.available) {
-    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note: '', missing: [] };
   }
   // FULL — this (year × course) has places and they're ALL taken. Year-scoped: a
   // student belongs to one course+year and occupies exactly one vacancy, so a
@@ -122,4 +128,17 @@ export function employerStatus(emp: any, courseIds?: string[]): EmployerStatus {
     return { key: 'not_contacted', label: 'טרם הוגדר לשנה', color: STATUS_COLORS.not_contacted, detail: 'הוסף/י מקומות לשנה זו', note: '', missing: av.hasDesc ? ['מקומות'] : ['תיאור', 'מקומות'] };
   }
   return { key: 'not_contacted', label: 'טרם פניתי', color: STATUS_COLORS.not_contacted, detail: '', note: '', missing };
+}
+
+// Set the workflow status on an employer, appending a dated statusHistory entry. Shared by
+// the editor chips AND the list-row quick toggle so both write IDENTICALLY. Manual approved
+// wins over auto-green; rejected wins over all. Pure — returns a new employer, no I/O.
+export type ManualStatusKey = 'not_contacted' | 'in_process' | 'approved' | 'rejected';
+export function applyEmployerStatus(emp: any, which: ManualStatusKey) {
+  const statusHistory = [...((emp?.statusHistory) || []), { at: new Date().toISOString(), status: which, note: String(emp?.statusNote || '').trim() }];
+  if (which === 'rejected') return { ...emp, approvalStatus: 'rejected', statusHistory };
+  if (which === 'approved') return { ...emp, contactStatus: 'approved', approvalStatus: 'approved', statusHistory };
+  // not_contacted / in_process: clear a prior manual approve, and lift a prior reject back to
+  // a neutral approvalStatus so the org is reconsidered.
+  return { ...emp, contactStatus: which, approvalStatus: emp?.approvalStatus === 'rejected' ? 'approved' : emp?.approvalStatus, statusHistory };
 }
