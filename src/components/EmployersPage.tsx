@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { btnPrimary, btnSecondary, btnSmall, btnTab } from '../lib/design';
 import type { Employer, EmployerApprovalRequest, Student } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
@@ -71,9 +71,16 @@ function manualStatusKey(emp: any): ManualStatusKey {
   if (emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending') return 'in_process';
   return 'not_contacted';
 }
-function StatusChips({ current, onPick }: { current: ManualStatusKey; onPick: (k: ManualStatusKey) => void }) {
+function StatusChips({ current, onPick, onClose }: { current: ManualStatusKey; onPick: (k: ManualStatusKey) => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Dismiss on any tap outside the picker — so it never stays stuck open.
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [onClose]);
   return (
-    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginTop: '7px' }} onClick={e => e.stopPropagation()}>
+    <div ref={ref} style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', marginTop: '7px' }} onClick={e => e.stopPropagation()}>
       {STATUS_OPTIONS.map(o => {
         const active = o.key === current; const color = (STATUS_COLORS as any)[o.key];
         return (
@@ -84,6 +91,8 @@ function StatusChips({ current, onPick }: { current: ManualStatusKey; onPick: (k
         );
       })}
       <span style={{ fontSize: '10px', color: 'var(--text-soft)' }}>נשמר מיד ✓</span>
+      <button type="button" onClick={e => { e.stopPropagation(); onClose(); }} title="סגור"
+        style={{ marginInlineStart: 'auto', width: '26px', height: '26px', borderRadius: '999px', border: '1px solid var(--divider)', background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer', fontSize: '13px', lineHeight: 1, flexShrink: 0 }}>✕</button>
     </div>
   );
 }
@@ -315,12 +324,13 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     await persistAndRefresh(next, idx >= 0 ? '✓ עודכן' : '✓ נוסף');
   }
 
-  // Persist WITHOUT closing the editor (auto-save on a status-chip click inside the sheet).
+  // Auto-save a status-chip click inside the editor AND close the sheet (Yariv: "saving
+  // should close the card"). Saves the whole form, so any place/notes edits persist too.
   async function handleQuickSave(e: Employer) {
     const idx = all.findIndex(x => x.id === e.id);
     const next = idx >= 0 ? all.map(x => x.id === e.id ? e : x) : [...all, e];
-    setEditing(cur => (cur && cur.id === e.id ? e : cur)); // keep the open sheet in sync
-    await persistAndRefresh(next, '✓ נשמר');
+    setEditing(null); setCreating(false);
+    await persistAndRefresh(next, '✓ נשמר ונסגר');
   }
 
   // One-tap status change from a list row (no editor) — writes identically to the editor chip.
@@ -745,7 +755,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
         )}
         <div style={{ fontSize: '10.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em', color: dotColor, paddingRight: '17px', marginTop: '2px', textTransform: 'uppercase' }}>{dotLabel}</div>
         {onSetStatus && statusOpen && (
-          <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} />
+          <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} onClose={() => setStatusOpen(false)} />
         )}
       </div>
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
@@ -881,7 +891,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
         {/* One-tap status picker (inline, no clipping) */}
         {onSetStatus && statusOpen && (
           <div style={{ paddingInlineStart: '31px' }}>
-            <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} />
+            <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} onClose={() => setStatusOpen(false)} />
           </div>
         )}
 
@@ -922,6 +932,11 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
           borderTop: '1px solid var(--divider)',
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px',
         }}>
+          {/* Close the expanded card */}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-start', marginTop: '10px' }}>
+            <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(false); }} title="סגור כרטיס"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 600, padding: '4px 12px', borderRadius: '999px', border: '1px solid var(--divider)', background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>✕ סגור</button>
+          </div>
 
           {/* Contact details */}
           <div>
