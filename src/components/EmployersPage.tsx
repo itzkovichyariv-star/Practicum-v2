@@ -450,19 +450,19 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '12px', padding: '9px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)', fontSize: '12px', color: 'var(--text-soft)' }}>
               <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '11px' }}>מקרא</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.approved, flexShrink: 0 }} /> מאושר (תיאור + מקומות פנויים)
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.approved, flexShrink: 0 }} /> מאושר (תיאור + מקומות פנויים)
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.in_process, flexShrink: 0 }} /> בתהליך
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.in_process, flexShrink: 0 }} /> בתהליך
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.not_contacted, flexShrink: 0 }} /> טרם פניתי
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.not_contacted, flexShrink: 0 }} /> טרם פניתי
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.full, flexShrink: 0 }} /> מלא
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.full, flexShrink: 0 }} /> מלא
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_COLORS.rejected, flexShrink: 0 }} /> נדחה
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: STATUS_COLORS.rejected, flexShrink: 0 }} /> נדחה
               </span>
               {(() => { const na = filtered.filter(e => !orgAvailability(e).available && e.approvalStatus !== 'rejected').length; return na > 0
                 ? <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.in_process }}>⚠ {na} מעסיקים טרם מוכנים לשיבוץ</span>
@@ -559,9 +559,13 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
   const dotLabel = cardStatusChip(st, yearAv);
+  // One vivid status colour drives dot + pill + glow so they always MATCH (Yariv:
+  // "the dots don't match the statuses"). Big + glowing like the tasks-app ramzor.
   const isApproved = st.key === 'approved';
-  const dotFill = isApproved ? 'var(--tl-green)' : st.color;
-  const dotRing = isApproved ? 'rgba(22,163,74,0.30)' : st.color + '33';
+  const dotFill = st.color;
+  const dotGlow = isApproved
+    ? `0 0 0 3px ${st.color}2e, 0 0 10px ${st.color}99`   // green: unmistakable halo
+    : `0 0 0 2.5px ${st.color}30`;                        // others: a clean ring
   const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
 
   function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
@@ -577,9 +581,9 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
       <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid var(--divider)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            <div style={{ flexShrink: 0, width: '16px', height: '16px', borderRadius: '50%', background: dotFill, boxShadow: isApproved ? `0 0 0 3px ${dotRing}, 0 0 7px rgba(22,163,74,0.55)` : `0 0 0 3px ${dotRing}` }} title={dotLabel} />
+            <div style={{ flexShrink: 0, width: '22px', height: '22px', borderRadius: '50%', background: dotFill, boxShadow: dotGlow }} title={dotLabel} />
             <div className="serif text-[17px] leading-tight" style={{ color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
-            <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }}>{st.label}</span>
+            <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '3px 9px', borderRadius: '999px', background: st.color + '1f', color: st.color, border: `1px solid ${st.color}3a`, whiteSpace: 'nowrap' }}>{st.label}</span>
           </div>
           <div style={{ display: 'flex', gap: '5px', flexShrink: 0 }}>
             <button type="button" onClick={onEdit} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 600, background: 'transparent', color: 'var(--text-soft)', border: '1px solid var(--divider)', borderRadius: '999px', cursor: 'pointer', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em' }}>עריכה</button>
@@ -680,9 +684,13 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
   const posLabel = st.label;
+  // Same vivid single-source dot as the card (see CardHeader): dot + pill + glow all
+  // read from st.color, big + glowing like the tasks-app ramzor.
   const isApproved = st.key === 'approved';
-  const dotFill = isApproved ? 'var(--tl-green)' : st.color;
-  const dotRing = isApproved ? 'rgba(22,163,74,0.30)' : st.color + '33';
+  const dotFill = st.color;
+  const dotGlow = isApproved
+    ? `0 0 0 3px ${st.color}2e, 0 0 10px ${st.color}99`
+    : `0 0 0 2.5px ${st.color}30`;
   const statusChip = cardStatusChip(st, yearAv);
 
   function callEmployer() {
@@ -707,34 +715,34 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
       <div style={{ padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(o => !o)}>
         {/* Line 1: dot + name + status pill + chevron */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-          <div style={{ flexShrink: 0, width: '15px', height: '15px', borderRadius: '50%', background: dotFill, boxShadow: isApproved ? `0 0 0 3px ${dotRing}, 0 0 7px rgba(22,163,74,0.55)` : `0 0 0 3px ${dotRing}` }} title={posLabel} />
+          <div style={{ flexShrink: 0, width: '22px', height: '22px', borderRadius: '50%', background: dotFill, boxShadow: dotGlow }} title={posLabel} />
           <div className="serif" style={{ flex: 1, minWidth: 0, fontSize: '15.5px', fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {emp.name}
           </div>
-          <span style={{ flexShrink: 0, fontSize: '9.5px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 9px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }} title={st.note || st.label}>{st.label}</span>
+          <span style={{ flexShrink: 0, fontSize: '10px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '3px 10px', borderRadius: '999px', background: st.color + '1f', color: st.color, border: `1px solid ${st.color}3a`, whiteSpace: 'nowrap' }} title={st.note || st.label}>{st.label}</span>
           <div style={{ flexShrink: 0, fontSize: '12px', color: 'var(--text-soft)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>▾</div>
         </div>
 
         {/* Line 2: status detail / what's missing */}
         {statusChip && (
-          <div style={{ marginTop: '4px', paddingInlineStart: '18px', fontSize: '11.5px', fontFamily: 'var(--font-mono,monospace)', fontWeight: 600, color: st.color, opacity: 0.92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statusChip}>
+          <div style={{ marginTop: '4px', paddingInlineStart: '31px', fontSize: '11.5px', fontFamily: 'var(--font-mono,monospace)', fontWeight: 600, color: st.color, opacity: 0.92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statusChip}>
             {statusChip}
           </div>
         )}
         {privateFor && (
-          <div style={{ marginTop: '4px', paddingInlineStart: '18px', fontSize: '11px', fontWeight: 600, color: 'var(--accent)' }}
+          <div style={{ marginTop: '4px', paddingInlineStart: '31px', fontSize: '11px', fontWeight: 600, color: 'var(--accent)' }}
             title={`ארגון פרטי — גלוי רק ל${privateFor} כבחירה ראשונה`}>
             🔒 פרטי ל{privateFor}
           </div>
         )}
         {(emp.contactPerson || emp.location) && (
-          <div className="hidden md:block" style={{ marginTop: '3px', paddingInlineStart: '18px', fontSize: '12px', color: 'var(--text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className="hidden md:block" style={{ marginTop: '3px', paddingInlineStart: '31px', fontSize: '12px', color: 'var(--text-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {[emp.contactPerson, emp.location && `📍 ${emp.location}`].filter(Boolean).join(' · ')}
           </div>
         )}
 
         {/* Line 3: actions — wrap, never cut off; edit is a prominent filled button */}
-        <div style={{ marginTop: '10px', paddingInlineStart: '18px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+        <div style={{ marginTop: '10px', paddingInlineStart: '31px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
           <ActionBtn icon="📞" active={!!emp.contactPhone} title={emp.contactPhone || 'אין טלפון'} color="var(--accent)" bg="rgba(122,30,43,0.07)" border="rgba(122,30,43,0.25)" onClick={callEmployer} />
           <ActionBtn icon="📱" active={!!emp.contactPhone} title="WhatsApp" color="#15803d" bg="rgba(37,211,102,0.08)" border="rgba(37,211,102,0.4)" onClick={whatsappEmployer} />
           <ActionBtn icon="✉" active={!!emp.contactEmail} title={emp.contactEmail || 'אין מייל'} color="#1d4ed8" bg="rgba(37,99,235,0.07)" border="rgba(37,99,235,0.3)" onClick={emailEmployer} />

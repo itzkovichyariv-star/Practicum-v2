@@ -65,12 +65,15 @@ export function orgAvailability(emp: any, courseIds?: string[]): OrgAvailability
 //                 approvalStatus 'pending'. Carries a free-text statusNote.
 //   ⚪ טרם פניתי — contactStatus 'not_contacted' (default for a new employer).
 //   🔴 נדחה     — approvalStatus 'rejected' (contacted and ruled out / declined).
+// Single source of truth for status colour — used by the dot, the pill, the legend,
+// the filter chips and the editor chips so they always MATCH. Vivid (like the tasks
+// app ramzor) so "available/green" is unmistakable, and consistent across all surfaces.
 export const STATUS_COLORS = {
-  approved: '#15803d',       // green  — has a description + open places
-  in_process: '#d97706',     // amber  — contacted, in negotiation
-  not_contacted: '#9ca3af',  // gray   — not contacted / no capacity set
+  approved: '#16a34a',       // green  — matches --tl-green; has a description + open places
+  in_process: '#f59e0b',     // amber  — contacted, in negotiation
+  not_contacted: '#94a3b8',  // gray   — not contacted / no capacity set
   full: '#64748b',           // slate  — has places but all are taken
-  rejected: '#b91c1c',       // red    — ruled out
+  rejected: '#dc2626',       // red    — ruled out
 } as const;
 
 export type EmployerStatusKey = keyof typeof STATUS_COLORS;
