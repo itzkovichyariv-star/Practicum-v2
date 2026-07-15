@@ -238,9 +238,11 @@ export default function EmployerEditor({
             </div>
 
             <div className="col-span-full">
-              <Field label="הערות">
+              <Field label="תיאור ההתמחות בארגון">
                 <textarea value={form.notes||''} onChange={e=>update('notes', e.target.value)}
-                  rows={2} className="input w-full" style={{ padding:'10px 14px', fontSize:'14px', resize:'vertical' }} />
+                  rows={3} placeholder="מה הסטודנט/ית תעשה בארגון, תחומי אחריות ומה תלמד — הטקסט הזה מוצג לסטודנט/ית בקישור בחירת הארגונים"
+                  className="input w-full" style={{ padding:'10px 14px', fontSize:'14px', resize:'vertical' }} />
+                <div className="text-[11px] mt-1" style={{ color: 'var(--text-soft)' }}>מוצג לסטודנט/ית בעמוד בחירת הארגונים · שדה זה יחד עם מקום פנוי הם מה שהופך את הארגון ל«מאושר / ירוק».</div>
               </Field>
             </div>
 
