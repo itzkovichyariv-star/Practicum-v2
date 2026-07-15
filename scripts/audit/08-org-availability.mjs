@@ -57,8 +57,13 @@ try {
   };
   dbAvailable = emps.filter(e => {
     if (e.restrictedToStudentId) return false; // public page hides private orgs
+    if (e.approvalStatus === 'rejected') return false;
     const hasDesc = !!(e.notes && String(e.notes).trim());
-    return hasDesc && totalVac(e) > 0 && openVac(e) > 0 && e.approvalStatus !== 'rejected' && e.approvalStatus !== 'pending';
+    // The public list now shows ONLY 🟢 מאושר orgs — mirror employerStatus(e).key==='approved':
+    // manual-approved wins; in_process/pending are hidden; else auto-green (desc + open place).
+    if (e.contactStatus === 'approved') return true;
+    if (e.contactStatus === 'in_process' || e.approvalStatus === 'pending') return false;
+    return hasDesc && totalVac(e) > 0 && openVac(e) > 0;
   }).length;
 } catch (e) {
   audit.log(`could not preload employer data (non-fatal): ${e.message.slice(0, 100)}`);

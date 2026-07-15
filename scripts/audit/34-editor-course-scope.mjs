@@ -48,9 +48,15 @@ try {
   pastCourse = sorted[0]; nextCourse = sorted[sorted.length - 1]; sameName = nextCourse.name;
   const emp = {
     id: EMP_ID, name: EMP_NAME, approvalStatus: 'approved', addedBy: 'admin', restrictedToStudentId: null,
-    courseIds: [pastCourse.id, nextCourse.id], positionsTotal: 1, positions: 1, filledPositions: 1, notes: 'audit ecs',
+    courseIds: [pastCourse.id, nextCourse.id], positionsTotal: 3, positions: 3, filledPositions: 1, notes: 'audit ecs',
     contactPhone: '0500000000', contactEmail: 'a@b.local',
-    vacancySlots: [{ id: `${EMP_ID}-p1`, courseId: pastCourse.id, status: 'placed', studentId: STU_ID, prefRank: null, history: [] }],
+    // 1 placed + 1 open in the PAST year, 1 open in the NEXT year — so an UNSCOPED
+    // pill would sum to 2 open across years; a per-(course×year) pill shows just 1.
+    vacancySlots: [
+      { id: `${EMP_ID}-p1`, courseId: pastCourse.id, status: 'placed', studentId: STU_ID, prefRank: null, history: [] },
+      { id: `${EMP_ID}-pa`, courseId: pastCourse.id, status: 'available', studentId: null, prefRank: null, history: [] },
+      { id: `${EMP_ID}-na`, courseId: nextCourse.id, status: 'available', studentId: null, prefRank: null, history: [] },
+    ],
   };
   const stu = { id: STU_ID, name: `סקופ סטודנט ${ts}`, email: `ecs-${ts}@audit.local`, courseId: pastCourse.id, year: pastCourse.year, acceptedOrg: EMP_NAME, submissionStatus: 'placed', preferences: [] };
   await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
@@ -82,8 +88,10 @@ const result = await audit.page.evaluate((t) => {
     if (!s) return resolve({ error: 'no capacity section' });
     const defaultYears = [...s.querySelectorAll('.mono.font-bold')].map(h => h.textContent.trim());
     const scopedCount = s.querySelectorAll('input[type=checkbox]').length;
+    const statusSec = [...document.querySelectorAll('span.small-caps')].find(x => x.textContent.includes('סטטוס מעסיק'))?.closest('div.col-span-full');
+    const pillOpen = ((statusSec?.innerText || '').match(/(\d+)\s*מקומות פנויים/) || [])[1] || null;
     const histBtn = [...s.querySelectorAll('button')].find(b => b.textContent.includes('היסטוריה'));
-    if (!histBtn) return resolve({ defaultYears, scopedCount, hasHistoryToggle: false });
+    if (!histBtn) return resolve({ defaultYears, scopedCount, pillOpen, hasHistoryToggle: false });
     histBtn.click();
     setTimeout(() => {
       const s2 = sec();
@@ -91,7 +99,7 @@ const result = await audit.page.evaluate((t) => {
       const allBtn = [...s2.querySelectorAll('button')].find(b => b.textContent.includes('הצג את כל'));
       allBtn?.click();
       setTimeout(() => {
-        resolve({ defaultYears, scopedCount, hasHistoryToggle: true, historyYears, allCount: sec().querySelectorAll('input[type=checkbox]').length });
+        resolve({ defaultYears, scopedCount, pillOpen, hasHistoryToggle: true, historyYears, allCount: sec().querySelectorAll('input[type=checkbox]').length });
       }, 250);
     }, 250);
   }, 400));
@@ -118,6 +126,12 @@ if (result.error) {
     expected: `show-all reveals all ${totalCourses} courses`,
     observed: `allCount=${result.allCount}`,
     pass: (result.allCount || 0) >= totalCourses,
+  });
+  audit.recordCell({
+    id: 'EDITOR-pill-scoped', tableRef: 'EmployerEditor status pill = employerStatus(form, scopeCourseIds)',
+    expected: `pill shows ${nextCourse.year}'s open count (1), NOT the cross-year sum (2)`,
+    observed: `pillOpen=${result.pillOpen}`,
+    pass: result.pillOpen === '1',
   });
 }
 

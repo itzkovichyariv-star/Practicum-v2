@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Employer } from '../lib/supabase';
-import { orgAvailability } from '../lib/orgAvailability';
+import { orgAvailability, employerStatus } from '../lib/orgAvailability';
 import { migratePlacementData, countSlotsByStatus, studentRequestHold, studentCurrentPlacement } from '../lib/placement';
 import { saveSnapshot } from '../lib/dataApi';
 
@@ -109,13 +109,16 @@ export default function OrganizationsPage() {
     // student — their reserved first-priority org — and hidden from everyone else.
     const restrictedTo = (e as any).restrictedToStudentId;
     if (restrictedTo && restrictedTo !== student?.id) return false;
-    if (!orgAvailability(e).available) return false;
     const ids = e.courseIds || ((e as any).courseId ? [(e as any).courseId] : []);
-    // When we know the student's course, only show orgs that SERVE it AND have an
-    // available place for it (so "זמינים לקורס שלך" is accurate); else honor ?course=.
+    // When we know the student's course, only show orgs that SERVE it; else honor ?course=.
     const scope = studentCourse || courseFilter;
     if (scope && ids.length && !ids.includes(scope)) return false;
-    if (studentCourse && countSlotsByStatus(e, studentCourse).available <= 0) return false;
+    // Show ONLY a GREEN (מאושר — manual OR auto) org, scoped to the student's course×year:
+    // a בתהליך/נדחה/טרם org never appears to students, and a manually-approved one does.
+    const scopeIds = scope ? [scope] : undefined;
+    if (employerStatus(e, scopeIds).key !== 'approved') return false;
+    // …and require a real open (course×year) slot — a green-but-full org drops out.
+    if (scope && countSlotsByStatus(e, scope).available <= 0) return false;
     return true;
   }).sort((a, b) => {
     if (!!b.notes !== !!a.notes) return b.notes ? 1 : -1;

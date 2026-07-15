@@ -33,6 +33,7 @@ function cardStatusChip(st: any, yearAv: any): string {
 }
 
 type PosFilter = 'all' | 'open' | 'full' | 'none';
+type StatusFilter = 'all' | 'approved' | 'in_process' | 'rejected' | 'not_contacted';
 
 type ViewMode = 'list' | 'grid';
 
@@ -40,6 +41,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const [tab, setTab] = useState<'employers' | 'approvals'>('employers');
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState<PosFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [courseFilter, setCourseFilter] = useState('');
   const [editing, setEditing] = useState<Employer | null>(null);
   const [creating, setCreating] = useState(false);
@@ -204,6 +206,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
       if (posFilter === 'open' && open === 0) return false;
       if (posFilter === 'full' && (open > 0 || total === 0)) return false;
       if (posFilter === 'none' && total > 0) return false;
+      if (statusFilter !== 'all' && employerStatus(e, yearCourseIds).key !== statusFilter) return false;
       if (courseFilter) {
         const ids = empCourseIds(e);
         if (!ids.includes(courseFilter)) return false;
@@ -214,7 +217,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
       }
       return true;
     }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
-  }, [scoped, search, posFilter, courseFilter, yearCourseIds]);
+  }, [scoped, search, posFilter, statusFilter, courseFilter, yearCourseIds]);
 
   const totalPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).total, 0);
   const openPositions = scoped.reduce((s, e) => s + orgAvailability(e, yearCourseIds).open, 0);
@@ -365,6 +368,23 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
                     color: posFilter === v ? 'white' : 'var(--text-soft)',
                     border: 'none', cursor: 'pointer',
                   }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Status (ramzor) filter */}
+            <div className="flex gap-1 p-1 rounded-lg flex-wrap" style={{ background: 'rgba(0,0,0,0.05)' }}>
+              {([
+                ['all', 'כל הסטטוסים', 'var(--accent)'] as const,
+                ['approved', 'מאושר', STATUS_COLORS.approved] as const,
+                ['in_process', 'בתהליך', STATUS_COLORS.in_process] as const,
+                ['not_contacted', 'טרם', STATUS_COLORS.not_contacted] as const,
+                ['rejected', 'נדחה', STATUS_COLORS.rejected] as const,
+              ]).map(([v, label, activeBg]) => (
+                <button key={v} onClick={() => setStatusFilter(v)}
+                  className="mono text-[10.5px] uppercase tracking-[0.1em] font-semibold px-3 py-1.5 rounded flex items-center gap-1.5"
+                  style={{ background: statusFilter === v ? activeBg : 'transparent', color: statusFilter === v ? 'white' : 'var(--text-soft)', border: 'none', cursor: 'pointer' }}>
+                  {v !== 'all' && <span style={{ width: 7, height: 7, borderRadius: '50%', background: statusFilter === v ? 'white' : activeBg, flexShrink: 0 }} />}
                   {label}
                 </button>
               ))}
@@ -539,6 +559,9 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
   const dotLabel = cardStatusChip(st, yearAv);
+  const isApproved = st.key === 'approved';
+  const dotFill = isApproved ? 'var(--tl-green)' : st.color;
+  const dotRing = isApproved ? 'rgba(22,163,74,0.30)' : st.color + '33';
   const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
 
   function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
@@ -554,7 +577,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
       <div style={{ padding: '16px 18px 14px', borderBottom: '1px solid var(--divider)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-            <div style={{ flexShrink: 0, width: '9px', height: '9px', borderRadius: '50%', background: dotColor }} title={dotLabel} />
+            <div style={{ flexShrink: 0, width: '16px', height: '16px', borderRadius: '50%', background: dotFill, boxShadow: isApproved ? `0 0 0 3px ${dotRing}, 0 0 7px rgba(22,163,74,0.55)` : `0 0 0 3px ${dotRing}` }} title={dotLabel} />
             <div className="serif text-[17px] leading-tight" style={{ color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.name}</div>
             <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.04em', padding: '2px 7px', borderRadius: '999px', background: st.color + '22', color: st.color, whiteSpace: 'nowrap' }}>{st.label}</span>
           </div>
@@ -657,6 +680,9 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
   const fillPct = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
   const dotColor = st.color;
   const posLabel = st.label;
+  const isApproved = st.key === 'approved';
+  const dotFill = isApproved ? 'var(--tl-green)' : st.color;
+  const dotRing = isApproved ? 'rgba(22,163,74,0.30)' : st.color + '33';
   const statusChip = cardStatusChip(st, yearAv);
 
   function callEmployer() {
@@ -681,7 +707,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
       <div style={{ padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen(o => !o)}>
         {/* Line 1: dot + name + status pill + chevron */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
-          <div style={{ flexShrink: 0, width: '9px', height: '9px', borderRadius: '50%', background: dotColor }} title={posLabel} />
+          <div style={{ flexShrink: 0, width: '15px', height: '15px', borderRadius: '50%', background: dotFill, boxShadow: isApproved ? `0 0 0 3px ${dotRing}, 0 0 7px rgba(22,163,74,0.55)` : `0 0 0 3px ${dotRing}` }} title={posLabel} />
           <div className="serif" style={{ flex: 1, minWidth: 0, fontSize: '15.5px', fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {emp.name}
           </div>

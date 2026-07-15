@@ -65,6 +65,17 @@ export default function EmployerEditor({
   const scopeYear = defaultYear && defaultYear !== '__all__' ? normalizeYear(defaultYear) : null;
   const scopeCourse = defaultCourseId && defaultCourseId !== '__all__' ? defaultCourseId : null;
   const hasScope = !!(scopeYear || scopeCourse);
+  // (course × year) scope for the STATUS PILL — mirrors EmployersPage.yearCourseIds,
+  // defaulting to the LATEST year when the top bar is on __all__ (like the list). This
+  // stops the pill from summing places across other courses/years ("pill says 4 while
+  // the row shows 2").
+  const effYear = scopeYear || (years && years.length ? normalizeYear(years[0]) : null);
+  const scopeCourseIds = (() => {
+    let cs = courses;
+    if (effYear) cs = cs.filter(c => normalizeYear(c.year || '') === effYear);
+    if (scopeCourse) cs = cs.filter(c => c.id === scopeCourse || c.name === scopeCourse);
+    return cs.length ? cs.map(c => c.id) : undefined;
+  })();
   const attachedIds = new Set(form.courseIds || []);
   const inScope = (c: Course) =>
     (!scopeCourse || c.id === scopeCourse || c.name === scopeCourse) &&
@@ -234,7 +245,7 @@ export default function EmployerEditor({
             <div className="col-span-full">
               <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>סטטוס מעסיק (רמזור)</span>
               {(() => {
-                const st = employerStatus(form);
+                const st = employerStatus(form, scopeCourseIds);
                 const isRejected = form.approvalStatus === 'rejected';
                 const isApproved = !isRejected && (form as any).contactStatus === 'approved';
                 const isInProcess = !isRejected && !isApproved && (form.contactStatus === 'in_process' || form.approvalStatus === 'pending');
