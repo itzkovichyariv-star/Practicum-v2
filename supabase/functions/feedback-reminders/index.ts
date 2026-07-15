@@ -177,11 +177,19 @@ Deno.serve(async (req) => {
       (rec.mentorEmail ? toRemind : missingEmail).push(rec);
     }
 
-    // CC = Yariv (always) + whatever's in the FEEDBACK_REMINDER_CC secret (Rachel), de-duped.
+    // CC list, de-duped, from three sources (any/all optional):
+    //   1. d.supervisorEmail            — the coordinator (Yariv), primary.
+    //   2. d.feedbackReminderCc          — an array OR comma-string set in the app data
+    //                                      (the CLI-free way to add Rachel etc. — no secret).
+    //   3. FEEDBACK_REMINDER_CC env      — legacy secret, still honored if present.
     const yariv = String(d.supervisorEmail || 'itzkovichyariv@gmail.com').trim();
+    const fromData = Array.isArray(d.feedbackReminderCc)
+      ? d.feedbackReminderCc
+      : String(d.feedbackReminderCc || '').split(',');
     const ccList = Array.from(
       new Set([
         yariv,
+        ...fromData.map((x: unknown) => String(x).trim()).filter(Boolean),
         ...String(Deno.env.get('FEEDBACK_REMINDER_CC') || '')
           .split(',')
           .map((x) => x.trim())
