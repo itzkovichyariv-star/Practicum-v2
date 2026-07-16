@@ -63,7 +63,7 @@ type Rec = {
   mentorEmail: string;
   mentorName: string;
   link: string;
-  ageDays: number;
+  ageDays: number | null;   // null = legacy link with no recorded request time (overdue)
 };
 
 function mentorEmailHtml(r: Rec): string {
@@ -97,7 +97,7 @@ function mentorEmailHtml(r: Rec): string {
 function missingSummaryHtml(rows: Rec[], now: Date): string {
   const dateStr = now.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
   const items = rows
-    .map((r) => `<li style="margin-bottom:4px"><strong>${esc(r.studentName)}</strong> · ${esc(r.orgName)} · ממתין ${r.ageDays} ימים</li>`)
+    .map((r) => `<li style="margin-bottom:4px"><strong>${esc(r.studentName)}</strong> · ${esc(r.orgName)} · ${r.ageDays != null ? `ממתין ${r.ageDays} ימים` : 'ממתין מזה זמן'}</li>`)
     .join('');
   return `<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8"></head>
 <body style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;padding:28px;color:#3d0f14;background:#f4efe6;direction:rtl">
@@ -160,10 +160,14 @@ Deno.serve(async (req) => {
       if (!orgName) continue;                       // not placed / no org to name → can't identify a mentor
       if (hasEmployerFeedback(s)) continue;         // already has feedback → done
       if (!s.feedbackToken) continue;               // no link was ever generated → no request was made
-      const anchor = s.feedbackRequestedAt || s.placedAt; // request time (fallback: placement, for legacy links)
-      if (!anchor) continue;                         // can't measure "a week" → skip
-      const age = daysSince(anchor, now);
-      if (!(age >= REMIND_AFTER_DAYS)) continue;     // less than a week since the request → wait
+      // Anchor = when the feedback link was first requested (fallback: placement time). If we
+      // HAVE an anchor, honour the 7-day grace. If we DON'T — a legacy link that predates the
+      // feedbackRequestedAt field, or an anchor that was lost to a stale save — the link was
+      // clearly sent long ago, so the student is OVERDUE: remind rather than skip. This keeps
+      // reminders robust to a missing/wiped anchor (they hinge on the stable feedbackToken).
+      const anchor = s.feedbackRequestedAt || s.placedAt;
+      const age = anchor ? daysSince(anchor, now) : NaN;
+      if (anchor && !(age >= REMIND_AFTER_DAYS)) continue; // has an anchor but < a week → wait
 
       const emp = empByName.get(orgName);
       const rec: Rec = {
@@ -172,7 +176,7 @@ Deno.serve(async (req) => {
         mentorEmail: String(emp?.contactEmail || '').trim(),
         mentorName: String(emp?.contactPerson || '').trim(),
         link: buildFeedbackUrl(String(s.feedbackToken)),
-        ageDays: Math.floor(age),
+        ageDays: Number.isNaN(age) ? null : Math.floor(age),
       };
       (rec.mentorEmail ? toRemind : missingEmail).push(rec);
     }
