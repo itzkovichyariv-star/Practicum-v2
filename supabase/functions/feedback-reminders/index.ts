@@ -11,6 +11,11 @@
 // Students whose org has NO email on file can't be mailed — those are collected and
 // reported to Yariv + Rachel in ONE summary email so nothing falls through the cracks.
 //
+// DATA-INTEGRITY GUARD: before sending, the function compares the current feedback count
+// (and student roster) against the last 25 practicum_snapshots. Feedback is monotonic, so a
+// DROP means a bad write clobbered data — in that case it ABORTS the send and emails Yariv +
+// Rachel an alert instead of mailing employers on corrupted data (?dry=1 reports without alerting).
+//
 // Deploy:   supabase functions deploy feedback-reminders
 // Schedule: Sundays 05:00 UTC  (= 08:00 Israel summer / 07:00 winter — a fixed-UTC
 //           cron drifts 1h with DST, same as nightly-digest). Set via the Supabase
@@ -116,6 +121,24 @@ function missingSummaryHtml(rows: Rec[], now: Date): string {
 </body></html>`;
 }
 
+function integrityAlertHtml(reason: string): string {
+  return `<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8"></head>
+<body style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;padding:28px;color:#3d0f14;background:#fdf0f0;direction:rtl">
+  <div style="border-bottom:2px solid #b91c1c;padding-bottom:14px;margin-bottom:20px">
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#b91c1c;margin-bottom:5px">פרקטיקום · התראת מערכת</div>
+    <h1 style="font-family:Georgia,serif;font-size:22px;margin:0;color:#3d0f14">⚠️ תזכורות המשוב לא נשלחו — בעיית תקינות נתונים</h1>
+  </div>
+  <p style="font-size:15px;line-height:1.75;margin:0 0 14px">
+    התזכורת השבועית למעסיקים <strong>לא נשלחה השבוע</strong>, כי בבדיקת תקינות אוטומטית לפני השליחה נמצא סימן לאובדן נתונים:
+  </p>
+  <p style="font-size:14px;line-height:1.7;margin:0 0 16px;background:#fff;border:1px solid #f0c0c0;border-radius:8px;padding:12px 14px;color:#7a1e2b"><strong>${esc(reason)}</strong></p>
+  <p style="font-size:14.5px;line-height:1.7;margin:0 0 12px">
+    כדי למנוע שליחת מיילים למעסיקים על סמך נתונים פגומים — השליחה נעצרה. אנא בדוק/י את הנתונים (ושחזר/י מ‑practicum_snapshots אם צריך), ואז אפשר להריץ שוב את הפונקציה ידנית. הריצה הבאה תישלח כרגיל ברגע שהתקינות תשוחזר.
+  </p>
+  <div style="margin-top:26px;padding-top:16px;border-top:1px solid #ddd;font-size:11px;color:#aaa;letter-spacing:0.12em;text-transform:uppercase">פרקטיקום · אוניברסיטת אריאל · נשלח אוטומטית</div>
+</body></html>`;
+}
+
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
 }
@@ -152,6 +175,47 @@ Deno.serve(async (req) => {
     const empByName = new Map<string, any>();
     for (const e of employers) if (e?.name) empByName.set(String(e.name).trim(), e);
 
+    // CC list (built early so the integrity guard below can alert to it), de-duped, from three
+    // sources (any/all optional): d.supervisorEmail (Yariv), d.feedbackReminderCc (array/string in
+    // the app data — the CLI-free way to add Rachel), and the legacy FEEDBACK_REMINDER_CC env.
+    const yariv = String(d.supervisorEmail || 'itzkovichyariv@gmail.com').trim();
+    const fromData = Array.isArray(d.feedbackReminderCc)
+      ? d.feedbackReminderCc
+      : String(d.feedbackReminderCc || '').split(',');
+    const ccList = Array.from(new Set([
+      yariv,
+      ...fromData.map((x: unknown) => String(x).trim()).filter(Boolean),
+      ...String(Deno.env.get('FEEDBACK_REMINDER_CC') || '').split(',').map((x) => x.trim()).filter(Boolean),
+    ]));
+    const resendKey = Deno.env.get('RESEND_API_KEY');
+
+    // ── Data-integrity guard ──────────────────────────────────────────────────────
+    // Feedback is MONOTONIC — an employer never un-submits. If the current data has FEWER
+    // feedbacks than any recent snapshot (or the student roster collapsed), a bad write likely
+    // clobbered data. Never email employers on corrupted data: abort the send and alert Yariv+Rachel
+    // so they can recover from practicum_snapshots. A ?dry=1 run reports the abort without alerting.
+    const curFbCount = students.filter(hasEmployerFeedback).length;
+    const { data: snaps } = await supabase
+      .from('practicum_snapshots').select('data').order('created_at', { ascending: false }).limit(25);
+    const snapArr = (snaps || []) as any[];
+    const maxFb = Math.max(curFbCount, ...snapArr.map((r) => (r.data?.students || []).filter(hasEmployerFeedback).length));
+    const maxStu = Math.max(students.length, ...snapArr.map((r) => (r.data?.students || []).length));
+    const integrityIssue = curFbCount < maxFb
+      ? `feedback count dropped — now ${curFbCount}, recent max ${maxFb}`
+      : (students.length < Math.floor(maxStu * 0.9)
+        ? `student count dropped — now ${students.length}, recent max ${maxStu}`
+        : null);
+    if (integrityIssue) {
+      if (!dry && resendKey && ccList.length) {
+        await sendResend(resendKey, {
+          from: FROM, to: ccList,
+          subject: '⚠️ תזכורות משוב לא נשלחו — בעיית תקינות נתונים',
+          html: integrityAlertHtml(integrityIssue),
+        });
+      }
+      return json({ ok: false, aborted: true, reason: 'data-integrity', detail: integrityIssue, curFbCount, maxFb, curStudents: students.length, maxStu, alerted: !dry && !!resendKey });
+    }
+
     const toRemind: Rec[] = [];
     const missingEmail: Rec[] = [];
 
@@ -181,33 +245,12 @@ Deno.serve(async (req) => {
       (rec.mentorEmail ? toRemind : missingEmail).push(rec);
     }
 
-    // CC list, de-duped, from three sources (any/all optional):
-    //   1. d.supervisorEmail            — the coordinator (Yariv), primary.
-    //   2. d.feedbackReminderCc          — an array OR comma-string set in the app data
-    //                                      (the CLI-free way to add Rachel etc. — no secret).
-    //   3. FEEDBACK_REMINDER_CC env      — legacy secret, still honored if present.
-    const yariv = String(d.supervisorEmail || 'itzkovichyariv@gmail.com').trim();
-    const fromData = Array.isArray(d.feedbackReminderCc)
-      ? d.feedbackReminderCc
-      : String(d.feedbackReminderCc || '').split(',');
-    const ccList = Array.from(
-      new Set([
-        yariv,
-        ...fromData.map((x: unknown) => String(x).trim()).filter(Boolean),
-        ...String(Deno.env.get('FEEDBACK_REMINDER_CC') || '')
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean),
-      ]),
-    );
-
     const counts = { remind: toRemind.length, missing: missingEmail.length };
 
     if (dry) {
       return json({ ok: true, dryRun: true, counts, cc: ccList, wouldSend: toRemind, missingEmail });
     }
 
-    const resendKey = Deno.env.get('RESEND_API_KEY');
     if (!resendKey) return json({ ok: true, sent: false, reason: 'no RESEND_API_KEY', counts });
 
     const results: any[] = [];
