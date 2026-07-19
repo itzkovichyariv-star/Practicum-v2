@@ -127,15 +127,30 @@ export default function OrganizationsPage() {
   async function requestOrg(emp: Employer) {
     setMsg(null);
     setRequesting(emp.id);
-    // Read fresh + apply the hold + save (CAS-guarded), then reload.
-    const { data: row } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
-    const fresh = migratePlacementData(((row as any)?.data || {}) as any);
-    const res = studentRequestHold(fresh, email, emp.id);
-    if (!res.ok) { setMsg({ type: 'error', text: res.error || 'הבקשה נכשלה' }); setRequesting(null); return; }
-    const save = await saveSnapshot(res.data, { name: `סטודנט/ית (${email})` }, { action: 'בקשת מקום', entity: 'ארגון', target: res.employerName || emp.name });
+    let orgName = emp.name;
+    // ATOMIC hold. The mutator re-runs against the freshest cloud state on every
+    // compare-and-swap attempt, so if another student takes the last place while
+    // we're saving, studentRequestHold declines and we write NOTHING — instead of
+    // replaying a stale employers array that would erase their reservation. A
+    // place must only ever be released by the student who holds it.
+    const save = await saveSnapshot(
+      (cloud) => {
+        const fresh = migratePlacementData(cloud as any);
+        const res = studentRequestHold(fresh, email, emp.id);
+        if (!res.ok) return { error: res.error || 'הבקשה נכשלה' };
+        orgName = res.employerName || emp.name;
+        return { data: res.data };
+      },
+      { name: `סטודנט/ית (${email})` },
+      { action: 'בקשת מקום', entity: 'ארגון', target: emp.name },
+    );
     setRequesting(null);
-    if (!save.ok) { setMsg({ type: 'error', text: 'השמירה נכשלה — נסה/י שוב.' }); return; }
-    setMsg({ type: 'success', text: `בקשתך ל"${res.employerName}" נשלחה! המקום שמור עבורך זמנית עד לתשובת הרכזת.` });
+    if (!save.ok) {
+      setMsg({ type: 'error', text: save.error || 'השמירה נכשלה — נסה/י שוב.' });
+      await load(); // show the true, current availability
+      return;
+    }
+    setMsg({ type: 'success', text: `בקשתך ל"${orgName}" נשלחה! המקום שמור עבורך זמנית עד לתשובת הרכזת.` });
     await load();
   }
 

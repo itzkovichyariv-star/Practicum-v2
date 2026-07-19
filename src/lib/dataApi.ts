@@ -8,26 +8,54 @@ const GUARDED_KEYS = ['students', 'employers', 'courses', 'trainers', 'lectures'
 /** Minimum count that triggers the regression guard. */
 const REGRESSION_FLOOR = 3;
 
+/**
+ * A MUTATOR is re-run against the FRESHLY-read cloud state on every CAS attempt,
+ * so a retry recomputes from the winner's data instead of replaying a blob that
+ * was computed before the race was lost. Return `{ error }` to abort the write
+ * (e.g. "the last place was just taken by someone else").
+ *
+ * Why this exists: passing a pre-computed blob only guards the window INSIDE
+ * saveSnapshot. The caller's own read → compute → write window stays unguarded,
+ * so two students could each read "1 place free", both compute a hold, and the
+ * second write would replace the employers array wholesale — silently erasing
+ * the first student's reservation even though they were told it succeeded.
+ * A place must only ever be released by the student who holds it.
+ */
+export type SaveMutator = (cloud: PracticumData) => { data: PracticumData } | { error: string };
+
 export async function saveSnapshot(
-  data: PracticumData,
+  data: PracticumData | SaveMutator,
   editor: { name: string },
   activity?: { action: string; entity: string; target: string },
 ): Promise<{ ok: boolean; updated_at?: string; error?: string }> {
   const MAX_ATTEMPTS = 5;
+  const isMutator = typeof data === 'function';
 
   // Build the write payload from a freshly-read cloud row: merge (cloud is the
   // base, incoming `data` wins per key) + regression guard + history append.
   // Returns { blocked } if the regression guard trips.
   const build = (currentRow: any):
     | { blocked: string }
+    | { rejected: string }
     | { now: string; currentVersion: number; version: number; payload: any; dataWithHistory: PracticumData } => {
     const now = new Date().toISOString();
     const cloudData: PracticumData = currentRow?.data || {};
     const currentVersion: number = currentRow?.version || 0;
 
+    // Resolve the write against THIS attempt's cloud state. A mutator recomputes
+    // here, so on a CAS retry it sees the winner's data and can decline cleanly.
+    let incoming: PracticumData;
+    if (isMutator) {
+      const r = (data as SaveMutator)(cloudData);
+      if ('error' in r) return { rejected: r.error };
+      incoming = r.data;
+    } else {
+      incoming = data as PracticumData;
+    }
+
     // Merge: cloud state is the base, incoming data wins for any key it provides.
     // Arrays/objects in `data` fully replace their cloud counterparts (no deep merge).
-    const merged: PracticumData = { ...cloudData, ...data };
+    const merged: PracticumData = { ...cloudData, ...incoming };
 
     // ── Regression guard ── block any save where a key that had ≥ REGRESSION_FLOOR
     // records in the cloud would be reduced to 0 (catches accidental full-wipes).
@@ -69,6 +97,9 @@ export async function saveSnapshot(
 
     const built = build(currentRow);
     if ('blocked' in built) return { ok: false, error: built.blocked };
+    // The mutator looked at fresh cloud state and declined (e.g. the place was
+    // taken while we were deciding). Abort — do NOT write anything.
+    if ('rejected' in built) return { ok: false, error: built.rejected };
 
     const { data: updatedRows, error } = await supabase
       .from('practicum_data')
@@ -90,6 +121,15 @@ export async function saveSnapshot(
   // CAS retries exhausted (heavy contention) or a transient read glitch. Fall
   // back to ONE unguarded last-writer-wins write so a save NEVER fails where it
   // would have succeeded before this fix. Worst case = pre-fix behavior.
+  //
+  // NOT for mutators: an unguarded write is exactly the lost-update this API
+  // exists to prevent — it could erase a reservation another student just made.
+  // A contended hold must fail loudly and be retried, never overwrite blindly.
+  if (isMutator) {
+    return { ok: false, error: lastError === 'concurrent update'
+      ? 'מישהו אחר עדכן באותו רגע — נסה/י שוב'
+      : (lastError || 'השמירה נכשלה — נסה/י שוב') };
+  }
   const { data: fallbackRow } = await supabase
     .from('practicum_data')
     .select('data, version')
@@ -97,6 +137,7 @@ export async function saveSnapshot(
     .single();
   const built = build(fallbackRow);
   if ('blocked' in built) return { ok: false, error: built.blocked };
+  if ('rejected' in built) return { ok: false, error: built.rejected };
   const { error } = await supabase
     .from('practicum_data')
     .update(built.payload)
