@@ -82,5 +82,58 @@ audit.recordCell({
   notes: student ? (agree ? '' : 'the ?email= list differs from the ?course= list') : 'skipped — no test student',
 });
 
+// ── 4. Badge counts are course-scoped ───────────────────────────────────────
+// The "N מקומות פנויים" pill used to fall back to an UNSCOPED count for a visitor
+// who wasn't identified, so browsing by ?course= could show places belonging to
+// other courses. The number must be identical whichever way you arrive.
+const availBy = async (query) => {
+  await audit.page.goto(`${audit.baseUrl}/organizations${query}`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1800);
+  return audit.page.$$eval('[data-org-name]', els =>
+    Object.fromEntries(els.map(e => [e.getAttribute('data-org-name'), e.getAttribute('data-org-avail')])));
+};
+let badgeMatch = null, byCourseAvail = {}, byEmailAvail = {};
+if (student) {
+  byCourseAvail = await availBy(`?course=${encodeURIComponent(COURSE)}`);
+  byEmailAvail = await availBy(`?email=${encodeURIComponent(student.email)}`);
+  const keys = Object.keys(byEmailAvail);
+  badgeMatch = keys.length > 0 && keys.every(k => byCourseAvail[k] === byEmailAvail[k]);
+}
+audit.recordCell({
+  id: 'ORGS-badge-scoped', tableRef: 'OrganizationsPage / availFor course scoping',
+  expected: 'places-remaining per org is identical via ?course= and via ?email= (both course-scoped)',
+  observed: student ? `orgs=${Object.keys(byEmailAvail).length}, identical=${badgeMatch}` : 'no test student',
+  pass: student ? badgeMatch : null,
+  notes: badgeMatch === false ? `counts differ → course:${JSON.stringify(byCourseAvail)} vs email:${JSON.stringify(byEmailAvail)}` : '',
+});
+
+// ── 5. The email is remembered across a reload, and "זה לא אני" clears it ────
+let rememberedAfterReload = null, forgotten = null;
+if (student) {
+  await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1500);
+  await audit.page.fill('input[type="email"]', student.email).catch(() => {});
+  await audit.page.locator('button').filter({ hasText: 'המשך' }).first().click().catch(() => {});
+  await audit.page.waitForTimeout(1800);
+  // reload the BARE url — identity must survive
+  await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1800);
+  rememberedAfterReload = (await audit.page.$$('[data-org-name]')).length > 0;
+  // now explicitly forget, and confirm it does NOT come back after a reload
+  await audit.page.locator('button').filter({ hasText: 'זה לא אני' }).first().click().catch(() => {});
+  await audit.page.waitForTimeout(600);
+  await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1800);
+  forgotten = (await audit.page.$$('[data-org-name]')).length === 0;
+}
+audit.recordCell({
+  id: 'ORGS-remember-email', tableRef: 'OrganizationsPage / remembered identity',
+  expected: 'after identifying once, reloading the BARE link keeps the student identified; "זה לא אני" clears it for good',
+  observed: student ? `survivesReload=${rememberedAfterReload}, clearedByForgetMe=${forgotten}` : 'no test student',
+  pass: student ? (rememberedAfterReload === true && forgotten === true) : null,
+  notes: rememberedAfterReload === false ? 'identity did NOT survive a reload — student must retype every visit'
+       : forgotten === false ? '"זה לא אני" did not clear the remembered identity (shared-device risk)' : '',
+});
+
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);

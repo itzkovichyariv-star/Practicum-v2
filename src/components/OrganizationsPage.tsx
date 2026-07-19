@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Employer } from '../lib/supabase';
-import { orgAvailability, employerStatus } from '../lib/orgAvailability';
+import { employerStatus } from '../lib/orgAvailability';
 import { migratePlacementData, countSlotsByStatus, studentRequestHold, studentCurrentPlacement } from '../lib/placement';
 import { saveSnapshot } from '../lib/dataApi';
 
@@ -33,7 +33,7 @@ function OrgCard({ emp, availForCourse, canRequest, requesting, onRequest }: {
         onClick={() => emp.notes && setOpen(o => !o)}>
         <div style={{ width: '42px', height: '42px', borderRadius: '10px', flexShrink: 0, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🏢</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div data-org-name={emp.name} style={{ fontWeight: 700, fontSize: '15px', color: 'var(--ink)', lineHeight: 1.3 }}>{emp.name}</div>
+          <div data-org-name={emp.name} data-org-avail={availForCourse} style={{ fontWeight: 700, fontSize: '15px', color: 'var(--ink)', lineHeight: 1.3 }}>{emp.name}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
             {emp.location && (
               <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', background: 'var(--tag-neutral-bg)', color: 'var(--text-soft)', padding: '2px 9px', borderRadius: '999px', whiteSpace: 'nowrap' }}>📍 {emp.location}</span>
@@ -64,11 +64,21 @@ function OrgCard({ emp, availForCourse, canRequest, requesting, onRequest }: {
   );
 }
 
+/** Remembered identity, so a student types their email once per device rather
+ *  than on every visit/reload. Only written after the email actually resolves to
+ *  a student (never a typo), and clearable via "זה לא אני" for shared devices. */
+const EMAIL_KEY = 'practicum_student_email';
+function rememberedEmail(): string {
+  if (typeof window === 'undefined') return '';
+  try { return (localStorage.getItem(EMAIL_KEY) || '').trim().toLowerCase(); } catch { return ''; }
+}
+
 export default function OrganizationsPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [email, setEmail] = useState(getParam('email').trim().toLowerCase());
+  // ?email= in the link wins; otherwise fall back to the remembered identity.
+  const [email, setEmail] = useState(getParam('email').trim().toLowerCase() || rememberedEmail());
   const [emailInput, setEmailInput] = useState('');
   const [requesting, setRequesting] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -82,10 +92,37 @@ export default function OrganizationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Keep the places-remaining counts honest. The page used to fetch once on mount
+  // and never again (it sits outside App.tsx's realtime channel), so a student
+  // could stare at "3 מקומות פנויים" for places another student had already taken.
+  // Refetch when the tab regains focus and on a slow interval while visible.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') load(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const id = setInterval(refresh, 45000);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      clearInterval(id);
+    };
+  }, [load]);
+
   const student = email && data ? (data.students || []).find((s: any) => String(s.email || '').trim().toLowerCase() === email) : null;
   const studentCourse: string | undefined = student?.courseId;
   const current = email && data ? studentCurrentPlacement(data, email) : null;
   const canRequest = !!student && !current; // identified, and no active hold/placement yet
+
+  // Remember only a VERIFIED identity (resolved to a real student row).
+  useEffect(() => {
+    if (!student || !email) return;
+    try { localStorage.setItem(EMAIL_KEY, email); } catch { /* private mode — fine */ }
+  }, [student, email]);
+
+  function forgetMe() {
+    try { localStorage.removeItem(EMAIL_KEY); } catch { /* ignore */ }
+    setEmail(''); setEmailInput(''); setMsg(null);
+  }
 
   async function requestOrg(emp: Employer) {
     setMsg(null);
@@ -138,14 +175,29 @@ export default function OrganizationsPage() {
     return [e.name, e.location, e.notes].filter(Boolean).join(' ').toLowerCase().includes(q);
   });
 
-  const availFor = (emp: Employer) => studentCourse ? countSlotsByStatus(emp, studentCourse).available : orgAvailability(emp).open;
+  // Always count places for the SCOPED course. The old fallback
+  // (orgAvailability(emp).open) was not course- or year-scoped, so a visitor
+  // browsing by ?course= could be shown a number that included places belonging
+  // to other courses. `scope` is guaranteed non-empty wherever cards render.
+  const availFor = (emp: Employer) => (scope ? countSlotsByStatus(emp, scope).available : 0);
 
   return (
     <div dir="rtl" style={{ minHeight: '100vh', background: 'var(--bg)', paddingBottom: '60px' }}>
       <div style={{ background: 'var(--accent)', color: 'white', padding: '28px 24px 24px', textAlign: 'center' }}>
         <div style={{ fontSize: '22px', fontWeight: 800, letterSpacing: '-0.01em' }}>ארגונים לפרקטיקום</div>
         <div style={{ fontSize: '13px', marginTop: '6px', opacity: 0.85 }}>אוניברסיטת אריאל · תכנית הפרקטיקום במשאבי אנוש</div>
-        {student && <div style={{ fontSize: '13.5px', marginTop: '10px', fontWeight: 600 }}>שלום {student.name || ''} 👋</div>}
+        {student && (
+          <div style={{ fontSize: '13.5px', marginTop: '10px', fontWeight: 600 }}>
+            שלום {student.name || ''} 👋
+            {/* Shared-device escape: the identity is remembered on this device, so
+                offer an explicit way out — otherwise the next student on the same
+                phone would act as this one. */}
+            <button type="button" onClick={forgetMe}
+              style={{ marginRight: '10px', background: 'transparent', border: 'none', color: 'white', opacity: 0.75, fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', fontWeight: 600 }}>
+              זה לא אני
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ maxWidth: '680px', margin: '0 auto', padding: '20px 16px 0' }}>
