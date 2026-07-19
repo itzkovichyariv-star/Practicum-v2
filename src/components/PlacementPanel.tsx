@@ -35,7 +35,7 @@ export default function PlacementPanel({
   student, allStudents, employers, courses, dispatches, approvalRequests, placementSettings, userName, onDataChange,
 }: Props) {
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'placed' | 'rejected' | 'withdrawn' | 'mark_cancelled';
+    type: 'placed' | 'rejected' | 'withdrawn' | 'mark_cancelled' | 'place_direct';
     prefIndex: number;
     pref: StudentPreference;
   } | null>(null);
@@ -275,6 +275,44 @@ export default function PlacementPanel({
     setConfirmDialog(null);
   }
 
+  // Path 2 for a STUDENT-SUGGESTED org: the student is already in advanced contact,
+  // so no CV is sent — the coordinator's approval IS the placement (השמה). Acquires
+  // a free place at the org and marks it `placed` in one step (skips under_review).
+  async function handlePlaceDirect(prefIndex: number, pref: StudentPreference) {
+    const emp = getEmployer(pref.employerId);
+    if (!emp) return;
+    if (!student.courseId) { showToast('לא הוגדר קורס לסטודנט/ית', 'error'); setConfirmDialog(null); return; }
+    const now = new Date().toISOString();
+    const isRestricted = (emp as any).restrictedToStudentId === student.id;
+    const existing = pref.slotId ? getSlot(emp, pref.slotId) : null;
+    let target: any = existing
+      || ((emp as any).vacancySlots || []).find((s: any) => s.status === 'available' && s.courseId === student.courseId);
+    let updatedSlots: VacancySlot[];
+    if (target) {
+      updatedSlots = ((emp as any).vacancySlots || []).map((s: any) => {
+        if (s.id !== target.id) return s;
+        return { ...s, status: 'placed', studentId: student.id, prefRank: pref.rank, history: [...(s.history || []), { at: now, from: s.status, to: 'placed', by: 'admin', actorId: userName, reason: 'placed-direct' }] };
+      });
+    } else if (isRestricted) {
+      // A private (student-suggested) org may carry no pre-provisioned vacancy — the
+      // suggestion is itself the place. Mint one already in the 'placed' state so the
+      // direct placement always succeeds for the student who proposed it.
+      const newSlot: any = { id: `${emp.id}-direct-${Date.now()}`, courseId: student.courseId, status: 'placed', studentId: student.id, prefRank: pref.rank, history: [{ at: now, from: 'available', to: 'placed', by: 'admin', actorId: userName, reason: 'placed-direct-mint' }] };
+      target = newSlot;
+      updatedSlots = [...((emp as any).vacancySlots || []), newSlot];
+    } else {
+      showToast('אין כרגע מקום פנוי בארגון זה עבור הקורס', 'error'); setConfirmDialog(null); return;
+    }
+    const updatedEmp = reconcileEmployerCapacity({ ...emp, vacancySlots: updatedSlots });
+    const updatedPrefs = preferences.map((p, i) => i === prefIndex ? { ...p, status: 'placed' as const, slotId: target.id } : p);
+    const updatedStudent = { ...student, preferences: updatedPrefs, submissionStatus: 'placed', acceptedOrg: emp.name, placedAt: (student as any).placedAt || now.slice(0, 10) } as any;
+    const nextStudents = allStudents.map(s => s.id === student.id ? updatedStudent : s);
+    const nextEmployers = employers.map(e => e.id === emp.id ? updatedEmp : e);
+    await onDataChange({ students: nextStudents, employers: nextEmployers });
+    showToast(`✓ ${student.name} שובץ/ה ל"${emp.name}" (השמה ישירה)`, 'success');
+    setConfirmDialog(null);
+  }
+
   // Release a not-yet-sent (tentative) preference: free its reserved vacancy and
   // drop the row — for when you decide to go with another org instead.
   async function handleRelease(prefIndex: number, pref: StudentPreference) {
@@ -363,6 +401,10 @@ export default function PlacementPanel({
         const canSend = hasUpdatedCv && hasFreePlace;
         const blockedReason = !hasUpdatedCv ? 'אין קו"ח מעודכן לסטודנט/ית'
           : !hasFreePlace ? 'אין כרגע מקום פנוי בארגון זה עבור הקורס' : '';
+        // A STUDENT-SUGGESTED org is a private employer restricted to this student.
+        // For it, the coordinator gets a second path: "already in advanced contact —
+        // approve placement directly (no CV sent)". Yariv's two-path design.
+        const isSuggested = (emp as any).restrictedToStudentId === student.id;
         const isPending = (emp as any).approvalStatus === 'pending';
         const sentDispatch = dispatches.filter(d => d.studentId === student.id && d.slotId === pref.slotId && d.result === 'pending').slice(-1)[0];
         const agingDays = sentDispatch ? getAgingDays(sentDispatch.sentAt) : 0;
@@ -464,6 +506,17 @@ export default function PlacementPanel({
                     </div>
                   )}
                 </div>
+                {/* Path 2 (student-suggested org only): the student is already in
+                    advanced contact, so approving here IS the placement — no CV sent. */}
+                {isSuggested && pref.status === 'tentative' && (
+                  <button type="button"
+                    data-place-direct={idx}
+                    onClick={() => setConfirmDialog({ type: 'place_direct', prefIndex: idx, pref })}
+                    title="הסטודנט/ית כבר במגעים מתקדמים — אישורך מהווה שיבוץ (השמה), ללא שליחת קו״ח"
+                    style={{ ...btnSmall(), color: '#15803d', borderColor: '#15803d' }}>
+                    ✓ כבר במגעים — אשר שיבוץ
+                  </button>
+                )}
                 {pref.status === 'tentative' && (
                   <button type="button"
                     onClick={() => handleRelease(idx, pref)}
@@ -583,6 +636,7 @@ export default function PlacementPanel({
               style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
               <div className="serif text-[20px] mb-3" style={{ color: 'var(--ink)' }}>
                 {type === 'placed' ? '✅ אישור שיבוץ'
+                  : type === 'place_direct' ? '✅ שיבוץ ישיר (השמה)'
                   : type === 'rejected' ? '❌ אישור דחייה'
                   : isMarkCancelled ? '✓ סמן כבוטל'
                   : '🚫 ביטול מועמדות'}
@@ -590,6 +644,8 @@ export default function PlacementPanel({
               <div className="text-[13.5px] mb-5" style={{ color: 'var(--text-soft)' }}>
                 {type === 'placed'
                   ? `לסמן שיבוץ של ${student.name} אצל ${emp?.name}?`
+                  : type === 'place_direct'
+                  ? `${student.name} כבר במגעים מתקדמים עם ${emp?.name}. לאשר שיבוץ ישיר — ללא שליחת קו"ח? פעולה זו מסמנת השמה ותופסת מקום.`
                   : type === 'rejected'
                   ? `לסמן שהמעסיק ${emp?.name} דחה את ${student.name}?`
                   : isMarkCancelled
@@ -615,11 +671,15 @@ export default function PlacementPanel({
                 {!isWithdrawal && (
                   <button type="button"
                     onClick={() => {
-                      if (isMarkCancelled) handleResult(prefIndex, pref, 'withdrawn');
+                      if (type === 'place_direct') handlePlaceDirect(prefIndex, pref);
+                      else if (isMarkCancelled) handleResult(prefIndex, pref, 'withdrawn');
                       else handleResult(prefIndex, pref, type as 'placed' | 'rejected');
                     }}
                     style={btnPrimary()}>
-                    {type === 'placed' ? 'אשר שיבוץ →' : type === 'rejected' ? 'אשר דחייה →' : 'סמן כבוטל →'}
+                    {type === 'placed' ? 'אשר שיבוץ →'
+                      : type === 'place_direct' ? 'אשר שיבוץ ישיר →'
+                      : type === 'rejected' ? 'אשר דחייה →'
+                      : 'סמן כבוטל →'}
                   </button>
                 )}
               </div>
