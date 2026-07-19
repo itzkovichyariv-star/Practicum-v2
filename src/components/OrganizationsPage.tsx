@@ -33,7 +33,7 @@ function OrgCard({ emp, availForCourse, canRequest, requesting, onRequest }: {
         onClick={() => emp.notes && setOpen(o => !o)}>
         <div style={{ width: '42px', height: '42px', borderRadius: '10px', flexShrink: 0, background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🏢</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: '15px', color: 'var(--ink)', lineHeight: 1.3 }}>{emp.name}</div>
+          <div data-org-name={emp.name} style={{ fontWeight: 700, fontSize: '15px', color: 'var(--ink)', lineHeight: 1.3 }}>{emp.name}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
             {emp.location && (
               <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', background: 'var(--tag-neutral-bg)', color: 'var(--text-soft)', padding: '2px 9px', borderRadius: '999px', whiteSpace: 'nowrap' }}>📍 {emp.location}</span>
@@ -103,22 +103,29 @@ export default function OrganizationsPage() {
   }
 
   const employers: Employer[] = data?.employers || [];
-  const active = employers.filter(e => {
+  // The single course×year this visitor may see: an identified student's own course
+  // wins, else an explicit ?course=. If NEITHER resolves we show NOTHING.
+  //
+  // FAIL CLOSED — this page is public. Previously an unscoped visit (a link without
+  // ?email= / ?course=, or an unrecognised email) skipped every guard below and
+  // listed all globally-approved orgs across all courses AND years, so students saw
+  // other programmes' organizations. A missing parameter must never widen access.
+  const scope = studentCourse || courseFilter;
+  const active = !scope ? [] : employers.filter(e => {
     if (!e.name) return false;
     // Private orgs (a student's OWN approved suggestion) are visible only to THAT
     // student — their reserved first-priority org — and hidden from everyone else.
     const restrictedTo = (e as any).restrictedToStudentId;
     if (restrictedTo && restrictedTo !== student?.id) return false;
     const ids = e.courseIds || ((e as any).courseId ? [(e as any).courseId] : []);
-    // When we know the student's course, only show orgs that SERVE it; else honor ?course=.
-    const scope = studentCourse || courseFilter;
-    if (scope && ids.length && !ids.includes(scope)) return false;
-    // Show ONLY a GREEN (מאושר — manual OR auto) org, scoped to the student's course×year:
+    // Must be explicitly assigned to THIS course. An org with no assignment is
+    // unassigned — not "open to everyone" (it used to slip through this filter).
+    if (!ids.includes(scope)) return false;
+    // Show ONLY a GREEN (מאושר — manual OR auto) org, scoped to that course×year:
     // a בתהליך/נדחה/טרם org never appears to students, and a manually-approved one does.
-    const scopeIds = scope ? [scope] : undefined;
-    if (employerStatus(e, scopeIds).key !== 'approved') return false;
+    if (employerStatus(e, [scope]).key !== 'approved') return false;
     // …and require a real open (course×year) slot — a green-but-full org drops out.
-    if (scope && countSlotsByStatus(e, scope).available <= 0) return false;
+    if (countSlotsByStatus(e, scope).available <= 0) return false;
     return true;
   }).sort((a, b) => {
     if (!!b.notes !== !!a.notes) return b.notes ? 1 : -1;
@@ -169,19 +176,29 @@ export default function OrganizationsPage() {
           <div style={{ background: msg.type === 'success' ? 'rgba(21,128,61,0.1)' : 'rgba(185,28,28,0.08)', border: `1px solid ${msg.type === 'success' ? '#15803d' : '#b91c1c'}`, borderRadius: '12px', padding: '12px 16px', marginBottom: '14px', fontSize: '13.5px', color: msg.type === 'success' ? '#15803d' : '#b91c1c', fontWeight: 600 }}>{msg.text}</div>
         )}
 
-        <input type="search" placeholder="חיפוש ארגון..." value={search} onChange={e => setSearch(e.target.value)}
-          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 16px', borderRadius: '10px', border: '1px solid var(--divider)', background: 'var(--card)', color: 'var(--ink)', fontSize: '14px', outline: 'none' }} />
-        {!loading && (
-          <div style={{ fontSize: '12px', color: 'var(--text-soft)', marginTop: '10px', marginBottom: '4px' }}>
-            {filtered.length} ארגונים{search ? ` תואמים "${search}"` : (canRequest ? ' זמינים לקורס שלך' : ' זמינים לפרקטיקום')}
-            {canRequest ? ' · בחר/י ארגון ולחצ/י «בקש/י מקום»' : ' · לחץ/י על ארגון לקריאת התיאור'}
-          </div>
+        {/* Search + count only make sense once we know WHICH course's list to show. */}
+        {scope && (
+          <>
+            <input type="search" placeholder="חיפוש ארגון..." value={search} onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 16px', borderRadius: '10px', border: '1px solid var(--divider)', background: 'var(--card)', color: 'var(--ink)', fontSize: '14px', outline: 'none' }} />
+            {!loading && (
+              <div style={{ fontSize: '12px', color: 'var(--text-soft)', marginTop: '10px', marginBottom: '4px' }}>
+                {filtered.length} ארגונים{search ? ` תואמים "${search}"` : (canRequest ? ' זמינים לקורס שלך' : ' זמינים לפרקטיקום')}
+                {canRequest ? ' · בחר/י ארגון ולחצ/י «בקש/י מקום»' : ' · לחץ/י על ארגון לקריאת התיאור'}
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div style={{ maxWidth: '680px', margin: '0 auto', padding: '12px 16px 0' }}>
         {loading ? (
           <div style={{ textAlign: 'center', paddingTop: '60px', color: 'var(--text-soft)' }}>טוען...</div>
+        ) : !scope ? (
+          /* No course resolved → show nothing. The identify box above is the way in. */
+          <div style={{ textAlign: 'center', paddingTop: '40px', color: 'var(--text-soft)', fontSize: '13.5px', lineHeight: 1.8 }}>
+            הזן/י למעלה את המייל שאיתו נרשמת<br />כדי לראות את רשימת הארגונים של הקורס שלך.
+          </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', paddingTop: '60px', color: 'var(--text-soft)' }}>{search ? 'לא נמצאו ארגונים תואמים' : 'אין ארגונים זמינים כרגע'}</div>
         ) : (

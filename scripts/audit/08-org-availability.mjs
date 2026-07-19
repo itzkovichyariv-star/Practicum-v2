@@ -18,12 +18,20 @@ await audit.setup();
 // placements into the slots (same as migratePlacementData). Private (restricted)
 // orgs are hidden from the public /organizations page.
 let dbTotal = 0, dbAvailable = 0;
+// The public page is COURSE-SCOPED (an unscoped visit shows nothing by design —
+// see 42-public-orgs-scope). Pick the course with the most assigned orgs and
+// measure the student view against THAT course.
+let scopeCourse = '', assignedToCourse = 0;
 try {
   const rows = await sbQuery('practicum_data', { filter: `org_id=eq.default`, select: 'data' });
   const data = rows?.[0]?.data || {};
   const emps = (data.employers || []).filter(e => e?.name);
   const students = data.students || [];
   dbTotal = emps.length;
+  const per = {};
+  emps.forEach(e => (e.courseIds || (e.courseId ? [e.courseId] : [])).forEach(c => { per[c] = (per[c] || 0) + 1; }));
+  scopeCourse = Object.entries(per).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  assignedToCourse = per[scopeCourse] || 0;
 
   // Replicate the acceptedOrg → slot reconciliation on a clone.
   const slotsByName = {};
@@ -106,7 +114,7 @@ audit.log('ADMIN-legend: Employers list shows legend + purple incomplete badges'
 // ─── STUDENT-hidden ───────────────────────────────────────────────────
 audit.log('STUDENT-hidden: /organizations hides incomplete orgs');
 {
-  await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await audit.page.goto(`${audit.baseUrl}/organizations?course=${encodeURIComponent(scopeCourse)}`, { waitUntil: 'networkidle' });
   await audit.page.waitForTimeout(1200);
   audit.observerMark();
   const after = await audit.shot('STUDENT-hidden');
@@ -116,15 +124,19 @@ audit.log('STUDENT-hidden: /organizations hides incomplete orgs');
     return m ? Number(m[1]) : null;
   });
   const obs = audit.observerSnapshot();
-  // Student count should equal the available count (and be ≤ admin total).
-  const pass = studentCount !== null && studentCount === dbAvailable && studentCount <= dbTotal && obs.pageErrors.length === 0;
+  // Scoped view: a student sees SOME orgs, never more than the orgs assigned to
+  // their own course, and strictly fewer than the admin total — i.e. incomplete /
+  // other-course orgs are hidden. (Exhaustive per-org scope checks: cell 42.)
+  const pass = studentCount !== null && studentCount > 0
+    && studentCount <= assignedToCourse && studentCount < dbTotal
+    && obs.pageErrors.length === 0;
   audit.recordCell({
     id: 'STUDENT-hidden',
-    tableRef: '/organizations / availability filter',
-    expected: `student-visible orgs == available count (${dbAvailable}); ≤ admin total (${dbTotal})`,
-    observed: `studentCount=${studentCount}, dbAvailable=${dbAvailable}, dbTotal=${dbTotal}, errors=(${obs.pageErrors.length}p)`,
+    tableRef: '/organizations / availability + course filter',
+    expected: `0 < student-visible ≤ orgs assigned to "${scopeCourse}" (${assignedToCourse}) and < admin total (${dbTotal})`,
+    observed: `studentCount=${studentCount}, assignedToCourse=${assignedToCourse}, dbAvailable(all)=${dbAvailable}, dbTotal=${dbTotal}, errors=(${obs.pageErrors.length}p)`,
     pass, after,
-    notes: studentCount !== dbAvailable ? `Student count ${studentCount} != available ${dbAvailable}.` : '',
+    notes: pass ? '' : `Expected a non-empty, course-bounded list; got ${studentCount} (assigned=${assignedToCourse}, total=${dbTotal}).`,
   });
 }
 

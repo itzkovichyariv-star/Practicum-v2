@@ -522,7 +522,7 @@ function CopyOpenRow({ label, url }: { label: string; url: string }) {
   );
 }
 
-function Stage2LinkCard() {
+function Stage2LinkCard({ courseId }: { courseId?: string }) {
   const [base, setBase] = useState('');
   useEffect(() => {
     if (typeof window !== 'undefined')
@@ -530,7 +530,12 @@ function Stage2LinkCard() {
   }, []);
   const root = (base ? base.replace(/\/$/, '') : 'https://practicum.yarivitzkovich.org');
   const cvLink  = `${root}/cv-update/`;
-  const orgLink = `${root}/organizations`;
+  // Scope the public org list to the course selected in the top bar. Without a
+  // ?course= (or a student's ?email=) the page deliberately shows NOTHING, so an
+  // unscoped link can never expose another programme's organizations.
+  const orgLink = courseId
+    ? `${root}/organizations?course=${encodeURIComponent(courseId)}`
+    : `${root}/organizations`;
   return (
     <section className="mb-10 rounded-2xl border p-7" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
       <div className="flex items-start justify-between gap-6 mb-4">
@@ -565,6 +570,21 @@ export default function FormsPage(props: PageProps) {
   const allForms = [...BUILTIN_FORMS, ...customForms];
   const students = props.data.students || [];
   const courses = props.data.courses || [];
+
+  // Resolve the top-bar context (course NAME or id, + year) to ONE course id, so the
+  // public organizations link can be scoped to it. '' when "כל הקורסים" is selected —
+  // the link then stays unscoped and the public page shows nothing until a student
+  // identifies by email (deliberate: never leak another programme's orgs).
+  const scopedCourseId: string = (() => {
+    const ctxCourse = (props.context as any)?.courseId;
+    const ctxYear = (props.context as any)?.year;
+    if (!ctxCourse || ctxCourse === '__all__') return '';
+    const norm = (y?: string) => (y || '').replace(/["״]/g, '').trim();
+    const match = (courses as any[]).find(c =>
+      (c.id === ctxCourse || c.name === ctxCourse) &&
+      (!ctxYear || ctxYear === '__all__' || norm(c.year) === norm(ctxYear)));
+    return match?.id || '';
+  })();
 
   // Build FormContext from selected student
   const selectedStudent = students.find(s => s.id === selectedStudentId);
@@ -607,7 +627,7 @@ export default function FormsPage(props: PageProps) {
       </section>
 
       <RegistrationLinkCard />
-      <Stage2LinkCard />
+      <Stage2LinkCard courseId={scopedCourseId} />
 
       {/* ── Student picker ── */}
       <section className="mb-8 rounded-xl border p-5" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.35)' }}>

@@ -116,9 +116,13 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   // Build a personalized mailto: for ONE recipient (TO, not BCC) — name and
-  // their own /cv-update link prefilled.
-  function buildDraftUrl(r: { name: string; email: string }, subject: string, body: string, orgsLink: string): string {
+  // their own /cv-update + /organizations links prefilled.
+  function buildDraftUrl(r: { name: string; email: string }, subject: string, body: string): string {
     const cvLink = `${window.location.origin}/cv-update/?email=${encodeURIComponent(r.email)}&name=${encodeURIComponent(r.name)}`;
+    // Personalised per recipient (same as the Resend/notify-acceptance path): the
+    // organizations page identifies the student from ?email= and shows ONLY their
+    // own course's approved orgs. A bare /organizations link shows them nothing.
+    const orgsLink = `${window.location.origin}/organizations?email=${encodeURIComponent(r.email)}`;
     const personalBody = body
       .replace(/\{\{שם\}\}/g, r.name || '')
       .replace(/\{\{קישור_קוח\}\}/g, cvLink)
@@ -129,14 +133,13 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   function sendConfirmedEmail() {
     if (!emailConfirm) return;
     const { type, recipients, subject, body } = emailConfirm;
-    const orgsLink = `${window.location.origin}/organizations`;
 
     // One personalized draft per recipient. We open the FIRST now (inside this
     // click's gesture) and hand the rest to the draft queue, which opens them
     // one-at-a-time on their own clicks. Opening them all in a synchronous loop
     // makes the OS mail app race so every window gets the LAST recipient — the
     // exact "two drafts, same person" bug this replaces.
-    const drafts: Draft[] = recipients.map(r => ({ name: r.name, email: r.email, url: buildDraftUrl(r, subject, body, orgsLink) }));
+    const drafts: Draft[] = recipients.map(r => ({ name: r.name, email: r.email, url: buildDraftUrl(r, subject, body) }));
     if (!drafts.length) return;
     openMailto(drafts[0].url);
 

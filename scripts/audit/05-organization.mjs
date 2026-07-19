@@ -19,10 +19,22 @@ import { Audit, sbQuery } from '../audit-lib.mjs';
 const audit = new Audit({ name: 'organization' });
 await audit.setup();
 
+// The public page is COURSE-SCOPED by design: an unscoped visit deliberately shows
+// nothing so it can never leak another programme's orgs (see 42-public-orgs-scope;
+// students of מש״א תשפ״ז were seeing 15 orgs, 5 from other programmes). The render
+// assertions below (count / expand / search) therefore run against a real course.
+const _data = (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
+const _perCourse = {};
+(_data.employers || []).forEach(e => (e.courseIds || (e.courseId ? [e.courseId] : []))
+  .forEach(c => { _perCourse[c] = (_perCourse[c] || 0) + 1; }));
+const COURSE = Object.entries(_perCourse).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+const ORGS_URL = `${audit.baseUrl}/organizations?course=${encodeURIComponent(COURSE)}`;
+audit.log(`(public org page scoped to course "${COURSE}")`);
+
 // ─── ORG-loads ───────────────────────────────────────────────────────────────
 audit.log('ORG-loads: /organizations page loads and renders');
 {
-  await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await audit.page.goto(ORGS_URL, { waitUntil: 'networkidle' });
   await audit.page.waitForTimeout(1500);
   const before = await audit.shot('ORG-loads-before');
   audit.observerMark();
