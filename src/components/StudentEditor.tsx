@@ -35,7 +35,7 @@ type Props = {
   onClose: () => void;
   placementExtras?: PlacementExtras;
   /** Append a candidate-suggested org as a private (restricted) approved employer. */
-  onApproveSuggestion?: (emp: Employer) => Promise<void> | void;
+  onApproveSuggestion?: (emp: Employer, ctx: { studentId: string; firstChoiceOrgName: string; courseId?: string; suggestionId?: string }) => Promise<void> | void;
 };
 
 export default function StudentEditor({
@@ -264,6 +264,7 @@ export default function StudentEditor({
   async function approveSuggestion(suggested?: SuggestedOrg | null, cvRowId?: string) {
     const o = suggested || pendingCv?.suggested_org;
     if (!o?.name) return;
+    const rowId = cvRowId || pendingCv?.id;
     const emp: Employer = {
       id: randomId('emp'),
       name: o.name,
@@ -280,12 +281,17 @@ export default function StudentEditor({
       // build a slot to reserve when it becomes the first choice.
       positionsTotal: 1,
     } as Employer;
-    await onApproveSuggestion?.(emp);
+    // The parent persists employer + THIS student's firstChoiceOrg + dismisses the
+    // suggestion in one save (mirrors the Employers-page approve). Previously we
+    // only set firstChoiceOrg in local form state, which was never written unless
+    // the coordinator separately hit Save — so "became first choice" was a lie.
+    await onApproveSuggestion?.(emp, { studentId: form.id, firstChoiceOrgName: o.name, courseId: form.courseId, suggestionId: rowId });
     setForm(f => ({ ...f, firstChoiceOrg: o.name!, firstChoiceResult: 'pending' }));
-    const rowId = cvRowId || pendingCv?.id;
+    // Best-effort seen_at (RLS-blocked in prod today; dismissedSuggestionIds, set
+    // by the parent, is the real hide mechanism the banners now honour).
     if (rowId) await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', rowId);
     setSuggestionDecided('approved');
-    showToast(`✓ הצעת "${o.name}" אושרה — הפכה לבחירה ראשונה`, 'success');
+    showToast(`✓ הצעת "${o.name}" אושרה — נקבעה כבחירה ראשונה`, 'success');
   }
 
   async function rejectSuggestion(cvRowId?: string) {

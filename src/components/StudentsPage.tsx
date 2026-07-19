@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
-import { occupyAcceptedOrgSlot, releaseStudentSlots } from '../lib/placement';
+import { occupyAcceptedOrgSlot, releaseStudentSlots, setCourseCapacity } from '../lib/placement';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
 import PlacementPanel from './PlacementPanel';
@@ -49,8 +49,13 @@ const STAGE_TO_BUCKET: Record<Filters['stage'], MailBucketKey> = {
 };
 
 // In-app alert: candidate-suggested organizations awaiting the coordinator's approval.
-function PendingSuggestionsBanner() {
+function PendingSuggestionsBanner({ dismissedIds }: { dismissedIds?: string[] }) {
   const [pending, setPending] = useState<Array<{ id: string; name: string | null; email: string; org: string }>>([]);
+  // A suggestion is "handled" once its cv_updates id is in dismissedSuggestionIds
+  // (written on approve/dismiss). This is the ONLY reliable marker because anon
+  // can't set cv_updates.seen_at under RLS — so without it, approved/dismissed
+  // suggestions reappeared here forever.
+  const dismissed = new Set(dismissedIds || []);
   useEffect(() => {
     let alive = true;
     // Latest-submission-per-candidate dedup: only the candidate's most recent
@@ -68,11 +73,12 @@ function PendingSuggestionsBanner() {
           latestByEmail.set(key, r);
         }
         setPending([...latestByEmail.values()]
-          .filter((r: any) => r.suggested_org?.name && !r.seen_at)
+          .filter((r: any) => r.suggested_org?.name && !r.seen_at && !dismissed.has(r.id))
           .map((r: any) => ({ id: r.id, name: r.name, email: r.email, org: r.suggested_org.name })));
       });
     return () => { alive = false; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dismissedIds]);
   if (pending.length === 0) return null;
   return (
     <div className="mb-6 rounded-xl p-4" style={{ background: 'rgba(122,30,43,0.07)', border: '1px solid var(--accent)' }}>
@@ -411,7 +417,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
   return (
     <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
-      <PendingSuggestionsBanner />
+      <PendingSuggestionsBanner dismissedIds={(data as any).dismissedSuggestionIds} />
       <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">III · סטודנטים</div>
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -811,18 +817,34 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           onAutoSave={editing ? handleAutoSave : undefined}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
-          onApproveSuggestion={async (emp) => {
-            const updatedEmps = [...employers, emp];
+          onApproveSuggestion={async (emp, ctx) => {
+            // Mirror the Employers-page approve: persist the private employer (with a
+            // reserved place for the student's course), set the student's
+            // firstChoiceOrg, AND dismiss the suggestion — all in ONE save. The old
+            // handler wrote only employers, so firstChoiceOrg (set in the editor's
+            // local form) was silently lost and the suggestion re-appeared in the
+            // banner (dismissedSuggestionIds is the real "handled" marker since
+            // seen_at is RLS-blocked).
+            const empWithPlace = ctx.courseId ? setCourseCapacity(emp, ctx.courseId, 1) : emp;
+            const updatedEmps = [...employers, empWithPlace];
+            const updatedStudents = (data.students || []).map((s: Student) => s.id === ctx.studentId
+              ? { ...s, firstChoiceOrg: ctx.firstChoiceOrgName, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student
+              : s);
+            const dismissed = ctx.suggestionId
+              ? Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), ctx.suggestionId]))
+              : (((data as any).dismissedSuggestionIds as string[]) || []);
             setSaving(true);
             const res = await saveSnapshot(
-              { ...data, employers: updatedEmps },
+              { ...data, employers: updatedEmps, students: updatedStudents, dismissedSuggestionIds: dismissed },
               { name: userName },
               { action: 'אישר הצעת ארגון', entity: 'ארגון', target: emp.name }
             );
             setSaving(false);
             if (res.ok) {
               (data.employers as any) = updatedEmps;
-              showToast('✓ הצעת הארגון אושרה — נוסף כארגון פרטי', 'success');
+              (data.students as any) = updatedStudents;
+              (data as any).dismissedSuggestionIds = dismissed;
+              showToast('✓ הצעת הארגון אושרה — נוסף כארגון פרטי ונקבע כבחירה ראשונה', 'success');
               onRefresh();
             } else {
               showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
