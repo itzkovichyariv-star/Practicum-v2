@@ -967,7 +967,7 @@ export default function StudentEditor({
                   <div className="text-[13px] leading-[1.5]" style={{ color: 'var(--ink)' }}>
                     <span className="font-semibold">הכנת העדפות לשליחה למעסיקים</span>
                     <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-                      בונה את רשימת ההעדפות מבחירת המועמד/ת (וההצעה שאושרה), משריין מקום פנוי בכל ארגון, ומפעיל את שליחת הקו"ח למטה.
+                      בונה את רשימת ההעדפות מבחירת המועמד/ת (וההצעה שאושרה) ומפעיל את שליחת הקו"ח למטה. המקום נתפס רק בעת שליחת הקו"ח בפועל.
                     </div>
                   </div>
                   <button type="button" onClick={buildPlacements} disabled={building}
@@ -988,7 +988,7 @@ export default function StudentEditor({
                   </div>
                   <button type="button" onClick={addExtraEmployer} disabled={building || !extraOrg}
                     style={{ ...btnSmall(building || !extraOrg), whiteSpace: 'nowrap' }}>
-                    ➕ הוסף לשליחה ושריין מקום
+                    ➕ הוסף לשליחה
                   </button>
                 </div>
                 {buildResult && (

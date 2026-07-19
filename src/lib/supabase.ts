@@ -30,7 +30,10 @@ export type VacancySlot = {
 export type StudentPreference = {
   rank: number;
   employerId: string;
-  slotId: string;
+  /** null until a CV is actually SENT to this employer — sending is what takes a
+   *  place. A preference on its own reserves nothing (buildPlacementPreferences). */
+  slotId: string | null;
+  /** 'tentative' = chosen, no CV sent yet · 'under_review' = CV sent, place taken. */
   status: 'tentative' | 'under_review' | 'rejected' | 'placed' | 'withdrawn';
 };
 

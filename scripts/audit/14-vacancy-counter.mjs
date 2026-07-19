@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /**
- * 14-vacancy-counter.mjs — open-vacancy ledger updates live.
+ * 14-vacancy-counter.mjs — a place is taken by SENDING the CV, not by building.
  *
- *   COUNTER-reserve-release  Building a placement reserves one of the org's
- *                            vacancies (open count drops); releasing the
- *                            tentative preference frees it (open count returns).
- *                            Verifies the single capacity ledger (vacancySlots)
- *                            and that PlacementPanel shows the live "נותרו N".
+ *   COUNTER-send-takes-place  Building preferences reserves NOTHING (both of the
+ *                             org's 2 vacancies stay open). Ticking the "שלח קו"ח"
+ *                             checkbox and choosing a channel sends the CV AND takes
+ *                             exactly one place (open drops to 1, that preference
+ *                             becomes under_review holding a slot).
  *
- * Seeds a temp practicum student + a temp employer with TWO vacancy slots, then
- * removes both. Touches no real data.
+ * Rule change 2026-07-19 (Yariv: "מה שקובע תפיסה של מקום צריך להיות שליחת קורות
+ * חיים"). Previously build reserved a slot per preference — this cell asserted that
+ * and is now re-pinned to the send-takes-place model.
+ *
+ * Seeds a temp practicum student (with an updated CV) + a temp employer with TWO
+ * vacancy slots, then removes both. Touches no real data.
  */
 import { Audit, sbQuery } from '../audit-lib.mjs';
 
@@ -58,10 +62,10 @@ await audit.page.evaluate(({ cId }) => {
 await audit.page.reload({ waitUntil: 'networkidle' });
 await audit.page.waitForTimeout(1000);
 
-audit.log('COUNTER-reserve-release: build reserves a vacancy, release frees it');
+audit.log('COUNTER-send-takes-place: build reserves nothing; ticking the send-CV checkbox takes a place');
 {
   audit.observerMark();
-  let opened = false, availAfterBuild = null, availAfterRelease = null, uiShowedRemaining = false, prefsAfterRelease = null;
+  let opened = false, availAfterBuild = null, availAfterSend = null, sentUnderReview = false;
 
   if (seedOk) {
     const row = audit.page.locator('li').filter({ hasText: STU_NAME }).first();
@@ -72,51 +76,49 @@ audit.log('COUNTER-reserve-release: build reserves a vacancy, release frees it')
       await audit.page.waitForTimeout(1200);
       opened = true;
 
-      // Build → reserves one of the 2 slots.
+      // Build the preferences → must reserve NOTHING (new rule: a place is taken
+      // only when the CV is sent). Both of the org's 2 slots stay available.
       const buildBtn = audit.page.getByRole('button', { name: /אשר העדפות והכן לשליחה/ }).first();
       if (await buildBtn.count() > 0) { await buildBtn.scrollIntoViewIfNeeded(); await buildBtn.click().catch(() => {}); await audit.page.waitForTimeout(2500); }
-
       availAfterBuild = availSlots((await loadData()).employers?.find(e => e.id === EMP_ID));
-      // New capacity breakdown chip: "2 מקומות · 0 שובצו · 1 בתהליך · 1 פנויים".
-      uiShowedRemaining = await audit.page.evaluate(() => /1\s*פנויים/.test(document.body.textContent || '') && /בתהליך/.test(document.body.textContent || ''));
 
-      // Release → frees the reserved slot. Wait for the button to settle after the
-      // post-build refresh (which re-saves the reconciled employer ledger).
-      const releaseBtn = audit.page.getByRole('button', { name: /הסר ושחרר מקום/ }).first();
-      await releaseBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
-      if (await releaseBtn.count() > 0) {
-        await releaseBtn.scrollIntoViewIfNeeded();
-        await releaseBtn.click().catch(() => {});
-        // Wait until the preference is actually gone from the DB (release persisted).
-        for (let i = 0; i < 10; i++) {
-          const s = (await loadData()).students?.find(x => x.id === STU_ID);
-          if (((s && s.preferences) || []).length === 0) break;
+      // Tick the "שלח קו"ח" checkbox → pick a channel (WhatsApp) → sends AND takes
+      // one place. The window.open popup is swallowed by the audit popup handler.
+      const sendBox = audit.page.locator('[data-send-cv]').first();
+      await sendBox.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+      if (await sendBox.count() > 0) {
+        await sendBox.scrollIntoViewIfNeeded();
+        await sendBox.click().catch(() => {}); // opens the channel picker
+        await audit.page.waitForTimeout(400);
+        await audit.page.locator('[data-dispatch="whatsapp"]').first().click().catch(() => {});
+        // Wait until a slot is actually taken (send persisted).
+        for (let i = 0; i < 12; i++) {
+          const emp = (await loadData()).employers?.find(e => e.id === EMP_ID);
+          if (availSlots(emp) === 1) break;
           await audit.page.waitForTimeout(400);
         }
       }
-
       const after = await loadData();
-      availAfterRelease = availSlots(after.employers?.find(e => e.id === EMP_ID));
-      prefsAfterRelease = (after.students?.find(s => s.id === STU_ID)?.preferences || []).length;
+      availAfterSend = availSlots(after.employers?.find(e => e.id === EMP_ID));
+      sentUnderReview = ((after.students?.find(s => s.id === STU_ID)?.preferences) || []).some(p => p.status === 'under_review' && p.slotId);
     }
   }
 
   const shot = await audit.shot('COUNTER-after');
   const obs = audit.observerSnapshot();
   if (!seedOk || !opened) {
-    audit.recordCell({ id: 'COUNTER-reserve-release', tableRef: 'vacancy ledger', expected: 'seed + open editor', observed: `seedOk=${seedOk}, opened=${opened}`, pass: seedOk ? false : null, notes: 'Could not seed/open.' });
+    audit.recordCell({ id: 'COUNTER-send-takes-place', tableRef: 'vacancy ledger', expected: 'seed + open editor', observed: `seedOk=${seedOk}, opened=${opened}`, pass: seedOk ? false : null, notes: 'Could not seed/open.' });
   } else {
-    const pass = availAfterBuild === 1 && uiShowedRemaining && availAfterRelease === 2 && prefsAfterRelease === 0 && obs.pageErrors.length === 0;
+    const pass = availAfterBuild === 2 && availAfterSend === 1 && sentUnderReview && obs.pageErrors.length === 0;
     audit.recordCell({
-      id: 'COUNTER-reserve-release',
-      tableRef: 'PlacementPanel / vacancySlots ledger — reserve drops, release returns',
-      expected: 'after build: 1 of 2 vacancies open + UI "נותרו 1 מקומות"; after release: 2 open again, 0 preferences',
-      observed: `availAfterBuild=${availAfterBuild} (want 1), uiRemaining=${uiShowedRemaining}, availAfterRelease=${availAfterRelease} (want 2), prefsAfterRelease=${prefsAfterRelease}, errors=(${obs.pageErrors.length}p)`,
+      id: 'COUNTER-send-takes-place',
+      tableRef: 'PlacementPanel / send-CV checkbox — build reserves nothing, sending takes a place',
+      expected: 'after build: both 2 vacancies still open; after ticking send-CV + choosing a channel: 1 open + that preference is under_review holding a slot',
+      observed: `availAfterBuild=${availAfterBuild} (want 2), availAfterSend=${availAfterSend} (want 1), sentUnderReview=${sentUnderReview}, errors=(${obs.pageErrors.length}p)`,
       pass, after: shot,
-      notes: availAfterBuild !== 1 ? 'Build did not consume exactly one vacancy.'
-        : !uiShowedRemaining ? 'PlacementPanel did not show the live "נותרו 1 מקומות" count.'
-        : availAfterRelease !== 2 ? 'Release did not return the vacancy to the ledger.'
-        : prefsAfterRelease !== 0 ? 'Released preference was not removed.' : '',
+      notes: availAfterBuild !== 2 ? 'Build consumed a place — preferences must reserve nothing.'
+        : availAfterSend !== 1 ? 'Ticking send-CV did not take exactly one place.'
+        : !sentUnderReview ? 'The sent preference is not under_review holding a slot.' : '',
     });
   }
 }

@@ -41,6 +41,8 @@ export default function PlacementPanel({
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [copyMsg, setCopyMsg] = useState('');
+  // Which preference's "send CV" checkbox has its WhatsApp/email channel picker open.
+  const [channelPicker, setChannelPicker] = useState<number | null>(null);
 
   const preferences: StudentPreference[] = (student as any).preferences || [];
   const submissionStatus = (student as any).submissionStatus as string | undefined;
@@ -64,7 +66,8 @@ export default function PlacementPanel({
     return employers.find(e => e.id === employerId);
   }
 
-  function getSlot(emp: Employer, slotId: string): VacancySlot | undefined {
+  function getSlot(emp: Employer, slotId: string | null): VacancySlot | undefined {
+    if (!slotId) return undefined; // preference not sent yet ⇒ holds no place
     return ((emp as any).vacancySlots || []).find((s: any) => s.id === slotId);
   }
 
@@ -89,12 +92,25 @@ export default function PlacementPanel({
   }
 
   async function handleDispatch(prefIndex: number, pref: StudentPreference, channel: 'whatsapp' | 'email') {
-    if (!hasCv) {
-      showToast('יש להעלות קורות חיים לסטודנט לפני שליחה', 'error');
+    // Sending the CV is what TAKES a place, so it has two hard preconditions:
+    // an UPDATED CV (the /cv-update form cannot even be submitted without one),
+    // and a genuinely free place at this employer for the student's course.
+    if (!student.cvUpdatedUrl) {
+      showToast('אין קו"ח מעודכן לסטודנט/ית — לא ניתן לשלוח', 'error');
       return;
     }
     const emp = getEmployer(pref.employerId);
     if (!emp) return;
+
+    // Acquire the place NOW — a preference reserves nothing. Reuse the slot only
+    // if this preference already holds one (re-send to the same employer).
+    const already = pref.slotId ? getSlot(emp, pref.slotId) : null;
+    const target: any = already
+      || ((emp as any).vacancySlots || []).find((s: any) => s.status === 'available' && s.courseId === student.courseId);
+    if (!target) {
+      showToast('אין כרגע מקום פנוי בארגון זה עבור הקורס', 'error');
+      return;
+    }
 
     const ctx = buildCtx(emp);
     const now = new Date().toISOString();
@@ -117,21 +133,22 @@ export default function PlacementPanel({
 
     window.open(url, '_blank');
 
-    // Update slot to under_review
-    const slot = getSlot(emp, pref.slotId);
+    // Take the place: the acquired slot becomes under_review for this student.
     const updatedSlots: VacancySlot[] = ((emp as any).vacancySlots || []).map((s: any) => {
-      if (s.id !== pref.slotId) return s;
+      if (s.id !== target.id) return s;
       return {
         ...s,
         status: 'under_review',
+        studentId: student.id,
+        prefRank: pref.rank,
         history: [...(s.history || []), { at: now, from: s.status, to: 'under_review', by: 'admin', actorId: userName }],
       };
     });
     const updatedEmp = reconcileEmployerCapacity({ ...emp, vacancySlots: updatedSlots });
 
-    // Update student preference status
+    // Bind the preference to the place it just took.
     const updatedPrefs = preferences.map((p, i) =>
-      i === prefIndex ? { ...p, status: 'under_review' as const } : p
+      i === prefIndex ? { ...p, slotId: target.id, status: 'under_review' as const } : p
     );
     const updatedStudent = { ...student, preferences: updatedPrefs } as any;
 
@@ -140,7 +157,7 @@ export default function PlacementPanel({
       id: randomId('d'),
       studentId: student.id,
       employerId: emp.id,
-      slotId: pref.slotId,
+      slotId: target.id,
       channel,
       sentBy: userName,
       sentAt: now,
@@ -336,6 +353,16 @@ export default function PlacementPanel({
         const emp = getEmployer(pref.employerId);
         if (!emp) return null;
         const slot = getSlot(emp, pref.slotId);
+        // Sending the CV is what TAKES a place, so it is gated on both:
+        //  • an updated CV (the /cv-update form can't be submitted without one), and
+        //  • a genuinely free place for THIS student's course right now.
+        // A preference itself reserves nothing, so a full org can still be listed.
+        const cap = countSlotsByStatus(emp, student.courseId);
+        const hasUpdatedCv = !!student.cvUpdatedUrl;
+        const hasFreePlace = !!pref.slotId || cap.available > 0;
+        const canSend = hasUpdatedCv && hasFreePlace;
+        const blockedReason = !hasUpdatedCv ? 'אין קו"ח מעודכן לסטודנט/ית'
+          : !hasFreePlace ? 'אין כרגע מקום פנוי בארגון זה עבור הקורס' : '';
         const isPending = (emp as any).approvalStatus === 'pending';
         const sentDispatch = dispatches.filter(d => d.studentId === student.id && d.slotId === pref.slotId && d.result === 'pending').slice(-1)[0];
         const agingDays = sentDispatch ? getAgingDays(sentDispatch.sentAt) : 0;
@@ -366,7 +393,9 @@ export default function PlacementPanel({
               {(() => {
                 // Full live capacity picture for this org, at the point of dispatch:
                 // total, already placed, in-process (this + others), and still free.
-                const c = countSlotsByStatus(emp);
+                // Scoped to THIS student's course — an unscoped count mixes in other
+                // courses'/years' places and would show a free place that isn't.
+                const c = countSlotsByStatus(emp, student.courseId);
                 const inProcess = c.tentative + c.under_review;
                 return (
                   <span className="inline-flex items-center gap-2 mono text-[10.5px] px-2.5 py-1 rounded-full"
@@ -403,47 +432,73 @@ export default function PlacementPanel({
               )}
             </div>
 
-            {/* Actions based on status */}
+            {/* Actions based on status. Tentative = "not sent yet": the SEND-CV
+                checkbox is the only send control. Ticking it (when a place is free
+                AND the student has an updated CV) opens a WhatsApp/email picker;
+                choosing a channel sends the CV AND takes the place. */}
             {(pref.status === 'tentative' || (isOrphan && pref.status === 'under_review')) && !isPlaced && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  data-dispatch="whatsapp"
-                  onClick={() => handleDispatch(idx, pref, 'whatsapp')}
-                  disabled={!hasCv}
-                  title={hasCv ? 'שלח קו"ח ב‑WhatsApp' : 'יש להעלות קו"ח לפני שליחה'}
-                  style={dispatchChip(hasCv)}>
-                  <WhatsAppIcon /> WhatsApp
-                </button>
-                <button
-                  type="button"
-                  data-dispatch="email"
-                  onClick={() => handleDispatch(idx, pref, 'email')}
-                  disabled={!hasCv}
-                  title={hasCv ? 'שלח קו"ח במייל' : 'יש להעלות קו"ח לפני שליחה'}
-                  style={{ ...dispatchChip(hasCv), color: hasCv ? 'var(--accent)' : 'var(--text-soft)' }}>
-                  <MailIcon /> מייל
-                </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <div style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={false}
+                    data-send-cv={idx}
+                    disabled={!canSend}
+                    onClick={() => canSend && setChannelPicker(p => (p === idx ? null : idx))}
+                    title={canSend ? 'סמן/י לשליחת קו"ח — פעולה זו תופסת מקום' : blockedReason}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', padding: 0, cursor: canSend ? 'pointer' : 'not-allowed', opacity: canSend ? 1 : 0.55 }}>
+                    <span aria-hidden style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 5, border: `2px solid ${canSend ? 'var(--accent)' : 'var(--divider)'}`, flexShrink: 0 }} />
+                    <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>
+                      שלח קו"ח <span style={{ color: 'var(--text-soft)', fontWeight: 400 }}>· תופס מקום</span>
+                    </span>
+                  </button>
+                  {channelPicker === idx && canSend && (
+                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 30, background: 'var(--card)', border: '1px solid var(--divider)', borderRadius: 10, boxShadow: '0 12px 34px rgba(0,0,0,0.2)', padding: 12, minWidth: 190 }}>
+                      <div className="mono text-[10.5px] uppercase tracking-[0.12em] mb-2" style={{ color: 'var(--text-soft)' }}>שליחה דרך</div>
+                      <div className="flex gap-2">
+                        <button type="button" data-dispatch="whatsapp" onClick={() => { setChannelPicker(null); handleDispatch(idx, pref, 'whatsapp'); }} style={dispatchChip(true)}><WhatsAppIcon /> WhatsApp</button>
+                        <button type="button" data-dispatch="email" onClick={() => { setChannelPicker(null); handleDispatch(idx, pref, 'email'); }} style={{ ...dispatchChip(true), color: 'var(--accent)' }}><MailIcon /> מייל</button>
+                      </div>
+                      <button type="button" onClick={() => setChannelPicker(null)} className="mono text-[10.5px] mt-2 hover:opacity-100" style={{ color: 'var(--text-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>ביטול</button>
+                    </div>
+                  )}
+                </div>
                 {pref.status === 'tentative' && (
                   <button type="button"
                     onClick={() => handleRelease(idx, pref)}
-                    title="הסר העדפה זו ושחרר את המקום שהשתריין"
+                    // A preference that hasn't been sent holds NO place, so removing
+                    // it frees nothing — don't imply otherwise.
+                    title={pref.slotId ? 'הסר העדפה זו ושחרר את המקום שנתפס' : 'הסר העדפה זו (טרם נתפס מקום)'}
                     style={{ ...btnSmall(), color: 'var(--text-soft)' }}>
-                    ✕ הסר ושחרר מקום
+                    {pref.slotId ? '✕ הסר ושחרר מקום' : '✕ הסר העדפה'}
                   </button>
                 )}
-                {!hasCv && (
-                  <span className="mono text-[11px]" style={{ color: '#b91c1c' }}>
-                    יש להעלות קו"ח בטופס הסטודנט
-                  </span>
+                {blockedReason && (
+                  <span className="mono text-[11px]" style={{ color: '#b91c1c' }}>{blockedReason}</span>
                 )}
               </div>
             )}
 
             {pref.status === 'under_review' && !isOrphan && (
-              <div className="flex flex-wrap gap-2">
-                {/* Solid/subtle outline style: green outline = accept (נקלט),
-                    wine outline = reject (נדחה). Marks inherit the border colour. */}
+              <div className="flex flex-wrap items-center gap-3">
+                {/* CV sent = a CHECKED send box. Unticking it withdraws the
+                    candidacy and RELEASES the place (confirm dialog first) — a
+                    place is only ever freed by an explicit coordinator action. */}
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={true}
+                  data-sent-cv={idx}
+                  onClick={() => setConfirmDialog({ type: 'withdrawn', prefIndex: idx, pref })}
+                  title='בטל שליחה ושחרר את המקום'
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}>
+                  <span aria-hidden style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: 5, border: '2px solid var(--accent)', background: 'var(--accent)', color: 'white', fontSize: 13, flexShrink: 0 }}>✓</span>
+                  <span className="text-[13px] font-semibold" style={{ color: 'var(--ink)' }}>
+                    קו"ח נשלח <span style={{ color: 'var(--text-soft)', fontWeight: 400 }}>· ממתין לתשובת המעסיק</span>
+                  </span>
+                </button>
+                {/* Green outline = accept (נקלט), wine outline = reject (נדחה). */}
                 <button
                   type="button"
                   onClick={() => setConfirmDialog({ type: 'placed', prefIndex: idx, pref })}
@@ -455,12 +510,6 @@ export default function PlacementPanel({
                   onClick={() => setConfirmDialog({ type: 'rejected', prefIndex: idx, pref })}
                   style={btnSmall()}>
                   ✕ נדחה
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDialog({ type: 'withdrawn', prefIndex: idx, pref })}
-                  style={btnSmall()}>
-                  🚫 בטל מועמדות
                 </button>
               </div>
             )}

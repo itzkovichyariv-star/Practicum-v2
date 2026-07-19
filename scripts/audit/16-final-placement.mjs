@@ -64,10 +64,17 @@ audit.log('PLACED-converges: dispatch → נקלט sets acceptedOrg + occupies t
 
       // Stub window.open so the WhatsApp dispatch doesn't launch a tab.
       await audit.page.evaluate(() => { window.open = () => null; });
-      // Dispatch WhatsApp button (stable test hook, unambiguous vs the pref-link one).
-      const waBtn = audit.page.locator('[data-dispatch="whatsapp"]').first();
-      await waBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
-      if (await waBtn.count() > 0) { await waBtn.scrollIntoViewIfNeeded(); await waBtn.click().catch(() => {}); dispatched = true; }
+      // Send the CV: tick the "שלח קו"ח" checkbox → the channel picker opens →
+      // click WhatsApp. (Sending is now behind the checkbox, not a bare button.)
+      const sendBox = audit.page.locator('[data-send-cv]').first();
+      await sendBox.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
+      if (await sendBox.count() > 0) {
+        await sendBox.scrollIntoViewIfNeeded();
+        await sendBox.click().catch(() => {});
+        await audit.page.waitForTimeout(400);
+        const waBtn = audit.page.locator('[data-dispatch="whatsapp"]').first();
+        if (await waBtn.count() > 0) { await waBtn.click().catch(() => {}); dispatched = true; }
+      }
 
       // Wait for the row to transition to under_review (the "✓ נקלט" button appears).
       // Match the exact button text — a bare "נקלט" also matches the student

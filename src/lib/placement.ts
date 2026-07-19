@@ -505,26 +505,31 @@ export function buildPlacementPreferences(
       }));
     }
 
-    // Reuse a slot already held by this student here, else take an available slot
-    // of the STUDENT'S own course/year — never another year's slot.
-    let slot = slots.find(s => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'))
-      || slots.find(s => s.status === 'available' && s.courseId === student.courseId);
-    if (!slot) { unresolved.push({ orgName, reason: 'אין מקום פנוי בקורס שלך' }); continue; }
+    // A preference is INTENT ONLY — it must never reserve a place. What takes a
+    // place is the coordinator actually SENDING the CV (PlacementPanel), which
+    // acquires an available slot at that moment.
+    //
+    // Previously every preference flipped a slot to `tentative`, so 3 preferences
+    // × N students consumed 3N places and a course could read "full" before a
+    // single CV went out (תשפ״ז: 11 students × 3 = 33 demanded vs 21 real places).
+    // Consequently a preference for a CURRENTLY-FULL org is allowed — availability
+    // is re-checked at send time, where refusing is meaningful.
+    const held = slots.find(s => s.studentId === student.id
+      && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'));
 
     const rank = built.length + 1;
-    if (slot.status === 'available') {
-      slot.status = 'tentative';
-      slot.studentId = student.id;
-      slot.prefRank = rank;
-      slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'tentative', by: 'admin', actorId: opts.actorId }];
-    } else {
-      slot.prefRank = rank;
-    }
+    if (held) held.prefRank = rank; // CV already sent / placed here — keep the link
     (emp as any).vacancySlots = slots;
     if ((emp as any).positionsTotal == null) (emp as any).positionsTotal = slots.length;
 
     usedEmployerIds.add(emp.id);
-    prefs.push({ rank, employerId: emp.id, slotId: slot.id, status: 'tentative' });
+    prefs.push({
+      rank,
+      employerId: emp.id,
+      // null until a CV is actually sent (that is what acquires the place).
+      slotId: held ? held.id : null,
+      status: held ? (held.status === 'placed' ? 'placed' : 'under_review') : 'tentative',
+    });
     built.push({ rank, orgName: emp.name, employerId: emp.id });
   }
 
@@ -570,24 +575,26 @@ export function addPlacementPreference(
       history: [{ at: now, from: null, to: 'available', by: 'system', actorId: opts.actorId }],
     }));
   }
-  // Take a slot of the STUDENT'S own course/year — never another year's slot.
-  const slot = slots.find(s => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'))
-    || slots.find(s => s.status === 'available' && s.courseId === student.courseId);
-  if (!slot) return { updatedStudent: student, updatedEmployers: employers, ok: false, reason: 'אין מקום פנוי בקורס של הסטודנט/ית' };
+  // Adding a target reserves NOTHING — same rule as buildPlacementPreferences:
+  // a place is taken only when the CV is actually SENT (PlacementPanel acquires
+  // an available slot at that moment). Keep the link if this student already
+  // holds a place here (a CV was already sent to this employer).
+  const held = slots.find(s => s.studentId === student.id
+    && (s.status === 'tentative' || s.status === 'under_review' || s.status === 'placed'));
 
   const rank = prefs.reduce((m, p) => Math.max(m, p.rank), 0) + 1;
-  if (slot.status === 'available') {
-    slot.status = 'tentative';
-    slot.studentId = student.id;
-    slot.prefRank = rank;
-    slot.history = [...(slot.history || []), { at: now, from: 'available', to: 'tentative', by: 'admin', actorId: opts.actorId }];
-  }
+  if (held) held.prefRank = rank;
   (emp as any).vacancySlots = slots;
   emps[idx] = reconcileEmployerCapacity(emp);
 
   const updatedStudent: Student = {
     ...student,
-    preferences: [...prefs, { rank, employerId: emp.id, slotId: slot.id, status: 'tentative' }],
+    preferences: [...prefs, {
+      rank,
+      employerId: emp.id,
+      slotId: held ? held.id : null,
+      status: held ? (held.status === 'placed' ? 'placed' : 'under_review') : 'tentative',
+    }],
     submissionStatus: student.submissionStatus === 'placed' ? 'placed' : 'submitted',
   };
   return { updatedStudent, updatedEmployers: emps, ok: true };

@@ -4,9 +4,9 @@
  *
  *   BUILD-preferences  Opening a practicum student who chose an org and clicking
  *                      "אשר העדפות והכן לשליחה" must create a structured
- *                      StudentPreference (rank+employerId+slotId+status) AND
- *                      reserve a vacancy slot on that employer — which is what
- *                      lights up PlacementPanel's WhatsApp/email dispatch.
+ *                      StudentPreference and leave the employer's place FREE —
+ *                      a place is taken only when the CV is actually SENT
+ *                      (PlacementPanel), which this build lights up.
  *
  * Seeds a TEMPORARY practicum student + a TEMPORARY employer (both audit-tagged),
  * exercises the build, asserts the DB result, and removes both. Touches no real
@@ -74,7 +74,7 @@ await audit.page.evaluate(({ cId }) => {
 await audit.page.reload({ waitUntil: 'networkidle' });
 await audit.page.waitForTimeout(1000);
 
-audit.log('BUILD-preferences: אשר העדפות והכן לשליחה → structured preference + reserved slot');
+audit.log('BUILD-preferences: אשר העדפות והכן לשליחה → structured preference, place NOT reserved');
 {
   audit.observerMark();
   let opened = false, clicked = false, adhocClicked = false;
@@ -102,7 +102,7 @@ audit.log('BUILD-preferences: אשר העדפות והכן לשליחה → stru
         await adhocSelect.scrollIntoViewIfNeeded();
         await adhocSelect.selectOption(EMP2_NAME).catch(() => {});
         await audit.page.waitForTimeout(300);
-        const addBtn = audit.page.getByRole('button', { name: /הוסף לשליחה ושריין מקום/ }).first();
+        const addBtn = audit.page.getByRole('button', { name: /הוסף לשליחה/ }).first();
         if (await addBtn.count() > 0) {
           await addBtn.click().catch(() => {});
           await audit.page.waitForTimeout(2000);
@@ -115,7 +115,12 @@ audit.log('BUILD-preferences: אשר העדפות והכן לשליחה → stru
   const after = await audit.shot('BUILD-preferences-after');
 
   // Deterministic DB assertion: the student now has a structured preference and
-  // the employer's slot is reserved (tentative + studentId).
+  // …and the employer's place is left UNTOUCHED. Rule change (2026-07-19, Yariv:
+  // "מה שקובע תפיסה של מקום צריך להיות שליחת קורות חיים"): building preferences
+  // reserves NOTHING — the place is taken only when the CV is actually sent. This
+  // cell used to assert the opposite (slot flipped to tentative), which made a
+  // course read "full" before any CV went out (11 students × 3 prefs = 33 vs 21
+  // real places). slotOk/adhocSlotOk therefore now mean "place still FREE".
   let prefOk = false, slotOk = false, prefCount = 0, adhocPrefOk = false, adhocSlotOk = false;
   try {
     const data = await loadData();
@@ -124,13 +129,13 @@ audit.log('BUILD-preferences: אשר העדפות והכן לשליחה → stru
     const emp2 = (data.employers || []).find(e => e.id === EMP2_ID);
     const prefs = (stu && stu.preferences) || [];
     prefCount = prefs.length;
-    prefOk = prefs.some(p => p.employerId === EMP_ID && p.slotId === SLOT_ID && p.status === 'tentative');
+    prefOk = prefs.some(p => p.employerId === EMP_ID && p.slotId === null && p.status === 'tentative');
     const slot = ((emp && emp.vacancySlots) || []).find(s => s.id === SLOT_ID);
-    slotOk = !!slot && slot.status === 'tentative' && slot.studentId === STU_ID;
-    // Ad-hoc employer (outside the candidate's list) also got a pref + reserved slot.
-    adhocPrefOk = prefs.some(p => p.employerId === EMP2_ID && p.status === 'tentative');
+    slotOk = !!slot && slot.status === 'available' && !slot.studentId;
+    // Ad-hoc employer (outside the candidate's list) — same rule: pref, no place taken.
+    adhocPrefOk = prefs.some(p => p.employerId === EMP2_ID && p.slotId === null && p.status === 'tentative');
     const slot2 = ((emp2 && emp2.vacancySlots) || []).find(s => s.id === SLOT2_ID);
-    adhocSlotOk = !!slot2 && slot2.status === 'tentative' && slot2.studentId === STU_ID;
+    adhocSlotOk = !!slot2 && slot2.status === 'available' && !slot2.studentId;
   } catch (e) { audit.log(`DB check failed: ${e.message.slice(0, 100)}`); }
 
   // UI corroboration: a WhatsApp dispatch button now exists in PlacementPanel.
@@ -144,14 +149,14 @@ audit.log('BUILD-preferences: אשר העדפות והכן לשליחה → stru
     const pass = opened && clicked && prefOk && slotOk && adhocClicked && adhocPrefOk && adhocSlotOk && obs.pageErrors.length === 0;
     audit.recordCell({
       id: 'BUILD-preferences',
-      tableRef: 'StudentEditor / build placements + ad-hoc send-to-employer → preferences[] + reserved slots',
-      expected: 'build creates a tentative pref+slot for the chosen org; the ad-hoc picker adds an OUTSIDE-the-list employer with its own reserved vacancy',
+      tableRef: 'StudentEditor / build placements + ad-hoc → preferences[] with NO place reserved',
+      expected: 'build creates a pref (slotId=null) for the chosen org and leaves its place FREE; the ad-hoc picker adds an OUTSIDE-the-list employer the same way — a place is taken only when the CV is sent',
       observed: `opened=${opened}, build(clicked=${clicked}, prefOk=${prefOk}, slot=${slotOk}), adhoc(clicked=${adhocClicked}, prefOk=${adhocPrefOk}, slot=${adhocSlotOk}), prefCount=${prefCount}, waButton=${waButton}, errors=(${obs.pageErrors.length}p)`,
       pass, after,
       notes: !opened ? 'Could not open the seeded student editor.'
         : !clicked ? 'Build button not found in the editor.'
         : !prefOk ? 'No structured preference was created by build.'
-        : !slotOk ? 'Build did not reserve the employer slot.'
+        : !slotOk ? 'Build consumed a place — preferences must reserve nothing.'
         : !adhocClicked ? 'Ad-hoc add control not found / not clicked.'
         : !adhocPrefOk ? 'Ad-hoc employer did not get a preference.'
         : !adhocSlotOk ? 'Ad-hoc employer vacancy was not reserved.' : '',
