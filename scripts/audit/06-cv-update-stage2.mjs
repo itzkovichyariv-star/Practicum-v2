@@ -23,6 +23,45 @@ await audit.setup();
 
 const auditTs = Date.now();
 const auditEmail = `audit-${auditTs}-cv@audit.local`;
+const auditStuId = `zcv6-${auditTs.toString(36).slice(-5)}`;
+
+// The form is now FAIL-CLOSED: it offers only the organizations of the visitor's OWN
+// course, resolved from ?email= (see 48-cvupdate-course-scope). A synthetic email that
+// matches nobody is therefore offered NOTHING and the pickers do not render — that is
+// correct behaviour, not a regression, but it means this cell must use a REAL student
+// to exercise the pickers at all. Seed one for the audit email; removed at the end.
+// (Same lesson as cells 46/47: a fixture that cannot occur in production tests nothing.)
+const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
+const SB_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+const SBH = { apikey: SB_ANON, Authorization: `Bearer ${SB_ANON}`, 'Content-Type': 'application/json' };
+const readBlob = async () => {
+  const r = await fetch(`${SB_URL}/rest/v1/practicum_data?org_id=eq.default&select=data,version`, { headers: SBH });
+  return (await r.json())[0];
+};
+const writeBlob = async (data, version) => {
+  const r = await fetch(`${SB_URL}/rest/v1/practicum_data?org_id=eq.default&version=eq.${version}`, {
+    method: 'PATCH', headers: { ...SBH, Prefer: 'return=representation' },
+    body: JSON.stringify({ data, version: version + 1, updated_at: new Date().toISOString() }),
+  });
+  const j = await r.json().catch(() => null);
+  return Array.isArray(j) && j.length > 0;
+};
+let seededStudent = false;
+for (let i = 0; i < 6 && !seededStudent; i++) {
+  try {
+    const row = await readBlob();
+    const d = row.data;
+    const courseId = ((d.courses || []).find(c => c?.type === 'practicum') || (d.courses || [])[0])?.id || '';
+    seededStudent = await writeBlob({
+      ...d,
+      students: [...(d.students || []), {
+        id: auditStuId, name: 'Audit CV', email: auditEmail, courseId,
+        cvUrl: 'storage://candidate-uploads/audit.pdf', submissionStatus: 'submitted', preferences: [],
+      }],
+    }, row.version);
+  } catch (e) { audit.log(`seed attempt ${i} failed: ${e.message.slice(0, 80)}`); }
+}
+audit.log(seededStudent ? 'Seeded a temp student so the course-scoped pickers render' : '⚠ could not seed student — pickers will be empty');
 
 // Load the approved-org notes once so we can compare the revealed description
 // against the real source-of-truth.
@@ -204,6 +243,19 @@ audit.log('CV-suggestion-required: empty suggestion submit shows error + creates
     notes: !showsRequiredError ? 'Expected the required-fields error; not found in page text.' :
            !noRowCreated ? `A cv_updates row was created despite incomplete suggestion (delta=${rowsAfter.length - rowsBefore.length}).` : '',
   });
+}
+
+// ── Cleanup: remove the seeded student (CAS retry — must not linger in prod) ──
+if (seededStudent) {
+  let cleaned = false;
+  for (let i = 0; i < 6 && !cleaned; i++) {
+    try {
+      const row = await readBlob();
+      const d = row.data;
+      cleaned = await writeBlob({ ...d, students: (d.students || []).filter(s => s.id !== auditStuId) }, row.version);
+    } catch (e) { audit.log(`cleanup attempt ${i} failed: ${e.message.slice(0, 80)}`); }
+  }
+  audit.log(cleaned ? 'Cleanup: removed temp student' : '⚠ Cleanup FAILED — a temp student may remain.');
 }
 
 await audit.teardown();

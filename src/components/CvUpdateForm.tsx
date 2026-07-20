@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, type FormEvent, type CSSProperties } from 'react';
+import { useState, useEffect, useMemo, useRef, type FormEvent, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
-import { orgAvailability } from '../lib/orgAvailability';
+import { employerStatus } from '../lib/orgAvailability';
+import { countSlotsByStatus } from '../lib/placement';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
 type OrgOption = { name: string; notes: string };
@@ -14,7 +15,6 @@ export default function CvUpdateForm() {
   const [email, setEmail] = useState(prefillEmail);
   const [name,  setName]  = useState(prefillName);
   const [file,  setFile]  = useState<File | null>(null);
-  const [orgs,  setOrgs]  = useState<OrgOption[]>([]);
   const [pref1, setPref1] = useState('');
   const [pref2, setPref2] = useState('');
   const [pref3, setPref3] = useState('');
@@ -36,36 +36,56 @@ export default function CvUpdateForm() {
     if (err) errRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [err]);
 
-  // Load approved organizations (with descriptions) so the candidate can state a preference.
+  // The whole blob once; the option list is derived so it re-scopes the moment the
+  // student is identified (the emailed link prefills the address, so that is instant).
+  const [blob, setBlob] = useState<any | null>(null);
   useEffect(() => {
-    supabase
-      .from('practicum_data')
-      .select('data')
-      .eq('org_id', 'default')
-      .single()
-      .then(({ data }) => {
-        const all: any[] = (data as any)?.data?.employers || [];
-        const seen = new Set<string>();
-        const opts = all
-          .filter(e => {
-            if (!e?.name) return false;
-            // Private (candidate-suggested) orgs aren't offered as preferences here.
-            if (e.restrictedToStudentId) return false;
-            // Only orgs ready for students: description + open places, not pending/rejected.
-            if (!orgAvailability(e).available) return false;
-            if (courseParam) {
-              const ids = e.courseIds || (e.courseId ? [e.courseId] : []);
-              if (ids.length && !ids.includes(courseParam)) return false;
-            }
-            if (seen.has(e.name)) return false;
-            seen.add(e.name);
-            return true;
-          })
-          .map(e => ({ name: e.name as string, notes: (e.notes as string) || '' }))
-          .sort((a, b) => a.name.localeCompare(b.name, 'he'));
-        setOrgs(opts);
-      });
-  }, [courseParam]);
+    supabase.from('practicum_data').select('data').eq('org_id', 'default').single()
+      .then(({ data }) => setBlob((data as any)?.data || null));
+  }, []);
+
+  // SCOPE — resolve the student's own course from their email, exactly as the public
+  // /organizations page does. The acceptance email links here with ?email= but WITHOUT
+  // ?course=, so relying on the URL param alone left the list UNSCOPED and offered a
+  // תשפ״ז HR student organizations belonging to other programmes/years. Resolving by
+  // email fixes every link already sent — no need to reissue anything.
+  const scope: string = useMemo(() => {
+    const em = (email || '').trim().toLowerCase();
+    if (!em || !blob) return courseParam || '';
+    const match = (r: any) => String(r?.email || '').trim().toLowerCase() === em;
+    // Students first. Then CANDIDATES — the acceptance mail can reach someone before
+    // the coordinator converts them to a student (conversion copies email+courseId
+    // from the candidate, CandidatesPage.tsx:296-308), and without this fallback that
+    // window would strand a legitimately accepted student with an empty picker.
+    const stu = (blob.students || []).find(match);
+    const cand = stu ? null : (blob.candidates || []).find(match);
+    return stu?.courseId || cand?.courseId || courseParam || '';
+  }, [blob, email, courseParam]);
+
+  // FAIL CLOSED — with no resolvable course we offer NOTHING rather than everything.
+  // Same GREEN-and-has-a-free-place rule the organizations page applies, so the two
+  // student-facing surfaces cannot disagree about what is on offer.
+  const orgs: OrgOption[] = useMemo(() => {
+    const all: any[] = blob?.employers || [];
+    if (!scope) return [];
+    const seen = new Set<string>();
+    return all
+      .filter(e => {
+        if (!e?.name) return false;
+        // Private (candidate-suggested) orgs aren't offered as generic preferences —
+        // a student proposes their own through the suggestion section below.
+        if (e.restrictedToStudentId) return false;
+        const ids = e.courseIds || (e.courseId ? [e.courseId] : []);
+        if (!ids.includes(scope)) return false;
+        if (employerStatus(e, [scope]).key !== 'approved') return false;
+        if (countSlotsByStatus(e, scope).available <= 0) return false;
+        if (seen.has(e.name)) return false;
+        seen.add(e.name);
+        return true;
+      })
+      .map(e => ({ name: e.name as string, notes: (e.notes as string) || '' }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+  }, [blob, scope]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -254,6 +274,19 @@ export default function CvUpdateForm() {
             </div>
           </label>
         </div>
+
+        {/* Fail-closed means an unidentified visitor sees no organizations. Say WHY,
+            otherwise the preference section just silently vanishes and reads as a bug. */}
+        {orgs.length === 0 && (
+          <div className="rounded-lg px-4 py-3 text-[13px] leading-[1.6]"
+            style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid rgba(122,30,43,0.2)', color: 'var(--text-soft)' }}>
+            {!email.trim()
+              ? 'הזן/י את המייל שאיתו נרשמת כדי לראות את רשימת הארגונים של הקורס שלך.'
+              : !scope
+              ? 'לא זיהינו את המייל הזה במערכת, ולכן איננו יכולים להציג את הארגונים של הקורס שלך. אפשר להמשיך ולהעלות קו״ח — ולציין העדפה בהמשך מול מנחה התכנית.'
+              : 'אין כרגע ארגונים פנויים להצגה בקורס שלך. אפשר להעלות קו״ח כעת — הרשימה תתעדכן.'}
+          </div>
+        )}
 
         {orgs.length > 0 && (
           <div className="space-y-4 pt-1">
@@ -456,6 +489,7 @@ function OrgPicker({ label, value, onChange, options, placeholder }: {
             return (
               <div key={o.name} style={{ borderBottom: '1px solid var(--divider)' }}>
                 <div
+                  data-org-option={o.name}
                   onClick={() => select(o.name)}
                   onMouseEnter={() => hasNotes && setPreview(o.name)}
                   onMouseLeave={() => setPreview(p => (p === o.name ? null : p))}
