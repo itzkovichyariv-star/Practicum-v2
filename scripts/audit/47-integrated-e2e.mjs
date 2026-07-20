@@ -8,11 +8,13 @@
  *         student's firstChoiceOrg + a PRIVATE employer restricted to them, and
  *         the suggestion is dismissed;  (2) coordinator builds the preferences
  *         ("אשר העדפות והכן לשליחה") → the suggested org becomes preference #1 in
- *         the tentative state (reserving no place);  (3) because the student is
- *         already in advanced contact, coordinator takes PATH 2 — the two-path
+ *         the tentative state (reserving no place);  (3) BOTH routes are then on
+ *         offer — the "שלח קו״ח" checkbox ENABLED (the student has a CV, as every
+ *         real student does) and the direct-placement button;  (4) because the
+ *         student is already in advanced contact, coordinator takes PATH 2 — the
  *         "✓ כבר במגעים — אשר שיבוץ" button → confirm → direct placement (השמה),
- *         no CV sent.  Asserts the student ends PLACED at the suggested org with
- *         one occupancy recorded.
+ *         the CV is NOT SENT.  Asserts the student ends PLACED at the suggested
+ *         org with one occupancy recorded.
  *
  * This guards the HANDOFF between features that individual cells don't: cell 45
  * stops at first-choice; cell 46 seeds the preference directly. Only here do we
@@ -56,8 +58,14 @@ try {
   const d = row.data;
   courseId = ((d.courses || []).find(c => c?.type === 'practicum') || (d.courses || [])[0])?.id || '';
   if (!courseId) throw new Error('no course');
-  // Student: submitted, NO CV (path 2 sends nothing), no prefs, no firstChoiceOrg.
-  const stu = { id: STU_ID, name: STU_NAME, email: STU_MAIL, courseId, submissionStatus: 'submitted', preferences: [] };
+  // Student: submitted, WITH a CV on file, no prefs, no firstChoiceOrg.
+  // Yariv 2026-07-20: "אין מצב כזה אין קורות חיים — טופס שליחת בקשות מחייב העלאת
+  // קורות חיים." A CV-less student is impossible: /register blocks submit without one
+  // (RegistrationForm.tsx:132) and the stage-2 request form blocks it too
+  // (CvUpdateForm.tsx:75), its cv_file_path being promoted to cvUpdatedUrl by
+  // StudentsPage.tsx:189-220. Seeding cvUpdatedUrl directly also keeps that
+  // auto-promotion from racing this cell (it only fires for students lacking it).
+  const stu = { id: STU_ID, name: STU_NAME, email: STU_MAIL, courseId, cvUrl: 'storage://candidate-uploads/int-orig.pdf', cvUpdatedUrl: 'storage://candidate-uploads/int-updated.pdf', submissionStatus: 'submitted', preferences: [] };
   if (!await writeData({ ...d, students: [...(d.students || []), stu] }, row.version)) throw new Error('seed CAS lost');
   const ins = await fetch(`${SUPABASE_URL}/rest/v1/cv_updates`, {
     method: 'POST', headers: { ...H, Prefer: 'return=representation' },
@@ -113,7 +121,7 @@ if (seedOk) {
 }
 
 // ── Step 2 + 3: build preferences → path-2 direct placement ──────────────────
-let builtPrefTentative = false, twoPathSeen = false, placedConverged = false, acceptedOk = false, statusPlaced = false, slotPlaced = false;
+let builtPrefTentative = false, twoPathSeen = false, bothPathsOffered = false, placedConverged = false, acceptedOk = false, statusPlaced = false, slotPlaced = false;
 if (seedOk && firstChoiceOk) {
   // Fresh editor so the placement panel reflects the just-approved first choice.
   await audit.page.reload({ waitUntil: 'networkidle' });
@@ -133,6 +141,17 @@ if (seedOk && firstChoiceOk) {
   const directBtn = audit.page.locator('[data-place-direct]').first();
   await directBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
   twoPathSeen = (await directBtn.count()) > 0;
+
+  // REALISTIC CHECK — the student HAS a CV and the built preference has a free place,
+  // so BOTH routes must genuinely be on offer: path 1 (the "שלח קו״ח" checkbox, ENABLED
+  // — not greyed) and path 2 (direct placement). That is Yariv's design: "the system
+  // asks whether to send the CV, or whether the student is already in advanced contact
+  // and only your approval is needed." If path 1 were disabled here it would mean the
+  // CV/place gate is wrong, not that path 2 works.
+  const sendBox = audit.page.locator('[data-send-cv]').first();
+  bothPathsOffered = (await sendBox.count()) > 0
+    && !(await sendBox.isDisabled().catch(() => true))
+    && twoPathSeen;
   if (twoPathSeen) {
     await directBtn.scrollIntoViewIfNeeded();
     await directBtn.click().catch(() => {});
@@ -163,16 +182,17 @@ const obs = audit.observerSnapshot();
 if (!seedOk) {
   audit.recordCell({ id: 'E2E-suggest-to-placement', tableRef: 'integrated placement lifecycle', expected: 'seed', observed: 'seed failed', pass: null, notes: 'Could not seed.' });
 } else {
-  const pass = firstChoiceOk && privateEmpOk && dismissedOk && builtPrefTentative && twoPathSeen && placedConverged && obs.pageErrors.length === 0;
+  const pass = firstChoiceOk && privateEmpOk && dismissedOk && builtPrefTentative && twoPathSeen && bothPathsOffered && placedConverged && obs.pageErrors.length === 0;
   audit.recordCell({
     id: 'E2E-suggest-to-placement',
-    tableRef: 'suggestion → first-choice → build prefs → PATH-2 direct placement, chained',
-    expected: 'approve suggestion sets firstChoiceOrg + private employer + dismissed; building prefs makes it pref #1 tentative (no place held); the two-path button appears; confirming it places the student (acceptedOrg + submissionStatus=placed + a placed slot held by the student), with NO CV sent',
-    observed: `approve(first=${firstChoiceOk}, privEmp=${privateEmpOk}, dismissed=${dismissedOk}) → builtPrefTentative=${builtPrefTentative} → twoPathSeen=${twoPathSeen} → placed(accepted=${acceptedOk}, status=${statusPlaced}, slot=${slotPlaced}), errors=(${obs.pageErrors.length}p)`,
+    tableRef: 'suggestion → first-choice → build prefs → BOTH paths offered → PATH-2 direct placement, chained',
+    expected: 'approve suggestion sets firstChoiceOrg + private employer + dismissed; building prefs makes it pref #1 tentative (no place held); BOTH routes are then offered for the suggested org — the "שלח קו״ח" checkbox ENABLED (the student has a CV, as every real student does) and the "כבר במגעים" direct-placement button; confirming the latter places the student (acceptedOrg + submissionStatus=placed + a placed slot held by the student) without SENDING the CV',
+    observed: `approve(first=${firstChoiceOk}, privEmp=${privateEmpOk}, dismissed=${dismissedOk}) → builtPrefTentative=${builtPrefTentative} → twoPathSeen=${twoPathSeen}, bothPathsOffered=${bothPathsOffered} → placed(accepted=${acceptedOk}, status=${statusPlaced}, slot=${slotPlaced}), errors=(${obs.pageErrors.length}p)`,
     pass, after,
     notes: !firstChoiceOk ? 'approval did not persist firstChoiceOrg (feature 4 broke).'
       : !builtPrefTentative ? 'building prefs did not create a tentative pref #1 holding no place.'
       : !twoPathSeen ? 'the two-path button did not appear for the approved suggested org (handoff broke).'
+      : !bothPathsOffered ? 'path 1 (send-CV checkbox) was NOT enabled alongside path 2 — with a CV on file and a free place the coordinator must genuinely have both choices.'
       : !placedConverged ? 'path-2 direct placement did not converge the student to placed.' : '',
   });
 }

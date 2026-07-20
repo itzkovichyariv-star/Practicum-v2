@@ -5,9 +5,11 @@
  *
  *   SUGGEST-place-direct  Seed a student whose first preference is a PRIVATE org
  *                         restricted to them (restrictedToStudentId = the student),
- *                         in the tentative state, with NO CV. Open the editor →
- *                         the "✓ כבר במגעים — אשר שיבוץ" button appears (path 2) →
- *                         click it → confirm "אשר שיבוץ ישיר". Asserts in the DB:
+ *                         in the tentative state, WITH an updated CV on file (every
+ *                         real student has one — both public forms mandate the
+ *                         upload). Open the editor → the "✓ כבר במגעים — אשר שיבוץ"
+ *                         button appears (path 2) → click it → confirm "אשר שיבוץ
+ *                         ישיר". Asserts in the DB:
  *                         (a) student.acceptedOrg = the org, (b) submissionStatus
  *                         = 'placed', (c) the preference is 'placed' holding a slot,
  *                         (d) a vacancy slot on the org is 'placed' for the student.
@@ -19,7 +21,9 @@
  * (a private org may carry no pre-provisioned vacancy — the suggestion is the place).
  *
  * Seeds a temp practicum student + a restricted employer with ZERO slots (forces the
- * mint path); removes both.
+ * mint path); removes both. Because the org has no free place, path 1 (the send-CV
+ * checkbox) is correctly DISABLED here even though the student HAS a CV — the block
+ * reason is "no free place", not "no CV". Cell 47 covers the both-paths-offered case.
  */
 import { Audit, sbQuery } from '../audit-lib.mjs';
 
@@ -46,9 +50,14 @@ try {
   // Private (student-suggested) employer restricted to the student, with NO vacancy
   // slots at all — forces handlePlaceDirect's mint-a-placed-slot fallback.
   const emp = { id: EMP_ID, name: EMP_NAME, approvalStatus: 'approved', addedBy: 'student', restrictedToStudentId: STU_ID, courseIds: [courseId], positionsTotal: 1, positions: 1, filledPositions: 0, notes: 'audit place-direct', contactPhone: '0500000000', contactEmail: 'a@b.local', vacancySlots: [] };
-  // Student with the org as preference #1 in tentative, and deliberately NO CV (path 2
-  // sends nothing, so it must not require one).
-  const stu = { id: STU_ID, name: STU_NAME, email: `audit-pd-${ts}@audit.local`, courseId, firstChoiceOrg: EMP_NAME, submissionStatus: 'submitted', preferences: [{ rank: 1, employerId: EMP_ID, slotId: null, status: 'tentative' }] };
+  // Student with the org as preference #1 in tentative, WITH an updated CV on file.
+  // Yariv 2026-07-20: "אין מצב כזה אין קורות חיים — טופס שליחת בקשות מחייב העלאת קורות
+  // חיים." A CV-less student cannot exist: /register hard-blocks submit without a CV
+  // (RegistrationForm.tsx:132 → cvUrl) and the stage-2 request form does the same
+  // (CvUpdateForm.tsx:75 → cv_updates.cv_file_path, promoted to cvUpdatedUrl by
+  // StudentsPage.tsx:189-220 on coordinator mount). Path 2 is about NOT SENDING the
+  // CV — never about lacking one — so the seed must carry one.
+  const stu = { id: STU_ID, name: STU_NAME, email: `audit-pd-${ts}@audit.local`, courseId, cvUrl: 'storage://candidate-uploads/audit-pd-orig.pdf', cvUpdatedUrl: 'storage://candidate-uploads/audit-pd-updated.pdf', firstChoiceOrg: EMP_NAME, submissionStatus: 'submitted', preferences: [{ rank: 1, employerId: EMP_ID, slotId: null, status: 'tentative' }] };
   await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
