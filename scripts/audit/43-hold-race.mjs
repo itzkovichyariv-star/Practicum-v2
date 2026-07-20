@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 /**
- * 43-hold-race.mjs — two students click for the SAME last place at the same
- * instant. Exactly one may end up holding it, and the one who was told "success"
- * must be the one actually holding it.
+ * 43-hold-race.mjs — two students edit their request lists at the same instant.
  *
- *   HOLD-race-one-winner  Two real browser pages, one free place, simultaneous
- *                         «בקש/י מקום» clicks. Asserts: exactly ONE holder in the
- *                         database, and the student whose page reported success is
- *                         that holder.
+ * RE-POINTED 2026-07-20 for the 3-request INTENT model. A request no longer takes a
+ * place, so the old race (two students grabbing the same last place) cannot happen at
+ * request time — that contention moved to when the COORDINATOR sends a CV, where a
+ * full org is refused. What still matters, and still needs two real browsers, is the
+ * LOST UPDATE the mutator prevents: two concurrent writes to the students array must
+ * BOTH survive.
+ *
+ *   HOLD-race-no-lost-update  Two real browser pages, simultaneous «בקש/י מקום»
+ *                             clicks on the same org. Asserts: both succeed, NOBODY
+ *                             holds the place (0 reservations), and both students'
+ *                             request lists are intact afterwards.
  *
  * Why this shape: the caller used to read → compute the hold → hand a PRE-COMPUTED
  * blob to saveSnapshot. The compare-and-swap only guarded the window INSIDE
@@ -81,8 +86,8 @@ async function openAs(stu) {
 /** success | error | none, as the student sees it. */
 async function outcome(page) {
   const t = await page.evaluate(() => document.body.innerText);
-  if (/בקשתך ל.*נשלחה/.test(t)) return 'success';
-  if (/אין כרגע מקום פנוי|נכשל|נסה\/י שוב|כבר יש לך בקשה|לא נמצא|עדכן באותו רגע/.test(t)) return 'error';
+  if (/נרשמה בקשתך/.test(t)) return 'success';
+  if (/נכשל|נסה\/י שוב|לא נמצא|עדכן באותו רגע|הגעת ל|כבר שובצת/.test(t)) return 'error';
   return 'none';
 }
 
@@ -103,30 +108,39 @@ if (seedOk) {
 
     const after = (await read()).data;
     const slots = ((after.employers || []).find(e => e.id === EID)?.vacancySlots || []);
-    const taken = slots.filter(s => s.studentId);
-    holders = taken.length;
-    holder = taken[0]?.studentId || null;
-    // The student told "success" MUST be the one holding it.
-    const claimed = outA === 'success' ? A.id : outB === 'success' ? B.id : null;
-    consistent = holders === 1 && claimed !== null && holder === claimed
-      && !(outA === 'success' && outB === 'success');
+    // A request now reserves NOTHING, so NOBODY may hold the place afterwards.
+    holders = slots.filter(s => s.studentId).length;
+    holder = null;
+    // The contention moved from the vacancy to the students array: two concurrent
+    // list edits must BOTH survive. A lost update here means one student's request
+    // was silently erased by the other's write — the same class of bug fix ③ closed,
+    // which is why this cell keeps its two-real-browser shape.
+    const reqOf = (id) => {
+      const s = (after.students || []).find(x => x.id === id) || {};
+      return [s.firstChoiceOrg, s.secondChoiceOrg, s.thirdChoiceOrg].filter(Boolean);
+    };
+    const aKept = reqOf(A.id).some(n => n === ORG);
+    const bKept = reqOf(B.id).some(n => n === ORG);
+    consistent = holders === 0
+      && outA === 'success' && outB === 'success'   // no place to contend for
+      && aKept && bKept;                             // neither write erased the other
   }
   await a.page.close().catch(() => {});
   await b.page.close().catch(() => {});
 }
 
 audit.recordCell({
-  id: 'HOLD-race-one-winner',
-  tableRef: 'OrganizationsPage.requestOrg / atomic hold under concurrent clicks',
-  expected: 'exactly ONE holder in the DB, and the student who saw "success" is that holder (never two successes, never a silently erased hold)',
+  id: 'HOLD-race-no-lost-update',
+  tableRef: 'OrganizationsPage.toggleRequest / atomic mutator under concurrent clicks',
+  expected: 'a request reserves nothing, so BOTH students succeed and NOBODY holds the place — and both request lists survive (neither concurrent write erased the other)',
   observed: seedOk
-    ? `bothReady=${bothReady}, A=${outA}, B=${outB}, holdersInDb=${holders}, holder=${holder === A.id ? 'A' : holder === B.id ? 'B' : holder}`
+    ? `bothReady=${bothReady}, A=${outA}, B=${outB}, holdersInDb=${holders} (want 0), bothListsKept=${consistent}`
     : 'seed failed',
   pass: seedOk ? (bothReady === true && consistent === true) : null,
   notes: !bothReady ? 'Both pages must show the request button — otherwise no race happened and this proves nothing.'
-    : holders > 1 ? 'OVER-SUBSCRIBED: more than one student holds the single place.'
-    : (outA === 'success' && outB === 'success') ? 'LOST UPDATE: both students were told success but only one place exists — one reservation was erased.'
-    : consistent === false ? 'The student told "success" is NOT the one holding the place.' : '',
+    : holders > 0 ? 'A request RESERVED a place — requests must be intent only (see cell 49).'
+    : (outA !== 'success' || outB !== 'success') ? 'A student was refused; with no place at stake both requests must succeed.'
+    : consistent === false ? 'LOST UPDATE: one student\'s request list was erased by the other\'s concurrent write.' : '',
 });
 
 // ── Cleanup ─────────────────────────────────────────────────────────────────

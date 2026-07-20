@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Employer } from '../lib/supabase';
 import { employerStatus } from '../lib/orgAvailability';
-import { migratePlacementData, countSlotsByStatus, studentRequestHold, studentCurrentPlacement } from '../lib/placement';
+import { migratePlacementData, countSlotsByStatus, studentSetRequests, studentCurrentPlacement, studentSuggestedOrgName, MAX_STUDENT_REQUESTS } from '../lib/placement';
 import { saveSnapshot } from '../lib/dataApi';
 
 function getParam(key: string): string {
@@ -23,8 +23,10 @@ const STATUS_HE: Record<string, string> = {
   placed: 'שובצת לארגון זה 🎉',
 };
 
-function OrgCard({ emp, availForCourse, canRequest, requesting, onRequest }: {
-  emp: Employer; availForCourse: number; canRequest: boolean; requesting: boolean; onRequest: (e: Employer) => void;
+function OrgCard({ emp, availForCourse, canRequest, requesting, requested, atCap, listCap, onRequest }: {
+  emp: Employer; availForCourse: number; canRequest: boolean; requesting: boolean;
+  requested: boolean; atCap: boolean; listCap: number;
+  onRequest: (e: Employer, mode: 'add' | 'remove') => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -52,12 +54,36 @@ function OrgCard({ emp, availForCourse, canRequest, requesting, onRequest }: {
           <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--ink)', whiteSpace: 'pre-wrap' }}>{emp.notes}</div>
         </div>
       )}
-      {canRequest && availForCourse > 0 && (
+      {/* A request is intent, so a FULL org is still requestable — the coordinator
+          regulates, and a place is only refused when she actually sends the CV. */}
+      {canRequest && (
         <div style={{ padding: '0 20px 16px 20px' }}>
-          <button type="button" onClick={(e) => { e.stopPropagation(); onRequest(emp); }} disabled={requesting}
-            style={{ width: '100%', padding: '11px', borderRadius: '10px', border: 'none', background: 'var(--accent)', color: 'white', fontSize: '14px', fontWeight: 700, cursor: requesting ? 'wait' : 'pointer', opacity: requesting ? 0.6 : 1 }}>
-            {requesting ? 'שולח/ת…' : 'בקש/י מקום זה ›'}
+          <button
+            type="button"
+            data-request-org={emp.name}
+            data-requested={requested ? '1' : '0'}
+            onClick={(e) => { e.stopPropagation(); onRequest(emp, requested ? 'remove' : 'add'); }}
+            disabled={requesting || (!requested && atCap)}
+            title={!requested && atCap ? `הגעת ל‑${listCap} בקשות — הסר/י אחת כדי לבקש אחרת` : undefined}
+            style={{
+              width: '100%', padding: '11px', borderRadius: '10px',
+              border: requested ? '1px solid var(--accent)' : 'none',
+              background: requested ? 'transparent' : 'var(--accent)',
+              color: requested ? 'var(--accent)' : 'white',
+              fontSize: '14px', fontWeight: 700,
+              cursor: requesting ? 'wait' : (!requested && atCap) ? 'not-allowed' : 'pointer',
+              opacity: requesting ? 0.6 : (!requested && atCap) ? 0.45 : 1,
+            }}>
+            {requesting ? 'שומר/ת…'
+              : requested ? '✓ ביקשת · הסר/י'
+              : atCap ? `הגעת ל‑${listCap} בקשות`
+              : 'בקש/י מקום זה ›'}
           </button>
+          {!requested && availForCourse === 0 && !atCap && (
+            <div style={{ marginTop: '6px', fontSize: '11.5px', color: '#b45309', textAlign: 'center' }}>
+              הארגון מלא כרגע — ניתן לבקש, והרכזת תווסת.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -111,7 +137,23 @@ export default function OrganizationsPage() {
   const student = email && data ? (data.students || []).find((s: any) => String(s.email || '').trim().toLowerCase() === email) : null;
   const studentCourse: string | undefined = student?.courseId;
   const current = email && data ? studentCurrentPlacement(data, email) : null;
-  const canRequest = !!student && !current; // identified, and no active hold/placement yet
+  // A request is INTENT, not a reservation (2026-07-20). So the only thing that ends
+  // the ability to request is being PLACED — a CV already out with an employer no
+  // longer blocks anything, and neither does a full organization.
+  const isPlaced = current?.status === 'placed' || !!(student as any)?.acceptedOrg;
+  const canRequest = !!student && !isPlaced;
+
+  // A self-suggested org keeps rank #1 and is not one of the toggleable requests.
+  const suggestedOrg = student && data ? studentSuggestedOrgName(data, student) : null;
+  const listCap = MAX_STUDENT_REQUESTS - (suggestedOrg ? 1 : 0);
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const myRequests: string[] = student
+    ? [(student as any).firstChoiceOrg, (student as any).secondChoiceOrg, (student as any).thirdChoiceOrg]
+        .map((v: any) => (v || '').trim()).filter(Boolean)
+        .filter((n: string) => !(suggestedOrg && sameName(n, suggestedOrg)))
+    : [];
+  const hasRequested = (emp: Employer) => myRequests.some(n => sameName(n, emp.name));
+  const atCap = myRequests.length >= listCap;
 
   // Remember only a VERIFIED identity (resolved to a real student row).
   useEffect(() => {
@@ -124,33 +166,39 @@ export default function OrganizationsPage() {
     setEmail(''); setEmailInput(''); setMsg(null);
   }
 
-  async function requestOrg(emp: Employer) {
+  async function toggleRequest(emp: Employer, mode: 'add' | 'remove') {
     setMsg(null);
     setRequesting(emp.id);
     let orgName = emp.name;
-    // ATOMIC hold. The mutator re-runs against the freshest cloud state on every
-    // compare-and-swap attempt, so if another student takes the last place while
-    // we're saving, studentRequestHold declines and we write NOTHING — instead of
-    // replaying a stale employers array that would erase their reservation. A
-    // place must only ever be released by the student who holds it.
+    let count = 0;
+    // Still a MUTATOR (not a pre-computed blob): it re-runs against the freshest cloud
+    // state on every compare-and-swap attempt, so two students editing their lists at
+    // the same moment can't clobber each other's students array. Nothing about a
+    // vacancy is written here — a request holds no place.
     const save = await saveSnapshot(
       (cloud) => {
         const fresh = migratePlacementData(cloud as any);
-        const res = studentRequestHold(fresh, email, emp.id);
+        const res = studentSetRequests(fresh, email, emp.id, mode);
         if (!res.ok) return { error: res.error || 'הבקשה נכשלה' };
         orgName = res.employerName || emp.name;
+        count = (res.requests || []).length;
         return { data: res.data };
       },
       { name: `סטודנט/ית (${email})` },
-      { action: 'בקשת מקום', entity: 'ארגון', target: emp.name },
+      { action: mode === 'add' ? 'בקשת ארגון' : 'הסרת בקשה', entity: 'ארגון', target: emp.name },
     );
     setRequesting(null);
     if (!save.ok) {
       setMsg({ type: 'error', text: save.error || 'השמירה נכשלה — נסה/י שוב.' });
-      await load(); // show the true, current availability
+      await load();
       return;
     }
-    setMsg({ type: 'success', text: `בקשתך ל"${orgName}" נשלחה! המקום שמור עבורך זמנית עד לתשובת הרכזת.` });
+    setMsg({
+      type: 'success',
+      text: mode === 'add'
+        ? `נרשמה בקשתך ל"${orgName}" (${count} מתוך ${listCap}). הרכזת תיצור קשר — בקשה אינה תופסת מקום.`
+        : `הבקשה ל"${orgName}" הוסרה (${count} מתוך ${listCap}).`,
+    });
     await load();
   }
 
@@ -252,6 +300,13 @@ export default function OrganizationsPage() {
               <div style={{ fontSize: '12px', color: 'var(--text-soft)', marginTop: '10px', marginBottom: '4px' }}>
                 {filtered.length} ארגונים{search ? ` תואמים "${search}"` : (canRequest ? ' זמינים לקורס שלך' : ' זמינים לפרקטיקום')}
                 {canRequest ? ' · בחר/י ארגון ולחצ/י «בקש/י מקום»' : ' · לחץ/י על ארגון לקריאת התיאור'}
+                {canRequest && (
+                  <span data-request-counter={myRequests.length} style={{ display: 'block', marginTop: '4px', fontWeight: 700, color: atCap ? '#b45309' : 'var(--accent)' }}>
+                    בחרת {myRequests.length} מתוך {listCap}
+                    {suggestedOrg ? ` · «${suggestedOrg}» שהצעת שמור כבחירה ראשונה` : ''}
+                    {atCap ? ' · להחלפה — הסר/י בקשה קיימת' : ''}
+                  </span>
+                )}
               </div>
             )}
           </>
@@ -271,7 +326,9 @@ export default function OrganizationsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {filtered.map(emp => (
-              <OrgCard key={emp.id} emp={emp} availForCourse={availFor(emp)} canRequest={canRequest} requesting={requesting === emp.id} onRequest={requestOrg} />
+              <OrgCard key={emp.id} emp={emp} availForCourse={availFor(emp)} canRequest={canRequest}
+                requesting={requesting === emp.id} requested={hasRequested(emp)} atCap={atCap} listCap={listCap}
+                onRequest={toggleRequest} />
             ))}
           </div>
         )}
@@ -280,7 +337,7 @@ export default function OrganizationsPage() {
       {!loading && filtered.length > 0 && (
         <div style={{ maxWidth: '680px', margin: '24px auto 0', padding: '0 16px', fontSize: '12px', color: 'var(--text-soft)', textAlign: 'center', lineHeight: 1.6 }}>
           {canRequest
-            ? 'בקשת מקום שומרת אותו עבורך זמנית עד שהרכזת תאשר. ניתן לבקש ארגון אחד בכל פעם.'
+            ? `ניתן לבקש עד ${listCap} ארגונים${suggestedOrg ? ' (בנוסף לארגון שהצעת, השמור כבחירה ראשונה)' : ''}. הבקשה מציינת העדפה — הרכזת מווסתת ומאשרת. בקשה אינה תופסת מקום ואינה מבטיחה שיבוץ, וניתן לבקש גם ארגון מלא.`
             : 'לחיצה על ארגון מציגה את תיאור הניסיון שתצבור/י שם.'}
         </div>
       )}

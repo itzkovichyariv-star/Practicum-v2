@@ -413,37 +413,94 @@ export function studentCurrentPlacement(data: any, email: string): { orgName: st
   return null;
 }
 
-export function studentRequestHold(
+// ── Student requests = INTENT, never a reservation ───────────────────────────
+//
+// Yariv 2026-07-20: "אפשר לבקש שלושה כאשר הרכזת תווסת… אם היא שלחה יותר מדי למקום
+// כלשהו היא לא תוכל לשלוח לאותו מקום אם עברה את המכסה אבל ניתן לבקש."
+//
+// A request states a preference and TOUCHES NO VACANCY. What consumes a place is the
+// coordinator actually sending the CV (PlacementPanel), which is where a full org is
+// refused — refusing there is meaningful, refusing at request time is not. This also
+// dissolves the capacity trap the old model created: one hold per request meant 11
+// students × 3 = 33 places demanded against 21 real ones.
+//
+// Replaces studentRequestHold, which allowed exactly ONE request, flipped a slot to
+// `tentative`, and refused a full org outright.
+export const MAX_STUDENT_REQUESTS = 3;
+
+// The org a student proposed themselves is private to them and is always their FIRST
+// choice (v1.26.7) — it is not one of the list requests and they cannot drop it here.
+export function studentSuggestedOrgName(data: any, student: any): string | null {
+  const emp = (data?.employers || []).find((e: any) => e?.restrictedToStudentId === student?.id);
+  return emp?.name || null;
+}
+
+/**
+ * Toggle one organization in the student's ordered request list.
+ *
+ * `mode` 'add' appends (subject to the cap), 'remove' drops it and closes the gap.
+ * Writes ONLY the ordered choice fields the coordinator's bridge already reads
+ * (StudentEditor buildPlacements → buildPlacementPreferences). No slot is touched.
+ */
+export function studentSetRequests(
   data: any,
   studentEmail: string,
   employerId: string,
-  now?: string,
-): { ok: boolean; error?: string; data?: any; employerName?: string } {
-  const ts = now || new Date().toISOString();
+  mode: 'add' | 'remove',
+): { ok: boolean; error?: string; data?: any; employerName?: string; requests?: string[] } {
   const email = String(studentEmail || '').trim().toLowerCase();
   if (!email) return { ok: false, error: 'לא זוהה מייל.' };
   const students: any[] = data?.students || [];
   const employers: any[] = data?.employers || [];
   const student = students.find(s => String(s.email || '').trim().toLowerCase() === email);
   if (!student) return { ok: false, error: 'המייל לא נמצא ברשימת הסטודנטים. פנה/י לרכזת הפרקטיקום.' };
-  const courseId = student.courseId;
-  if (!courseId) return { ok: false, error: 'לא הוגדר קורס עבורך במערכת. פנה/י לרכזת.' };
+  if (!student.courseId) return { ok: false, error: 'לא הוגדר קורס עבורך במערכת. פנה/י לרכזת.' };
+  // Once placed the list is settled — only the coordinator may move a placed student.
   if (student.acceptedOrg || employers.some(e => (e.vacancySlots || []).some((s: any) => s.studentId === student.id && s.status === 'placed')))
     return { ok: false, error: 'כבר שובצת לארגון. לשינוי פנה/י לרכזת.' };
-  const active = employers.find(e => (e.vacancySlots || []).some((s: any) => s.studentId === student.id && (s.status === 'tentative' || s.status === 'under_review')));
-  if (active) return { ok: false, error: `כבר יש לך בקשה פעילה ל"${active.name}". יש להמתין לתשובה לפני בקשה נוספת.` };
-  const empIdx = employers.findIndex(e => e.id === employerId);
-  if (empIdx < 0) return { ok: false, error: 'הארגון לא נמצא.' };
-  const emp = employers[empIdx];
-  const slots: any[] = emp.vacancySlots || [];
-  const slotIdx = slots.findIndex(s => s.courseId === courseId && s.status === 'available');
-  if (slotIdx < 0) return { ok: false, error: 'אין כרגע מקום פנוי בארגון זה עבור הקורס שלך.' };
-  const nextSlots = slots.map((s, i) => i === slotIdx
-    ? { ...s, status: 'tentative', studentId: student.id, prefRank: 1, history: [...(s.history || []), { at: ts, from: 'available', to: 'tentative', by: 'student' as const, actorId: student.id, reason: 'student-request' }] }
-    : s);
-  const nextEmployers = employers.map((e, i) => i === empIdx ? reconcileEmployerCapacity({ ...emp, vacancySlots: nextSlots }) : e);
-  const nextStudents = students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: emp.name, firstChoiceResult: s.firstChoiceResult || 'pending' } : s);
-  return { ok: true, data: { ...data, employers: nextEmployers, students: nextStudents }, employerName: emp.name };
+
+  const emp = employers.find(e => e.id === employerId);
+  if (!emp) return { ok: false, error: 'הארגון לא נמצא.' };
+
+  // A self-suggested org occupies rank #1 and is never part of the toggleable list.
+  const suggested = studentSuggestedOrgName(data, student);
+  if (suggested && suggested.toLowerCase() === String(emp.name).toLowerCase())
+    return { ok: false, error: 'הארגון שהצעת שמור עבורך כבחירה ראשונה.' };
+
+  const listCap = suggested ? MAX_STUDENT_REQUESTS - 1 : MAX_STUDENT_REQUESTS;
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+  // Current list requests, in rank order, excluding the suggested org.
+  const current: string[] = [student.firstChoiceOrg, student.secondChoiceOrg, student.thirdChoiceOrg]
+    .map(v => (v || '').trim())
+    .filter(Boolean)
+    .filter(n => !(suggested && same(n, suggested)));
+
+  let next: string[];
+  if (mode === 'remove') {
+    next = current.filter(n => !same(n, emp.name));
+    if (next.length === current.length) return { ok: false, error: 'הארגון אינו ברשימת הבקשות שלך.' };
+  } else {
+    if (current.some(n => same(n, emp.name))) return { ok: false, error: 'כבר ביקשת את הארגון הזה.' };
+    if (current.length >= listCap) {
+      return { ok: false, error: suggested
+        ? `הגעת ל‑${listCap} בקשות (בנוסף לארגון שהצעת). הסר/י בקשה כדי לבקש ארגון אחר.`
+        : `הגעת ל‑${listCap} בקשות. הסר/י בקשה כדי לבקש ארגון אחר.` };
+    }
+    next = [...current, emp.name];
+  }
+
+  // Re-rank: the suggested org keeps #1, list requests fill the remaining ranks.
+  const ordered = suggested ? [suggested, ...next] : next;
+  const updated = {
+    ...student,
+    firstChoiceOrg: ordered[0] || '',
+    secondChoiceOrg: ordered[1] || '',
+    thirdChoiceOrg: ordered[2] || '',
+    firstChoiceResult: ordered[0] ? (student.firstChoiceResult || 'pending') : student.firstChoiceResult,
+  };
+  const nextStudents = students.map(s => s.id === student.id ? updated : s);
+  return { ok: true, data: { ...data, students: nextStudents }, employerName: emp.name, requests: next };
 }
 
 export function buildMailtoUrl(email: string, subject: string, body: string): string {

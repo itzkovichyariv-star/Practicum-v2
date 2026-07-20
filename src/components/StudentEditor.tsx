@@ -352,6 +352,7 @@ export default function StudentEditor({
     };
     push(form.firstChoiceOrg);
     push(form.secondChoiceOrg);
+    push(form.thirdChoiceOrg); // 3-request student model (2026-07-20)
     if (latest) { push(latest.org_pref_1); push(latest.org_pref_2); push(latest.org_pref_3); }
 
     if (ordered.length === 0) {

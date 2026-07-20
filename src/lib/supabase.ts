@@ -106,6 +106,10 @@ export type Student = {
   firstChoiceResult?: 'pending' | 'passed' | 'failed';
   secondChoiceOrg?: string;
   secondChoiceResult?: 'pending' | 'passed' | 'failed';
+  // Third ranked choice — added 2026-07-20 with the 3-request student model. The
+  // public org page writes up to three ordered requests (intent only, no place
+  // held) and the coordinator's buildPlacements bridge reads all three.
+  thirdChoiceOrg?: string;
   fromCandidateId?: string;
   practicumCompleted?: boolean;  // מילא חובות שעות וסיים פרקטיקום
   notes?: string; fromCandidate?: boolean;
