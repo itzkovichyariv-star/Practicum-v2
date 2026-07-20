@@ -138,9 +138,16 @@ if (seedOk && firstChoiceOk) {
   }
 
   // Path 2: the "כבר במגעים — אשר שיבוץ" button (suggested org only).
+  // Same wrong-student guard as cell 46 — the open editor must be the subject's and
+  // exactly one place-direct button may exist, or a stray row gets placed instead
+  // and the failure masquerades as a flake (see 46's header for the 2026-07-20 case).
+  const editorHasSubject = await audit.page.locator(`text=${STU_NAME}`).first().isVisible().catch(() => false);
+  const directCount = await audit.page.locator('[data-place-direct]').count();
+  if (!editorHasSubject) audit.log('⚠ editor does not show the subject student — refusing to click');
+  if (directCount > 1) audit.log(`⚠ ${directCount} place-direct buttons on the page — ambiguous, refusing to click`);
   const directBtn = audit.page.locator('[data-place-direct]').first();
   await directBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
-  twoPathSeen = (await directBtn.count()) > 0;
+  twoPathSeen = directCount === 1 && editorHasSubject;
 
   // REALISTIC CHECK — the student HAS a CV and the built preference has a free place,
   // so BOTH routes must genuinely be on offer: path 1 (the "שלח קו״ח" checkbox, ENABLED

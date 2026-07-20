@@ -85,9 +85,21 @@ audit.log('SUGGEST-place-direct: approve a suggested org directly → placement 
       opened = true;
 
       // Path-2 button: only rendered for a suggested (restricted) org in tentative.
+      //
+      // GUARDED against acting on the WRONG STUDENT. On 2026-07-20 this cell reported
+      // approved=true with its own student unplaced, and the slot history showed a
+      // 'placed-direct' landing on a LEFTOVER preview student at that exact second —
+      // i.e. the click hit a row that was not the subject. An unscoped `.first()` plus
+      // any stray student carrying a place-direct button silently tests the wrong row
+      // and reads as a mysterious "flake". So: require the open editor to be THIS
+      // student's, and require exactly ONE such button on the page.
+      const editorHasSubject = await audit.page.locator(`text=${STU_NAME}`).first().isVisible().catch(() => false);
+      const directCount = await audit.page.locator('[data-place-direct]').count();
+      if (!editorHasSubject) audit.log('⚠ editor does not show the subject student — refusing to click');
+      if (directCount > 1) audit.log(`⚠ ${directCount} place-direct buttons on the page — ambiguous, refusing to click`);
       const directBtn = audit.page.locator('[data-place-direct]').first();
       await directBtn.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
-      btnSeen = (await directBtn.count()) > 0;
+      btnSeen = directCount === 1 && editorHasSubject;
       if (btnSeen) {
         await directBtn.scrollIntoViewIfNeeded();
         await directBtn.click().catch(() => {});
