@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type FormEvent, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
 import { employerStatus } from '../lib/orgAvailability';
+import { useFormDraft } from '../lib/useFormDraft';
 import { countSlotsByStatus } from '../lib/placement';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
@@ -35,6 +36,30 @@ export default function CvUpdateForm() {
   useEffect(() => {
     if (err) errRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [err]);
+
+  // Nothing typed here may be lost either — the org preferences and, above all, the
+  // suggested-organization details (contact person, role, phone…) are real effort.
+  // Keyed by the student's email so a shared device never shows someone else's draft.
+  // The CV FILE itself cannot be persisted (a File handle isn't serialisable) — that
+  // one field must always be re-attached, which the form already tells them.
+  const draft = useFormDraft(
+    email.trim() ? `practicum_draft_cvupdate_${email.trim().toLowerCase()}` : null,
+    'v1',
+    { pref1, pref2, pref3, suggesting, sgName, sgContact, sgRole, sgEmail, sgPhone, sgLocation, sgNotes },
+    (v) => {
+      if (v.pref1) setPref1(v.pref1 as string);
+      if (v.pref2) setPref2(v.pref2 as string);
+      if (v.pref3) setPref3(v.pref3 as string);
+      if (v.suggesting) setSuggesting(v.suggesting as boolean);
+      if (v.sgName) setSgName(v.sgName as string);
+      if (v.sgContact) setSgContact(v.sgContact as string);
+      if (v.sgRole) setSgRole(v.sgRole as string);
+      if (v.sgEmail) setSgEmail(v.sgEmail as string);
+      if (v.sgPhone) setSgPhone(v.sgPhone as string);
+      if (v.sgLocation) setSgLocation(v.sgLocation as string);
+      if (v.sgNotes) setSgNotes(v.sgNotes as string);
+    },
+  );
 
   // The whole blob once; the option list is derived so it re-scopes the moment the
   // student is identified (the emailed link prefills the address, so that is instant).
@@ -173,6 +198,7 @@ export default function CvUpdateForm() {
       } catch { /* ignore — the suggestion is already saved in cv_updates */ }
     }
 
+    draft.clear(); // safely submitted — only now is the local copy redundant
     setStatus('done');
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
+import { useFormDraft } from '../lib/useFormDraft';
 
 type Status = 'idle' | 'uploading' | 'saving' | 'done' | 'error';
 
@@ -70,6 +71,21 @@ export default function RegistrationForm() {
   const [status, setStatus] = useState<Status>('idle');
   const [err, setErr] = useState<string | null>(null);
   const [qErrors, setQErrors] = useState<Partial<Record<keyof Questionnaire, boolean>>>({});
+
+  // The registration questionnaire is the longest free-text form in the app, so losing
+  // it is the most expensive loss of all. Persist as they type, keyed by the email they
+  // entered (before that there is nothing worth keying on). The CV file itself can't be
+  // serialised and must be re-attached — the form already says so.
+  const regDraft = useFormDraft(
+    form.email.trim() ? `practicum_draft_register_${form.email.trim().toLowerCase()}` : null,
+    'v1',
+    { form, q },
+    (v) => {
+      if (v.form) setForm(f => ({ ...f, ...(v.form as Record<string, string>) }));
+      if (v.q) setQ(prev => ({ ...prev, ...(v.q as Questionnaire) }));
+    },
+  );
+
   const [availableSlots, setAvailableSlots] = useState<PublicSlot[]>([]);
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [slotErr, setSlotErr] = useState(false);
@@ -209,6 +225,7 @@ export default function RegistrationForm() {
       setNotifyDiag('notify-submission network error: ' + (e?.message || e));
     }
 
+    regDraft.clear(); // safely submitted — only now is the local copy redundant
     setStatus('done');
   }
 

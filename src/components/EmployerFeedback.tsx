@@ -6,9 +6,10 @@
  * to student.feedbackText + feedbackSubmittedAt + hired.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { saveSnapshot } from '../lib/dataApi';
+import { useFormDraft, draftSavedLabel } from '../lib/useFormDraft';
 import type { Student, PracticumData } from '../lib/supabase';
 
 type Phase = 'loading' | 'not-found' | 'already-done' | 'form' | 'submitting' | 'done' | 'error';
@@ -62,6 +63,34 @@ export default function EmployerFeedback() {
         || '').trim()
     : '';
 
+  // ── Nothing typed here may ever be lost ────────────────────────────────────
+  // Two supervisors filled this form on 2026-07-09, could not submit (see the
+  // validation fix in handleSubmit), and every word was unrecoverable — it lived
+  // only in React memory. Persist continuously, keyed to this employer's own link.
+  const draft = useFormDraft(
+    token ? `practicum_draft_feedback_${token}` : null,
+    'v2',
+    { mentor, mentorRole, period, ratings, groupNotes, overallScore, recommendation, strengths, improvements, additionalNotes, hired },
+    (v) => {
+      if (v.mentor) setMentor(v.mentor as string);
+      if (v.mentorRole) setMentorRole(v.mentorRole as string);
+      if (v.period) setPeriod(v.period as string);
+      if (v.ratings) setRatings(v.ratings as RatingMap);
+      if (v.groupNotes) setGroupNotes(v.groupNotes as Record<string, string>);
+      if (v.overallScore) setOverallScore(v.overallScore as string);
+      if (v.recommendation) setRecommendation(v.recommendation as string);
+      if (v.strengths) setStrengths(v.strengths as string);
+      if (v.improvements) setImprovements(v.improvements as string);
+      if (v.additionalNotes) setAdditionalNotes(v.additionalNotes as string);
+      if (typeof v.hired === 'boolean') setHired(v.hired as boolean);
+    },
+  );
+
+  // Which required field blocked the submit, so we can say so IN HEBREW, in place.
+  const [missingField, setMissingField] = useState<'score' | 'recommendation' | null>(null);
+  const scoreRef = useRef<HTMLInputElement | null>(null);
+  const recRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     if (!token) { setPhase('not-found'); return; }
     load();
@@ -106,8 +135,21 @@ export default function EmployerFeedback() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!student || !allData) return;
-    if (!overallScore) { alert('אנא הזן ציון שביעות רצון כללית (0–100)'); return; }
-    if (!recommendation) { alert('אנא בחר המלצה כוללת'); return; }
+    // The form is <form noValidate>: the BROWSER must not police it. With the native
+    // `required` active, Chrome blocked the submit with an English tooltip anchored to
+    // a field ~930px above the button — off-screen on a phone — so the page appeared
+    // to do nothing and these Hebrew checks below were unreachable dead code. Two
+    // supervisors gave up that way (נעמה ביטרמן, שיראל קורן — 2026-07-09). We now
+    // validate ourselves and SHOW the reason, in Hebrew, at the field.
+    const focusMissing = (which: 'score' | 'recommendation') => {
+      setMissingField(which);
+      const el = which === 'score' ? scoreRef.current : recRef.current;
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (which === 'score') setTimeout(() => scoreRef.current?.focus(), 350);
+    };
+    if (!overallScore) { focusMissing('score'); return; }
+    if (!recommendation) { focusMissing('recommendation'); return; }
+    setMissingField(null);
     setPhase('submitting');
     const now = new Date().toISOString();
     const feedbackText = buildFeedbackJson();
@@ -126,10 +168,13 @@ export default function EmployerFeedback() {
       { action: 'משוב מעסיק התקבל', entity: 'סטודנט', target: student.name }
     );
     if (!res.ok) {
+      // Keep the draft — the whole point is that a failed save never costs them
+      // their work. They can retry from the same link with everything still filled.
       setErrorMsg(res.error || 'שגיאה בשמירה');
       setPhase('error');
       return;
     }
+    draft.clear(); // safely stored server-side — only now is the local copy redundant
     setPhase('done');
   }
 
@@ -184,7 +229,16 @@ export default function EmployerFeedback() {
 
   return (
     <PageShell>
-      <form onSubmit={handleSubmit} className="max-w-[720px] mx-auto">
+      {/* noValidate — we validate in handleSubmit and show the reason in Hebrew at
+          the field. Matches CvUpdateForm / CloudSignIn / PasswordGate; this form was
+          the only public one still letting the browser block it silently. */}
+      <form onSubmit={handleSubmit} noValidate className="max-w-[720px] mx-auto">
+        {draft.restored && (
+          <div data-draft-restored="1" className="rounded-xl px-4 py-3 mb-5 text-[13.5px]"
+            style={{ background: 'rgba(21,128,61,0.08)', border: '1px solid rgba(21,128,61,0.35)', color: '#15803d', fontWeight: 600 }}>
+            ✓ שוחזרו התשובות שהתחלת למלא במכשיר הזה. אפשר להמשיך מאותה נקודה.
+          </div>
+        )}
 
         {/* Header */}
         <header className="border-b pb-5 mb-8" style={{ borderColor: 'var(--divider)' }}>
@@ -275,25 +329,42 @@ export default function EmployerFeedback() {
               <label className="block">
                 <span className="small-caps block mb-2">ציון שביעות רצון כללית (0–100) *</span>
                 <input
+                  ref={scoreRef}
                   type="number" min={0} max={100}
                   value={overallScore}
-                  onChange={e => setOverallScore(e.target.value)}
+                  onChange={e => { setOverallScore(e.target.value); if (missingField === 'score') setMissingField(null); }}
                   placeholder="___"
+                  // `required` kept for screen readers; <form noValidate> stops the
+                  // browser from blocking submission with an off-screen English tooltip.
                   required
+                  aria-invalid={missingField === 'score'}
+                  data-missing={missingField === 'score' ? '1' : '0'}
                   className="input w-32 text-center"
-                  style={{ padding: '10px 14px', fontSize: '22px', fontWeight: 700 }}
+                  style={{ padding: '10px 14px', fontSize: '22px', fontWeight: 700,
+                    borderColor: missingField === 'score' ? '#b91c1c' : undefined,
+                    boxShadow: missingField === 'score' ? '0 0 0 3px rgba(185,28,28,0.15)' : undefined }}
                 />
+                {missingField === 'score' && (
+                  <div className="text-[12.5px] font-semibold mt-1.5" style={{ color: '#b91c1c' }}>
+                    יש להזין ציון שביעות רצון כללית (0–100) כדי לשלוח את המשוב.
+                  </div>
+                )}
               </label>
             </div>
-            <div>
+            <div ref={recRef}>
               <div className="small-caps mb-2">המלצה כוללת *</div>
+              {missingField === 'recommendation' && (
+                <div className="text-[12.5px] font-semibold mb-2" style={{ color: '#b91c1c' }}>
+                  יש לבחור המלצה כוללת כדי לשלוח את המשוב.
+                </div>
+              )}
               <div className="flex flex-col gap-2">
                 {['ממליץ/ה בחום', 'ממליץ/ה', 'ממליץ/ה עם הסתייגויות', 'לא ממליץ/ה'].map(opt => (
                   <label key={opt} className="flex items-center gap-2 text-[14px] cursor-pointer"
                     style={{ color: recommendation === opt ? 'var(--accent)' : 'var(--ink)', fontWeight: recommendation === opt ? 600 : 400 }}>
                     <input type="radio" name="recommendation" value={opt}
                       checked={recommendation === opt}
-                      onChange={() => setRecommendation(opt)}
+                      onChange={() => { setRecommendation(opt); if (missingField === 'recommendation') setMissingField(null); }}
                       style={{ accentColor: 'var(--accent)' }} />
                     {opt}
                   </label>
@@ -341,7 +412,15 @@ export default function EmployerFeedback() {
             {phase === 'submitting' ? 'שולח...' : 'שלח משוב →'}
           </button>
 
-          <div className="text-[12px] mt-4 text-center" style={{ color: 'var(--text-soft)' }}>
+          {/* Say it out loud, so nobody retypes out of doubt or fears losing work. */}
+          <div className="text-[12px] mt-3 text-center" data-draft-indicator={draft.savedAt ? '1' : '0'}
+            style={{ color: draft.savedAt ? '#15803d' : 'var(--text-soft)', fontWeight: draft.savedAt ? 600 : 400 }}>
+            {draft.savedAt
+              ? `✓ ${draftSavedLabel(draft.savedAt)} — אפשר לחזור לקישור הזה ולהמשיך מאותה נקודה`
+              : 'מה שתמלא/י נשמר אוטומטית במכשיר הזה — אפשר לחזור לקישור ולהמשיך'}
+          </div>
+
+          <div className="text-[12px] mt-3 text-center" style={{ color: 'var(--text-soft)' }}>
             המשוב יועבר ישירות לרכזת הפרקטיקום באוניברסיטת אריאל
           </div>
         </FSection>

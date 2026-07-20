@@ -104,7 +104,13 @@ export default function OrganizationsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   // ?email= in the link wins; otherwise fall back to the remembered identity.
-  const [email, setEmail] = useState(getParam('email').trim().toLowerCase() || rememberedEmail());
+  // Where the identity came from decides two things: whether we persist it, and whether
+  // we offer "זה לא אני". A personal link identifies its own recipient — asking them
+  // whether they are themselves is noise. Only a REMEMBERED identity can belong to
+  // someone else on this device, and that is exactly who needs the way out.
+  const urlEmail = getParam('email').trim().toLowerCase();
+  const [email, setEmail] = useState(urlEmail || rememberedEmail());
+  const identityFromUrl = !!urlEmail && email === urlEmail;
   const [emailInput, setEmailInput] = useState('');
   const [requesting, setRequesting] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -155,11 +161,16 @@ export default function OrganizationsPage() {
   const hasRequested = (emp: Employer) => myRequests.some(n => sameName(n, emp.name));
   const atCap = myRequests.length >= listCap;
 
-  // Remember only a VERIFIED identity (resolved to a real student row).
+  // Remember only a VERIFIED identity (resolved to a real student row) that the person
+  // actually TYPED. An identity supplied by ?email= needs no remembering — the link
+  // carries it every time — and persisting it is what planted one student's identity on
+  // a shared device, so the next person arriving on a bare link was greeted as them and
+  // could have acted on their record. Storing only typed identities removes that window
+  // instead of merely offering an exit from it.
   useEffect(() => {
-    if (!student || !email) return;
+    if (!student || !email || identityFromUrl) return;
     try { localStorage.setItem(EMAIL_KEY, email); } catch { /* private mode — fine */ }
-  }, [student, email]);
+  }, [student, email, identityFromUrl]);
 
   function forgetMe() {
     try { localStorage.removeItem(EMAIL_KEY); } catch { /* ignore */ }
@@ -252,13 +263,16 @@ export default function OrganizationsPage() {
         {student && (
           <div style={{ fontSize: '13.5px', marginTop: '10px', fontWeight: 600 }}>
             שלום {student.name || ''} 👋
-            {/* Shared-device escape: the identity is remembered on this device, so
-                offer an explicit way out — otherwise the next student on the same
-                phone would act as this one. */}
-            <button type="button" onClick={forgetMe}
+            {/* Shared-device escape — shown ONLY when the identity came from this
+                device's memory, i.e. it may belong to whoever used the phone before.
+                A personal ?email= link identifies its own recipient, so asking them
+                "is this you?" is pure noise (Yariv, 2026-07-20). */}
+            {!identityFromUrl && (
+            <button type="button" onClick={forgetMe} data-forget-me="1"
               style={{ marginRight: '10px', background: 'transparent', border: 'none', color: 'white', opacity: 0.75, fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', fontWeight: 600 }}>
               זה לא אני
             </button>
+            )}
           </div>
         )}
       </div>
