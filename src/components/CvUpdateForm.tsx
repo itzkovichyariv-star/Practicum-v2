@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, type FormEvent, type CSSPropertie
 import { supabase } from '../lib/supabase';
 import { employerStatus } from '../lib/orgAvailability';
 import { useFormDraft } from '../lib/useFormDraft';
+import { viewableCvUrl } from '../lib/cvUrl';
 import { countSlotsByStatus } from '../lib/placement';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
@@ -142,6 +143,24 @@ export default function CvUpdateForm() {
     }
   }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The student's OWN submission history — so they can see what they submitted before,
+  // when (Yariv: "student history was also requested"). Read-only; the coordinator has
+  // the same view in the editor. Refetched via `historyTick` after each submit.
+  const [myHistory, setMyHistory] = useState<Array<{ id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null }>>([]);
+  const [showMyHistory, setShowMyHistory] = useState(false);
+  useEffect(() => {
+    const em = (email || '').trim().toLowerCase();
+    if (!em) { setMyHistory([]); return; }
+    let alive = true;
+    supabase.from('cv_updates')
+      .select('id, uploaded_at, cv_file_path, org_pref_1, org_pref_2, org_pref_3')
+      .eq('email', em)
+      .order('uploaded_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => { if (alive) setMyHistory((data || []) as any); });
+    return () => { alive = false; };
+  }, [email]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -278,6 +297,37 @@ export default function CvUpdateForm() {
         <div className="rounded-lg px-4 py-3 mb-6 text-[13.5px] leading-[1.6]"
           style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.35)', color: '#065f46' }}>
           ✓ כבר הגשת דרך הקישור הזה. אפשר לעדכן <strong>רק את הקו״ח</strong>, <strong>רק ארגון</strong>, או את שניהם — מה שלא תשנה/י יישאר כפי שהוא. ההעדפות למטה מולאו לפי הבחירה הנוכחית שלך.
+        </div>
+      )}
+
+      {/* The student's OWN submission history — revealed on demand (Yariv). Read-only. */}
+      {myHistory.length > 0 && (
+        <div className="mb-6">
+          <button type="button" onClick={() => setShowMyHistory(s => !s)}
+            className="text-[13px] underline" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            {showMyHistory ? 'הסתר את היסטוריית ההגשות שלי' : `היסטוריית ההגשות שלי (${myHistory.length})`}
+          </button>
+          {showMyHistory && (
+            <div className="mt-2 space-y-1.5 pt-2" style={{ borderTop: '1px dashed var(--divider)' }}>
+              {myHistory.map((row, idx) => {
+                const ps = [row.org_pref_1, row.org_pref_2, row.org_pref_3].filter(Boolean);
+                let when = row.uploaded_at;
+                try { when = new Date(row.uploaded_at).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); } catch { /* keep raw */ }
+                return (
+                  <div key={row.id} className="text-[12.5px] flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-soft)' }}>
+                    <span className="font-semibold" style={{ color: idx === 0 ? 'var(--accent)' : 'var(--text-soft)' }}>{when}{idx === 0 ? ' · אחרונה' : ''}</span>
+                    <span>· {ps.length ? ps.map((p, i) => `${i + 1}. ${p}`).join('   ') : 'ללא העדפות'}</span>
+                    {row.cv_file_path && (
+                      <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${row.cv_file_path}`), '_blank')}
+                        className="underline" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        קו״ח ↗
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
