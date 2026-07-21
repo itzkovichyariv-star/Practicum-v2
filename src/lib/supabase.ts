@@ -30,6 +30,14 @@ export type VacancySlot = {
 export type StudentPreference = {
   rank: number;
   employerId: string;
+  /** Display name of the org — kept even when the employer can't be resolved, so a
+   *  ranked row never goes blank. Added in the 2026-07-21 student-editor redesign
+   *  (Phase 0): the ordered, org-keyed list is the single source for the org hub. */
+  orgName?: string;
+  /** The coordinator's per-org interview result, bound to the ORG (not a rank slot),
+   *  so re-ranking never moves 'עבר' onto the wrong org. Replaces the slot-indexed
+   *  Student.firstChoiceResult/secondChoiceResult/thirdChoiceResult. */
+  interviewResult?: 'pending' | 'passed' | 'failed';
   /** null until a CV is actually SENT to this employer — sending is what takes a
    *  place. A preference on its own reserves nothing (buildPlacementPreferences). */
   slotId: string | null;

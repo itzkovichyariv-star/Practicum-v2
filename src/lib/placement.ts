@@ -507,6 +507,116 @@ export function buildMailtoUrl(email: string, subject: string, body: string): st
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+// ── Unified ordered org list — the single source for the student-editor org hub ──
+//
+// 2026-07-21 redesign, Phase 0 (data model). Today a student's org choices live in
+// TWO places: the legacy `firstChoiceOrg/second/third` + `*ChoiceResult` fields, AND
+// the structured `preferences: StudentPreference[]`. The redesign renders ONE ordered,
+// coordinator-reorderable list where the interview result is bound to the ORG (not a
+// rank slot) — so re-ranking never moves 'עבר' onto the wrong org. These pure helpers
+// derive that list, reorder it, and write it back (keeping the legacy fields in sync
+// as a compat shim). Behaviour-preserving: no component consumes them yet (Phase 1).
+export type InterviewResult = 'pending' | 'passed' | 'failed';
+export type UnifiedOrgPref = {
+  rank: number;
+  orgName: string;
+  employerId: string | null;
+  interviewResult: InterviewResult;
+  status: 'tentative' | 'under_review' | 'rejected' | 'placed' | 'withdrawn';
+  slotId: string | null;
+};
+
+const eqName = (a?: string | null, b?: string | null) =>
+  String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase() && !!String(a || '').trim();
+
+function resolveEmployerIdByName(orgName: string, employers: any[]): string | null {
+  const e = (employers || []).find((x: any) => eqName(x?.name, orgName));
+  return e ? e.id : null;
+}
+
+/** The legacy choice fields as an ordered [{orgName, interviewResult}] list. */
+function legacyChoices(student: any): Array<{ orgName: string; interviewResult: InterviewResult }> {
+  return [
+    { orgName: (student?.firstChoiceOrg || '').trim(), interviewResult: (student?.firstChoiceResult || 'pending') as InterviewResult },
+    { orgName: (student?.secondChoiceOrg || '').trim(), interviewResult: (student?.secondChoiceResult || 'pending') as InterviewResult },
+    { orgName: (student?.thirdChoiceOrg || '').trim(), interviewResult: (student?.thirdChoiceResult || 'pending') as InterviewResult },
+  ].filter(c => c.orgName);
+}
+
+/**
+ * Build the unified ordered org list for a student. Prefers the structured
+ * `preferences[]` when present (resolving each org's display name + carrying its own
+ * interviewResult, falling back to the legacy result matched BY ORG NAME); otherwise
+ * derives the list straight from the legacy choice fields. Always sorted by rank and
+ * re-numbered 1..N.
+ */
+export function buildUnifiedOrgList(student: any, employers: any[] = []): UnifiedOrgPref[] {
+  const legacy = legacyChoices(student);
+  const legacyResultFor = (orgName: string): InterviewResult | undefined =>
+    legacy.find(c => eqName(c.orgName, orgName))?.interviewResult;
+  const nameOf = (empId: string): string => (employers || []).find((e: any) => e?.id === empId)?.name || '';
+
+  const prefs: any[] = Array.isArray(student?.preferences) ? student.preferences : [];
+  let list: UnifiedOrgPref[];
+  if (prefs.length > 0) {
+    list = [...prefs]
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0))
+      .map((p) => {
+        const orgName = (p.orgName || nameOf(p.employerId) || legacy[p.rank - 1]?.orgName || '').trim();
+        const interviewResult: InterviewResult = p.interviewResult || legacyResultFor(orgName) || 'pending';
+        return { rank: p.rank || 0, orgName, employerId: p.employerId || resolveEmployerIdByName(orgName, employers), interviewResult, status: p.status || 'tentative', slotId: p.slotId ?? null };
+      })
+      .filter(p => p.orgName);
+  } else {
+    list = legacy.map((c, i) => ({
+      rank: i + 1, orgName: c.orgName, employerId: resolveEmployerIdByName(c.orgName, employers),
+      interviewResult: c.interviewResult, status: 'tentative' as const, slotId: null,
+    }));
+  }
+  return list.map((p, i) => ({ ...p, rank: i + 1 }));
+}
+
+/**
+ * Reorder the unified list to match `orderedOrgNames` and re-number ranks 1..N. Each
+ * entry KEEPS its interviewResult and status — the whole point: the result follows the
+ * org, never the rank index. Names not found are ignored; entries not named keep their
+ * relative order at the end.
+ */
+export function reorderUnifiedList(list: UnifiedOrgPref[], orderedOrgNames: string[]): UnifiedOrgPref[] {
+  const used = new Set<number>();
+  const out: UnifiedOrgPref[] = [];
+  for (const name of orderedOrgNames) {
+    const idx = list.findIndex((p, i) => !used.has(i) && eqName(p.orgName, name));
+    if (idx >= 0) { used.add(idx); out.push(list[idx]); }
+  }
+  list.forEach((p, i) => { if (!used.has(i)) out.push(p); });
+  return out.map((p, i) => ({ ...p, rank: i + 1 }));
+}
+
+/**
+ * Write a unified list back onto a student: the structured `preferences[]` becomes the
+ * source of truth (carrying orgName + interviewResult), and the legacy
+ * `firstChoiceOrg/second/third` + `*ChoiceResult` fields are kept in sync (compat shim)
+ * so existing readers (reports, PlacementPanel, /cv-update pre-fill) keep working.
+ * Pure: returns a fresh student.
+ */
+export function applyUnifiedList(student: any, list: UnifiedOrgPref[]): any {
+  const ranked = list.map((p, i) => ({ ...p, rank: i + 1 }));
+  const preferences = ranked.map(p => ({
+    rank: p.rank, employerId: p.employerId || '', orgName: p.orgName,
+    interviewResult: p.interviewResult, status: p.status, slotId: p.slotId ?? null,
+  }));
+  const legacyKeys: Array<['firstChoiceOrg' | 'secondChoiceOrg' | 'thirdChoiceOrg', 'firstChoiceResult' | 'secondChoiceResult' | 'thirdChoiceResult']> = [
+    ['firstChoiceOrg', 'firstChoiceResult'], ['secondChoiceOrg', 'secondChoiceResult'], ['thirdChoiceOrg', 'thirdChoiceResult'],
+  ];
+  const sync: any = {};
+  legacyKeys.forEach(([orgKey, resKey], i) => {
+    sync[orgKey] = ranked[i]?.orgName || '';
+    sync[resKey] = ranked[i] ? ranked[i].interviewResult : 'pending';
+  });
+  return { ...student, ...sync, preferences };
+}
+
 // ── Build placement preferences from a candidate's chosen org names ───────────
 //
 // The bridge between the candidate's free-text org choices (org_pref_1/2/3 /
