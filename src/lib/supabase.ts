@@ -110,6 +110,7 @@ export type Student = {
   // public org page writes up to three ordered requests (intent only, no place
   // held) and the coordinator's buildPlacements bridge reads all three.
   thirdChoiceOrg?: string;
+  thirdChoiceResult?: 'pending' | 'passed' | 'failed';
   fromCandidateId?: string;
   practicumCompleted?: boolean;  // מילא חובות שעות וסיים פרקטיקום
   notes?: string; fromCandidate?: boolean;

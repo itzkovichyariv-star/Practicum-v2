@@ -12,6 +12,7 @@ import type {
 import { randomId } from '../lib/dataApi';
 import { renderTemplate, buildWhatsAppUrl, buildMailtoUrl, openVacancies, reconcileEmployerCapacity, countSlotsByStatus } from '../lib/placement';
 import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
+import { resolveCvUrl, viewableCvUrl } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 
@@ -47,9 +48,16 @@ export default function PlacementPanel({
   const preferences: StudentPreference[] = (student as any).preferences || [];
   const submissionStatus = (student as any).submissionStatus as string | undefined;
 
-  // CV link: prefer updated CV (post-prep), fall back to original uploaded CV.
-  // These are Supabase Storage public URLs — no manual paste needed.
-  const cvLink: string = student.cvUpdatedUrl || student.cvUrl || '';
+  // CV link: prefer the UPDATED CV (post-prep) over the original — the updated one is
+  // what must reach the employer. `cvUpdatedUrl`/`cvUrl` are stored as
+  // `storage://candidate-uploads/…`, NOT public URLs, so they MUST be resolved before
+  // being opened/copied/sent — sending the raw storage:// path delivered a dead link
+  // to the employer (all 11 תשפ״ז CVs, found 2026-07-21). resolveCvUrl → public URL;
+  // viewableCvUrl additionally routes Word files through the Office viewer.
+  const cvRef: string = student.cvUpdatedUrl || student.cvUrl || '';
+  const cvLink: string = resolveCvUrl(cvRef);      // public URL sent to the employer
+  const cvViewLink: string = viewableCvUrl(cvRef); // coordinator "open" (Word → viewer)
+  const usingUpdatedCv = !!student.cvUpdatedUrl;   // updated CV present → it replaces the original
   const hasCv = !!cvLink;
 
   // Find the student's course
@@ -350,10 +358,21 @@ export default function PlacementPanel({
         </div>
         {hasCv ? (
           <div className="flex gap-2 items-center flex-wrap">
-            <span className="text-[13px]" style={{ color: 'var(--ink)' }}>
-              {student.cvUpdatedUrl ? '✓ קו"ח מעודכן (אחרי הכנה)' : '✓ קו"ח מקורי'}
+            {/* Make it unmistakable WHICH CV is going out. When an updated CV exists it
+                REPLACES the original — highlight that so the coordinator never sends
+                the pre-workshop version by accident. */}
+            <span className="text-[13px] font-semibold px-2 py-0.5 rounded-md"
+              style={usingUpdatedCv
+                ? { color: '#065f46', background: 'rgba(5,150,105,0.14)', border: '1px solid rgba(5,150,105,0.45)' }
+                : { color: 'var(--ink)' }}>
+              {usingUpdatedCv ? '✓ קו"ח מעודכן (אחרי הכנה) — יישלח למעסיק' : '✓ קו"ח מקורי'}
             </span>
-            <button type="button" onClick={() => window.open(cvLink, '_blank')} style={btnSmall()}>פתח ↗</button>
+            {usingUpdatedCv && student.cvUrl && (
+              <span className="mono text-[10.5px]" style={{ color: 'var(--text-soft)', textDecoration: 'line-through' }}>
+                מחליף את הקו"ח המקורי
+              </span>
+            )}
+            <button type="button" onClick={() => window.open(cvViewLink, '_blank')} style={btnSmall()}>פתח ↗</button>
             <button type="button" onClick={copyCvLink} style={btnSmall()}>
               {copyMsg || '📋 העתק קישור'}
             </button>

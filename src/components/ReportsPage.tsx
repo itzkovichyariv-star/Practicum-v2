@@ -150,7 +150,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
 
       /* ── Students list ── */
       case 'students': return {
-        headers: ['שם', 'סטטוס', 'שובץ ב', 'בחירה 1', 'בחירה 2', 'נקלט', 'הכנה', 'תאריך שיבוץ', 'שעות מאושרות', 'טלפון', 'מייל', 'עיר', 'קורס', 'שנה', 'הערות'],
+        headers: ['שם', 'סטטוס', 'שובץ ב', 'בחירה 1', 'בחירה 2', 'בחירה 3', 'נקלט', 'הכנה', 'תאריך שיבוץ', 'שעות מאושרות', 'טלפון', 'מייל', 'עיר', 'קורס', 'שנה', 'הערות'],
         rows: students.map(s => {
           const status =
             s.hired                                              ? '✅ נקלט לעבודה' :
@@ -167,6 +167,9 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
               : '',
             s.secondChoiceOrg
               ? `${s.secondChoiceOrg}${s.secondChoiceResult === 'passed' ? ' ✓' : s.secondChoiceResult === 'failed' ? ' ✗' : ''}`
+              : '',
+            (s as any).thirdChoiceOrg
+              ? `${(s as any).thirdChoiceOrg}${(s as any).thirdChoiceResult === 'passed' ? ' ✓' : (s as any).thirdChoiceResult === 'failed' ? ' ✗' : ''}`
               : '',
             s.hired ? '✓' : '',
             s.preparation?.passed

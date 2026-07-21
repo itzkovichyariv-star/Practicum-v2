@@ -71,6 +71,13 @@ export default function StudentEditor({
     firstChoiceResult: student?.firstChoiceResult || 'pending',
     secondChoiceOrg: student?.secondChoiceOrg || '',
     secondChoiceResult: student?.secondChoiceResult || 'pending',
+    // Third choice — the 3-request student model (2026-07-20) writes this from the
+    // public /organizations page. It MUST be loaded into the form, or the editor
+    // shows only 2 choices and buildPlacements (which reads form.thirdChoiceOrg)
+    // silently drops the student's third request. Found live: הדר עוזירי chose
+    // שיבא as her 3rd and it was invisible + would not have been built.
+    thirdChoiceOrg: (student as any)?.thirdChoiceOrg || '',
+    thirdChoiceResult: (student as any)?.thirdChoiceResult || 'pending',
     placementInterviewDate: student?.placementInterviewDate || '',
     placementInterviewTime: student?.placementInterviewTime || '',
     placementInterviewOrg: student?.placementInterviewOrg || '',
@@ -311,7 +318,7 @@ export default function StudentEditor({
       .filter(e => {
         if (orgAvailability(e).available) return true;
         if (showAllOrgs) return true;
-        return e.name === selectedValue || e.name === form.firstChoiceOrg || e.name === form.secondChoiceOrg;
+        return e.name === selectedValue || e.name === form.firstChoiceOrg || e.name === form.secondChoiceOrg || e.name === (form as any).thirdChoiceOrg;
       })
       .map(e => {
         const av = orgAvailability(e);
@@ -713,10 +720,18 @@ export default function StudentEditor({
           {/* CV for dispatch — auto-uses cvUpdatedUrl or cvUrl (Supabase Storage links) */}
           {(form as any).cvUpdatedUrl || (form as any).cvUrl ? (
             <SectionSub title="📋 שיבוץ — קו&quot;ח לשליחה">
-              <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.3)' }}>
-                <div className="mono text-[11px] font-semibold mb-1" style={{ color: '#059669' }}>
-                  ✓ {(form as any).cvUpdatedUrl ? 'קו"ח מעודכן (אחרי הכנה) — יצורף אוטומטית לשליחה למעסיק' : 'קו"ח מקורי — יצורף אוטומטית לשליחה למעסיק'}
+              <div className="col-span-full rounded-xl p-3"
+                style={(form as any).cvUpdatedUrl
+                  ? { background: 'rgba(5,150,105,0.12)', border: '1.5px solid rgba(5,150,105,0.5)' }
+                  : { background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.3)' }}>
+                <div className="text-[12.5px] font-bold mb-1" style={{ color: '#065f46' }}>
+                  ✓ {(form as any).cvUpdatedUrl ? 'קו"ח מעודכן (אחרי הכנה) — זהו הקו"ח שיישלח למעסיק' : 'קו"ח מקורי — יצורף אוטומטית לשליחה למעסיק'}
                 </div>
+                {(form as any).cvUpdatedUrl && (form as any).cvUrl && (
+                  <div className="mono text-[10.5px] mb-1" style={{ color: 'var(--text-soft)' }}>
+                    <span style={{ textDecoration: 'line-through' }}>הקו"ח המקורי</span> הוחלף בגרסה המעודכנת שהמועמד/ת הגיש/ה.
+                  </div>
+                )}
                 <div className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
                   הקישור מגיע מה-Supabase ומצורף להודעת WhatsApp/מייל ללא הגדרה נוספת.
                 </div>
@@ -954,6 +969,20 @@ export default function StudentEditor({
             </Field>
             <Field label="תוצאת ראיון — בחירה שנייה">
               <Select value={form.secondChoiceResult||'pending'} onChange={v=>update('secondChoiceResult', v as any)}
+                options={[
+                  { value: 'pending', label: 'טרם רואיין' },
+                  { value: 'passed', label: 'עבר' },
+                  { value: 'failed', label: 'לא עבר' },
+                ]}/>
+            </Field>
+            <Field label="בחירה שלישית — ארגון">
+              <Select value={form.thirdChoiceOrg||''} onChange={v=>update('thirdChoiceOrg',v)}
+                options={gatedOrgOptions(form.thirdChoiceOrg||'')}
+                placeholder="בחר ארגון שלישי"
+                freeText/>
+            </Field>
+            <Field label="תוצאת ראיון — בחירה שלישית">
+              <Select value={form.thirdChoiceResult||'pending'} onChange={v=>update('thirdChoiceResult', v as any)}
                 options={[
                   { value: 'pending', label: 'טרם רואיין' },
                   { value: 'passed', label: 'עבר' },
