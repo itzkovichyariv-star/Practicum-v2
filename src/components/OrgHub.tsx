@@ -393,13 +393,7 @@ export default function OrgHub({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <div className="chapter-mark" style={{ fontSize: '11px' }}>ארגונים מדורגים ושליחה</div>
-        <label className="inline-flex items-center gap-2 cursor-pointer text-[11.5px]" style={{ color: showAllOrgs ? 'var(--accent)' : 'var(--text-soft)' }}>
-          <input type="checkbox" checked={showAllOrgs} onChange={e => setShowAllOrgs(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-          הצג גם ארגונים שאינם זמינים
-        </label>
-      </div>
+      <div className="chapter-mark mb-2" style={{ fontSize: '11px' }}>ארגונים מדורגים ושליחה</div>
       {submittedCaption && (
         <div className="text-[11.5px] mb-3" style={{ color: 'var(--text-soft)' }}>{submittedCaption}</div>
       )}
@@ -556,6 +550,13 @@ export default function OrgHub({
           </div>
         )}
       </div>
+
+      {/* Secondary toggle — at the BOTTOM (it's not the main thing): reveal orgs that
+          aren't currently available, for a deliberate manual override. */}
+      <label className="inline-flex items-center gap-2 cursor-pointer text-[11px] mt-2" style={{ color: showAllOrgs ? 'var(--accent)' : 'var(--text-soft)' }}>
+        <input type="checkbox" checked={showAllOrgs} onChange={e => setShowAllOrgs(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+        הצג גם ארגונים שאינם זמינים
+      </label>
 
       {/* Sticky multi-select send bar */}
       {selected.size > 0 && (

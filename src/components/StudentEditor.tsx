@@ -727,7 +727,7 @@ export default function StudentEditor({
                     <>
                       <div className="flex items-center justify-between gap-3 flex-wrap">
                         <div className="text-[12.5px] font-bold" style={{ color: '#065f46' }}>
-                          ✓ {usingUpdated ? 'קו"ח מעודכן (אחרי הכנה) — זהו הקו"ח שיישלח למעסיק' : 'קו"ח מקורי — יצורף אוטומטית לשליחה למעסיק'}
+                          ✓ קו"ח מעודכן — יישלח למעסיק
                         </div>
                         <div className="flex gap-2 shrink-0">
                           <button type="button" data-cv-open onClick={() => window.open(viewableCvUrl(cur), '_blank')} style={{ ...btnSmall(), padding: '5px 12px' }}>פתח ↗</button>
@@ -735,8 +735,8 @@ export default function StudentEditor({
                         </div>
                       </div>
                       {usingUpdated && (form as any).cvUrl && (
-                        <div className="mono text-[10.5px] mt-1" style={{ color: 'var(--text-soft)' }}>
-                          <span style={{ textDecoration: 'line-through' }}>הקו"ח המקורי</span> הוחלף בגרסה המעודכנת שהמועמד/ת הגיש/ה.
+                        <div className="text-[10.5px] mt-1" style={{ color: 'var(--text-soft)' }}>
+                          קורות החיים הוחלפו בגרסה מעודכנת · הגרסאות הקודמות בהיסטוריה למטה.
                         </div>
                       )}
                     </>
@@ -861,30 +861,9 @@ export default function StudentEditor({
               </div>
             )}
 
-            <div className="col-span-full">
-              <FileField label="קורות חיים מעודכן — אחרי הכנה" value={form.cvUpdatedUrl||''} onChange={v=>update('cvUpdatedUrl',v)}/>
-            </div>
           </SectionSub>
 
           <SectionSub title="בחירת ארגון ושליחה">
-            {/* Send the personalized stage-2 (preference-selection) link from here */}
-            <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
-              <div className="text-[12.5px] font-semibold" style={{ color: 'var(--ink)' }}>📨 קישור אישי לבחירת העדפות (שלב 2)</div>
-              <div className="text-[11.5px] mb-2" style={{ color: 'var(--text-soft)' }}>
-                שליחת הקישור להעלאת קו"ח מעודכן ובחירת ארגונים — ישירות למועמד/ת.
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button type="button" onClick={copyPrefLink} style={{ ...btnSmall(), whiteSpace: 'nowrap' }}>📋 העתק קישור</button>
-                <button type="button" onClick={waPrefLink} disabled={!(form.phone || '').trim()}
-                  style={dispatchChip(!!(form.phone || '').trim())}>
-                  <WhatsAppIcon /> WhatsApp
-                </button>
-                <button type="button" onClick={mailPrefLink} disabled={!(form.email || '').trim()}
-                  style={{ ...dispatchChip(!!(form.email || '').trim()), color: (form.email || '').trim() ? 'var(--accent)' : 'var(--text-soft)' }}>
-                  <MailIcon /> מייל
-                </button>
-              </div>
-            </div>
             {/* Latest submission's suggested org — approve to create it as a private,
                 ranked employer (then it appears as an OrgHub card). Once approved or
                 rejected it drops (it's a card / dismissed). The pending-CV banner above
@@ -989,6 +968,22 @@ export default function StudentEditor({
                     options={[{ value: 'pending', label: 'טרם רואיין' }, { value: 'passed', label: 'עבר' }, { value: 'failed', label: 'לא עבר' }]}/>
                 </Field>
               </>
+            )}
+
+            {/* Ask the STUDENT to update — sits UNDER the ranked list, clearly a
+                different action from the per-org employer send above (which is the
+                checkbox→WhatsApp/Outlook on each card). Sends the student their /cv-update
+                link to re-upload a CV / re-pick orgs. */}
+            {!isNew && (
+              <div className="col-span-full rounded-lg px-3 py-2 flex items-center justify-between gap-2 flex-wrap"
+                style={{ background: 'rgba(122,30,43,0.03)', border: '1px dashed var(--divider)' }}>
+                <span className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>📨 בקש/י מהמועמד/ת לעדכן קו״ח / לבחור ארגונים (קישור אישי):</span>
+                <div className="flex gap-2 flex-wrap">
+                  <button type="button" onClick={copyPrefLink} style={{ ...btnSmall(), padding: '5px 12px', whiteSpace: 'nowrap' }}>📋 העתק קישור</button>
+                  <button type="button" onClick={waPrefLink} disabled={!(form.phone || '').trim()} style={{ ...dispatchChip(!!(form.phone || '').trim()), padding: '5px 12px' }}><WhatsAppIcon /> WhatsApp</button>
+                  <button type="button" onClick={mailPrefLink} disabled={!(form.email || '').trim()} style={{ ...dispatchChip(!!(form.email || '').trim()), padding: '5px 12px', color: (form.email || '').trim() ? 'var(--accent)' : 'var(--text-soft)' }}><MailIcon /> מייל</button>
+                </div>
+              </div>
             )}
 
             {/* Previous submissions (coordinator view) — Phase 3 folds this into the
@@ -1101,7 +1096,10 @@ export default function StudentEditor({
 
           <Accordion title="מסמכים וחוו״ד מעסיק"
             hint={form.feedbackText ? '✓ יש חוות דעת מעסיק' : (form.questionnaire ? 'שאלון מועמדות' : undefined)}>
-            <FileField label="CV — קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
+            <FileField label="קו״ח מקורי" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
+            {/* Editable path for the current/updated CV — the CV strip above shows + sends it;
+                this raw-path field lives here so the strip stays a clean single display. */}
+            <FileField label="קו״ח מעודכן (קישור לעריכה)" value={form.cvUpdatedUrl||''} onChange={v=>update('cvUpdatedUrl',v)}/>
             <FileField label="טופס הגשת מועמדות" value={form.formUrl||''} onChange={v=>update('formUrl',v)}/>
             {form.questionnaire && (
               <div className="col-span-full">
