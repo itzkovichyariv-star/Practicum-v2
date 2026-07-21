@@ -287,16 +287,23 @@ export default function OrgHub({
       window.open(url, '_blank');
     }
 
+    // Resolve the target slot robustly: the pref's slotId if present, else the slot this
+    // student actually holds at the employer (ground truth from the employers prop). A
+    // rapid send→נקלט could run before the form's slotId synced back; the held-slot
+    // fallback stops that from marking placement without freeing/occupying the slot.
+    const slotId = pref.slotId
+      || ((empLive as any).vacancySlots || []).find((s: any) => s.studentId === form.id && (s.status === 'under_review' || s.status === 'placed'))?.id
+      || null;
     const newSlotStatus = result === 'placed' ? 'placed' : 'available';
     const updatedSlots: VacancySlot[] = ((empLive as any).vacancySlots || []).map((s: any) => {
-      if (s.id !== pref.slotId) return s;
+      if (s.id !== slotId) return s;
       const h: any = { at: now, from: s.status, to: newSlotStatus, by: 'admin', actorId: userName };
       if (result === 'withdrawn') h.reason = isPlacedNow ? 'withdrawn-after-placement' : 'withdrawn-manual';
-      return { ...s, status: newSlotStatus, studentId: result === 'placed' ? s.studentId : null, prefRank: result === 'placed' ? s.prefRank : null, history: [...(s.history || []), h] };
+      return { ...s, status: newSlotStatus, studentId: result === 'placed' ? (s.studentId || form.id) : null, prefRank: result === 'placed' ? s.prefRank : null, history: [...(s.history || []), h] };
     });
     const updatedEmp = reconcileEmployerCapacity({ ...empLive, vacancySlots: updatedSlots });
     const updatedPrefs = (student.preferences as any[]).map(p => p.orgName === orgName
-      ? { ...p, status: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn' } : p);
+      ? { ...p, slotId: slotId ?? p.slotId, status: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn' } : p);
 
     let newSubmissionStatus = student.submissionStatus;
     if (result === 'placed') newSubmissionStatus = 'placed';
@@ -305,7 +312,7 @@ export default function OrgHub({
     const updatedStudent: any = { ...student, preferences: updatedPrefs, submissionStatus: newSubmissionStatus };
     if (result === 'placed') { updatedStudent.acceptedOrg = empLive.name; if (!updatedStudent.placedAt) updatedStudent.placedAt = now.slice(0, 10); }
 
-    const updatedDispatches = dispatches.map(d => (d.studentId === form.id && d.slotId === pref.slotId && d.result === 'pending')
+    const updatedDispatches = dispatches.map(d => (d.studentId === form.id && d.slotId === slotId && d.result === 'pending')
       ? { ...d, result: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn', resultAt: now, resultBy: userName } : d);
 
     const nextStudents = allStudents.map(s => s.id === form.id ? updatedStudent : s);
