@@ -1,5 +1,5 @@
 // Bump CACHE on every meaningful change so old caches are purged on activate.
-const CACHE = 'practicum-v2-cache-v1.30.3+build.87';
+const CACHE = 'practicum-v2-cache-v1.30.3+build.88.65fbe968';
 const PRECACHE = ['/'];
 
 self.addEventListener('install', e => {
