@@ -56,7 +56,10 @@ for (let i = 0; i < 6 && !seededStudent; i++) {
       ...d,
       students: [...(d.students || []), {
         id: auditStuId, name: 'Audit CV', email: auditEmail, courseId,
-        cvUrl: 'storage://candidate-uploads/audit.pdf', submissionStatus: 'submitted', preferences: [],
+        // NO CV on file — a FIRST-TIME student, so the form still REQUIRES a CV upload
+        // (CV-nofile-feedback). A returning student who already has a CV is the
+        // separate partial-update case, covered by cell 54.
+        submissionStatus: 'submitted', preferences: [],
       }],
     }, row.version);
   } catch (e) { audit.log(`seed attempt ${i} failed: ${e.message.slice(0, 80)}`); }

@@ -112,12 +112,49 @@ export default function CvUpdateForm() {
       .sort((a, b) => a.name.localeCompare(b.name, 'he'));
   }, [blob, scope]);
 
+  // ── Returning student: everything under this one link ──────────────────────
+  // Yariv 2026-07-21: "אני רוצה שהכל ישב תחת אותו קישור שכבר יש להם" + be able to
+  // "לעדכן רק קורות חיים או רק ארגון אחד". So a student who already submitted can
+  // come back here and change JUST the CV or JUST one org — without redoing the rest.
+  const me = useMemo(() => {
+    const em = (email || '').trim().toLowerCase();
+    return em && blob ? (blob.students || []).find((s: any) => String(s.email || '').trim().toLowerCase() === em) : null;
+  }, [blob, email]);
+  // The current CV's storage path — reused when they update ONLY the orgs (cv_updates
+  // requires a cv_file_path, so an org-only update keeps the CV on file).
+  const existingCvPath = useMemo(() => {
+    const ref = (me as any)?.cvUpdatedUrl || (me as any)?.cvUrl || '';
+    const m = String(ref).match(/^storage:\/\/[^/]+\/(.+)$/);
+    return m ? m[1] : (ref && !/^https?:\/\//i.test(ref) ? ref : '');
+  }, [me]);
+  const hasExistingCv = !!existingCvPath;
+
+  // Pre-fill the 3 org pickers with the student's CURRENT choices, once, and only if
+  // the form is still blank (never clobber a restored draft or live typing).
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    if (prefilledRef.current || !me) return;
+    prefilledRef.current = true;
+    if (!pref1 && !pref2 && !pref3) {
+      if ((me as any).firstChoiceOrg) setPref1((me as any).firstChoiceOrg);
+      if ((me as any).secondChoiceOrg) setPref2((me as any).secondChoiceOrg);
+      if ((me as any).thirdChoiceOrg) setPref3((me as any).thirdChoiceOrg);
+    }
+  }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
     if (!email.trim()) { setErr('יש להזין כתובת מייל'); return; }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setErr('כתובת המייל אינה תקינה'); return; }
-    if (!file)         { setErr('יש לצרף קובץ קורות חיים (PDF או Word)'); return; }
+    // A CV is required only for someone with NONE on file. A RETURNING student can
+    // update just their orgs and keep the existing CV — the whole point of "one link,
+    // partial updates". A first-time submission still must attach a file.
+    if (!file && !hasExistingCv) { setErr('יש לצרף קובץ קורות חיים (PDF או Word)'); return; }
+    // At least SOMETHING must change — a new CV, or an org preference.
+    if (!file && !pref1.trim() && !pref2.trim() && !pref3.trim() && !suggesting) {
+      setErr('לא בוצע שינוי — העלה/י קו"ח חדש או בחר/י ארגון לעדכון.'); return;
+    }
 
     // Build the suggested-org payload. Required fields apply only when suggesting.
     let suggestedOrg: Record<string, string> | null = null;
@@ -139,22 +176,27 @@ export default function CvUpdateForm() {
 
     setStatus('uploading');
 
-    // Upload file to candidate-uploads bucket
-    const safeEmail = email.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 40) || 'candidate';
-    const ext = (file.name.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 8) || 'bin';
-    const path = `cv-updates/${safeEmail}-${Date.now()}.${ext}`;
-
-    const { error: uploadErr } = await supabase.storage.from('candidate-uploads').upload(path, file, {
-      cacheControl: '3600',
-      upsert: false,
-      contentType: file.type || 'application/octet-stream',
-    });
-
-    if (uploadErr) {
-      setStatus('error');
-      setErr('העלאה נכשלה: ' + uploadErr.message);
-      return;
+    // Upload a NEW CV if one was attached; otherwise reuse the CV already on file (an
+    // org-only update). cv_updates.cv_file_path is NOT NULL, so an org-only submission
+    // records the existing path — the coordinator's "adopt" keeps that CV and takes
+    // the new org preferences.
+    let path = existingCvPath;
+    if (file) {
+      const safeEmail = email.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 40) || 'candidate';
+      const ext = (file.name.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 8) || 'bin';
+      path = `cv-updates/${safeEmail}-${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage.from('candidate-uploads').upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'application/octet-stream',
+      });
+      if (uploadErr) {
+        setStatus('error');
+        setErr('העלאה נכשלה: ' + uploadErr.message);
+        return;
+      }
     }
+    if (!path) { setStatus('error'); setErr('אין קו"ח לשמור — יש לצרף קובץ.'); return; }
 
     // Record in cv_updates table
     const { error: dbErr } = await supabase.from('cv_updates').insert({
@@ -227,9 +269,17 @@ export default function CvUpdateForm() {
       <h1 className="serif text-[36px] leading-[1.1] tracking-tight mb-2" style={{ color: 'var(--ink)' }}>
         העלאת CV מעודכן
       </h1>
-      <p className="text-[15px] leading-[1.55] mb-8" style={{ color: 'var(--ink)', opacity: 0.82 }}>
-        לאחר סדנת קורות חיים — העלה/י את הגרסה המעודכנת כאן.
+      <p className="text-[15px] leading-[1.55] mb-3" style={{ color: 'var(--ink)', opacity: 0.82 }}>
+        לאחר סדנת קורות חיים — העלה/י את הגרסה המעודכנת ובחר/י העדפות ארגון כאן.
       </p>
+      {/* Returning student: everything is under this one link — update just the CV,
+          just an org, or both, without redoing the rest. */}
+      {hasExistingCv && (
+        <div className="rounded-lg px-4 py-3 mb-6 text-[13.5px] leading-[1.6]"
+          style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.35)', color: '#065f46' }}>
+          ✓ כבר הגשת דרך הקישור הזה. אפשר לעדכן <strong>רק את הקו״ח</strong>, <strong>רק ארגון</strong>, או את שניהם — מה שלא תשנה/י יישאר כפי שהוא. ההעדפות למטה מולאו לפי הבחירה הנוכחית שלך.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         <div>
@@ -268,7 +318,9 @@ export default function CvUpdateForm() {
         )}
 
         <div>
-          <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>קורות חיים מעודכנים (PDF / Word) *</span>
+          <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
+            {hasExistingCv ? 'קורות חיים מעודכנים (PDF / Word) — אופציונלי' : 'קורות חיים מעודכנים (PDF / Word) *'}
+          </span>
           <label
             className="block border-2 border-dashed rounded-xl p-5 cursor-pointer transition-colors hover:bg-[rgba(122,30,43,0.03)]"
             style={{ borderColor: file ? 'var(--accent)' : 'var(--divider)' }}
@@ -280,7 +332,7 @@ export default function CvUpdateForm() {
               </span>
               <div className="flex-1">
                 <div className="text-[14px]" style={{ color: file ? 'var(--ink)' : 'var(--text-soft)' }}>
-                  {file ? file.name : 'לחץ/י כדי לבחור קובץ'}
+                  {file ? file.name : (hasExistingCv ? 'יש קו״ח על הקובץ — לחץ/י כדי להחליף (או השאר/י ריק)' : 'לחץ/י כדי לבחור קובץ')}
                 </div>
                 {file && (
                   <div className="mono text-[11px] uppercase tracking-[0.12em] mt-0.5" style={{ color: 'var(--text-soft)' }}>
@@ -407,9 +459,9 @@ export default function CvUpdateForm() {
             opacity: busy ? 0.6 : 1,
           }}
         >
-          {busy ? 'מעלה...' : 'שלח CV מעודכן ←'}
+          {busy ? 'מעלה...' : (hasExistingCv ? 'שלח/י עדכון ←' : 'שלח CV מעודכן ←')}
         </button>
-        {!file && (
+        {!file && !hasExistingCv && (
           <div className="text-[12px] text-center" style={{ color: 'var(--text-soft)', marginTop: '-8px' }}>
             יש לצרף קובץ קורות חיים לפני השליחה
           </div>

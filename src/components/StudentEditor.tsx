@@ -123,14 +123,23 @@ export default function StudentEditor({
       .order('uploaded_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
-        // Don't nag about a row whose file is already the current CV (e.g. the first,
-        // auto-promoted submission if its seen_at write raced) — only a genuinely
-        // different, newer file is "pending".
+        // "Pending" = the latest submission differs from what's currently on the
+        // student record — in EITHER the CV file OR the org preferences. An org-only
+        // update deliberately reuses the current CV path (cv_updates needs one), so a
+        // file-only guard would hide it; comparing orgs too surfaces it. Once the
+        // coordinator adopts (fields match the row), it stops nagging — which is what
+        // carries the guard even though anon can't write cv_updates.seen_at (RLS).
         const row = data?.[0];
+        if (!row) return;
         const currentFile = (student?.cvUpdatedUrl || '').split('/').pop();
-        if (row && row.cv_file_path.split('/').pop() !== currentFile) setPendingCv(row);
+        const same = (a?: string | null, b?: string | null) => (a || '').trim() === (b || '').trim();
+        const cvChanged = row.cv_file_path.split('/').pop() !== currentFile;
+        const orgsChanged = !same(row.org_pref_1, student?.firstChoiceOrg)
+          || !same(row.org_pref_2, student?.secondChoiceOrg)
+          || !same(row.org_pref_3, (student as any)?.thirdChoiceOrg);
+        if (cvChanged || orgsChanged) setPendingCv(row);
       });
-  }, [student?.email, student?.cvUpdatedUrl]);
+  }, [student?.email, student?.cvUpdatedUrl, student?.firstChoiceOrg, student?.secondChoiceOrg, (student as any)?.thirdChoiceOrg]);
 
   // Full submission history for this candidate (every dated /cv-update submission).
   type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
