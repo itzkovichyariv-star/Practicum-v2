@@ -58,6 +58,10 @@ audit.log('FORM-carryover: converted student shows the submitted "שאלון מ�
       await row.getByTitle('ערוך').first().click().catch(() => {});
       await audit.page.waitForTimeout(1400);
       opened = await audit.page.evaluate(() => !!document.querySelector('button[aria-label="סגור"]'));
+      // The questionnaire lives inside the (collapsed) "מסמכים וחוו״ד מעסיק" accordion —
+      // expand it first (the redesign folds secondary sections into accordions).
+      const docsAcc = audit.page.locator('[data-accordion="מסמכים וחוו״ד מעסיק"]').first();
+      if (await docsAcc.count() > 0) { await docsAcc.scrollIntoViewIfNeeded().catch(() => {}); await docsAcc.click().catch(() => {}); await audit.page.waitForTimeout(400); }
       hasForm = await audit.page.evaluate(() => /שאלון מועמדות/.test(document.body.innerText || ''));
       // The form view is collapsed by default (same as the candidate card) — expand it.
       const toggle = audit.page.locator('button').filter({ hasText: /^שאלון מועמדות/ }).first();

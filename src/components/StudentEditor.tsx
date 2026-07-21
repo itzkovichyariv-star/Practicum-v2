@@ -610,42 +610,97 @@ export default function StudentEditor({
   return (
     <>
     <Modal onClose={onClose} maxWidth="max-w-[820px]">
-        <form onSubmit={handleSubmit} className="px-5 py-7 md:px-10 md:py-10">
+        <form onSubmit={handleSubmit} className="px-5 pb-7 md:px-10 md:pb-10">
 
-          <div className="flex items-start justify-between gap-8 pb-6 border-b mb-8" style={{ borderColor: 'var(--divider)' }}>
-            <div>
-              <div className="chapter-mark mb-2">{isNew ? 'סטודנט/ית חדש' : 'עריכת סטודנט/ית'}</div>
-              <h2 className="serif text-[32px] leading-[1.1] tracking-tight" style={{ color: 'var(--ink)' }}>
-                {form.name || (isNew ? 'הוסף שם' : '')}
-              </h2>
+          {/* ── Sticky cockpit header — name · one status pill · contact icons · ✕ ── */}
+          <div className="sticky top-0 z-20 -mx-5 md:-mx-10 px-5 md:px-10 pt-6 pb-3 mb-3"
+            style={{ background: 'var(--bg)', borderBottom: '1px solid var(--divider)' }}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="chapter-mark mb-1" style={{ fontSize: '10px' }}>{isNew ? 'סטודנט/ית חדש' : 'עריכת סטודנט/ית'}</div>
+                <h2 className="serif text-[26px] md:text-[30px] leading-[1.1] tracking-tight truncate" style={{ color: 'var(--ink)' }}>
+                  {form.name || (isNew ? 'הוסף שם' : '')}
+                </h2>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {!isNew && (() => { const st = cockpitStatus(form); return (
+                  <span className="mono text-[10.5px] px-2.5 py-1 rounded-full font-semibold" style={{ background: 'var(--accent-soft)', color: st.tone }}>{st.label}</span>
+                ); })()}
+                {!isNew && (
+                  <span className="inline-flex items-center gap-1">
+                    <button type="button" onClick={openCall} disabled={!form.phone} title="התקשר" style={iconBtn(!!form.phone)}>📞</button>
+                    <button type="button" onClick={openWhatsApp} disabled={!form.phone} title="WhatsApp" style={iconBtn(!!form.phone)}><WhatsAppIcon size={14} /></button>
+                    <button type="button" onClick={openOutlookCompose} disabled={!form.email} title="מייל" style={iconBtn(!!form.email)}><MailIcon size={14} /></button>
+                  </span>
+                )}
+                <button type="button" onClick={onClose} className="mono text-[11px] font-semibold opacity-60 hover:opacity-100 px-1" title="סגור">✕</button>
+              </div>
             </div>
-            <button type="button" onClick={onClose} className="mono text-[11px] uppercase tracking-[0.15em] font-semibold opacity-60 hover:opacity-100">סגור ✕</button>
+            {/* Passive stage stepper — current lit in maroon; tap = scroll is not wired (passive). */}
+            {!isNew && (() => {
+              const cur = cockpitStage(form);
+              const curIdx = STAGE_ORDER.findIndex(s => s.key === cur);
+              return (
+                <div className="flex items-center gap-1 mt-2.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                  {STAGE_ORDER.map((s, i) => (
+                    <span key={s.key} className="flex items-center gap-1 shrink-0">
+                      <span className="text-[10.5px] px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                        style={i === curIdx
+                          ? { background: 'var(--accent)', color: '#fff', fontWeight: 700 }
+                          : { color: i < curIdx ? 'var(--accent)' : 'var(--text-soft)', opacity: i < curIdx ? 0.9 : 0.6 }}>
+                        {i < curIdx ? '✓ ' : ''}{s.label}
+                      </span>
+                      {i < STAGE_ORDER.length - 1 && <span className="text-[9px]" style={{ color: 'var(--divider)' }}>·</span>}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
-          <SectionSub title="פרטים אישיים">
-            <Field label="שם מלא"><Input value={form.name} onChange={v=>update('name',v)} required/></Field>
-            <Field label="עיר מגורים"><Input value={form.city||''} onChange={v=>update('city',v)}/></Field>
-            <Field label="טלפון"><Input type="tel" value={form.phone||''} onChange={v=>update('phone',v)}/></Field>
-            <Field label="מייל"><Input type="email" value={form.email||''} onChange={v=>update('email',v)}/></Field>
-          </SectionSub>
+          {/* Next-action hint — one line, only when there's a clear next thing to do. */}
+          {!isNew && (() => {
+            const hint = pendingCv ? 'הגשה חדשה ממתינה — אמץ/י בקטע קורות חיים'
+              : (!form.cvUpdatedUrl && form.preparation?.passed) ? 'שלח/י למועמד/ת קישור שלב 2 להעלאת קו״ח ובחירת ארגונים'
+              : (form.cvUpdatedUrl && !form.acceptedOrg && ((form as any).preferences || []).every((p: any) => p.status === 'tentative') && ((form as any).preferences || form.firstChoiceOrg)) ? 'מוכן לשליחה — סמן/י ארגון ושלח/י קו״ח בקטע הארגונים'
+              : (form.acceptedOrg && (form.hoursApproved || 0) < 120 && !form.practicumCompleted) ? `שובץ/ה — מעקב שעות (${form.hoursApproved || 0}/120 מאושרות)`
+              : '';
+            if (!hint) return null;
+            return (
+              <div className="rounded-xl px-3.5 py-2.5 mb-4 text-[12.5px] font-semibold"
+                style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.3)', color: '#92400e' }}>
+                → {hint}
+              </div>
+            );
+          })()}
 
-          <SectionSub title="הקשר — קורס ושנה">
-            <Field label="קורס">
-              <Select value={form.courseId||''}
-                onChange={v=>{ const c=courses.find(x=>x.id===v); setForm(f=>({ ...f, courseId: v, ...(c?.year ? { year: c.year } : {}) })); }}
-                options={courses.map(c=>({value:c.id,label:c.year?`${c.name} · ${c.year}`:c.name}))} placeholder="בחר קורס"/>
-            </Field>
-            <Field label="שנה אקדמית">
-              <Select value={form.year||''} onChange={v=>update('year',v)} options={years.map(y=>({value:y,label:y}))} placeholder="בחר שנה"/>
-            </Field>
-          </SectionSub>
+          <Accordion title="פרטים ועריכה" defaultOpen={isNew}
+            hint={[courses.find(c => c.id === form.courseId)?.name, form.city, form.preparation?.passed ? 'עבר/ה הכנה' : ''].filter(Boolean).join(' · ') || undefined}>
+            <SectionSub title="פרטים אישיים">
+              <Field label="שם מלא"><Input value={form.name} onChange={v=>update('name',v)} required/></Field>
+              <Field label="עיר מגורים"><Input value={form.city||''} onChange={v=>update('city',v)}/></Field>
+              <Field label="טלפון"><Input type="tel" value={form.phone||''} onChange={v=>update('phone',v)}/></Field>
+              <Field label="מייל"><Input type="email" value={form.email||''} onChange={v=>update('email',v)}/></Field>
+            </SectionSub>
 
-          <SectionSub title="הכנה לפרקטיקום">
-            <Field label="עבר/ה הכנה">
-              <Checkbox checked={!!form.preparation?.passed} onChange={v=>updatePrep('passed', v)} label="סומן שעבר/ה הכנה"/>
-            </Field>
-            <Field label="תאריך הכנה"><Input type="date" value={form.preparation?.date||''} onChange={v=>updatePrep('date', v)}/></Field>
-          </SectionSub>
+            <SectionSub title="הקשר — קורס ושנה">
+              <Field label="קורס">
+                <Select value={form.courseId||''}
+                  onChange={v=>{ const c=courses.find(x=>x.id===v); setForm(f=>({ ...f, courseId: v, ...(c?.year ? { year: c.year } : {}) })); }}
+                  options={courses.map(c=>({value:c.id,label:c.year?`${c.name} · ${c.year}`:c.name}))} placeholder="בחר קורס"/>
+              </Field>
+              <Field label="שנה אקדמית">
+                <Select value={form.year||''} onChange={v=>update('year',v)} options={years.map(y=>({value:y,label:y}))} placeholder="בחר שנה"/>
+              </Field>
+            </SectionSub>
+
+            <SectionSub title="הכנה לפרקטיקום">
+              <Field label="עבר/ה הכנה">
+                <Checkbox checked={!!form.preparation?.passed} onChange={v=>updatePrep('passed', v)} label="סומן שעבר/ה הכנה"/>
+              </Field>
+              <Field label="תאריך הכנה"><Input type="date" value={form.preparation?.date||''} onChange={v=>updatePrep('date', v)}/></Field>
+            </SectionSub>
+          </Accordion>
 
           {/* ── CV strip — ONE place for the CV: the current file (cvUpdatedUrl → cvUrl
               → red warn), open/copy, the pending-adopt banner, and a קו״ח-history toggle
@@ -966,7 +1021,8 @@ export default function StudentEditor({
             )}
           </SectionSub>
 
-          <SectionSub title="ראיון שיבוץ (רחל — תיאום עם מעסיק)">
+          <Accordion title="ראיון שיבוץ (רחל)"
+            hint={form.feedbackSubmittedAt ? '✓ מעסיק מילא משוב' : (form.placementInterviewDate ? `ראיון ${form.placementInterviewDate}` : undefined)}>
             <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>
             <Field label="שעת ראיון שיבוץ"><Input type="time" value={form.placementInterviewTime||''} onChange={v=>update('placementInterviewTime',v)}/></Field>
             <div className="col-span-full">
@@ -1023,9 +1079,10 @@ export default function StudentEditor({
                 </button>
               </div>
             )}
-          </SectionSub>
+          </Accordion>
 
-          <SectionSub title="השמה סופית ושעות">
+          <Accordion title="השמה סופית ושעות" defaultOpen={!!form.acceptedOrg}
+            hint={form.acceptedOrg ? `${form.acceptedOrg} · ${form.hoursApproved || 0}/120 ש׳` : undefined}>
             <Field label="ארגון מאכסן בפועל">
               <Select value={form.acceptedOrg||''} onChange={v=>update('acceptedOrg',v)}
                 options={[...employers.map(e=>({value:e.name,label:e.name}))]}
@@ -1040,9 +1097,10 @@ export default function StudentEditor({
             <Field label="סיים/סיימה פרקטיקום">
               <Checkbox checked={!!form.practicumCompleted} onChange={v=>update('practicumCompleted',v)} label="מילא/ה חובות שעות וסיים/סיימה פרקטיקום"/>
             </Field>
-          </SectionSub>
+          </Accordion>
 
-          <SectionSub title="מסמכים וחוו״ד (קישורי OneDrive / SharePoint)">
+          <Accordion title="מסמכים וחוו״ד מעסיק"
+            hint={form.feedbackText ? '✓ יש חוות דעת מעסיק' : (form.questionnaire ? 'שאלון מועמדות' : undefined)}>
             <FileField label="CV — קורות חיים" value={form.cvUrl||''} onChange={v=>update('cvUrl',v)}/>
             <FileField label="טופס הגשת מועמדות" value={form.formUrl||''} onChange={v=>update('formUrl',v)}/>
             {form.questionnaire && (
@@ -1090,21 +1148,20 @@ export default function StudentEditor({
             <div className="col-span-full text-[12px]" style={{ color: 'var(--text-soft)' }}>
               💡 הדבק קישור מ‑OneDrive או SharePoint. לחיצה על "פתח" תפתח את הקובץ בחלון חדש.
             </div>
-          </SectionSub>
+          </Accordion>
 
-          <SectionSub title="הערות">
+          <Accordion title="הערות" hint={form.notes ? form.notes.slice(0, 40) : undefined}>
             <div className="col-span-full"><Field label="הערות פנימיות"><Textarea rows={3} value={form.notes||''} onChange={v=>update('notes',v)}/></Field></div>
-          </SectionSub>
+          </Accordion>
 
-          <div className="flex flex-wrap gap-3 pt-8 mt-8 border-t" style={{ borderColor: 'var(--divider)' }}>
+          <div className="flex flex-wrap gap-3 pt-6 mt-6 border-t sticky bottom-0 -mx-5 md:-mx-10 px-5 md:px-10 pb-2"
+            style={{ borderColor: 'var(--divider)', background: 'var(--bg)', zIndex: 15 }}>
             <button type="submit" style={{
               display: 'inline-block', padding: '12px 22px', fontSize: '13px', fontWeight: 600,
               background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
               cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
             }}>{isNew ? 'צור' : 'שמור'} →</button>
-            <button type="button" onClick={openCall} disabled={!form.phone} style={btnSmall(!form.phone)}>📞 התקשר</button>
-            <button type="button" onClick={openWhatsApp} disabled={!form.phone} style={btnSmall(!form.phone)}>WhatsApp</button>
-            <button type="button" onClick={openOutlookCompose} disabled={!form.email} style={btnSmall(!form.email)}>מייל (Outlook)</button>
+            {/* Student-contact actions (📞/WhatsApp/מייל) live in the sticky header now. */}
             {!isNew && (
               <button type="button" onClick={() => setShowEval(true)} style={btnSecondary()}>🖨 טופס הערכה</button>
             )}
@@ -1195,6 +1252,67 @@ function SectionSub({ title, children }: { title: string; children: any }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">{children}</div>
     </div>
   );
+}
+
+/**
+ * Accordion — a collapsible section with a title, a live one-line hint (so the
+ * coordinator sees what's inside without opening it), and a chevron. Subtle maroon.
+ * Body is grid-laid like SectionSub. Used to fold the editor's secondary sections so
+ * the two working surfaces (CV strip + org hub) stay the focus.
+ */
+function Accordion({ title, hint, defaultOpen, plain, children }: { title: string; hint?: string; defaultOpen?: boolean; plain?: boolean; children: any }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <div className="mb-3 rounded-xl overflow-hidden" style={{ border: '1px solid var(--divider)' }}>
+      <button type="button" data-accordion={title} aria-expanded={open} onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-right"
+        style={{ background: open ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>
+        <span className="flex items-baseline gap-2 min-w-0">
+          <span className="chapter-mark" style={{ fontSize: '11px', color: 'var(--accent)' }}>{title}</span>
+          {hint ? <span className="text-[11.5px] truncate" style={{ color: 'var(--text-soft)' }}>· {hint}</span> : null}
+        </span>
+        <span className="shrink-0 text-[12px]" style={{ color: 'var(--accent)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+      </button>
+      {open && (plain
+        ? <div className="px-4 pb-1 pt-2">{children}</div>
+        : <div className="px-4 pb-4 pt-1"><div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">{children}</div></div>
+      )}
+    </div>
+  );
+}
+
+// ── Cockpit derivations — a single status pill, the passive stepper, and the one
+// next-action hint. Pure functions of the form so the header/footer stay in sync.
+type StageKey = 'prep' | 'cv' | 'send' | 'interview' | 'placed' | 'hours';
+function cockpitStatus(f: Student): { label: string; tone: string } {
+  const prefs = (f as any).preferences as any[] | undefined;
+  const anyUnderReview = (prefs || []).some(p => p.status === 'under_review');
+  if (f.practicumCompleted) return { label: 'סיים/ה פרקטיקום', tone: '#059669' };
+  if (f.acceptedOrg || (f as any).submissionStatus === 'placed') return { label: 'שובץ/ה', tone: '#059669' };
+  if (anyUnderReview) return { label: 'קו״ח נשלח — בבדיקה', tone: '#b45309' };
+  if (f.cvUpdatedUrl) return { label: 'מוכן לשליחה', tone: 'var(--accent)' };
+  if (f.preparation?.passed) return { label: 'עבר/ה הכנה', tone: 'var(--accent)' };
+  return { label: 'פעיל/ה', tone: 'var(--text-soft)' };
+}
+function cockpitStage(f: Student): StageKey {
+  const prefs = (f as any).preferences as any[] | undefined;
+  if ((f.hoursApproved || 0) > 0 || f.practicumCompleted) return 'hours';
+  if (f.acceptedOrg || (f as any).submissionStatus === 'placed') return 'placed';
+  if (f.placementInterviewDate || (prefs || []).some(p => p.status === 'under_review')) return 'interview';
+  if (f.firstChoiceOrg || (prefs || []).length) return 'send';
+  if (f.cvUpdatedUrl) return 'cv';
+  return 'prep';
+}
+const STAGE_ORDER: { key: StageKey; label: string }[] = [
+  { key: 'prep', label: 'הכנה' }, { key: 'cv', label: 'קו״ח' }, { key: 'send', label: 'העדפות ושליחה' },
+  { key: 'interview', label: 'ראיון' }, { key: 'placed', label: 'שובץ' }, { key: 'hours', label: 'שעות' },
+];
+function iconBtn(enabled: boolean): React.CSSProperties {
+  return {
+    display: 'inline-grid', placeItems: 'center', width: 30, height: 30, borderRadius: '999px',
+    border: '1px solid var(--divider)', background: 'transparent', color: 'var(--accent)',
+    cursor: enabled ? 'pointer' : 'not-allowed', opacity: enabled ? 1 : 0.35, fontSize: '13px',
+  };
 }
 
 function FileField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {

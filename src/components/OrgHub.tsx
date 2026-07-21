@@ -23,7 +23,7 @@
  * onDataChange — exactly as the old PlacementPanel did.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   Student, Employer, Course, Dispatch, PlacementSettings, PracticumData, VacancySlot,
@@ -89,6 +89,8 @@ export default function OrgHub({
   const [selected, setSelected] = useState<Set<string>>(new Set()); // orgNames checked to send
   const [sendSheet, setSendSheet] = useState(false);
   const [draftOrg, setDraftOrg] = useState<string | null>(null); // "➕ הוסף ארגון" input open
+  const formRef = useRef(form);
+  useEffect(() => { formRef.current = form; }, [form]);
 
   const course = courses.find(c => c.id === form.courseId);
   const cvRef = form.cvUpdatedUrl || form.cvUrl || '';
@@ -171,8 +173,12 @@ export default function OrgHub({
   // ── Placement actions — persist IMMEDIATELY (onDataChange), like PlacementPanel ─
   // They operate on a MATERIALISED student: preferences[] rebuilt from the full
   // unified list so every card has a stable index and legacy edits are baked in.
+  // Placement actions persist async, then the parent syncs `form` back. Read the LATEST
+  // committed form through a ref so a rapid send → נקלט doesn't materialise from a stale
+  // render closure (which would miss the just-assigned slotId and leave the slot orphaned).
   function materialise(): { student: any; prefs: any[] } {
-    const s = applyUnifiedList(form, cards);
+    const f = formRef.current;
+    const s = applyUnifiedList(f, buildUnifiedOrgList(f, employers));
     return { student: s, prefs: s.preferences };
   }
   function buildCtx(emp: Employer) {
