@@ -92,7 +92,9 @@ if (seedOk) {
 
   if (panelShown) {
     await audit.page.evaluate(() => {
-      const b = [...document.querySelectorAll('button')].find(x => /אמץ כ‑CV מעודכן|אמץ כ-CV/.test(x.textContent || ''));
+      // Matches both labels: "אמץ כ‑CV מעודכן" (CV-only re-upload) and
+      // "אמץ הגשה (קו״ח + העדפות)" (submission with org preferences).
+      const b = [...document.querySelectorAll('button')].find(x => /^✓ אמץ/.test((x.textContent || '').trim()));
       if (b) b.click();
     });
     await audit.page.waitForTimeout(600);
@@ -114,19 +116,24 @@ if (seedOk) {
 }
 
 const after = await loadData();
-const finalCv = (after.students || []).find(s => s.id === STU_ID)?.cvUpdatedUrl || '';
+const finalStu = (after.students || []).find(s => s.id === STU_ID) || {};
+const finalCv = finalStu.cvUpdatedUrl || '';
+// The submission carried org_pref_1='ארגון חדש' — applying it must REPLACE the old
+// firstChoiceOrg ('ארגון ראשון'), per Yariv "בקשה חדשה צריכה להחליף את הישנה".
+const orgAdopted = (finalStu.firstChoiceOrg || '') === 'ארגון חדש';
 const shot = await audit.shot('cv-resubmission');
 audit.recordCell({
   id: 'RESUB-shown-and-applied',
-  tableRef: 'StudentEditor pending-CV detection — a re-submission is surfaced + replaces the old CV',
-  expected: 'a newer unseen cv_updates row is shown even when a CV already exists; applying it replaces cvUpdatedUrl with the new file; reopening does not re-nag',
+  tableRef: 'StudentEditor pending-CV detection — a re-submission is surfaced + replaces the old CV AND orgs',
+  expected: 'a newer unseen cv_updates row is shown even when a CV already exists; applying it replaces cvUpdatedUrl with the new file AND adopts the submission org preferences (firstChoiceOrg); reopening does not re-nag',
   observed: seedOk
-    ? `opened=${opened}, panelShown=${panelShown}, showsSecond=${showsSecond}, appliedToSecond=${applied}, reNags=${reNags}, finalCv=…${finalCv.split('/').pop()}`
+    ? `opened=${opened}, panelShown=${panelShown}, showsSecond=${showsSecond}, appliedToSecond=${applied}, orgAdopted=${orgAdopted}(${finalStu.firstChoiceOrg||''}), reNags=${reNags}, finalCv=…${finalCv.split('/').pop()}`
     : 'seed failed',
-  pass: seedOk ? (opened && panelShown && showsSecond && applied && !reNags) : null,
+  pass: seedOk ? (opened && panelShown && showsSecond && applied && orgAdopted && !reNags) : null,
   after: shot,
   notes: !panelShown ? 'The re-submission was NOT surfaced — the coordinator would keep sending the old CV (the bug).'
     : !applied ? 'Applying the re-submission did not replace cvUpdatedUrl with the new file.'
+    : !orgAdopted ? 'Applying did not adopt the new org preferences — the old firstChoiceOrg was kept.'
     : reNags ? 'The panel re-nags after applying (the file-match guard failed).' : '',
 });
 

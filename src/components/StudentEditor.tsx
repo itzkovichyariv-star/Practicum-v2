@@ -6,6 +6,7 @@ import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi'
 import { orgAvailability } from '../lib/orgAvailability';
 import { buildPlacementPreferences, addPlacementPreference, openVacancies, buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
+import { viewableCvUrl } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
@@ -132,7 +133,7 @@ export default function StudentEditor({
   }, [student?.email, student?.cvUpdatedUrl]);
 
   // Full submission history for this candidate (every dated /cv-update submission).
-  type CvRow = { id: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
+  type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
   const [cvHistory, setCvHistory] = useState<CvRow[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   useEffect(() => {
@@ -140,7 +141,7 @@ export default function StudentEditor({
     if (!email) { setCvHistory([]); return; }
     let alive = true;
     supabase.from('cv_updates')
-      .select('id, uploaded_at, org_pref_1, org_pref_2, org_pref_3, suggested_org')
+      .select('id, uploaded_at, cv_file_path, org_pref_1, org_pref_2, org_pref_3, suggested_org')
       .eq('email', email)
       .order('uploaded_at', { ascending: false })
       .limit(40) // cap history — a heavily re-tested email can have dozens of rows
@@ -271,7 +272,20 @@ export default function StudentEditor({
   async function applyPendingCv() {
     if (!pendingCv) return;
     const storageUrl = `storage://candidate-uploads/${pendingCv.cv_file_path}`;
-    setForm(f => ({ ...f, cvUpdatedUrl: storageUrl }));
+    // Adopt the WHOLE latest submission — the new CV AND the new org preferences —
+    // so a re-submission REPLACES the old (Yariv 2026-07-21: "בקשה חדשה צריכה
+    // להחליף את הישנה … וכמובן שקורות חיים חדשים צריכים להחליף ישנים"). The previous
+    // values are never lost: every submission stays in cv_updates and is revealed by
+    // the "היסטוריית הגשות קודמות" button + the /organizations request history. Only
+    // overwrite an org rank the submission actually specifies (a CV-only re-upload
+    // keeps the current preferences).
+    setForm(f => ({
+      ...f,
+      cvUpdatedUrl: storageUrl,
+      ...(pendingCv.org_pref_1 ? { firstChoiceOrg: pendingCv.org_pref_1 } : {}),
+      ...(pendingCv.org_pref_2 ? { secondChoiceOrg: pendingCv.org_pref_2 } : {}),
+      ...(pendingCv.org_pref_3 ? { thirdChoiceOrg: pendingCv.org_pref_3 } : {}),
+    }));
     await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
     setPendingCv(null);
     setCvApplied(true);
@@ -797,7 +811,9 @@ export default function StudentEditor({
                     display: 'inline-block', padding: '7px 14px', fontSize: '12px', fontWeight: 600,
                     background: '#b45309', color: 'white', border: 'none',
                     borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap',
-                  }}>✓ אמץ כ‑CV מעודכן</button>
+                  }}>{(pendingCv.org_pref_1 || pendingCv.org_pref_2 || pendingCv.org_pref_3)
+                    ? '✓ אמץ הגשה (קו״ח + העדפות)'
+                    : '✓ אמץ כ‑CV מעודכן'}</button>
                 </div>
               </div>
             )}
@@ -941,11 +957,19 @@ export default function StudentEditor({
                           {cvHistory.slice(1).map(row => {
                             const ps = [0, 1, 2].map(i => prefAt(row, i)).filter(Boolean);
                             return (
-                              <div key={row.id} className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
+                              <div key={row.id} className="text-[12px] flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-soft)' }}>
                                 <span className="font-semibold">{fmt(row.uploaded_at)}</span>
                                 {' · '}
-                                {ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}
-                                {row.suggested_org?.name ? `   · הצעה: ${row.suggested_org.name}` : ''}
+                                <span>{ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}</span>
+                                {row.suggested_org?.name ? <span>{`· הצעה: ${row.suggested_org.name}`}</span> : null}
+                                {/* Previous CV file — kept in history, openable on demand (Yariv:
+                                    "גם כאן יכולה להישמר היסטוריה שחושפים … על ידי לחיצה על היסטוריה"). */}
+                                {row.cv_file_path && (
+                                  <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${row.cv_file_path}`), '_blank')}
+                                    className="text-[11px] underline" style={{ color: 'var(--accent)' }}>
+                                    קו״ח ↗
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
