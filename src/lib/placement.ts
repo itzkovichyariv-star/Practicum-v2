@@ -544,11 +544,12 @@ function legacyChoices(student: any): Array<{ orgName: string; interviewResult: 
 }
 
 /**
- * Build the unified ordered org list for a student. Prefers the structured
- * `preferences[]` when present (resolving each org's display name + carrying its own
- * interviewResult, falling back to the legacy result matched BY ORG NAME); otherwise
- * derives the list straight from the legacy choice fields. Always sorted by rank and
- * re-numbered 1..N.
+ * Build the unified ordered org list for a student — the UNION of the structured
+ * `preferences[]` (rank order, each carrying its own interviewResult, falling back to
+ * the legacy result matched BY ORG NAME) and any legacy `*ChoiceOrg` the coordinator
+ * chose but never "built" into a preference yet. A freshly-typed org therefore shows
+ * as a card immediately, and a built org keeps its placement status/slot. Always
+ * re-numbered 1..N. The union is what lets the editor drop the explicit "build" step.
  */
 export function buildUnifiedOrgList(student: any, employers: any[] = []): UnifiedOrgPref[] {
   const legacy = legacyChoices(student);
@@ -557,23 +558,25 @@ export function buildUnifiedOrgList(student: any, employers: any[] = []): Unifie
   const nameOf = (empId: string): string => (employers || []).find((e: any) => e?.id === empId)?.name || '';
 
   const prefs: any[] = Array.isArray(student?.preferences) ? student.preferences : [];
-  let list: UnifiedOrgPref[];
-  if (prefs.length > 0) {
-    list = [...prefs]
-      .sort((a, b) => (a.rank || 0) - (b.rank || 0))
-      .map((p) => {
-        const orgName = (p.orgName || nameOf(p.employerId) || legacy[p.rank - 1]?.orgName || '').trim();
-        const interviewResult: InterviewResult = p.interviewResult || legacyResultFor(orgName) || 'pending';
-        return { rank: p.rank || 0, orgName, employerId: p.employerId || resolveEmployerIdByName(orgName, employers), interviewResult, status: p.status || 'tentative', slotId: p.slotId ?? null };
-      })
-      .filter(p => p.orgName);
-  } else {
-    list = legacy.map((c, i) => ({
-      rank: i + 1, orgName: c.orgName, employerId: resolveEmployerIdByName(c.orgName, employers),
+  const fromPrefs: UnifiedOrgPref[] = [...prefs]
+    .sort((a, b) => (a.rank || 0) - (b.rank || 0))
+    .map((p) => {
+      const orgName = (p.orgName || nameOf(p.employerId) || legacy[(p.rank || 1) - 1]?.orgName || '').trim();
+      const interviewResult: InterviewResult = p.interviewResult || legacyResultFor(orgName) || 'pending';
+      return { rank: p.rank || 0, orgName, employerId: p.employerId || resolveEmployerIdByName(orgName, employers), interviewResult, status: p.status || 'tentative', slotId: p.slotId ?? null } as UnifiedOrgPref;
+    })
+    .filter(p => p.orgName);
+
+  // Append any legacy choice not already represented by a preference (case-insensitive).
+  const seen = new Set(fromPrefs.map(p => p.orgName.trim().toLowerCase()));
+  const fromLegacy: UnifiedOrgPref[] = legacy
+    .filter(c => !seen.has(c.orgName.trim().toLowerCase()))
+    .map(c => ({
+      rank: 0, orgName: c.orgName, employerId: resolveEmployerIdByName(c.orgName, employers),
       interviewResult: c.interviewResult, status: 'tentative' as const, slotId: null,
     }));
-  }
-  return list.map((p, i) => ({ ...p, rank: i + 1 }));
+
+  return [...fromPrefs, ...fromLegacy].map((p, i) => ({ ...p, rank: i + 1 }));
 }
 
 /**

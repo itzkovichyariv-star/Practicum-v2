@@ -121,6 +121,29 @@ const audit = new Audit({ name: 'unified-org-list' });
   });
 }
 
+// ── 3b. UNION: a legacy org not yet built still shows as a card ──────────────
+{
+  // e1 is built into preferences[]; e2/e3 are only chosen in the legacy fields
+  // (coordinator picked them but never pressed "build"). All three must appear.
+  const student = {
+    id: 's3b', name: 'איחוד',
+    preferences: [{ rank: 1, employerId: 'e1', orgName: 'ארגון אלפא', interviewResult: 'passed', status: 'under_review', slotId: 's-a' }],
+    secondChoiceOrg: 'ארגון בטא', secondChoiceResult: 'failed',
+    thirdChoiceOrg: 'ארגון גמא', thirdChoiceResult: 'pending',
+  };
+  const list = buildUnifiedOrgList(student, employers);
+  const names = list.map(p => p.orgName).join(' > ');
+  const alphaBuilt = list[0]?.status === 'under_review' && list[0]?.slotId === 's-a';
+  const betaResult = list.find(p => p.orgName === 'ארגון בטא')?.interviewResult;
+  audit.recordCell({
+    id: 'UNI-union', tableRef: 'placement.buildUnifiedOrgList / prefs ∪ legacy',
+    expected: 'a built pref (אלפא, under_review) AND two legacy-only orgs (בטא, גמא) all appear as cards, ranks 1..3; built keeps its slot, legacy keeps its result',
+    observed: `order="${names}", alphaBuilt=${alphaBuilt}, betaResult=${betaResult}, count=${list.length}`,
+    pass: list.length === 3 && names === 'ארגון אלפא > ארגון בטא > ארגון גמא' && alphaBuilt && betaResult === 'failed',
+    notes: list.length !== 3 ? 'A chosen-but-not-built org is hidden — the union failed, so the editor would drop it.' : '',
+  });
+}
+
 // ── 4. Write-back syncs the legacy compat fields ────────────────────────────
 {
   const student = { id: 's4', name: 'כתיבה חזרה', firstChoiceOrg: 'stale', firstChoiceResult: 'passed' };

@@ -4,14 +4,14 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildPlacementPreferences, addPlacementPreference, openVacancies, buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { viewableCvUrl } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
 import Modal from './Modal';
-import PlacementPanel from './PlacementPanel';
+import OrgHub from './OrgHub';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 
 type PlacementExtras = {
@@ -91,13 +91,6 @@ export default function StudentEditor({
     preferences: student?.preferences || [],
     submissionStatus: student?.submissionStatus,
   });
-  // Result of the last "build placements" action (built rows + flagged orgs).
-  const [buildResult, setBuildResult] = useState<{ built: Array<{ rank: number; orgName: string }>; unresolved: Array<{ orgName: string; reason: string }> } | null>(null);
-  const [building, setBuilding] = useState(false);
-  const [extraOrg, setExtraOrg] = useState(''); // ad-hoc "send to an employer outside the list"
-
-  const prepPassed = !!form.preparation?.passed;
-
   // ── Pending CV update detection ──────────────────────────────────────
   type SuggestedOrg = { name?: string; contactName?: string; contactRole?: string; email?: string; phone?: string; location?: string; notes?: string };
   const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
@@ -365,59 +358,8 @@ export default function StudentEditor({
     if (!row) return '';
     return (([row.org_pref_1, row.org_pref_2, row.org_pref_3][i] || '') as string).trim();
   }
-  function changeTag(cur: CvRow, prev: CvRow | undefined, i: number): { label: string; color: string } | null {
-    const org = prefAt(cur, i);
-    if (!org || !prev) return null; // first submission → no diff
-    if (prefAt(prev, i) === org) return { label: 'ללא שינוי', color: 'var(--text-soft)' };
-    const wasAt = [0, 1, 2].findIndex(j => prefAt(prev, j) === org);
-    if (wasAt >= 0) return { label: `שינה מיקום (היה #${wasAt + 1})`, color: '#b45309' };
-    const replaced = prefAt(prev, i);
-    return { label: replaced ? `חדש (במקום ${replaced})` : 'חדש', color: 'var(--accent)' };
-  }
-
   function updatePrep<K extends keyof NonNullable<Student['preparation']>>(k: K, v: any) {
     setForm(f => ({ ...f, preparation: { ...(f.preparation || {}), [k]: v } as any }));
-  }
-
-  // One-click bridge: turn the candidate's chosen orgs (admin first/second choice
-  // + the candidate's submitted org_pref_1/2/3, in order) into structured
-  // placement preferences with reserved slots, so PlacementPanel can dispatch the
-  // CV to each employer. Flags orgs that are unmatched / full.
-  async function buildPlacements() {
-    if (!placementExtras) return;
-    const latest = cvHistory[0];
-    const ordered: string[] = [];
-    const push = (v?: string | null) => {
-      const t = (v || '').trim();
-      if (t && !ordered.some(o => o.toLowerCase() === t.toLowerCase())) ordered.push(t);
-    };
-    push(form.firstChoiceOrg);
-    push(form.secondChoiceOrg);
-    push(form.thirdChoiceOrg); // 3-request student model (2026-07-20)
-    if (latest) { push(latest.org_pref_1); push(latest.org_pref_2); push(latest.org_pref_3); }
-
-    if (ordered.length === 0) {
-      showToast('אין העדפות ארגון לבנות — לא נבחרו ארגונים', 'error');
-      return;
-    }
-
-    setBuilding(true);
-    const base: Student = { ...((student || {}) as Student), ...form };
-    const { updatedStudent, updatedEmployers, built, unresolved } =
-      buildPlacementPreferences(base, ordered, employers, { actorId: placementExtras.userName });
-
-    setForm(f => ({ ...f, preferences: updatedStudent.preferences, submissionStatus: updatedStudent.submissionStatus }));
-    const nextStudents = placementExtras.allStudents.map(s => s.id === base.id ? updatedStudent : s);
-    try {
-      await placementExtras.onDataChange({ students: nextStudents, employers: updatedEmployers });
-      setBuildResult({ built: built.map(b => ({ rank: b.rank, orgName: b.orgName })), unresolved });
-      if (built.length) showToast(`✓ נבנו ${built.length} העדפות — ניתן לשלוח קו"ח למטה`, 'success');
-      else showToast('לא נבנו העדפות — אף ארגון לא זמין לשליחה', 'error');
-    } catch (e: any) {
-      showToast('שגיאה בבניית ההעדפות: ' + (e?.message || ''), 'error');
-    } finally {
-      setBuilding(false);
-    }
   }
 
   // ── Stage-2 link (org-preference selection) — sendable from the student card ──
@@ -443,53 +385,6 @@ export default function StudentEditor({
   function mailPrefLink() {
     if (!(form.email || '').trim()) { showToast('לא הוזן מייל למועמד/ת', 'error'); return; }
     openMailto(buildMailtoUrl(form.email!, 'בחירת העדפות ארגון — פרקטיקום, אוניברסיטת אריאל', prefLinkMessage()));
-  }
-
-  // Open vacancies for an employer (available slots, or positionsTotal if no
-  // slots have been generated yet).
-  function openCapacity(e: Employer): number {
-    return openVacancies(e);
-  }
-
-  // Employers the admin can send this student to (full list, gated to ones with a
-  // free vacancy unless the bypass is on; excludes other students' private orgs
-  // and ones already on the dispatch list).
-  function dispatchableEmployerOptions() {
-    const alreadyIds = new Set((form.preferences || []).map(p => p.employerId));
-    return employers
-      .filter(e => {
-        if ((e as any).restrictedToStudentId && (e as any).restrictedToStudentId !== form.id) return false;
-        if (alreadyIds.has(e.id)) return false;
-        if ((e as any).approvalStatus === 'rejected') return false;
-        return showAllOrgs || openCapacity(e) > 0;
-      })
-      .map(e => {
-        const open = openCapacity(e);
-        return { value: e.name, label: open > 0 ? `${e.name} — ${open} מקומות פנויים` : `${e.name} — מלא` };
-      });
-  }
-
-  // Ad-hoc: send the CV to an employer outside the candidate's chosen list,
-  // reserving one of that employer's vacancies.
-  async function addExtraEmployer() {
-    if (!placementExtras || !extraOrg.trim()) return;
-    const emp = employers.find(e => (e.name || '').trim().toLowerCase() === extraOrg.trim().toLowerCase());
-    if (!emp) { showToast('ארגון לא נמצא ברשימה', 'error'); return; }
-    setBuilding(true);
-    const base: Student = { ...((student || {}) as Student), ...form };
-    const { updatedStudent, updatedEmployers, ok, reason } = addPlacementPreference(base, emp, employers, { actorId: placementExtras.userName });
-    if (!ok) { showToast(reason || 'לא ניתן להוסיף את הארגון', 'error'); setBuilding(false); return; }
-    setForm(f => ({ ...f, preferences: updatedStudent.preferences, submissionStatus: updatedStudent.submissionStatus }));
-    const nextStudents = placementExtras.allStudents.map(s => s.id === base.id ? updatedStudent : s);
-    try {
-      await placementExtras.onDataChange({ students: nextStudents, employers: updatedEmployers });
-      showToast(`✓ "${emp.name}" נוסף לשליחה — שוריין מקום`, 'success');
-      setExtraOrg('');
-    } catch (e: any) {
-      showToast('שגיאה: ' + (e?.message || ''), 'error');
-    } finally {
-      setBuilding(false);
-    }
   }
 
   function handleSubmit(e: FormEvent) {
@@ -873,7 +768,7 @@ export default function StudentEditor({
             </div>
           </SectionSub>
 
-          <SectionSub title="בחירת ארגון">
+          <SectionSub title="בחירת ארגון ושליחה">
             {/* Send the personalized stage-2 (preference-selection) link from here */}
             <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
               <div className="text-[12.5px] font-semibold" style={{ color: 'var(--ink)' }}>📨 קישור אישי לבחירת העדפות (שלב 2)</div>
@@ -892,231 +787,138 @@ export default function StudentEditor({
                 </button>
               </div>
             </div>
-            {cvHistory.length > 0 && (() => {
+            {/* Latest submission's suggested org — approve to create it as a private,
+                ranked employer (then it appears as an OrgHub card). Once approved or
+                rejected it drops (it's a card / dismissed). The pending-CV banner above
+                covers the freshest one; this catches an already-adopted submission whose
+                banner is gone. */}
+            {(() => {
               const latest = cvHistory[0];
-              const prev = cvHistory[1];
-              const fmt = (s: string) => { try { return new Date(s).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); } catch { return s; } };
-              const latestPrefs = [0, 1, 2].map(i => prefAt(latest, i)).filter(Boolean);
-              if (latestPrefs.length === 0 && !latest.suggested_org?.name) return null;
+              const sg = latest?.suggested_org;
+              if (!sg?.name) return null;
+              const approved = suggestionDecided === 'approved'
+                || employers.some(e => (e as any).restrictedToStudentId === form.id && (e.name || '').trim() === (sg.name || '').trim());
+              if (approved || suggestionDecided === 'rejected') return null;
               return (
-                <div className="col-span-full p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)' }}>
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <span className="text-[12px] font-semibold" style={{ color: 'var(--ink)' }}>
-                      העדפות הארגון שהמועמד/ת הגיש/ה · {fmt(latest.uploaded_at)}
-                    </span>
-                    {!prev && <span className="text-[11px]" style={{ color: 'var(--text-soft)' }}>הגשה ראשונה</span>}
+                <div className="col-span-full rounded-lg p-2.5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px dashed var(--accent)' }}>
+                  <div className="text-[12px]" style={{ color: 'var(--ink)' }}>
+                    🔆 הצעת ארגון מהמועמד/ת: <strong>{sg.name}</strong>
+                    {sg.contactName ? <span style={{ color: 'var(--text-soft)' }}> · {sg.contactName}{sg.contactRole ? ` (${sg.contactRole})` : ''}</span> : null}
                   </div>
-                  <ol className="mt-2 space-y-1">
-                    {[0, 1, 2].map(i => {
-                      const org = prefAt(latest, i);
-                      if (!org) return null;
-                      const tag = changeTag(latest, prev, i);
-                      return (
-                        <li key={i} className="text-[13px] flex items-center gap-2 flex-wrap" style={{ color: 'var(--ink)' }}>
-                          <span style={{ color: 'var(--text-soft)' }}>{i + 1}.</span>
-                          <span>{org}</span>
-                          {tag && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                              style={{ color: tag.color, background: 'rgba(0,0,0,0.04)' }}>
-                              {tag.label}
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                  {latest.suggested_org?.name && (() => {
-                    const sg = latest.suggested_org;
-                    const approved = suggestionDecided === 'approved'
-                      || employers.some(e => (e as any).restrictedToStudentId === form.id && (e.name || '').trim() === (sg.name || '').trim());
-                    const rejected = suggestionDecided === 'rejected';
-                    return (
-                      <div className="mt-2 rounded-lg p-2.5" style={{ background: 'rgba(122,30,43,0.05)', border: '1px dashed var(--accent)' }}>
-                        <div className="text-[12px]" style={{ color: 'var(--ink)' }}>
-                          🔆 הצעת ארגון מהמועמד/ת: <strong>{sg.name}</strong>
-                          {sg.contactName ? <span style={{ color: 'var(--text-soft)' }}> · {sg.contactName}{sg.contactRole ? ` (${sg.contactRole})` : ''}</span> : null}
-                        </div>
-                        {approved ? (
-                          <div className="mt-1 text-[11.5px] font-semibold" style={{ color: '#15803d' }}>✓ אושרה — נקבעה כבחירה ראשונה</div>
-                        ) : rejected ? (
-                          <div className="mt-1 text-[11.5px]" style={{ color: 'var(--text-soft)' }}>ההצעה נדחתה</div>
-                        ) : (
-                          <div className="flex gap-2 mt-2">
-                            <button type="button" onClick={() => approveSuggestion(sg, latest.id)}
-                              style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer' }}>
-                              ✓ אשר כבחירה ראשונה
-                            </button>
-                            <button type="button" onClick={() => rejectSuggestion(latest.id)}
-                              style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '999px', cursor: 'pointer' }}>
-                              דחה
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {cvHistory.length > 1 && (
-                    <>
-                      <button type="button" onClick={() => setShowHistory(s => !s)}
-                        className="mt-2 text-[11px] underline" style={{ color: 'var(--accent)' }}>
-                        {showHistory ? 'הסתר היסטוריית הגשות' : `היסטוריית הגשות קודמות (${cvHistory.length - 1})`}
-                      </button>
-                      {showHistory && (
-                        <div className="mt-2 space-y-1.5 pt-2" style={{ borderTop: '1px dashed var(--divider)' }}>
-                          {cvHistory.slice(1).map(row => {
-                            const ps = [0, 1, 2].map(i => prefAt(row, i)).filter(Boolean);
-                            return (
-                              <div key={row.id} className="text-[12px] flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-soft)' }}>
-                                <span className="font-semibold">{fmt(row.uploaded_at)}</span>
-                                {' · '}
-                                <span>{ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}</span>
-                                {row.suggested_org?.name ? <span>{`· הצעה: ${row.suggested_org.name}`}</span> : null}
-                                {/* Previous CV file — kept in history, openable on demand (Yariv:
-                                    "גם כאן יכולה להישמר היסטוריה שחושפים … על ידי לחיצה על היסטוריה"). */}
-                                {row.cv_file_path && (
-                                  <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${row.cv_file_path}`), '_blank')}
-                                    className="text-[11px] underline" style={{ color: 'var(--accent)' }}>
-                                    קו״ח ↗
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </>
-                  )}
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => approveSuggestion(sg, latest.id)}
+                      style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer' }}>
+                      ✓ אשר כבחירה ראשונה
+                    </button>
+                    <button type="button" onClick={() => rejectSuggestion(latest.id)}
+                      style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: 600, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '999px', cursor: 'pointer' }}>
+                      דחה
+                    </button>
+                  </div>
                 </div>
               );
             })()}
-            <div className="col-span-full flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-                מוצגים ארגונים זמינים לסטודנטים (תיאור + מקומות פנויים).
-              </span>
-              <label className="inline-flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: showAllOrgs ? 'var(--accent)' : 'var(--text-soft)' }}>
-                <input type="checkbox" checked={showAllOrgs} onChange={e=>setShowAllOrgs(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-                ⚠ הצג גם ארגונים שאינם זמינים (עקיפה ידנית)
-              </label>
-            </div>
-            <Field label="בחירה ראשונה — ארגון">
-              <Select value={form.firstChoiceOrg||''} onChange={v=>update('firstChoiceOrg',v)}
-                options={gatedOrgOptions(form.firstChoiceOrg||'')}
-                placeholder="בחר ארגון"
-                freeText/>
-            </Field>
-            <Field label="תוצאת ראיון — בחירה ראשונה">
-              <Select value={form.firstChoiceResult||'pending'} onChange={v=>update('firstChoiceResult', v as any)}
-                options={[
-                  { value: 'pending', label: 'טרם רואיין' },
-                  { value: 'passed', label: 'עבר' },
-                  { value: 'failed', label: 'לא עבר' },
-                ]}/>
-            </Field>
-            <Field label="בחירה שנייה — ארגון">
-              <Select value={form.secondChoiceOrg||''} onChange={v=>update('secondChoiceOrg',v)}
-                options={gatedOrgOptions(form.secondChoiceOrg||'')}
-                placeholder="בחר ארגון שני"
-                freeText/>
-            </Field>
-            <Field label="תוצאת ראיון — בחירה שנייה">
-              <Select value={form.secondChoiceResult||'pending'} onChange={v=>update('secondChoiceResult', v as any)}
-                options={[
-                  { value: 'pending', label: 'טרם רואיין' },
-                  { value: 'passed', label: 'עבר' },
-                  { value: 'failed', label: 'לא עבר' },
-                ]}/>
-            </Field>
-            <Field label="בחירה שלישית — ארגון">
-              <Select value={form.thirdChoiceOrg||''} onChange={v=>update('thirdChoiceOrg',v)}
-                options={gatedOrgOptions(form.thirdChoiceOrg||'')}
-                placeholder="בחר ארגון שלישי"
-                freeText/>
-            </Field>
-            <Field label="תוצאת ראיון — בחירה שלישית">
-              <Select value={form.thirdChoiceResult||'pending'} onChange={v=>update('thirdChoiceResult', v as any)}
-                options={[
-                  { value: 'pending', label: 'טרם רואיין' },
-                  { value: 'passed', label: 'עבר' },
-                  { value: 'failed', label: 'לא עבר' },
-                ]}/>
-            </Field>
 
-            {/* One-click: build placement preferences → activates CV dispatch below */}
-            {!isNew && placementExtras && (courses.find(c => c.id === form.courseId) as any)?.type === 'practicum' && (
-              <div className="col-span-full rounded-xl p-3.5 mt-1" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="text-[13px] leading-[1.5]" style={{ color: 'var(--ink)' }}>
-                    <span className="font-semibold">הכנת העדפות לשליחה למעסיקים</span>
-                    <div className="text-[12px]" style={{ color: 'var(--text-soft)' }}>
-                      בונה את רשימת ההעדפות מבחירת המועמד/ת (וההצעה שאושרה) ומפעיל את שליחת הקו"ח למטה. המקום נתפס רק בעת שליחת הקו"ח בפועל.
-                    </div>
-                  </div>
-                  <button type="button" onClick={buildPlacements} disabled={building}
-                    style={{ ...btnSmall(building), background: building ? undefined : 'var(--accent)', color: building ? undefined : 'white', borderColor: 'var(--accent)', whiteSpace: 'nowrap' }}>
-                    {building ? 'בונה…' : (form.preferences || []).length > 0 ? '↻ עדכן העדפות לשליחה' : '✓ אשר העדפות והכן לשליחה'}
-                  </button>
+            {/* Org world. Practicum → the unified OrgHub (ranked cards, re-rank,
+                per-org interview result, checkbox-select → WhatsApp/Outlook send).
+                Non-practicum → the simple choice fields (no placement workflow). */}
+            {!isNew && placementExtras && (courses.find(c => c.id === form.courseId) as any)?.type === 'practicum' ? (
+              <div className="col-span-full">
+                <OrgHub
+                  form={form}
+                  employers={employers}
+                  courses={courses}
+                  extras={{
+                    allStudents: placementExtras.allStudents,
+                    dispatches: placementExtras.dispatches,
+                    placementSettings: placementExtras.placementSettings as PlacementSettings,
+                    userName: placementExtras.userName,
+                    onDataChange: async (patch) => {
+                      await placementExtras.onDataChange(patch);
+                      // Keep the editor's form in step with OrgHub's persisted mutations
+                      // (send → under_review, נקלט/נדחה, release) — incl. the compat
+                      // legacy fields, so the coordinator-edit log + re-open stay correct.
+                      const me = (patch.students || []).find(s => s.id === form.id) as Student | undefined;
+                      if (me) setForm(f => ({
+                        ...f,
+                        preferences: me.preferences || [], submissionStatus: me.submissionStatus,
+                        acceptedOrg: me.acceptedOrg ?? f.acceptedOrg,
+                        firstChoiceOrg: (me as any).firstChoiceOrg ?? f.firstChoiceOrg, firstChoiceResult: (me as any).firstChoiceResult ?? f.firstChoiceResult,
+                        secondChoiceOrg: (me as any).secondChoiceOrg ?? f.secondChoiceOrg, secondChoiceResult: (me as any).secondChoiceResult ?? f.secondChoiceResult,
+                        thirdChoiceOrg: (me as any).thirdChoiceOrg ?? f.thirdChoiceOrg, thirdChoiceResult: (me as any).thirdChoiceResult ?? f.thirdChoiceResult,
+                      }));
+                    },
+                  }}
+                  showAllOrgs={showAllOrgs}
+                  setShowAllOrgs={setShowAllOrgs}
+                  onFormChange={(patch) => setForm(f => ({ ...f, ...patch }))}
+                  submittedCaption={cvHistory[0] ? `הוגש ע״י המועמד/ת · ${new Date(cvHistory[0].uploaded_at).toLocaleDateString('he-IL')}` : null}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="col-span-full flex items-center justify-end">
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-[12px]" style={{ color: showAllOrgs ? 'var(--accent)' : 'var(--text-soft)' }}>
+                    <input type="checkbox" checked={showAllOrgs} onChange={e=>setShowAllOrgs(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+                    ⚠ הצג גם ארגונים שאינם זמינים
+                  </label>
                 </div>
+                <Field label="בחירה ראשונה — ארגון">
+                  <Select value={form.firstChoiceOrg||''} onChange={v=>update('firstChoiceOrg',v)}
+                    options={gatedOrgOptions(form.firstChoiceOrg||'')} placeholder="בחר ארגון" freeText/>
+                </Field>
+                <Field label="תוצאת ראיון — בחירה ראשונה">
+                  <Select value={form.firstChoiceResult||'pending'} onChange={v=>update('firstChoiceResult', v as any)}
+                    options={[{ value: 'pending', label: 'טרם רואיין' }, { value: 'passed', label: 'עבר' }, { value: 'failed', label: 'לא עבר' }]}/>
+                </Field>
+                <Field label="בחירה שנייה — ארגון">
+                  <Select value={form.secondChoiceOrg||''} onChange={v=>update('secondChoiceOrg',v)}
+                    options={gatedOrgOptions(form.secondChoiceOrg||'')} placeholder="בחר ארגון שני" freeText/>
+                </Field>
+                <Field label="תוצאת ראיון — בחירה שנייה">
+                  <Select value={form.secondChoiceResult||'pending'} onChange={v=>update('secondChoiceResult', v as any)}
+                    options={[{ value: 'pending', label: 'טרם רואיין' }, { value: 'passed', label: 'עבר' }, { value: 'failed', label: 'לא עבר' }]}/>
+                </Field>
+                <Field label="בחירה שלישית — ארגון">
+                  <Select value={form.thirdChoiceOrg||''} onChange={v=>update('thirdChoiceOrg',v)}
+                    options={gatedOrgOptions(form.thirdChoiceOrg||'')} placeholder="בחר ארגון שלישי" freeText/>
+                </Field>
+                <Field label="תוצאת ראיון — בחירה שלישית">
+                  <Select value={form.thirdChoiceResult||'pending'} onChange={v=>update('thirdChoiceResult', v as any)}
+                    options={[{ value: 'pending', label: 'טרם רואיין' }, { value: 'passed', label: 'עבר' }, { value: 'failed', label: 'לא עבר' }]}/>
+                </Field>
+              </>
+            )}
 
-                {/* Ad-hoc: send to an employer outside the candidate's chosen list (still reserves a vacancy) */}
-                <div className="mt-3 pt-3 flex items-end gap-2 flex-wrap" style={{ borderTop: '1px dashed var(--divider)' }}>
-                  <div className="flex-1 min-w-[220px]">
-                    <span className="mono text-[10px] uppercase tracking-[0.12em] block mb-1" style={{ color: 'var(--text-soft)' }}>
-                      שליחה לארגון נוסף (מחוץ לרשימת ההעדפות)
-                    </span>
-                    <Select value={extraOrg} onChange={setExtraOrg}
-                      options={dispatchableEmployerOptions()}
-                      placeholder="בחר/י ארגון מהרשימה" />
-                  </div>
-                  <button type="button" onClick={addExtraEmployer} disabled={building || !extraOrg}
-                    style={{ ...btnSmall(building || !extraOrg), whiteSpace: 'nowrap' }}>
-                    ➕ הוסף לשליחה
-                  </button>
-                </div>
-                {buildResult && (
-                  <div className="mt-2.5 pt-2.5 text-[12.5px] space-y-1" style={{ borderTop: '1px dashed var(--divider)' }}>
-                    {buildResult.built.map(b => (
-                      <div key={b.rank} style={{ color: 'var(--ink)' }}>✓ העדפה {b.rank}: {b.orgName} — מוכן לשליחה</div>
-                    ))}
-                    {buildResult.unresolved.map((u, i) => (
-                      <div key={'u' + i} style={{ color: '#b45309' }}>⚠ {u.orgName} — {u.reason} (החלף/י ידנית למעלה ובנה/י שוב)</div>
-                    ))}
-                    {buildResult.built.length === 0 && buildResult.unresolved.length === 0 && (
-                      <div style={{ color: 'var(--text-soft)' }}>לא נבחרו ארגונים.</div>
-                    )}
+            {/* Previous submissions (coordinator view) — Phase 3 folds this into the
+                History accordion; kept here so nothing is lost in the interim. */}
+            {cvHistory.length > 1 && (
+              <div className="col-span-full p-3 rounded-lg" style={{ background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)' }}>
+                <button type="button" onClick={() => setShowHistory(s => !s)} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>
+                  {showHistory ? 'הסתר היסטוריית הגשות' : `היסטוריית הגשות קודמות (${cvHistory.length - 1})`}
+                </button>
+                {showHistory && (
+                  <div className="mt-2 space-y-1.5 pt-2" style={{ borderTop: '1px dashed var(--divider)' }}>
+                    {cvHistory.slice(1).map(row => {
+                      const ps = [0, 1, 2].map(i => prefAt(row, i)).filter(Boolean);
+                      const fmt = (s: string) => { try { return new Date(s).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }); } catch { return s; } };
+                      return (
+                        <div key={row.id} className="text-[12px] flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-soft)' }}>
+                          <span className="font-semibold">{fmt(row.uploaded_at)}</span>{' · '}
+                          <span>{ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}</span>
+                          {row.suggested_org?.name ? <span>{`· הצעה: ${row.suggested_org.name}`}</span> : null}
+                          {row.cv_file_path && (
+                            <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${row.cv_file_path}`), '_blank')}
+                              className="text-[11px] underline" style={{ color: 'var(--accent)' }}>קו״ח ↗</button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             )}
           </SectionSub>
-
-          {/* Dispatch workflow — co-located right after building the org preferences */}
-          {!isNew && placementExtras && (() => {
-            const studentCourse = courses.find(c => c.id === form.courseId);
-            if (!studentCourse || (studentCourse as any).type !== 'practicum') return null;
-            const ps = placementExtras.placementSettings as PlacementSettings;
-            return (
-              <div style={{ borderTop: '2px solid var(--divider)', marginTop: '24px', paddingTop: '20px' }}>
-                <PlacementPanel
-                  student={form as Student & { cvShareUrl?: string | null; submissionStatus?: string; preferences?: any[] }}
-                  allStudents={placementExtras.allStudents}
-                  employers={employers}
-                  courses={courses}
-                  dispatches={placementExtras.dispatches}
-                  approvalRequests={placementExtras.approvalRequests}
-                  placementSettings={ps}
-                  userName={placementExtras.userName}
-                  onDataChange={async (patch) => {
-                    await placementExtras.onDataChange(patch);
-                    // Keep the form in sync with PlacementPanel's own mutations
-                    // (dispatch → under_review, result → placed/…) so the panel,
-                    // which is fed `form`, reflects them without a reopen.
-                    const me = (patch.students || []).find(s => s.id === form.id) as Student | undefined;
-                    if (me) setForm(f => ({ ...f, preferences: me.preferences || [], submissionStatus: me.submissionStatus, acceptedOrg: me.acceptedOrg ?? f.acceptedOrg }));
-                  }}
-                />
-              </div>
-            );
-          })()}
 
           <SectionSub title="ראיון שיבוץ (רחל — תיאום עם מעסיק)">
             <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>

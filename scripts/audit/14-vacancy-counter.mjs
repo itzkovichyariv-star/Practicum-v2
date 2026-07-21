@@ -76,20 +76,22 @@ audit.log('COUNTER-send-takes-place: build reserves nothing; ticking the send-CV
       await audit.page.waitForTimeout(1200);
       opened = true;
 
-      // Build the preferences → must reserve NOTHING (new rule: a place is taken
-      // only when the CV is sent). Both of the org's 2 slots stay available.
-      const buildBtn = audit.page.getByRole('button', { name: /אשר העדפות והכן לשליחה/ }).first();
-      if (await buildBtn.count() > 0) { await buildBtn.scrollIntoViewIfNeeded(); await buildBtn.click().catch(() => {}); await audit.page.waitForTimeout(2500); }
+      // The chosen org now renders as a ranked OrgHub card WITHOUT any "build" step
+      // (union of prefs ∪ legacy). A card reserves NOTHING — both of the org's 2 slots
+      // stay available until the CV is actually sent.
+      await audit.page.waitForSelector('[data-org-card]', { timeout: 4000 }).catch(() => {});
       availAfterBuild = availSlots((await loadData()).employers?.find(e => e.id === EMP_ID));
 
-      // Tick the "שלח קו"ח" checkbox → pick a channel (WhatsApp) → sends AND takes
+      // Tick the card's "שלח קו"ח" checkbox → the send bar → WhatsApp → sends AND takes
       // one place. The window.open popup is swallowed by the audit popup handler.
       const sendBox = audit.page.locator('[data-send-cv]').first();
       await sendBox.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
       if (await sendBox.count() > 0) {
         await sendBox.scrollIntoViewIfNeeded();
-        await sendBox.click().catch(() => {}); // opens the channel picker
-        await audit.page.waitForTimeout(400);
+        await sendBox.click().catch(() => {}); // select the card
+        await audit.page.waitForTimeout(300);
+        await audit.page.locator('[data-send-selected]').first().click().catch(() => {}); // open channel sheet
+        await audit.page.waitForTimeout(300);
         await audit.page.locator('[data-dispatch="whatsapp"]').first().click().catch(() => {});
         // Wait until a slot is actually taken (send persisted).
         for (let i = 0; i < 12; i++) {

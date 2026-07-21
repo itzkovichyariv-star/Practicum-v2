@@ -66,12 +66,13 @@ if (seedOk) {
     await audit.page.waitForTimeout(2000);
     opened = await audit.page.evaluate(() => !!document.querySelector('button[aria-label="סגור"]'));
 
-    // Change the first choice (free-text input) to NEW_ORG. The input sits right after
-    // the "בחירה ראשונה — ארגון" label — target it with a locator and fill() so React's
-    // onChange fires reliably (headless evaluate-set can miss the controlled update).
-    const firstInput = audit.page.locator('xpath=//span[normalize-space()="בחירה ראשונה — ארגון"]/following::input[1]');
+    // Change the first choice to NEW_ORG by renaming the FIRST ranked-org card's
+    // combobox (the redesigned OrgHub — the old "בחירה ראשונה — ארגון" field is gone).
+    // fill() + blur fires the card's onBlur → renameOrg → writeList → form + legacy sync.
+    await audit.page.waitForSelector('[data-org-card="0"] input', { timeout: 4000 }).catch(() => {});
+    const firstInput = audit.page.locator('[data-org-card="0"] input').first();
     await firstInput.fill(NEW_ORG).catch(() => {});
-    await firstInput.press('Tab').catch(() => {}); // blur → commit + close dropdown (Escape would close the whole modal)
+    await firstInput.press('Tab').catch(() => {}); // blur → commit (Escape would close the whole modal)
     await audit.page.waitForTimeout(400);
     await audit.page.evaluate(() => {
       const b = [...document.querySelectorAll('button')].find(x => (x.textContent || '').trim().startsWith('שמור'));

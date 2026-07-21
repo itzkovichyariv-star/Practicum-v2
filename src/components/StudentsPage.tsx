@@ -8,7 +8,6 @@ import { saveSnapshot, randomId } from '../lib/dataApi';
 import { occupyAcceptedOrgSlot, releaseStudentSlots, setCourseCapacity } from '../lib/placement';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
-import PlacementPanel from './PlacementPanel';
 import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';

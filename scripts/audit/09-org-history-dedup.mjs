@@ -156,8 +156,15 @@ audit.log('CARD-history: student editor shows submitted-prefs panel + history to
     }
 
     const before = await audit.shot('CARD-history-panel');
+    // The redesign surfaces the student's submitted orgs as ranked OrgHub cards + a
+    // "הוגש ע״י המועמד/ת · DATE" caption (practicum) and the previous-submissions
+    // toggle (>1). Any of these — or the legacy panel text — counts as "submitted
+    // prefs shown".
     const panelShown = await audit.page.evaluate(() =>
-      /העדפות הארגון שהמועמד\/ת הגיש\/ה/.test(document.body.textContent || ''));
+      document.querySelectorAll('[data-org-card]').length > 0
+      || /הוגש ע״י המועמד\/ת/.test(document.body.textContent || '')
+      || /היסטוריית הגשות קודמות/.test(document.body.textContent || '')
+      || /העדפות הארגון שהמועמד\/ת הגיש\/ה/.test(document.body.textContent || ''));
 
     // If the candidate has >1 submission, exercise the history toggle.
     let toggleWorked = null;

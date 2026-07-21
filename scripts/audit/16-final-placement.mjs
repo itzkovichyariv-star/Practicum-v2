@@ -59,19 +59,21 @@ audit.log('PLACED-converges: dispatch → נקלט sets acceptedOrg + occupies t
       await audit.page.waitForTimeout(1200);
       opened = true;
 
-      const buildBtn = audit.page.getByRole('button', { name: /אשר העדפות והכן לשליחה/ }).first();
-      if (await buildBtn.count() > 0) { await buildBtn.scrollIntoViewIfNeeded(); await buildBtn.click().catch(() => {}); await audit.page.waitForTimeout(2500); }
+      // The chosen org renders as an OrgHub card directly (union — no "build" step).
+      await audit.page.waitForSelector('[data-org-card]', { timeout: 4000 }).catch(() => {});
 
       // Stub window.open so the WhatsApp dispatch doesn't launch a tab.
       await audit.page.evaluate(() => { window.open = () => null; });
-      // Send the CV: tick the "שלח קו"ח" checkbox → the channel picker opens →
-      // click WhatsApp. (Sending is now behind the checkbox, not a bare button.)
+      // Send the CV: tick the card's "שלח קו"ח" checkbox (selects) → the send bar →
+      // WhatsApp. (Sending is behind a checkbox + a channel bottom-sheet now.)
       const sendBox = audit.page.locator('[data-send-cv]').first();
       await sendBox.waitFor({ state: 'visible', timeout: 6000 }).catch(() => {});
       if (await sendBox.count() > 0) {
         await sendBox.scrollIntoViewIfNeeded();
         await sendBox.click().catch(() => {});
-        await audit.page.waitForTimeout(400);
+        await audit.page.waitForTimeout(300);
+        await audit.page.locator('[data-send-selected]').first().click().catch(() => {});
+        await audit.page.waitForTimeout(300);
         const waBtn = audit.page.locator('[data-dispatch="whatsapp"]').first();
         if (await waBtn.count() > 0) { await waBtn.click().catch(() => {}); dispatched = true; }
       }

@@ -128,13 +128,18 @@ if (seedOk && firstChoiceOk) {
   await audit.page.waitForTimeout(1200);
   await openEditor();
 
-  // Build preferences: firstChoiceOrg → structured preference #1 (intent only).
-  const buildBtn = audit.page.getByRole('button', { name: /אשר העדפות והכן לשליחה/ }).first();
-  if (await buildBtn.count() > 0) { await buildBtn.scrollIntoViewIfNeeded(); await buildBtn.click().catch(() => {}); await audit.page.waitForTimeout(2500); }
+  // No "build" step now — the approved firstChoiceOrg surfaces directly as a ranked
+  // OrgHub card (union of prefs ∪ legacy), tentative and reserving no place. A tentative
+  // suggested-org card is exactly the one that offers the place-direct button, so its
+  // presence IS the "intent, no place held" state the old build produced.
+  await audit.page.waitForSelector('[data-org-card]', { timeout: 4000 }).catch(() => {});
   {
+    const cards = await audit.page.locator('[data-org-card]').count();
+    const directs = await audit.page.locator('[data-place-direct]').count();
+    // still tentative → not yet placed in the DB, no slot held
     const stu = (await loadData()).students?.find(s => s.id === STU_ID);
-    const p = (stu?.preferences || [])[0];
-    builtPrefTentative = !!p && p.status === 'tentative' && (p.slotId == null);
+    const noPlaceHeld = !(stu?.preferences || []).some(p => p.slotId);
+    builtPrefTentative = cards >= 1 && directs === 1 && noPlaceHeld;
   }
 
   // Path 2: the "כבר במגעים — אשר שיבוץ" button (suggested org only).
