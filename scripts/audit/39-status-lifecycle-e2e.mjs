@@ -47,19 +47,18 @@ async function setEmpStatus(contactStatus) {
   const employers = (data.employers || []).map(e => e.id === EMP_ID ? { ...e, contactStatus } : e);
   await sbPatchData({ ...data, employers });
 }
-// Does the seeded employer appear on the public link for this email? Also whether its card
-// exposes a request control (selectable).
+// Does the seeded employer appear on the public link for this email, as a proper
+// org CARD? /organizations is now the read-only preview (2026-07-21) — choosing
+// happens on the /cv-update link — so "selectable" no longer means a "בקש/י מקום"
+// button; it means the org renders as its own list card (data-org-name), i.e. the
+// student can actually see and read it, not just find the name somewhere in the text.
 async function orgVisibleFor(email) {
   await audit.page.goto(`${audit.baseUrl}/organizations?email=${encodeURIComponent(email)}`, { waitUntil: 'networkidle' });
   await audit.page.waitForTimeout(1400);
   return audit.page.evaluate((name) => {
-    const cards = [...document.querySelectorAll('div,li,article')].filter(el =>
-      (el.textContent || '').includes(name) && el.querySelector('button, a'));
-    // the tightest element that contains the name and a button = the org card
-    const card = cards.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)[0] || null;
     const bodyHas = (document.body.textContent || '').includes(name);
-    const selectable = !!card && [...card.querySelectorAll('button')].some(b => /בקש\/?י? מקום|בקש/.test(b.textContent || ''));
-    return { visible: bodyHas, selectable };
+    const asCard = [...document.querySelectorAll('[data-org-name]')].some(el => (el.getAttribute('data-org-name') || '') === name);
+    return { visible: bodyHas, selectable: asCard };
   }, EMP_NAME);
 }
 
@@ -127,11 +126,11 @@ try {
     notes: !approved.visible ? 'Approved employer did NOT appear for the matching student.' : '',
   });
   audit.recordCell({
-    id: 'E2E-selectable', tableRef: 'OrgCard request control',
-    expected: `the shown org is selectable ('בקש/י מקום') for the identified ${yearA} student`,
-    observed: `selectable=${approved.selectable}`,
+    id: 'E2E-selectable', tableRef: 'OrgCard renders as a list card (read-only preview)',
+    expected: `the shown org renders as its own card (data-org-name) for the identified ${yearA} student — the read-only preview, choosing is on /cv-update`,
+    observed: `rendersAsCard=${approved.selectable}`,
     pass: approved.selectable === true,
-    notes: !approved.selectable ? 'Org shown but no request control for the student.' : '',
+    notes: !approved.selectable ? 'Org name in the text but not rendered as a proper org card.' : '',
   });
 
   // ── State 3: year-B student (no open slot in their year) still does NOT see it ──
