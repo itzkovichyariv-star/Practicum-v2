@@ -6,7 +6,7 @@ import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi'
 import { orgAvailability } from '../lib/orgAvailability';
 import { buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
-import { viewableCvUrl } from '../lib/cvUrl';
+import { viewableCvUrl, resolveCvUrl } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
@@ -138,6 +138,7 @@ export default function StudentEditor({
   type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
   const [cvHistory, setCvHistory] = useState<CvRow[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showCvHistory, setShowCvHistory] = useState(false); // the CV strip's קו״ח-history toggle
   useEffect(() => {
     const email = student?.email?.trim().toLowerCase();
     if (!email) { setCvHistory([]); return; }
@@ -646,37 +647,79 @@ export default function StudentEditor({
             <Field label="תאריך הכנה"><Input type="date" value={form.preparation?.date||''} onChange={v=>updatePrep('date', v)}/></Field>
           </SectionSub>
 
-          {/* CV for dispatch — auto-uses cvUpdatedUrl or cvUrl (Supabase Storage links) */}
-          {(form as any).cvUpdatedUrl || (form as any).cvUrl ? (
-            <SectionSub title="📋 שיבוץ — קו&quot;ח לשליחה">
-              <div className="col-span-full rounded-xl p-3"
-                style={(form as any).cvUpdatedUrl
-                  ? { background: 'rgba(5,150,105,0.12)', border: '1.5px solid rgba(5,150,105,0.5)' }
-                  : { background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.3)' }}>
-                <div className="text-[12.5px] font-bold mb-1" style={{ color: '#065f46' }}>
-                  ✓ {(form as any).cvUpdatedUrl ? 'קו"ח מעודכן (אחרי הכנה) — זהו הקו"ח שיישלח למעסיק' : 'קו"ח מקורי — יצורף אוטומטית לשליחה למעסיק'}
+          {/* ── CV strip — ONE place for the CV: the current file (cvUpdatedUrl → cvUrl
+              → red warn), open/copy, the pending-adopt banner, and a קו״ח-history toggle
+              (the replaced original + every past submission's file). Absorbs the old
+              green/red status box + the "CV מעודכן" section + the raw path field. ── */}
+          <SectionSub title="קורות חיים">
+            {(() => {
+              const cur = (form as any).cvUpdatedUrl || (form as any).cvUrl || '';
+              const usingUpdated = !!(form as any).cvUpdatedUrl;
+              const copyCv = async () => {
+                const u = resolveCvUrl(cur);
+                if (!u) return;
+                try { await navigator.clipboard.writeText(u); showToast('✓ קישור הקו״ח הועתק', 'success'); }
+                catch { showToast(u, 'info'); }
+              };
+              return (
+                <div className="col-span-full rounded-xl p-3"
+                  style={cur
+                    ? (usingUpdated
+                      ? { background: 'rgba(5,150,105,0.12)', border: '1.5px solid rgba(5,150,105,0.5)' }
+                      : { background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.3)' })
+                    : { background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.3)' }}>
+                  {cur ? (
+                    <>
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="text-[12.5px] font-bold" style={{ color: '#065f46' }}>
+                          ✓ {usingUpdated ? 'קו"ח מעודכן (אחרי הכנה) — זהו הקו"ח שיישלח למעסיק' : 'קו"ח מקורי — יצורף אוטומטית לשליחה למעסיק'}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button type="button" data-cv-open onClick={() => window.open(viewableCvUrl(cur), '_blank')} style={{ ...btnSmall(), padding: '5px 12px' }}>פתח ↗</button>
+                          <button type="button" data-cv-copy onClick={copyCv} style={{ ...btnSmall(), padding: '5px 12px' }}>📋 העתק</button>
+                        </div>
+                      </div>
+                      {usingUpdated && (form as any).cvUrl && (
+                        <div className="mono text-[10.5px] mt-1" style={{ color: 'var(--text-soft)' }}>
+                          <span style={{ textDecoration: 'line-through' }}>הקו"ח המקורי</span> הוחלף בגרסה המעודכנת שהמועמד/ת הגיש/ה.
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="mono text-[11px] font-semibold" style={{ color: '#b91c1c' }}>
+                      ⚠ לא הועלה קו"ח — הדבק/י קישור קו״ח מעודכן למטה לפני שליחה למעסיק.
+                    </div>
+                  )}
+                  {/* קו״ח history — the replaced original (line-through) + every past submission's file */}
+                  {(((form as any).cvUpdatedUrl && (form as any).cvUrl) || cvHistory.some(r => r.cv_file_path)) && (
+                    <div className="mt-2">
+                      <button type="button" data-cv-history-toggle onClick={() => setShowCvHistory(s => !s)}
+                        className="text-[11px] underline" style={{ color: 'var(--accent)' }}>
+                        {showCvHistory ? 'הסתר היסטוריית קו״ח' : `היסטוריית קו״ח (${(usingUpdated && (form as any).cvUrl ? 1 : 0) + cvHistory.filter(r => r.cv_file_path).length})`}
+                      </button>
+                      {showCvHistory && (
+                        <div className="mt-1.5 space-y-1 pt-1.5" style={{ borderTop: '1px dashed var(--divider)' }}>
+                          {usingUpdated && (form as any).cvUrl && (
+                            <div className="text-[12px] flex items-center gap-2" style={{ color: 'var(--text-soft)' }}>
+                              <span style={{ textDecoration: 'line-through' }}>קו״ח מקורי (הוחלף)</span>
+                              <button type="button" onClick={() => window.open(viewableCvUrl((form as any).cvUrl), '_blank')} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>פתח ↗</button>
+                            </div>
+                          )}
+                          {cvHistory.filter(r => r.cv_file_path).map(r => (
+                            <div key={r.id} className="text-[12px] flex items-center gap-2" style={{ color: 'var(--text-soft)' }}>
+                              <span>{(() => { try { return new Date(r.uploaded_at).toLocaleDateString('he-IL'); } catch { return ''; } })()}</span>
+                              <span className="mono text-[10.5px]">{(r.cv_file_path || '').split('/').pop()}</span>
+                              <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${r.cv_file_path}`), '_blank')} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>קו״ח ↗</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                {(form as any).cvUpdatedUrl && (form as any).cvUrl && (
-                  <div className="mono text-[10.5px] mb-1" style={{ color: 'var(--text-soft)' }}>
-                    <span style={{ textDecoration: 'line-through' }}>הקו"ח המקורי</span> הוחלף בגרסה המעודכנת שהמועמד/ת הגיש/ה.
-                  </div>
-                )}
-                <div className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>
-                  הקישור מגיע מה-Supabase ומצורף להודעת WhatsApp/מייל ללא הגדרה נוספת.
-                </div>
-              </div>
-            </SectionSub>
-          ) : (
-            <SectionSub title="📋 שיבוץ — קו&quot;ח לשליחה">
-              <div className="col-span-full rounded-xl p-3" style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.3)' }}>
-                <div className="mono text-[11px] font-semibold" style={{ color: '#b91c1c' }}>
-                  ⚠ לא הועלה קו"ח — יש להעלות קו"ח בקטע "מסמכים וחוו"ד" למטה לפני שליחה למעסיק.
-                </div>
-              </div>
-            </SectionSub>
-          )}
+              );
+            })()}
 
-          <SectionSub title="CV מעודכן (חובה לפני בחירת ארגון)">
             {pendingCv && (
               <div className="col-span-full flex items-center justify-between gap-3 p-3 rounded-xl"
                 style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.35)' }}>
