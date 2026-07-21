@@ -108,7 +108,13 @@ export default function StudentEditor({
 
   useEffect(() => {
     const email = student?.email?.trim().toLowerCase();
-    if (!email || student?.cvUpdatedUrl) return; // skip if already has a CV
+    // Show ANY not-yet-applied submission — including a RE-SUBMISSION after the student
+    // already has an updated CV. The old code skipped when `cvUpdatedUrl` was set, so a
+    // student who re-uploaded a corrected CV (or new org preferences) was silently
+    // ignored: the coordinator kept sending the OLD CV with no signal a newer one
+    // existed (verified live 2026-07-21). An unseen row = not yet applied — applyPendingCv
+    // marks it seen, so a resolved submission won't re-appear.
+    if (!email) return;
     supabase.from('cv_updates')
       .select('id, cv_file_path, uploaded_at, org_pref_1, org_pref_2, org_pref_3, suggested_org')
       .eq('email', email)
@@ -116,9 +122,14 @@ export default function StudentEditor({
       .order('uploaded_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
-        if (data && data.length > 0) setPendingCv(data[0]);
+        // Don't nag about a row whose file is already the current CV (e.g. the first,
+        // auto-promoted submission if its seen_at write raced) — only a genuinely
+        // different, newer file is "pending".
+        const row = data?.[0];
+        const currentFile = (student?.cvUpdatedUrl || '').split('/').pop();
+        if (row && row.cv_file_path.split('/').pop() !== currentFile) setPendingCv(row);
       });
-  }, [student?.email]);
+  }, [student?.email, student?.cvUpdatedUrl]);
 
   // Full submission history for this candidate (every dated /cv-update submission).
   type CvRow = { id: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
@@ -753,11 +764,18 @@ export default function StudentEditor({
                 style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.35)' }}>
                 <div>
                   <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: '#b45309' }}>
-                    ✦ CV מעודכן ממתין — הועלה {new Date(pendingCv.uploaded_at).toLocaleDateString('he-IL')}
+                    {(form as any).cvUpdatedUrl
+                      ? `✦ הגשה חדשה יותר ממתינה — הועלתה ${new Date(pendingCv.uploaded_at).toLocaleDateString('he-IL')}`
+                      : `✦ CV מעודכן ממתין — הועלה ${new Date(pendingCv.uploaded_at).toLocaleDateString('he-IL')}`}
                   </div>
                   <div className="text-[12px] mt-0.5" style={{ color: '#92400e' }}>
                     {pendingCv.cv_file_path.split('/').pop()}
                   </div>
+                  {(form as any).cvUpdatedUrl && (
+                    <div className="text-[12px] mt-1 font-bold" style={{ color: '#b45309' }}>
+                      ⚠ המועמד/ת עדכן/ה קו״ח לאחר ההגשה הקודמת. "החל/י" יחליף את הקו״ח הנוכחי בגרסה זו.
+                    </div>
+                  )}
                   {(pendingCv.org_pref_1 || pendingCv.org_pref_2 || pendingCv.org_pref_3) && (
                     <div className="text-[12px] mt-1 font-semibold" style={{ color: '#92400e' }}>
                       ✦ העדפות ארגון: {[pendingCv.org_pref_1, pendingCv.org_pref_2, pendingCv.org_pref_3].filter(Boolean).join(' · ')}
