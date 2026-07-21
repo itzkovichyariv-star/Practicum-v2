@@ -18,7 +18,9 @@ export function dispatchChip(active: boolean): React.CSSProperties {
     display: 'inline-flex', alignItems: 'center', gap: 6,
     padding: '7px 13px', fontSize: '12.5px', fontWeight: 600,
     borderRadius: '999px', border: '1px solid var(--divider)',
-    background: 'var(--card)', color: 'var(--ink)',
+    // --card is not defined in global.css; fall back to the maroon-soft surface so the
+    // chip has a visible fill in both light and dark (was transparent → weak affordance).
+    background: 'var(--card, var(--accent-soft))', color: 'var(--ink)',
     cursor: active ? 'pointer' : 'not-allowed', opacity: active ? 1 : 0.45,
     whiteSpace: 'nowrap',
   };

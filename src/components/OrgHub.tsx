@@ -130,6 +130,13 @@ export default function OrgHub({
   }
   function renameOrg(oldName: string, newName: string) {
     const nm = newName.trim();
+    if (!nm) return; // never rename to empty — that would silently drop the card
+    // Refuse renaming onto another card's org (orgName is the identity key for every
+    // placement action — a duplicate would let an action hit the WRONG card and could
+    // free a sent slot). addOrg already blocks this; renameOrg must too.
+    if (cards.some(c => c.orgName !== oldName && c.orgName.trim().toLowerCase() === nm.toLowerCase())) {
+      showToast('הארגון כבר קיים בדירוג', 'warn'); return;
+    }
     writeList(cards.map(c => c.orgName === oldName
       ? { ...c, orgName: nm, employerId: resolveEmployer(nm)?.id ?? null }
       : c));
@@ -182,18 +189,26 @@ export default function OrgHub({
   async function dispatchMany(orgNames: string[], channel: 'whatsapp' | 'email') {
     setSendSheet(false);
     if (!hasUpdatedCv) { showToast('אין קו"ח מעודכן לסטודנט/ית — לא ניתן לשלוח', 'error'); return; }
-    const { student, prefs } = materialise();
+    // Resolve against the CURRENT cards (by identity), not the raw `selected` name set —
+    // a card that was renamed/removed after being checked drops out here, so we never
+    // send to a stale name (which would otherwise reserve a slot no preference owns).
+    const targets = cards.filter(c => orgNames.includes(c.orgName) && c.status === 'tentative');
+    if (targets.length === 0) { setSelected(new Set()); showToast('לא נשלח — אין ארגון תקף שנבחר', 'error'); return; }
+    const { student } = materialise();
     let nextStudent = student;
     let nextEmployers = employers;
     const newDispatches: Dispatch[] = [];
     const opened: string[] = [];
     const skipped: string[] = [];
+    const usedEmployerIds = new Set<string>(); // one place per employer per batch (no double-book)
+    let openedIdx = 0;
 
-    for (const orgName of orgNames) {
-      const pref = (nextStudent.preferences as any[]).find(p => p.orgName === orgName)
-        || prefs.find(p => p.orgName === orgName);
+    for (const card of targets) {
+      const orgName = card.orgName;
       const emp = resolveEmployer(orgName);
       if (!emp) { skipped.push(`${orgName} (לא זוהה מעסיק)`); continue; }
+      if (usedEmployerIds.has(emp.id)) { skipped.push(`${orgName} (אותו מעסיק כבר נשלח)`); continue; }
+      const pref = (nextStudent.preferences as any[]).find(p => p.orgName === orgName);
       const empLive = nextEmployers.find(e => e.id === emp.id) || emp;
       const already = pref?.slotId ? getSlot(empLive, pref.slotId) : null;
       const target: any = already
@@ -204,14 +219,22 @@ export default function OrgHub({
       const now = new Date().toISOString();
       let url = '', messageSnapshot = '';
       if (channel === 'whatsapp') {
-        messageSnapshot = renderTemplate(placementSettings.whatsappTemplate, ctx);
+        messageSnapshot = renderTemplate(placementSettings.whatsappTemplate || '', ctx);
         url = buildWhatsAppUrl(empLive.contactPhone || '', messageSnapshot);
       } else {
-        const subject = renderTemplate(placementSettings.emailSubjectTemplate, ctx);
-        const body = renderTemplate(placementSettings.emailBodyTemplate, ctx);
+        const subject = renderTemplate(placementSettings.emailSubjectTemplate || '', ctx);
+        const body = renderTemplate(placementSettings.emailBodyTemplate || '', ctx);
         messageSnapshot = `${subject}\n\n${body}`;
         url = buildMailtoUrl(empLive.contactEmail || '', subject, body);
       }
+
+      // Open the channel FIRST and only commit if it actually opened. The first open is
+      // in-gesture (reliable); mobile blocks the 2nd+ popup — for those, skip the org
+      // rather than reserve a place + log a dispatch for a CV we never sent.
+      const w = window.open(url, '_blank');
+      if (!w && openedIdx > 0) { skipped.push(`${orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
+      openedIdx++;
+      usedEmployerIds.add(emp.id);
 
       const updatedSlots: VacancySlot[] = ((empLive as any).vacancySlots || []).map((s: any) => s.id !== target.id ? s : ({
         ...s, status: 'under_review', studentId: form.id, prefRank: pref?.rank ?? null,
@@ -227,8 +250,6 @@ export default function OrgHub({
         id: randomId('d'), studentId: form.id, employerId: emp.id, slotId: target.id, channel,
         sentBy: userName, sentAt: now, messageSnapshot, result: 'pending', resultAt: null, resultBy: null,
       });
-      // Open the channel in-gesture. Mobile blocks the 2nd+ popup, so we note skips.
-      window.open(url, '_blank');
       opened.push(orgName);
     }
 
@@ -616,7 +637,7 @@ function OrgCombo({ value, options, onCommit, placeholder, autoFocus }: {
   return (
     <span className="inline-flex" style={{ minWidth: 200, flex: '1 1 200px' }}>
       <input value={v} autoFocus={autoFocus} onChange={e => setV(e.target.value)}
-        onBlur={() => { if (v.trim() !== value.trim()) onCommit(v); }}
+        onBlur={() => { const t = v.trim(); if (!t) { setV(value); return; } if (t !== value.trim()) onCommit(t); }}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
         placeholder={placeholder} list={listId} className="input"
         style={{ padding: '8px 12px', fontSize: '13.5px', width: '100%' }} />

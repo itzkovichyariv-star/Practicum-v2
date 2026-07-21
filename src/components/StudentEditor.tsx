@@ -841,8 +841,11 @@ export default function StudentEditor({
                       const me = (patch.students || []).find(s => s.id === form.id) as Student | undefined;
                       if (me) setForm(f => ({
                         ...f,
-                        preferences: me.preferences || [], submissionStatus: me.submissionStatus,
+                        preferences: me.preferences || [], submissionStatus: me.submissionStatus ?? f.submissionStatus,
                         acceptedOrg: me.acceptedOrg ?? f.acceptedOrg,
+                        // Sync placedAt too — a placement done via OrgHub stamps it; without this
+                        // a later שמור would re-stamp it to the save date (wrong placement date).
+                        placedAt: (me as any).placedAt ?? f.placedAt,
                         firstChoiceOrg: (me as any).firstChoiceOrg ?? f.firstChoiceOrg, firstChoiceResult: (me as any).firstChoiceResult ?? f.firstChoiceResult,
                         secondChoiceOrg: (me as any).secondChoiceOrg ?? f.secondChoiceOrg, secondChoiceResult: (me as any).secondChoiceResult ?? f.secondChoiceResult,
                         thirdChoiceOrg: (me as any).thirdChoiceOrg ?? f.thirdChoiceOrg, thirdChoiceResult: (me as any).thirdChoiceResult ?? f.thirdChoiceResult,

@@ -328,10 +328,15 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     // cv_updates; this covers COORDINATOR edits, which previously left no history entry).
     const tracked: Array<[keyof Student, string]> = [
       ['firstChoiceOrg', 'בחירה ראשונה'], ['secondChoiceOrg', 'בחירה שנייה'], ['thirdChoiceOrg' as keyof Student, 'בחירה שלישית'],
+      // Interview-result edits are now first-class (the per-org תוצאת ראיון control) — audit them too.
+      ['firstChoiceResult' as keyof Student, 'תוצאת ראיון א'], ['secondChoiceResult' as keyof Student, 'תוצאת ראיון ב'], ['thirdChoiceResult' as keyof Student, 'תוצאת ראיון ג'],
       ['cvUpdatedUrl', 'קו״ח מעודכן'], ['submissionStatus', 'סטטוס'], ['acceptedOrg', 'שיבוץ'], ['feedbackText', 'משוב'],
     ];
+    // Normalise so a *Result field materialising from undefined → its 'pending' default
+    // (which OrgHub writes on the first edit) is NOT logged as a real interview-result change.
+    const norm = (k: keyof Student, v: any) => { const str = String(v ?? ''); return /Result$/.test(String(k)) && str === 'pending' ? '' : str; };
     const changedLabels = previous
-      ? tracked.filter(([k]) => String((previous as any)[k] ?? '') !== String((s as any)[k] ?? '')).map(([, label]) => label)
+      ? tracked.filter(([k]) => norm(k, (previous as any)[k]) !== norm(k, (s as any)[k])).map(([, label]) => label)
       : [];
     const editActivity = !previous
       ? { action: 'יצירת סטודנט/ית', entity: 'סטודנט', target: s.name }

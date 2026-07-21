@@ -144,6 +144,49 @@ const audit = new Audit({ name: 'unified-org-list' });
   });
 }
 
+// ── 3c. Dedup by EMPLOYER id: canonical pref name vs free-text legacy ────────
+{
+  // Old built pref carries employerId 'e1' but NO orgName; the employer's canonical
+  // name ("ארגון אלפא/מטה") differs from the free-text firstChoiceOrg ("ארגון אלפא").
+  // Both resolve to e1, so it must be ONE card, not a phantom duplicate.
+  const emps = [{ id: 'e1', name: 'ארגון אלפא/מטה' }, { id: 'e2', name: 'ארגון בטא' }];
+  const student = {
+    id: 's3c', name: 'כפילות מעסיק',
+    preferences: [{ rank: 1, employerId: 'e1', interviewResult: 'passed', status: 'under_review', slotId: 's-a' }],
+    firstChoiceOrg: 'ארגון אלפא', firstChoiceResult: 'passed',
+  };
+  const list = buildUnifiedOrgList(student, emps);
+  const forE1 = list.filter(p => p.employerId === 'e1');
+  audit.recordCell({
+    id: 'UNI-dedup-by-employer',
+    tableRef: 'placement.buildUnifiedOrgList / dedup by resolved employer id',
+    expected: 'a built pref and a free-text legacy choice resolving to the SAME employer collapse to ONE card',
+    observed: `cards=${list.length}, cardsForE1=${forE1.length}, names=[${list.map(p => p.orgName).join(', ')}]`,
+    pass: list.length === 1 && forE1.length === 1,
+    notes: forE1.length > 1 ? 'Phantom duplicate — the canonical vs free-text name was not deduped by employer id.' : '',
+  });
+}
+
+// ── 3d. A slot-holding pref NEVER vanishes, even with an unresolved employer ──
+{
+  // Employer was deleted; the pref still holds a slot (under_review). It must remain a
+  // card (fallback name) so the coordinator can still mark/release it — never orphaned.
+  const student = {
+    id: 's3d', name: 'מקום יתום',
+    preferences: [{ rank: 1, employerId: 'gone', status: 'under_review', slotId: 's-x' }],
+  };
+  const list = buildUnifiedOrgList(student, []);
+  const held = list.find(p => p.slotId === 's-x');
+  audit.recordCell({
+    id: 'UNI-slot-survives',
+    tableRef: 'placement.buildUnifiedOrgList / slot-holding pref never dropped',
+    expected: 'a preference holding a slot survives as a card (fallback name) even when its employer no longer resolves',
+    observed: `cards=${list.length}, heldPresent=${!!held}, name="${held?.orgName || ''}"`,
+    pass: list.length === 1 && !!held && !!held.orgName,
+    notes: !held ? 'The slot-holding preference was filtered out — its reserved place is now orphaned/unmanageable.' : '',
+  });
+}
+
 // ── 4. Write-back syncs the legacy compat fields ────────────────────────────
 {
   const student = { id: 's4', name: 'כתיבה חזרה', firstChoiceOrg: 'stale', firstChoiceResult: 'passed' };

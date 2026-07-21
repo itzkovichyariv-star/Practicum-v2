@@ -529,8 +529,18 @@ export type UnifiedOrgPref = {
 const eqName = (a?: string | null, b?: string | null) =>
   String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase() && !!String(a || '').trim();
 
+// Resolve an org name to an employer id the SAME fuzzy way the rest of the app does
+// (exact → case-insensitive → prefix, either direction), so a free-text choice like
+// "Icon Group" resolves to the employer "Icon Group/I digital". Matches
+// StudentEditor.resolveEmployerForOrg / OrgHub.resolveEmployer.
 function resolveEmployerIdByName(orgName: string, employers: any[]): string | null {
-  const e = (employers || []).find((x: any) => eqName(x?.name, orgName));
+  const norm = (s?: string) => String(s || '').trim().toLowerCase();
+  const n = norm(orgName);
+  if (!n) return null;
+  const list = employers || [];
+  const e = list.find((x: any) => x?.name === orgName)
+    || list.find((x: any) => norm(x?.name) === n)
+    || list.find((x: any) => { const en = norm(x?.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
   return e ? e.id : null;
 }
 
@@ -563,14 +573,26 @@ export function buildUnifiedOrgList(student: any, employers: any[] = []): Unifie
     .map((p) => {
       const orgName = (p.orgName || nameOf(p.employerId) || legacy[(p.rank || 1) - 1]?.orgName || '').trim();
       const interviewResult: InterviewResult = p.interviewResult || legacyResultFor(orgName) || 'pending';
-      return { rank: p.rank || 0, orgName, employerId: p.employerId || resolveEmployerIdByName(orgName, employers), interviewResult, status: p.status || 'tentative', slotId: p.slotId ?? null } as UnifiedOrgPref;
+      // A preference that HOLDS A SLOT must never vanish (an unresolved/deleted employer
+      // would otherwise drop it, orphaning its reserved place). Give it a fallback name.
+      const name = orgName || (p.slotId ? 'ארגון לא ידוע' : '');
+      return { rank: p.rank || 0, orgName: name, employerId: p.employerId || resolveEmployerIdByName(orgName, employers), interviewResult, status: p.status || 'tentative', slotId: p.slotId ?? null } as UnifiedOrgPref;
     })
     .filter(p => p.orgName);
 
-  // Append any legacy choice not already represented by a preference (case-insensitive).
-  const seen = new Set(fromPrefs.map(p => p.orgName.trim().toLowerCase()));
+  // Append any legacy choice not already represented by a preference — deduping by BOTH
+  // the org name AND the resolved employer id. Without the id check a built preference
+  // whose CANONICAL employer name differs from the free-text legacy choice (e.g.
+  // "Icon Group/I digital" vs "Icon Group") would appear as a phantom second card.
+  const seenNames = new Set(fromPrefs.map(p => p.orgName.trim().toLowerCase()));
+  const seenEmpIds = new Set(fromPrefs.map(p => p.employerId).filter(Boolean) as string[]);
   const fromLegacy: UnifiedOrgPref[] = legacy
-    .filter(c => !seen.has(c.orgName.trim().toLowerCase()))
+    .filter(c => {
+      if (seenNames.has(c.orgName.trim().toLowerCase())) return false;
+      const eid = resolveEmployerIdByName(c.orgName, employers);
+      if (eid && seenEmpIds.has(eid)) return false;
+      return true;
+    })
     .map(c => ({
       rank: 0, orgName: c.orgName, employerId: resolveEmployerIdByName(c.orgName, employers),
       interviewResult: c.interviewResult, status: 'tentative' as const, slotId: null,
