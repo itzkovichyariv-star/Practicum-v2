@@ -276,11 +276,11 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       .sort((a, b2) => (a.name || '').localeCompare(b2.name || '', 'he'));
   }, [mailMode, mailBucket, scoped, selectedIds, all]);
 
-  async function persistAndRefresh(next: Student[], msg: string, nextEmployers?: any[]) {
+  async function persistAndRefresh(next: Student[], msg: string, nextEmployers?: any[], activity?: { action: string; entity: string; target: string }) {
     setSaving(true);
     setSaveMsg(null);
     const nextData = nextEmployers ? { ...data, students: next, employers: nextEmployers } : { ...data, students: next };
-    const res = await saveSnapshot(nextData, { name: userName });
+    const res = await saveSnapshot(nextData, { name: userName }, activity);
     setSaving(false);
     if (!res.ok) { setSaveMsg('שגיאה: ' + (res.error || '')); showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
     setSaveMsg(msg);
@@ -323,7 +323,22 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       }
     }
 
-    await persistAndRefresh(next, idx >= 0 ? '✓ הסטודנט/ית עודכנו' : '✓ סטודנט/ית נוצר');
+    // Coordinator-edit audit trail: record WHO (userName — Yariv or Rachel) changed
+    // WHICH key fields. Now that a coordinator can directly change a student's choices,
+    // Yariv wants a "who changed what" trail (student SUBMISSIONS are already logged in
+    // cv_updates; this covers COORDINATOR edits, which previously left no history entry).
+    const tracked: Array<[keyof Student, string]> = [
+      ['firstChoiceOrg', 'בחירה ראשונה'], ['secondChoiceOrg', 'בחירה שנייה'], ['thirdChoiceOrg' as keyof Student, 'בחירה שלישית'],
+      ['cvUpdatedUrl', 'קו״ח מעודכן'], ['submissionStatus', 'סטטוס'], ['acceptedOrg', 'שיבוץ'], ['feedbackText', 'משוב'],
+    ];
+    const changedLabels = previous
+      ? tracked.filter(([k]) => String((previous as any)[k] ?? '') !== String((s as any)[k] ?? '')).map(([, label]) => label)
+      : [];
+    const editActivity = !previous
+      ? { action: 'יצירת סטודנט/ית', entity: 'סטודנט', target: s.name }
+      : { action: changedLabels.length ? `עריכת רכז: ${changedLabels.join(', ')}` : 'עריכת פרטי סטודנט/ית', entity: 'סטודנט', target: s.name };
+
+    await persistAndRefresh(next, idx >= 0 ? '✓ הסטודנט/ית עודכנו' : '✓ סטודנט/ית נוצר', undefined, editActivity);
   }
 
   async function handleAutoSave(s: Student) {
