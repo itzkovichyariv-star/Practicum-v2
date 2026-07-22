@@ -11,6 +11,7 @@
     --accent: #7a1e2b;
     --accent-soft: rgba(122, 30, 43, 0.08);
     --divider: rgba(122, 30, 43, 0.18);
+    --divider-strong: rgba(122, 30, 43, 0.42);
     --text-soft: rgba(61, 15, 20, 0.5);
     --nav-bg: rgba(244, 239, 230, 0.88);
     --tag-neutral-bg: rgba(0, 0, 0, 0.06);
@@ -352,6 +353,7 @@ html[data-theme="light"] {
   --accent:          #7a1e2b;
   --accent-soft:     rgba(122, 30, 43, 0.08);
   --divider:         rgba(122, 30, 43, 0.18);
+  --divider-strong:  rgba(122, 30, 43, 0.42);
   --text-soft:       rgba(61, 15, 20, 0.5);
   --nav-bg:          rgba(244, 239, 230, 0.88);
   --tag-neutral-bg:  rgba(0, 0, 0, 0.06);
@@ -391,6 +393,7 @@ html[data-theme="dark"] {
   --accent:          #e06a7a;
   --accent-soft:     rgba(224,106,122,0.18);
   --divider:         rgba(255,255,255,0.09);
+  --divider-strong:  rgba(255,255,255,0.22);
   --text-soft:       rgba(255,255,255,0.52);
   --nav-bg:          rgba(22,8,11,0.94);
   --tag-neutral-bg:  rgba(255,255,255,0.10);
@@ -430,6 +433,7 @@ html[data-theme="dark"] .border-b { border-color: rgba(255,255,255,0.09) !import
     --accent:         #e06a7a;
     --accent-soft:    rgba(224,106,122,0.18);
     --divider:        rgba(255,255,255,0.09);
+    --divider-strong: rgba(255,255,255,0.22);
     --text-soft:      rgba(255,255,255,0.52);
     --nav-bg:         rgba(22,8,11,0.94);
     --tag-neutral-bg: rgba(255,255,255,0.10);

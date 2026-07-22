@@ -948,15 +948,18 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
 
   return (
     <li className="relative group" data-info-row>
+      {/* The between-students separator is the PRIMARY divider: thicker + the stronger token.
+          NB: not the `border-b` class — a global `.border-b{…!important}` rule pins that to the
+          light --divider, so the border is set inline (no class) to win the cascade. */}
       <div
         onClick={onTogglePin}
-        className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
-        style={{ borderColor: 'var(--divider)', background: selected ? 'rgba(122,30,43,0.04)' : undefined }}
+        className="py-4 cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
+        style={{ borderBottom: '2px solid var(--divider-strong)', background: selected ? 'rgba(122,30,43,0.04)' : undefined }}
       >
         {/* The card splits into two zones — STUDENT (right, in RTL): name · status tags ·
             the student's own contacts + edit; and ORG (left): the hosting org + how to
             reach it. A hairline divider makes the split unmistakable. */}
-        <div className="flex items-stretch gap-3">
+        <div className="flex items-stretch gap-4">
           {/* ── STUDENT zone (right) ── */}
           <div className="flex-1 min-w-0 flex flex-col gap-1.5">
             <div className="flex items-center gap-2 min-w-0">
@@ -1002,8 +1005,11 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
             </div>
           </div>
 
-          {/* ── divider + ORG zone (left) ── */}
-          <div style={{ width: '0.5px', background: 'var(--divider)', flexShrink: 0 }} />
+          {/* ── divider + ORG zone (left) ──
+              The student↔org split is SECONDARY to the between-students separator, so this
+              hairline stays on the lighter --divider token and is inset vertically (shorter
+              than the full card height) — it reads as a within-card guide, not a row break. */}
+          <div style={{ width: '1px', background: 'var(--divider)', flexShrink: 0, margin: '3px 0' }} />
           <div className="flex flex-col gap-1.5 shrink-0" style={{ width: '38%', maxWidth: 190 }} onClick={e => e.stopPropagation()}>
             {placed ? (
               <>
