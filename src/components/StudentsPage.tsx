@@ -915,9 +915,12 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
   const hostEmp = placed ? resolveEmployerForOrg(s.acceptedOrg, employers) : undefined;
   const hostPhone = hostEmp?.contactPhone || '';
   const hostEmail = firstEmailOf(hostEmp?.contactEmail);
+  const orgCall = (e: any) => { e.stopPropagation(); const tel = hostPhone.replace(/[^\d+]/g, ''); const canDial = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)); if (canDial) { window.location.href = `tel:${tel}`; } else if (navigator.clipboard?.writeText) { navigator.clipboard.writeText(hostPhone).then(() => showToast(`📞 ${hostEmp?.name}: ${hostPhone} · הועתק`, 'success'), () => showToast(`📞 ${hostPhone}`, 'info')); } else { showToast(`📞 ${hostPhone}`, 'info'); } };
   const orgWa = (e: any) => { e.stopPropagation(); let n = hostPhone.replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '972' + n.slice(1); window.open(`https://wa.me/${n}?text=${encodeURIComponent(`שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — `)}`, '_blank'); };
   const orgMail = (e: any) => { e.stopPropagation(); openMailto(`mailto:${hostEmail}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
-  const orgIconBtn = 'inline-grid place-items-center w-6 h-6 rounded-full border shrink-0 hover:bg-[rgba(122,30,43,0.08)]';
+  // org-contact icon inside the maroon org chip
+  const orgIconBtn = 'inline-grid place-items-center w-7 h-7 rounded-full shrink-0';
+  const orgIconStyle = { background: 'var(--bg)', border: '0.5px solid rgba(122,30,43,0.28)', color: 'var(--accent)' } as const;
   const hired = !!s.hired;
   const completed = !!s.practicumCompleted;
   const prepPassed = !!s.preparation?.passed;
@@ -975,33 +978,36 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
             {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
           </div>
         </div>
-        {/* Line 2: contact info · actions */}
-        <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12.5px] flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
-            {s.phone && <span dir="ltr">{s.phone}</span>}
-            {s.email && <span className="truncate" style={{ maxWidth: 'min(200px, 50vw)' }}>{s.email}</span>}
-            {s.city && <span>· {s.city}</span>}
-            {placed && (
-              <span className="inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-                · {s.acceptedOrg}
-                {hostEmp && hostPhone && (
-                  <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`}
-                    className={orgIconBtn} style={{ borderColor: 'var(--divider)' }}><WhatsAppIcon size={12} /></button>
-                )}
-                {hostEmp && hostEmail && (
-                  <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`}
-                    className={orgIconBtn} style={{ borderColor: 'var(--divider)', color: 'var(--accent)' }}><MailIcon size={12} /></button>
-                )}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* The one-tap "↩ מועמד" quick-revert was removed — it changed a student's
-                status straight from the list with no confirmation (Yariv reverted two
-                students by accident). Reverting to a candidate now lives ONLY inside the
-                student card, behind the delete dialog's confirmed "השאר כמועמד". */}
-            <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
-          </div>
+        {/* Line 2 — two contact groups that sit together but are unmistakable:
+            · the ORG (only when placed) in a maroon chip: building icon + org name +
+              call / WhatsApp / mail (phone added for orgs like Clalit that have no WA).
+            · the STUDENT's own contacts (call/WhatsApp/mail) + edit (RowActions).
+            The raw student phone/email text was removed — reach them via the icons. */}
+        <div className="flex items-center justify-between gap-2 pr-5 flex-wrap gap-y-2" onClick={e => e.stopPropagation()}>
+          {placed ? (
+            <span className="inline-flex items-center gap-1.5 pr-2.5 pl-1.5 py-1 rounded-full min-w-0"
+              style={{ background: 'var(--accent-soft)', border: '0.5px solid rgba(122,30,43,0.22)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
+                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M3 21h18M9 7h1M9 11h1M9 15h1M14 7h1M14 11h1M14 15h1"/>
+              </svg>
+              <span className="text-[12.5px] font-semibold truncate" style={{ color: 'var(--accent)', maxWidth: '40vw' }}>{s.acceptedOrg}</span>
+              {hostEmp && (hostPhone || hostEmail) && <span style={{ width: 1, height: 16, background: 'rgba(122,30,43,0.22)', flexShrink: 0 }} />}
+              {hostEmp && hostPhone && (
+                <button type="button" onClick={orgCall} title={`התקשר לארגון ${hostEmp.name}`} aria-label={`התקשר לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+                </button>
+              )}
+              {hostEmp && hostPhone && (
+                <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><WhatsAppIcon size={13} /></button>
+              )}
+              {hostEmp && hostEmail && (
+                <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><MailIcon size={13} /></button>
+              )}
+            </span>
+          ) : (
+            <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>טרם שובץ/ה בארגון</span>
+          )}
+          <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
         </div>
       </div>
 

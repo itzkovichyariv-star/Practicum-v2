@@ -39,14 +39,16 @@ await audit.page.evaluate(({c})=>{localStorage.setItem('practicum_v2_context',JS
 await audit.page.reload({waitUntil:'networkidle'});
 await audit.page.waitForTimeout(1200);
 
-let waSeen=false, mailSeen=false, waUrl='', mailUsedEmployer=false;
+let callSeen=false, waSeen=false, mailSeen=false, waUrl='', mailUsedEmployer=false;
 if(seedOk){
   // filter to our student
   const search=audit.page.locator('input[type="search"]').first();
   await search.fill(STU_NAME).catch(()=>{});
   await audit.page.waitForTimeout(800);
+  const callBtn=audit.page.locator(`button[title="התקשר לארגון ${EMP_NAME}"]`).first();
   const waBtn=audit.page.locator(`button[title="WhatsApp לארגון ${EMP_NAME}"]`).first();
   const mailBtn=audit.page.locator(`button[title="מייל לארגון ${EMP_NAME}"]`).first();
+  callSeen=(await callBtn.count())>0;
   waSeen=(await waBtn.count())>0;
   mailSeen=(await mailBtn.count())>0;
   if(waSeen){
@@ -65,11 +67,11 @@ const shot=await audit.shot('org-contact-from-list');
 audit.recordCell({
   id:'ORGCONTACT-list',
   tableRef:'StudentsPage StudentRow — org-contact (WhatsApp/mail to employer)',
-  expected:'a placed student\'s list row shows WhatsApp + mail icons that reach the hosting EMPLOYER; WhatsApp opens wa.me with the employer\'s 972-normalised phone',
-  observed: seedOk?`waIcon=${waSeen}, mailIcon=${mailSeen}, waUrl="${waUrl.slice(0,48)}", usesEmployerPhone=${mailUsedEmployer}`:'seed failed',
-  pass: seedOk?(waSeen&&mailSeen&&mailUsedEmployer):null,
+  expected:'a placed student\'s list row shows the org chip with call + WhatsApp + mail reaching the hosting EMPLOYER; WhatsApp opens wa.me with the employer\'s 972-normalised phone (phone added for orgs without WA)',
+  observed: seedOk?`callIcon=${callSeen}, waIcon=${waSeen}, mailIcon=${mailSeen}, waUrl="${waUrl.slice(0,48)}", usesEmployerPhone=${mailUsedEmployer}`:'seed failed',
+  pass: seedOk?(callSeen&&waSeen&&mailSeen&&mailUsedEmployer):null,
   after:shot,
-  notes:!waSeen?'No org-WhatsApp icon on the placed row.':!mailSeen?'No org-mail icon.':!mailUsedEmployer?`WhatsApp did not target the employer phone (url=${waUrl}).`:'',
+  notes:!callSeen?'No org-call (phone) icon — orgs without WhatsApp cannot be reached.':!waSeen?'No org-WhatsApp icon on the placed row.':!mailSeen?'No org-mail icon.':!mailUsedEmployer?`WhatsApp did not target the employer phone (url=${waUrl}).`:'',
 });
 
 // cleanup
