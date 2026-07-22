@@ -11,6 +11,21 @@ import StudentEditor from './StudentEditor';
 import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';
+import { WhatsAppIcon, MailIcon } from './icons';
+import type { Employer } from '../lib/supabase';
+
+// Resolve the hosting employer from a student's free-text acceptedOrg (exact → ci →
+// prefix, either direction) — same fuzzy match the editor uses — so the org-contact
+// icons find the employer even when the name drifts slightly.
+function resolveEmployerForOrg(orgName: string | undefined, employers: Employer[]): Employer | undefined {
+  if (!orgName) return undefined;
+  const norm = (s?: string) => (s || '').trim().toLowerCase();
+  const n = norm(orgName);
+  return employers.find(e => e.name === orgName)
+    || employers.find(e => norm(e.name) === n)
+    || employers.find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+}
+const firstEmailOf = (s?: string) => (s || '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)?.[0] || '';
 
 type Filters = {
   search: string;
@@ -608,7 +623,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
               <ul>
                 {group.items.map(s => (
-                  <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
+                  <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
                     pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                     onRevert={() => handleRevertToCandidate(s)}
                     selected={selectedIds.has(s.id)}
@@ -624,7 +639,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         ) : (
           <ul>
             {filtered.map(s => (
-              <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)}
+              <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
                 pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                 onRevert={() => handleRevertToCandidate(s)}
                 selected={selectedIds.has(s.id)}
@@ -906,11 +921,19 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
-function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onToggleSelect }: {
+function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onToggleSelect, employers = [] }: {
   s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void; onRevert?: () => void;
-  selected?: boolean; onToggleSelect?: () => void;
+  selected?: boolean; onToggleSelect?: () => void; employers?: Employer[];
 }) {
   const placed = !!s.acceptedOrg;
+  // Hosting org contact — so the coordinator can reach the EMPLOYER straight from the
+  // list (distinct from the student-contact icons on the right). Resolved fuzzily.
+  const hostEmp = placed ? resolveEmployerForOrg(s.acceptedOrg, employers) : undefined;
+  const hostPhone = hostEmp?.contactPhone || '';
+  const hostEmail = firstEmailOf(hostEmp?.contactEmail);
+  const orgWa = (e: any) => { e.stopPropagation(); let n = hostPhone.replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '972' + n.slice(1); window.open(`https://wa.me/${n}?text=${encodeURIComponent(`שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — `)}`, '_blank'); };
+  const orgMail = (e: any) => { e.stopPropagation(); openMailto(`mailto:${hostEmail}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
+  const orgIconBtn = 'inline-grid place-items-center w-6 h-6 rounded-full border shrink-0 hover:bg-[rgba(122,30,43,0.08)]';
   const hired = !!s.hired;
   const completed = !!s.practicumCompleted;
   const prepPassed = !!s.preparation?.passed;
@@ -974,7 +997,19 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onTogg
             {s.phone && <span dir="ltr">{s.phone}</span>}
             {s.email && <span className="truncate" style={{ maxWidth: 'min(200px, 50vw)' }}>{s.email}</span>}
             {s.city && <span>· {s.city}</span>}
-            {placed && <span style={{ color: 'var(--accent)' }}>· {s.acceptedOrg}</span>}
+            {placed && (
+              <span className="inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                · {s.acceptedOrg}
+                {hostEmp && hostPhone && (
+                  <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`}
+                    className={orgIconBtn} style={{ borderColor: 'var(--divider)' }}><WhatsAppIcon size={12} /></button>
+                )}
+                {hostEmp && hostEmail && (
+                  <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`}
+                    className={orgIconBtn} style={{ borderColor: 'var(--divider)', color: 'var(--accent)' }}><MailIcon size={12} /></button>
+                )}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={e => { e.stopPropagation(); onRevert(); }}
