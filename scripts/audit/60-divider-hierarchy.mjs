@@ -61,8 +61,12 @@ if(seedOk){
     const edit=placed.querySelector('button[title="ערוך"]');
     if(!vdiv||!edit) return {error:'divider/edit not found'};
     const rV=vdiv.getBoundingClientRect(), rE=edit.getBoundingClientRect(), rF=flex.getBoundingClientRect();
-    const csW=getComputedStyle(wrap), csV=getComputedStyle(vdiv);
+    const csW=getComputedStyle(wrap), csV=getComputedStyle(vdiv), csE=getComputedStyle(edit);
     const alpha=s=>{const m=/rgba?\([^)]*?,\s*([\d.]+)\s*\)/.exec(s||''); return m?parseFloat(m[1]):(s&&s.includes('rgb')?1:0);};
+    // the open-card (edit) pencil must be BARE (no capsule border/fill) and live in the tag
+    // block, not the bottom contact row — so that row mirrors the org's call/WhatsApp/mail.
+    const contactRow=[...placed.querySelectorAll('div')].find(d=>d.className.includes('mt-auto')&&d.querySelector('button[title^="התקשר"],button[title^="WhatsApp"],button[title^="מייל"]'));
+    const editInContactRow=!!(contactRow&&[...contactRow.querySelectorAll('button')].some(b=>b.getAttribute('title')==='ערוך'));
     return {
       hWidthPx: parseFloat(csW.borderBottomWidth),
       hAlpha: alpha(csW.borderBottomColor),
@@ -71,6 +75,10 @@ if(seedOk){
       vInsetTop:+(rV.top-rF.top).toFixed(1), vInsetBottom:+(rF.bottom-rV.bottom).toFixed(1),
       editClearance:+(rE.left-rV.right).toFixed(1),
       hasBorderBClass: wrap.classList.contains('border-b'),
+      editBare: (csE.borderStyle==='none'||parseFloat(csE.borderTopWidth)===0) && (csE.backgroundColor==='rgba(0, 0, 0, 0)'||csE.backgroundColor==='transparent'),
+      editInContactRow,
+      // in the tag block = the pencil's parent row also holds the flex-wrap tags container
+      editInTagBlock: !!edit.parentElement?.querySelector('.flex-wrap'),
     };
   });
 }
@@ -80,18 +88,21 @@ if(seedOk){
 //   the border-b class (which the !important rule would pin to the weak token).
 const hPrimary  = geo.hWidthPx>=2 && geo.hAlpha>0.3 && geo.hasBorderBClass===false;
 const vSecondary= geo.vWidthPx>0 && geo.vWidthPx<geo.hWidthPx && geo.vAlpha<0.25 && geo.vInsetTop>=2 && geo.vInsetBottom>=2;
-const editClear = geo.editClearance>=16;
-const pass = seedOk ? (hPrimary && vSecondary && editClear) : null;
+// The open-card (edit) pencil: BARE (no capsule), in the tag block (not the contact row so that
+// row mirrors the org's), and clear of — never crossing — the student↔org hairline.
+const editClear = geo.editClearance>=8;
+const editPencil= geo.editBare===true && geo.editInContactRow===false && geo.editInTagBlock===true;
+const pass = seedOk ? (hPrimary && vSecondary && editClear && editPencil) : null;
 
 const shot=await audit.shot('divider-hierarchy');
 audit.recordCell({
   id:'DIVIDER-hierarchy',
-  tableRef:'StudentsPage StudentRow — divider weights + edit-icon clearance',
-  expected:'row separator (between students) is PRIMARY: ≥2px, strong token (α≈0.42), NOT the border-b class; student↔org split is SECONDARY: thinner (1px), lighter (α≈0.18), inset ≥2px top/bottom; edit icon ≥16px clear of the hairline',
-  observed: seedOk?`H=${geo.hWidthPx}px α${geo.hAlpha} borderBClass=${geo.hasBorderBClass} | V=${geo.vWidthPx}px α${geo.vAlpha} inset(${geo.vInsetTop}/${geo.vInsetBottom}) | editClear=${geo.editClearance}px${geo.error?' ERR:'+geo.error:''}`:'seed failed',
+  tableRef:'StudentsPage StudentRow — divider weights + bare-pencil edit placement',
+  expected:'row separator (between students) is PRIMARY: ≥2px, strong token (α≈0.42), NOT the border-b class; student↔org split is SECONDARY: thinner (1px), lighter (α≈0.18), inset ≥2px top/bottom; open-card pencil is BARE (no capsule), sits in the tag block (not the contact row), and stays ≥8px clear of the hairline',
+  observed: seedOk?`H=${geo.hWidthPx}px α${geo.hAlpha} borderBClass=${geo.hasBorderBClass} | V=${geo.vWidthPx}px α${geo.vAlpha} inset(${geo.vInsetTop}/${geo.vInsetBottom}) | editClear=${geo.editClearance}px bare=${geo.editBare} inContactRow=${geo.editInContactRow} inTagBlock=${geo.editInTagBlock}${geo.error?' ERR:'+geo.error:''}`:'seed failed',
   pass,
   after:shot,
-  notes: pass===false?(!hPrimary?'Row separator is NOT the strong primary divider (thin/weak or still using the border-b class the !important rule pins to --divider).':!vSecondary?'Student↔org hairline is not clearly secondary (too thick/opaque or not inset).':!editClear?'Edit icon sits on/too close to the student↔org hairline.':''):'',
+  notes: pass===false?(!hPrimary?'Row separator is NOT the strong primary divider (thin/weak or still using the border-b class the !important rule pins to --divider).':!vSecondary?'Student↔org hairline is not clearly secondary (too thick/opaque or not inset).':!editClear?'Edit pencil sits on/too close to the student↔org hairline.':!editPencil?'Open-card control is not a bare pencil in the tag block (still a capsule, or back in the contact row).':''):'',
 });
 
 // cleanup

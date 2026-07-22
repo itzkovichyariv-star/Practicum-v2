@@ -981,27 +981,38 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
                 {s.name || 'ללא שם'}
               </div>
             </div>
-            <div className="flex items-center gap-1 flex-wrap">
-              {(!s.phone || !s.email) && <NeedsUpdate />}
-              {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
-              {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
-              {s.cvUpdatedUrl ? <Tag label="CV ✓" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
-              {placed && !hired && !completed && <Tag label="שובץ/ה" />}
-              {hired && !completed && <Tag label="נקלט/ה" solid />}
-              {completed && <Tag label="✓ סיים" color="#b45309" />}
-              {hasEmployerFeedback(s) && <Tag label="✓ משוב" color="#15803d" />}
-              {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
-              {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
+                {(!s.phone || !s.email) && <NeedsUpdate />}
+                {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
+                {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
+                {s.cvUpdatedUrl ? <Tag label="CV ✓" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
+                {placed && !hired && !completed && <Tag label="שובץ/ה" />}
+                {hired && !completed && <Tag label="נקלט/ה" solid />}
+                {completed && <Tag label="✓ סיים" color="#b45309" />}
+                {hasEmployerFeedback(s) && <Tag label="✓ משוב" color="#15803d" />}
+                {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
+                {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
+              </div>
+              {/* Open-card (edit) — a BARE pencil (no capsule) in the empty left area of the tag
+                  block, vertically centred between the tag lines. Pulled OUT of the contact row
+                  so that row now mirrors the org's exactly (call/WhatsApp/mail); a bare glyph
+                  (vs a filled circle) no longer reads as sitting on the student↔org hairline.
+                  title stays exactly "ערוך" — several gate cells locate it by that title. */}
+              <button
+                type="button"
+                onClick={e => { e.stopPropagation(); onEdit(); }}
+                title="ערוך"
+                aria-label="ערוך / פתח כרטיס סטודנט"
+                className="shrink-0 self-center grid place-items-center w-9 h-9 -my-1 rounded-md transition-colors hover:bg-[rgba(122,30,43,0.08)] active:scale-95"
+                style={{ color: 'var(--accent)', background: 'transparent', border: 'none' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
             </div>
             <div className="flex items-center gap-2 mt-auto pt-1" onClick={e => e.stopPropagation()}>
               {s.phone && <button type="button" onClick={stuCall} title="התקשר לסטודנט/ית" aria-label="התקשר לסטודנט/ית" className={contactBtn} style={contactStyle}><PhoneIcon size={16} /></button>}
               {s.phone && <button type="button" onClick={stuWa} title="WhatsApp לסטודנט/ית" aria-label="WhatsApp לסטודנט/ית" className={contactBtn} style={contactStyle}><WhatsAppIcon size={16} /></button>}
               {s.email && <button type="button" onClick={stuMail} title="מייל לסטודנט/ית" aria-label="מייל לסטודנט/ית" className={contactBtn} style={contactStyle}><MailIcon size={16} /></button>}
-              <button type="button" onClick={onEdit} title="ערוך" aria-label="ערוך"
-                className="w-9 h-9 rounded-full grid place-items-center shrink-0 transition-transform hover:brightness-95 active:scale-95"
-                style={{ border: '0.5px solid var(--accent)', color: 'var(--accent)', background: 'rgba(122,30,43,0.12)' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
             </div>
           </div>
 
