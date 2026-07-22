@@ -405,48 +405,34 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
   async function confirmKeepAsCandidate(student: Student) {
     setDeleteDialog(null);
+    // Revert-to-candidate now lives ONLY here (behind this confirmed dialog) — the
+    // one-tap list quick-revert was removed. Create the candidate record if one doesn't
+    // already exist, so "keep as candidate" reliably lands them back in the candidates list.
+    const candidates = (data.candidates as Candidate[]) || [];
+    const existing = student.fromCandidateId
+      ? candidates.find(c => c.id === student.fromCandidateId)
+      : (student.email ? candidates.find(c => (c.email || '').toLowerCase() === (student.email || '').toLowerCase()) : undefined);
+    const nextCandidates = existing ? candidates : [...candidates, {
+      id: randomId('cand'), name: student.name, phone: student.phone || '', email: student.email || '',
+      city: student.city || '', courseId: student.courseId || '', year: student.year || '',
+      applicationDate: '', cvUrl: student.cvUrl || '', applicationUrl: '', submittedAt: undefined,
+      interviewDate: '', interviewTime: '', interviewResult: 'pending', notes: 'הוחזר ממצב סטודנט',
+    } as Candidate];
     const nextEmployers = releaseStudentSlots((data.employers as any) || [], student.id);
-    await persistAndRefresh(all.filter(s => s.id !== student.id), `✓ ${student.name} הוסר/ה כסטודנט, נשמר/ה כמועמד`, nextEmployers);
-  }
-
-  async function handleRevertToCandidate(s: Student) {
-    const newCandidate: Candidate = {
-      id: randomId('cand'),
-      name: s.name,
-      phone: s.phone || '',
-      email: s.email || '',
-      city: s.city || '',
-      courseId: s.courseId || '',
-      year: s.year || '',
-      applicationDate: '',
-      cvUrl: s.cvUrl || '',
-      applicationUrl: '',
-      submittedAt: undefined,
-      interviewDate: '',
-      interviewTime: '',
-      interviewResult: 'pending',
-      notes: `הוחזר ממצב סטודנט`,
-    };
-    const nextStudents = all.filter(x => x.id !== s.id);
-    const nextCandidates = [...(data.candidates as Candidate[] || []), newCandidate];
-    const nextEmployers = releaseStudentSlots((data.employers as any) || [], s.id);
+    const nextStudents = all.filter(s => s.id !== student.id);
     setSaving(true);
     const res = await saveSnapshot(
       { ...data, students: nextStudents, candidates: nextCandidates, employers: nextEmployers },
       { name: userName },
-      { action: 'הוחזר למועמד', entity: 'סטודנט', target: s.name }
+      { action: 'הוחזר למועמד', entity: 'סטודנט', target: student.name },
     );
     setSaving(false);
-    if (res.ok) {
-      (data.students as Student[]) = nextStudents;
-      (data.candidates as Candidate[]) = nextCandidates;
-      (data.employers as any) = nextEmployers;
-      setEditing(null);
-      onRefresh();
-      showToast(`✓ ${s.name} הועבר/ה בחזרה לרשימת המועמדים`, 'success');
-    } else {
-      showToast('שגיאה: ' + (res.error || ''), 'error');
-    }
+    if (!res.ok) { showToast('שגיאה: ' + (res.error || ''), 'error'); return; }
+    (data.students as Student[]) = nextStudents;
+    (data.candidates as Candidate[]) = nextCandidates;
+    (data.employers as any) = nextEmployers;
+    onRefresh();
+    showToast(`✓ ${student.name} הוסר/ה כסטודנט, נשמר/ה כמועמד`, 'success');
   }
 
   return (
@@ -625,7 +611,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                 {group.items.map(s => (
                   <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
                     pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
-                    onRevert={() => handleRevertToCandidate(s)}
                     selected={selectedIds.has(s.id)}
                     onToggleSelect={() => {
                       const next = new Set(selectedIds);
@@ -641,7 +626,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             {filtered.map(s => (
               <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
                 pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
-                onRevert={() => handleRevertToCandidate(s)}
                 selected={selectedIds.has(s.id)}
                 onToggleSelect={() => {
                   const next = new Set(selectedIds);
@@ -921,8 +905,8 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
-function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onToggleSelect, employers = [] }: {
-  s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void; onRevert?: () => void;
+function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, employers = [] }: {
+  s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void; employers?: Employer[];
 }) {
   const placed = !!s.acceptedOrg;
@@ -1012,12 +996,10 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, onRevert, selected, onTogg
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={e => { e.stopPropagation(); onRevert(); }}
-              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border opacity-0 group-hover:opacity-100 transition-opacity"
-              style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
-              title="החזר למועמד">
-              ↩ מועמד
-            </button>
+            {/* The one-tap "↩ מועמד" quick-revert was removed — it changed a student's
+                status straight from the list with no confirmation (Yariv reverted two
+                students by accident). Reverting to a candidate now lives ONLY inside the
+                student card, behind the delete dialog's confirmed "השאר כמועמד". */}
             <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
           </div>
         </div>
