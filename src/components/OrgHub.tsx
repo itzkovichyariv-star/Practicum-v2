@@ -147,6 +147,9 @@ export default function OrgHub({
     const i = cards.findIndex(c => c.orgName === orgName);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= cards.length) return;
+    // Re-ranking is delicate (an accidental click loses the previous order), so confirm.
+    const other = cards[j]?.orgName || '';
+    if (!window.confirm(`לשנות דירוג — "${orgName}" ${dir < 0 ? 'למעלה, לפני' : 'למטה, אחרי'} "${other}"?`)) return;
     const order = cards.map(c => c.orgName);
     [order[i], order[j]] = [order[j], order[i]];
     writeList(reorderUnifiedList(cards, order));
@@ -395,7 +398,12 @@ export default function OrgHub({
 
       <div className="chapter-mark mb-2" style={{ fontSize: '11px' }}>ארגונים מדורגים ושליחה</div>
       {submittedCaption && (
-        <div className="text-[11.5px] mb-3" style={{ color: 'var(--text-soft)' }}>{submittedCaption}</div>
+        <div className="text-[11.5px] mb-1" style={{ color: 'var(--text-soft)' }}>{submittedCaption}</div>
+      )}
+      {cards.filter(c => c.status === 'tentative').length > 1 && (
+        <div className="text-[11.5px] mb-3 flex items-center gap-1.5" style={{ color: 'var(--accent)' }}>
+          <span style={{ fontWeight: 700 }}>▲▼</span> לשינוי דירוג הארגונים — השתמש/י בחיצים (כל שינוי מבקש אישור).
+        </div>
       )}
 
       {cards.length === 0 && (
@@ -432,14 +440,23 @@ export default function OrgHub({
             {/* Row 1 — rank + re-rank, org identity, capacity, status */}
             <div className="flex items-center gap-2 flex-wrap mb-2">
               <span className="mono text-[12px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>#{card.rank}</span>
-              {isTentative && (
-                <span className="inline-flex flex-col shrink-0" style={{ lineHeight: 0.9 }}>
-                  <button type="button" data-move-up={idx} onClick={() => moveOrg(card.orgName, -1)} disabled={idx === 0}
-                    title="העלה בדירוג" style={{ background: 'none', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? 'var(--divider)' : 'var(--text-soft)', fontSize: 11, padding: '0 2px' }}>▲</button>
-                  <button type="button" data-move-down={idx} onClick={() => moveOrg(card.orgName, 1)} disabled={idx === cards.length - 1}
-                    title="הורד בדירוג" style={{ background: 'none', border: 'none', cursor: idx === cards.length - 1 ? 'default' : 'pointer', color: idx === cards.length - 1 ? 'var(--divider)' : 'var(--text-soft)', fontSize: 11, padding: '0 2px' }}>▼</button>
-                </span>
-              )}
+              {isTentative && cards.length > 1 && (() => {
+                const arrow = (enabled: boolean): React.CSSProperties => ({
+                  display: 'inline-grid', placeItems: 'center', width: 26, height: 22,
+                  border: `1px solid ${enabled ? 'var(--accent)' : 'var(--divider)'}`, borderRadius: 6,
+                  background: enabled ? 'var(--accent-soft)' : 'transparent',
+                  color: enabled ? 'var(--accent)' : 'var(--divider)', fontSize: 12, fontWeight: 700,
+                  cursor: enabled ? 'pointer' : 'default', lineHeight: 1,
+                });
+                return (
+                  <span className="inline-flex flex-col shrink-0 gap-0.5">
+                    <button type="button" data-move-up={idx} onClick={() => moveOrg(card.orgName, -1)} disabled={idx === 0}
+                      title="העלה בדירוג" style={arrow(idx !== 0)}>▲</button>
+                    <button type="button" data-move-down={idx} onClick={() => moveOrg(card.orgName, 1)} disabled={idx === cards.length - 1}
+                      title="הורד בדירוג" style={arrow(idx !== cards.length - 1)}>▼</button>
+                  </span>
+                );
+              })()}
               {/* Org identity — editable combobox while not-yet-sent, else locked text. */}
               {isTentative ? (
                 <OrgCombo value={card.orgName} options={gatedOrgOptions(card.orgName)} onCommit={v => renameOrg(card.orgName, v)} />

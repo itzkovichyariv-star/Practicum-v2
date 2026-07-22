@@ -662,7 +662,7 @@ export default function StudentEditor({
           {!isNew && (() => {
             const hint = pendingCv ? 'הגשה חדשה ממתינה — אמץ/י בקטע קורות חיים'
               : (!form.cvUpdatedUrl && form.preparation?.passed) ? 'שלח/י למועמד/ת קישור שלב 2 להעלאת קו״ח ובחירת ארגונים'
-              : (form.cvUpdatedUrl && !form.acceptedOrg && ((form as any).preferences || []).every((p: any) => p.status === 'tentative') && ((form as any).preferences || form.firstChoiceOrg)) ? 'מוכן לשליחה — סמן/י ארגון ושלח/י קו״ח בקטע הארגונים'
+              : (form.cvUpdatedUrl && !form.acceptedOrg && ((form as any).preferences || []).every((p: any) => p.status === 'tentative') && ((form as any).preferences || form.firstChoiceOrg)) ? 'מוכן לשליחה — סמן/י ארגון ושלח/י קו״ח'
               : (form.acceptedOrg && (form.hoursApproved || 0) < 120 && !form.practicumCompleted) ? `שובץ/ה — מעקב שעות (${form.hoursApproved || 0}/120 מאושרות)`
               : '';
             if (!hint) return null;

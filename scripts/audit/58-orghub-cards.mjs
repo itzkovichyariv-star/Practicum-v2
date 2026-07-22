@@ -92,6 +92,8 @@ if (seedOk) {
     });
     await audit.page.locator('[data-result="1:passed"]').first().click().catch(() => {});
     await audit.page.waitForTimeout(250);
+    // Re-rank now asks a window.confirm ("delicate — don't lose the previous order") — accept it.
+    audit.page.once('dialog', d => d.accept().catch(() => {}));
     await audit.page.locator('[data-move-up="1"]').first().click().catch(() => {});
     await audit.page.waitForTimeout(300);
 
