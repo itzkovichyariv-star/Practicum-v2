@@ -946,68 +946,81 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
         className="py-4 border-b cursor-pointer hover:bg-[rgba(122,30,43,0.02)]"
         style={{ borderColor: 'var(--divider)', background: selected ? 'rgba(122,30,43,0.04)' : undefined }}
       >
-        {/* Line 1: checkbox (always) · dot · name · tags */}
-        <div className="flex items-center gap-2 min-w-0 mb-1.5">
-          <span
-            role="checkbox"
-            aria-checked={selected}
-            title="בחר/י לשליחת מייל קבוצתי"
-            onClick={e => { e.stopPropagation(); onToggleSelect?.(); }}
-            style={{
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-              border: `2px solid ${selected ? 'var(--accent)' : 'var(--divider)'}`,
-              background: selected ? 'var(--accent)' : 'transparent',
-              color: 'white', fontSize: 11, cursor: 'pointer',
-            }}
-          >{selected ? '✓' : ''}</span>
-          <StatusDot status={dotStatus} size={9} />
-          <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
-            {s.name || 'ללא שם'}
+        {/* The card splits into two zones — STUDENT (right, in RTL): name · status tags ·
+            the student's own contacts + edit; and ORG (left): the hosting org + how to
+            reach it. A hairline divider makes the split unmistakable. */}
+        <div className="flex items-stretch gap-3">
+          {/* ── STUDENT zone (right) ── */}
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                role="checkbox"
+                aria-checked={selected}
+                title="בחר/י לשליחת מייל קבוצתי"
+                onClick={e => { e.stopPropagation(); onToggleSelect?.(); }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                  border: `2px solid ${selected ? 'var(--accent)' : 'var(--divider)'}`,
+                  background: selected ? 'var(--accent)' : 'transparent',
+                  color: 'white', fontSize: 11, cursor: 'pointer',
+                }}
+              >{selected ? '✓' : ''}</span>
+              <StatusDot status={dotStatus} size={9} />
+              <div className="serif text-[20px] leading-tight tracking-tight flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>
+                {s.name || 'ללא שם'}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 flex-wrap">
+              {(!s.phone || !s.email) && <NeedsUpdate />}
+              {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
+              {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
+              {s.cvUpdatedUrl ? <Tag label="CV ✓" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
+              {placed && !hired && !completed && <Tag label="שובץ/ה" />}
+              {hired && !completed && <Tag label="נקלט/ה" solid />}
+              {completed && <Tag label="✓ סיים" color="#b45309" />}
+              {hasEmployerFeedback(s) && <Tag label="✓ משוב" color="#15803d" />}
+              {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
+              {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5" onClick={e => e.stopPropagation()}>
+              <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
+            </div>
           </div>
-          <div className="flex items-center gap-1 flex-wrap justify-end" style={{ maxWidth: '55%', flexShrink: 0 }}>
-            {(!s.phone || !s.email) && <NeedsUpdate />}
-            {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
-            {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
-            {s.cvUpdatedUrl ? <Tag label="CV ✓" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
-            {placed && !hired && !completed && <Tag label="שובץ/ה" />}
-            {hired && !completed && <Tag label="נקלט/ה" solid />}
-            {completed && <Tag label="✓ סיים" color="#b45309" />}
-            {hasEmployerFeedback(s) && <Tag label="✓ משוב" color="#15803d" />}
-            {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
-            {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
+
+          {/* ── divider + ORG zone (left) ── */}
+          <div style={{ width: '0.5px', background: 'var(--divider)', flexShrink: 0 }} />
+          <div className="flex flex-col justify-center gap-1.5 shrink-0" style={{ width: '38%', maxWidth: 190 }} onClick={e => e.stopPropagation()}>
+            {placed ? (
+              <>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
+                    <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M3 21h18M9 7h1M9 11h1M9 15h1M14 7h1M14 11h1M14 15h1"/>
+                  </svg>
+                  <span className="text-[12.5px] font-semibold truncate" style={{ color: 'var(--accent)' }}>{s.acceptedOrg}</span>
+                </div>
+                {hostEmp && (hostPhone || hostEmail) ? (
+                  <div className="flex items-center gap-1.5">
+                    {hostPhone && (
+                      <button type="button" onClick={orgCall} title={`התקשר לארגון ${hostEmp.name}`} aria-label={`התקשר לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+                      </button>
+                    )}
+                    {hostPhone && (
+                      <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><WhatsAppIcon size={13} /></button>
+                    )}
+                    {hostEmail && (
+                      <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><MailIcon size={13} /></button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>אין פרטי קשר לארגון</span>
+                )}
+              </>
+            ) : (
+              <span className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>טרם שובץ/ה בארגון</span>
+            )}
           </div>
-        </div>
-        {/* Line 2 — two contact groups that sit together but are unmistakable:
-            · the ORG (only when placed) in a maroon chip: building icon + org name +
-              call / WhatsApp / mail (phone added for orgs like Clalit that have no WA).
-            · the STUDENT's own contacts (call/WhatsApp/mail) + edit (RowActions).
-            The raw student phone/email text was removed — reach them via the icons. */}
-        <div className="flex items-center justify-between gap-2 pr-5 flex-wrap gap-y-2" onClick={e => e.stopPropagation()}>
-          {placed ? (
-            <span className="inline-flex items-center gap-1.5 pr-2.5 pl-1.5 py-1 rounded-full min-w-0"
-              style={{ background: 'var(--accent-soft)', border: '0.5px solid rgba(122,30,43,0.22)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
-                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M3 21h18M9 7h1M9 11h1M9 15h1M14 7h1M14 11h1M14 15h1"/>
-              </svg>
-              <span className="text-[12.5px] font-semibold truncate" style={{ color: 'var(--accent)', maxWidth: '40vw' }}>{s.acceptedOrg}</span>
-              {hostEmp && (hostPhone || hostEmail) && <span style={{ width: 1, height: 16, background: 'rgba(122,30,43,0.22)', flexShrink: 0 }} />}
-              {hostEmp && hostPhone && (
-                <button type="button" onClick={orgCall} title={`התקשר לארגון ${hostEmp.name}`} aria-label={`התקשר לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
-                </button>
-              )}
-              {hostEmp && hostPhone && (
-                <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><WhatsAppIcon size={13} /></button>
-              )}
-              {hostEmp && hostEmail && (
-                <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><MailIcon size={13} /></button>
-              )}
-            </span>
-          ) : (
-            <span className="text-[12px]" style={{ color: 'var(--text-soft)' }}>טרם שובץ/ה בארגון</span>
-          )}
-          <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
         </div>
       </div>
 
