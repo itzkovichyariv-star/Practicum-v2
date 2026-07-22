@@ -31,7 +31,7 @@ import type {
 import { randomId } from '../lib/dataApi';
 import {
   renderTemplate, buildWhatsAppUrl, buildMailtoUrl, reconcileEmployerCapacity, countSlotsByStatus,
-  buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, type UnifiedOrgPref, type InterviewResult,
+  buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName, type UnifiedOrgPref, type InterviewResult,
 } from '../lib/placement';
 import { orgAvailability } from '../lib/orgAvailability';
 import { resolveCvUrl } from '../lib/cvUrl';
@@ -131,7 +131,7 @@ export default function OrgHub({
     writeList(cards.map(c => c.orgName === orgName ? { ...c, interviewResult: result } : c));
   }
   function renameOrg(oldName: string, newName: string) {
-    const nm = newName.trim();
+    const nm = normalizeOrgName(newName).trim();
     if (!nm) return; // never rename to empty — that would silently drop the card
     // Refuse renaming onto another card's org (orgName is the identity key for every
     // placement action — a duplicate would let an action hit the WRONG card and could
@@ -155,7 +155,7 @@ export default function OrgHub({
     writeList(reorderUnifiedList(cards, order));
   }
   function addOrg(name: string) {
-    const nm = name.trim();
+    const nm = normalizeOrgName(name).trim();
     if (!nm) { setDraftOrg(null); return; }
     if (cards.some(c => c.orgName.trim().toLowerCase() === nm.toLowerCase())) { setDraftOrg(null); return; }
     writeList([...cards, { rank: cards.length + 1, orgName: nm, employerId: resolveEmployer(nm)?.id ?? null, interviewResult: 'pending', status: 'tentative', slotId: null }]);

@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import type { PracticumData, Student, Candidate, Trainer, Employer } from '../lib/supabase';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { normalizeYear } from '../lib/session';
+import { normalizeOrgName } from '../lib/placement';
 
 type ImportKind = 'students' | 'candidates' | 'trainers' | 'employers';
 
@@ -129,7 +130,7 @@ export default function ExcelImport({ kind, data, userName, onDone }: Props) {
           city: get(row, 'city'),
           courseId: findCourseId(get(row, 'courseName')),
           year: normalizeYear(get(row, 'year')) || '',
-          acceptedOrg: get(row, 'acceptedOrg'),
+          acceptedOrg: normalizeOrgName(get(row, 'acceptedOrg')),
           hoursReported: Number(get(row, 'hoursReported')) || 0,
           preparation: { passed: false },
           notes: get(row, 'notes'),
@@ -158,7 +159,7 @@ export default function ExcelImport({ kind, data, userName, onDone }: Props) {
           name,
           phone: get(row, 'phone'),
           email: get(row, 'email'),
-          organization: get(row, 'organization'),
+          organization: normalizeOrgName(get(row, 'organization')),
           role: get(row, 'role'),
           specialty: get(row, 'specialty'),
           courseId: findCourseId(get(row, 'courseName')),

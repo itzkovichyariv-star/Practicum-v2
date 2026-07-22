@@ -37,7 +37,7 @@ await build({
   bundle: true, format: 'esm', platform: 'neutral', outfile: out, logLevel: 'silent',
   external: ['@supabase/supabase-js'],
 });
-const { buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList } = await import(pathToFileURL(out).href);
+const { buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName } = await import(pathToFileURL(out).href);
 
 const employers = [
   { id: 'e1', name: 'ארגון אלפא' },
@@ -184,6 +184,21 @@ const audit = new Audit({ name: 'unified-org-list' });
     observed: `cards=${list.length}, heldPresent=${!!held}, name="${held?.orgName || ''}"`,
     pass: list.length === 1 && !!held && !!held.orgName,
     notes: !held ? 'The slot-holding preference was filtered out — its reserved place is now orphaned/unmanageable.' : '',
+  });
+}
+
+// ── 3e. normalizeOrgName — a straight ASCII quote can't truncate an org name ──
+{
+  const got = normalizeOrgName('ביה"ח שיבא תל השומר');
+  const noAsciiQuote = !got.includes('"');
+  const keptGershayim = got === 'ביה״ח שיבא תל השומר';
+  audit.recordCell({
+    id: 'ORG-quote-normalized',
+    tableRef: 'placement.normalizeOrgName / " → ״ (gershayim)',
+    expected: 'an org name with an ASCII double-quote is normalised to the Hebrew gershayim ״ (no fragile ") — the ביה"ח truncation guard',
+    observed: `out="${got}", hasAsciiQuote=${!noAsciiQuote}`,
+    pass: noAsciiQuote && keptGershayim,
+    notes: !noAsciiQuote ? 'ASCII quote survived — the name can still be truncated at the " (the live ביה bug).' : '',
   });
 }
 

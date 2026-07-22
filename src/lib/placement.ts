@@ -507,6 +507,17 @@ export function buildMailtoUrl(email: string, subject: string, body: string): st
   return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+/**
+ * Normalise an org name so it can never be truncated by a stray ASCII double-quote.
+ * A name like `ביה"ח שיבא` uses a straight `"` where the Hebrew gershayim `״` (U+05F4)
+ * is meant; the `"` terminates HTML attributes / datalist values / CSV fields, cutting
+ * `ביה"ח שיבא` down to `ביה` (live bug found 2026-07-22). Converting `"`→`״` keeps the
+ * intended glyph and removes the fragile character at every entry point.
+ */
+export function normalizeOrgName(s: any): string {
+  return String(s ?? '').replace(/"/g, '״');
+}
+
 // ── Unified ordered org list — the single source for the student-editor org hub ──
 //
 // 2026-07-21 redesign, Phase 0 (data model). Today a student's org choices live in

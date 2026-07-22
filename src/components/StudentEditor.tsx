@@ -4,7 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildWhatsAppUrl, buildMailtoUrl } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { viewableCvUrl, resolveCvUrl } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
@@ -1079,7 +1079,7 @@ export default function StudentEditor({
           <Accordion title="השמה סופית ושעות" defaultOpen={!!form.acceptedOrg}
             hint={form.acceptedOrg ? `${form.acceptedOrg} · ${form.hoursApproved || 0}/120 ש׳` : undefined}>
             <Field label="ארגון מאכסן בפועל">
-              <Select value={form.acceptedOrg||''} onChange={v=>update('acceptedOrg',v)}
+              <Select value={form.acceptedOrg||''} onChange={v=>update('acceptedOrg',normalizeOrgName(v))}
                 options={[...employers.map(e=>({value:e.name,label:e.name}))]}
                 placeholder="לא שובץ עדיין"
                 freeText/>
