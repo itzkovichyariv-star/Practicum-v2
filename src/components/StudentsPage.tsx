@@ -11,7 +11,7 @@ import StudentEditor from './StudentEditor';
 import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';
-import { WhatsAppIcon, MailIcon } from './icons';
+import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import type { Employer } from '../lib/supabase';
 
 // Resolve the hosting employer from a student's free-text acceptedOrg (exact → ci →
@@ -915,12 +915,19 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
   const hostEmp = placed ? resolveEmployerForOrg(s.acceptedOrg, employers) : undefined;
   const hostPhone = hostEmp?.contactPhone || '';
   const hostEmail = firstEmailOf(hostEmp?.contactEmail);
-  const orgCall = (e: any) => { e.stopPropagation(); const tel = hostPhone.replace(/[^\d+]/g, ''); const canDial = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)); if (canDial) { window.location.href = `tel:${tel}`; } else if (navigator.clipboard?.writeText) { navigator.clipboard.writeText(hostPhone).then(() => showToast(`📞 ${hostEmp?.name}: ${hostPhone} · הועתק`, 'success'), () => showToast(`📞 ${hostPhone}`, 'info')); } else { showToast(`📞 ${hostPhone}`, 'info'); } };
-  const orgWa = (e: any) => { e.stopPropagation(); let n = hostPhone.replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '972' + n.slice(1); window.open(`https://wa.me/${n}?text=${encodeURIComponent(`שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — `)}`, '_blank'); };
-  const orgMail = (e: any) => { e.stopPropagation(); openMailto(`mailto:${hostEmail}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
-  // org-contact icon inside the maroon org chip
-  const orgIconBtn = 'inline-grid place-items-center w-7 h-7 rounded-full shrink-0';
-  const orgIconStyle = { background: 'var(--bg)', border: '0.5px solid rgba(122,30,43,0.28)', color: 'var(--accent)' } as const;
+  // Shared contact actions — the STUDENT and the ORG use the same handlers + the same
+  // icon buttons (identical style + size), so the two contact rows read as one system.
+  const canDial = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+  const doCall = (phone: string, label: string) => { const tel = phone.replace(/[^\d+]/g, ''); if (canDial) { window.location.href = `tel:${tel}`; } else if (navigator.clipboard?.writeText) { navigator.clipboard.writeText(phone).then(() => showToast(`📞 ${label}: ${phone} · הועתק`, 'success'), () => showToast(`📞 ${phone}`, 'info')); } else { showToast(`📞 ${phone}`, 'info'); } };
+  const toWa = (phone: string) => { let n = phone.replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '972' + n.slice(1); return n; };
+  const stuCall = (e: any) => { e.stopPropagation(); if (s.phone) doCall(s.phone, s.name || ''); };
+  const stuWa = (e: any) => { e.stopPropagation(); if (s.phone) window.open(`https://wa.me/${toWa(s.phone)}`, '_blank'); };
+  const stuMail = (e: any) => { e.stopPropagation(); if (s.email) openMailto(`mailto:${s.email}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
+  const orgCall = (e: any) => { e.stopPropagation(); if (hostPhone) doCall(hostPhone, hostEmp?.name || ''); };
+  const orgWa = (e: any) => { e.stopPropagation(); if (hostPhone) window.open(`https://wa.me/${toWa(hostPhone)}?text=${encodeURIComponent(`שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — `)}`, '_blank'); };
+  const orgMail = (e: any) => { e.stopPropagation(); if (hostEmail) openMailto(`mailto:${hostEmail}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
+  const contactBtn = 'inline-grid place-items-center w-9 h-9 rounded-full shrink-0 transition-colors hover:bg-[rgba(122,30,43,0.06)]';
+  const contactStyle = { background: 'var(--bg)', border: '0.5px solid rgba(122,30,43,0.25)', color: 'var(--accent)' } as const;
   const hired = !!s.hired;
   const completed = !!s.practicumCompleted;
   const prepPassed = !!s.preparation?.passed;
@@ -983,14 +990,21 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
               {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
               {s.rejectionEmailSent && <Tag label="✉ דחייה" muted />}
             </div>
-            <div className="flex items-center gap-2 mt-0.5" onClick={e => e.stopPropagation()}>
-              <RowActions phone={s.phone} email={s.email} name={s.name} onEdit={onEdit} />
+            <div className="flex items-center gap-2 mt-auto pt-1" onClick={e => e.stopPropagation()}>
+              {s.phone && <button type="button" onClick={stuCall} title="התקשר לסטודנט/ית" aria-label="התקשר לסטודנט/ית" className={contactBtn} style={contactStyle}><PhoneIcon size={16} /></button>}
+              {s.phone && <button type="button" onClick={stuWa} title="WhatsApp לסטודנט/ית" aria-label="WhatsApp לסטודנט/ית" className={contactBtn} style={contactStyle}><WhatsAppIcon size={16} /></button>}
+              {s.email && <button type="button" onClick={stuMail} title="מייל לסטודנט/ית" aria-label="מייל לסטודנט/ית" className={contactBtn} style={contactStyle}><MailIcon size={16} /></button>}
+              <button type="button" onClick={onEdit} title="ערוך" aria-label="ערוך"
+                className="w-9 h-9 rounded-full grid place-items-center shrink-0 transition-transform hover:brightness-95 active:scale-95"
+                style={{ border: '0.5px solid var(--accent)', color: 'var(--accent)', background: 'rgba(122,30,43,0.12)' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
             </div>
           </div>
 
           {/* ── divider + ORG zone (left) ── */}
           <div style={{ width: '0.5px', background: 'var(--divider)', flexShrink: 0 }} />
-          <div className="flex flex-col justify-center gap-1.5 shrink-0" style={{ width: '38%', maxWidth: 190 }} onClick={e => e.stopPropagation()}>
+          <div className="flex flex-col gap-1.5 shrink-0" style={{ width: '38%', maxWidth: 190 }} onClick={e => e.stopPropagation()}>
             {placed ? (
               <>
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1000,25 +1014,17 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
                   <span className="text-[12.5px] font-semibold truncate" style={{ color: 'var(--accent)' }}>{s.acceptedOrg}</span>
                 </div>
                 {hostEmp && (hostPhone || hostEmail) ? (
-                  <div className="flex items-center gap-1.5">
-                    {hostPhone && (
-                      <button type="button" onClick={orgCall} title={`התקשר לארגון ${hostEmp.name}`} aria-label={`התקשר לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
-                      </button>
-                    )}
-                    {hostPhone && (
-                      <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><WhatsAppIcon size={13} /></button>
-                    )}
-                    {hostEmail && (
-                      <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`} className={orgIconBtn} style={orgIconStyle}><MailIcon size={13} /></button>
-                    )}
+                  <div className="flex items-center gap-2 mt-auto pt-1">
+                    {hostPhone && <button type="button" onClick={orgCall} title={`התקשר לארגון ${hostEmp.name}`} aria-label={`התקשר לארגון ${hostEmp.name}`} className={contactBtn} style={contactStyle}><PhoneIcon size={16} /></button>}
+                    {hostPhone && <button type="button" onClick={orgWa} title={`WhatsApp לארגון ${hostEmp.name}`} aria-label={`WhatsApp לארגון ${hostEmp.name}`} className={contactBtn} style={contactStyle}><WhatsAppIcon size={16} /></button>}
+                    {hostEmail && <button type="button" onClick={orgMail} title={`מייל לארגון ${hostEmp.name}`} aria-label={`מייל לארגון ${hostEmp.name}`} className={contactBtn} style={contactStyle}><MailIcon size={16} /></button>}
                   </div>
                 ) : (
-                  <span className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>אין פרטי קשר לארגון</span>
+                  <span className="mono text-[10px] mt-auto pt-1" style={{ color: 'var(--text-soft)' }}>אין פרטי קשר לארגון</span>
                 )}
               </>
             ) : (
-              <span className="text-[11.5px]" style={{ color: 'var(--text-soft)' }}>טרם שובץ/ה בארגון</span>
+              <span className="text-[11.5px] my-auto" style={{ color: 'var(--text-soft)' }}>טרם שובץ/ה בארגון</span>
             )}
           </div>
         </div>
