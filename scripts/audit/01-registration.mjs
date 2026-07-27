@@ -20,7 +20,7 @@
  * `candidate-uploads`. We use a tiny in-memory text file so the upload
  * succeeds without disk I/O. The bucket should accept text/plain.
  */
-import { Audit, sbQuery, sbDelete } from '../audit-lib.mjs';
+import { Audit, sbQuery, sbInsert, sbDelete } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'registration' });
 await audit.setup();
@@ -38,6 +38,47 @@ try {
   // Anon may not have DELETE rights — that's fine; the unique email
   // per run means we never collide. Just log and continue.
   audit.log(`pre-clean (non-fatal): ${e.message.slice(0, 120)}`);
+}
+
+// ── Seed a slot + its per-day Zoom link (for REG-onscreen-zoom) ───────────────
+// The success screen shows the Zoom block ONLY when practicum_data.interviewZoomLinks
+// has a link for the BOOKED slot's date (else it shows "the link will be sent later").
+// Booking whatever slot sorted first meant the cell depended on ambient data and sat
+// permanently red. So we seed our own future slot AND a Zoom link for its exact date,
+// book that slot by id, and remove both afterwards.
+const SUPA = 'https://vpqgmcmavnszcnakhiat.supabase.co';
+const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+const SBH = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' };
+const zoomSlotDate = new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10);
+const ZOOM_TEST_LINK = `https://ariel-ac-il.zoom.us/j/audit-${auditTs}`;
+let zoomSlotId = null;
+
+const readBlob = async () => (await (await fetch(`${SUPA}/rest/v1/practicum_data?org_id=eq.default&select=data,version`, { headers: SBH })).json())[0];
+/** CAS-write practicum_data; returns true when this write won the version race. */
+async function casBlob(mutate) {
+  for (let i = 0; i < 6; i++) {
+    const row = await readBlob();
+    const next = mutate(structuredClone(row.data));
+    const r = await fetch(`${SUPA}/rest/v1/practicum_data?org_id=eq.default&version=eq.${row.version}`, {
+      method: 'PATCH', headers: { ...SBH, Prefer: 'return=representation' },
+      body: JSON.stringify({ data: next, version: row.version + 1, updated_at: new Date().toISOString() }),
+    });
+    const j = await r.json().catch(() => null);
+    if (Array.isArray(j) && j.length) return true;
+  }
+  return false;
+}
+
+try {
+  const ins = await sbInsert('public_interview_slots', {
+    date: zoomSlotDate, start_time: '09:00', end_time: '09:30', capacity: 1, booked_count: 0,
+    course_name: 'פרקטיקום משאבי אנוש', note: `audit-zoom-${auditTs}`,
+  });
+  zoomSlotId = (Array.isArray(ins) ? ins[0]?.id : ins?.id) ?? null;
+  const linked = await casBlob((d) => ({ ...d, interviewZoomLinks: { ...(d.interviewZoomLinks || {}), [zoomSlotDate]: ZOOM_TEST_LINK } }));
+  audit.log(`Seeded zoom slot ${zoomSlotId} on ${zoomSlotDate} (zoom link seeded: ${linked})`);
+} catch (e) {
+  audit.log(`zoom-slot seed (non-fatal): ${e.message.slice(0, 120)}`);
 }
 
 // Helper to fill a textarea/input by id and dispatch change events
@@ -179,12 +220,21 @@ audit.log('REG-happy-path: submit creates row with EXACT filled values');
   // CV
   await uploadTinyCv(audit.page);
 
-  // Slot — if any radios appear, click the first
+  // Slot — prefer OUR seeded slot: its date has a Zoom link seeded too, so
+  // REG-onscreen-zoom actually exercises the Zoom block instead of depending on
+  // whichever ambient slot happened to sort first (that dependency is why the cell
+  // sat permanently red). Fall back to the first radio if the seed didn't take.
   const slotRadios = audit.page.locator('input[type="radio"][name="slot"]');
   const slotCount = await slotRadios.count();
   if (slotCount > 0) {
-    await slotRadios.first().check();
-    audit.log(`  slot present (${slotCount}) — selected first`);
+    const mine = zoomSlotId ? audit.page.locator(`input[type="radio"][name="slot"][value="${zoomSlotId}"]`) : null;
+    if (mine && (await mine.count()) > 0) {
+      await mine.check();
+      audit.log(`  slot present (${slotCount}) — selected the seeded zoom slot (${zoomSlotDate})`);
+    } else {
+      await slotRadios.first().check();
+      audit.log(`  slot present (${slotCount}) — seeded slot not offered, selected first`);
+    }
   }
 
   // Submit
@@ -282,6 +332,18 @@ audit.log('REG-happy-path: submit creates row with EXACT filled values');
     });
     audit.log('Released audit-booked interview slot(s)');
   } catch (e) { audit.log(`slot-release (non-fatal): ${e.message.slice(0, 100)}`); }
+
+  // Remove the seeded zoom slot + its per-day Zoom link so neither leaks into the
+  // real interview schedule (a stray slot would be offered to actual candidates).
+  try {
+    if (zoomSlotId) await sbDelete('public_interview_slots', `id=eq.${zoomSlotId}`);
+    const unlinked = await casBlob((d) => {
+      const links = { ...(d.interviewZoomLinks || {}) };
+      delete links[zoomSlotDate];
+      return { ...d, interviewZoomLinks: links };
+    });
+    audit.log(`Cleaned seeded zoom slot + link (link removed: ${unlinked})`);
+  } catch (e) { audit.log(`zoom-seed cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 }
 
 await audit.teardown();
