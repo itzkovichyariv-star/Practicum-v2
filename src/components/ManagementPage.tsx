@@ -541,6 +541,17 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
     else showToast('שגיאה בשמירת קישור הזום', 'error');
   }
 
+  // The permanent default room (used by any day without its own link). Shares the
+  // zoomSavingDate spinner via the sentinel '__default__'.
+  async function saveZoomDefault(value: string) {
+    const v = value.trim();
+    setZoomSavingDate('__default__');
+    const res = await saveSnapshot({ ...data, interviewZoomLinkDefault: v }, { name: userName });
+    setZoomSavingDate(null);
+    if (res.ok) { showToast(v ? '✓ קישור הזום הקבוע נשמר' : '✓ קישור הזום הקבוע הוסר', 'success'); onRefresh?.(); }
+    else showToast('שגיאה בשמירת קישור הזום הקבוע', 'error');
+  }
+
   function updateDay(uid: string, patch: Partial<DayConfig>) {
     setDays(ds => ds.map(d => d.uid === uid ? { ...d, ...patch } : d));
   }
@@ -665,6 +676,30 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
       <p className="text-[13.5px] leading-[1.55] mb-5" style={{ color: 'var(--text-soft)' }}>
         הגדר ימי ראיון — כל מועמד שמגיש טופס יבחר שעה פנויה. כל ראיון מקבל מקום אחד (קיבולת 1).
       </p>
+
+      {/* Permanent default Zoom room — used for every interview day that has no link of
+          its own, so publishing a new date needs no Zoom setup and a candidate can never
+          be left without a link. Per-day links (below) still override it when set. */}
+      <div className="rounded-xl p-3.5 mb-5" style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid var(--divider)' }}>
+        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+          <span className="text-[12.5px] font-semibold" style={{ color: 'var(--ink)' }}>🔗 קישור זום קבוע (ברירת מחדל)</span>
+          {zoomSavingDate === '__default__' && <span className="mono text-[10px]" style={{ color: 'var(--text-soft)' }}>שומר…</span>}
+        </div>
+        <input
+          type="url"
+          dir="ltr"
+          data-zoom-default
+          key={'zoomdef|' + (data.interviewZoomLinkDefault || '')}
+          defaultValue={data.interviewZoomLinkDefault || ''}
+          placeholder="https://…zoom.us/j/…  — החדר האישי הקבוע"
+          onBlur={e => { const v = e.target.value.trim(); if (v !== (data.interviewZoomLinkDefault || '')) saveZoomDefault(v); }}
+          className="input w-full"
+          style={{ fontSize: '12.5px', padding: '6px 10px', textAlign: 'left' }}
+        />
+        <div className="text-[11.5px] leading-[1.5] mt-1.5" style={{ color: 'var(--text-soft)' }}>
+          כל יום ראיון שאין לו קישור משלו ישתמש בקישור הזה — כך אין צורך להגדיר זום לכל מועד חדש.
+        </div>
+      </div>
 
       {/* Main action button */}
       <button
@@ -903,7 +938,7 @@ th{background:#f5f0f0;font-weight:bold}
                   data-zoom-date={date}
                   key={date + '|' + (data.interviewZoomLinks?.[date] || '')}
                   defaultValue={data.interviewZoomLinks?.[date] || ''}
-                  placeholder="קישור זום ליום זה (אופציונלי) — כל המועמדים שמתראיינים ביום זה יקבלו אותו"
+                  placeholder="קישור זום ליום זה (אופציונלי) — אם ריק, ישמש הקישור הקבוע"
                   onBlur={e => { const v = e.target.value.trim(); if (v !== (data.interviewZoomLinks?.[date] || '')) saveZoom(date, v); }}
                   className="input flex-1 min-w-[180px]"
                   style={{ fontSize: '12.5px', padding: '6px 10px', textAlign: 'left' }}

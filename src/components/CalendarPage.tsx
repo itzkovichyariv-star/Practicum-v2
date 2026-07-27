@@ -93,6 +93,11 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
 
   const lectures = data.lectures || [];
   const candidates = data.candidates || [];
+  // Interview Zoom link for a given ISO day: the day's own link, else the permanent
+  // default room. Same resolution as RegistrationForm/notify-submission, so the invite
+  // Yariv sends a candidate carries the SAME link they saw on screen and in their email.
+  const zoomFor = (isoDate: string): string =>
+    String((data.interviewZoomLinks || {})[String(isoDate).slice(0, 10)] || data.interviewZoomLinkDefault || '').trim();
   const students = data.students || [];
 
   const events = useMemo<CalEvent[]>(() => {
@@ -136,6 +141,8 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
           startDate: c.interviewDate.slice(0, 10),
           startTime: c.interviewTime ? c.interviewTime.split(/[-–]/)[0] : '10:00',
           endTime: c.interviewTime ? (c.interviewTime.split(/[-–]/)[1] || '10:45') : '10:45',
+          location: zoomFor(c.interviewDate),
+          body: [zoomFor(c.interviewDate) ? `קישור לראיון בזום: ${zoomFor(c.interviewDate)}` : '', 'נא להתחבר כמה דקות לפני המועד, במקום שקט ועם מצלמה פתוחה, ולהמתין בחדר ההמתנה בזום.'].filter(Boolean).join('\n'),
           attendeeEmail: c.email,
         }),
       });
@@ -188,6 +195,8 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
           startDate: p.date,
           startTime: p.time.split('–')[0] || '10:00',
           endTime: p.time.split('–')[1] || '10:30',
+          location: zoomFor(p.date),
+          body: [zoomFor(p.date) ? `קישור לראיון בזום: ${zoomFor(p.date)}` : '', 'נא להתחבר כמה דקות לפני המועד, במקום שקט ועם מצלמה פתוחה, ולהמתין בחדר ההמתנה בזום.'].filter(Boolean).join('\n'),
           attendeeEmail: p.email,
         }),
       });

@@ -91,8 +91,12 @@ export default function RegistrationForm() {
   const [slotErr, setSlotErr] = useState(false);
   const [notifyDiag, setNotifyDiag] = useState<string | null>(null);
   // Per-day Zoom links (ISO date → link), so the on-screen confirmation can show
-  // the SAME Zoom block as the email (no gap between the two).
+  // the SAME Zoom block as the email (no gap between the two). `zoomDefault` is the
+  // PERMANENT room used whenever a day has no link of its own — Yariv's standing rule
+  // is one personal Zoom room that is always open, never a per-date generated meeting,
+  // so a new interview date needs no Zoom setup at all (2026-07-27).
   const [zoomLinks, setZoomLinks] = useState<Record<string, string>>({});
+  const [zoomDefault, setZoomDefault] = useState<string>('');
   const [courses, setCourses] = useState<{ name: string; year?: string }[]>([]);
   const [years, setYears] = useState<string[]>(['תשפ״ו', 'תשפ״ז']);
 
@@ -132,6 +136,7 @@ export default function RegistrationForm() {
     (async () => {
       const { data: pd } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
       setZoomLinks(((pd as any)?.data?.interviewZoomLinks) || {});
+      setZoomDefault(String(((pd as any)?.data?.interviewZoomLinkDefault) || '').trim());
     })();
   }, []);
 
@@ -231,7 +236,9 @@ export default function RegistrationForm() {
 
   if (status === 'done') {
     const bookedSlot = availableSlots.find(s => s.id === selectedSlotId);
-    const zoom = bookedSlot ? (zoomLinks[bookedSlot.date] || '') : '';
+    // Per-day link wins; otherwise the permanent default room. Keep this resolution
+    // identical to notify-submission/index.ts or the screen and the email drift apart.
+    const zoom = bookedSlot ? (zoomLinks[bookedSlot.date] || zoomDefault || '') : '';
     return (
       <div className="max-w-[560px] mx-auto p-10 text-center">
         <div className="chapter-mark mb-4">✓ נקלט/ה</div>

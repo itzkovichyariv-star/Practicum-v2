@@ -64,13 +64,19 @@ Deno.serve(async (req) => {
 
       // Per-DAY Zoom link (same link for every candidate interviewing that day),
       // stored in practicum_data.interviewZoomLinks, independent of the slot rows.
+      // Falls back to interviewZoomLinkDefault — the PERMANENT personal room that is
+      // always open (Yariv's standing rule: never a per-date generated meeting), so a
+      // newly published interview date needs no Zoom setup and can never go out linkless.
+      // ⚠️ Keep this resolution IDENTICAL to RegistrationForm.tsx's on-screen block, or
+      // the confirmation screen and this email drift apart.
       const dateMatch = bookedSlot.match(/(\d{4}-\d{2}-\d{2})/);
       const bookedDate = dateMatch ? dateMatch[1] : '';
       let zoomLink = '';
-      if (bookedDate) {
+      if (bookedSlot) {
         try {
           const { data: pd } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
-          zoomLink = String(pd?.data?.interviewZoomLinks?.[bookedDate] || '').trim();
+          const perDay = bookedDate ? String(pd?.data?.interviewZoomLinks?.[bookedDate] || '').trim() : '';
+          zoomLink = perDay || String(pd?.data?.interviewZoomLinkDefault || '').trim();
         } catch (_) { /* non-fatal — fall back to the "link will be sent" note */ }
       }
 

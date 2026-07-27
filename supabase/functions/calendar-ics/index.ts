@@ -41,6 +41,18 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
 
+  // Interview Zoom links, so a subscribed calendar event is one tap from joining.
+  // Per-day link wins, else the permanent default room — the SAME resolution the
+  // candidate's confirmation screen/email uses (RegistrationForm / notify-submission).
+  let zoomLinks: Record<string, string> = {};
+  let zoomDefault = '';
+  try {
+    const { data: pd } = await supabase.from('practicum_data').select('data').eq('org_id', 'default').single();
+    zoomLinks = ((pd as any)?.data?.interviewZoomLinks) || {};
+    zoomDefault = String((pd as any)?.data?.interviewZoomLinkDefault || '').trim();
+  } catch (_) { /* non-fatal — events simply carry no join link */ }
+  const zoomFor = (d: string): string => String(zoomLinks[String(d).slice(0, 10)] || zoomDefault || '').trim();
+
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -67,7 +79,13 @@ Deno.serve(async (req) => {
     lines.push(`DTEND;TZID=Asia/Jerusalem:${fmtDt(slot.date, slot.end_time)}`);
     lines.push(`SUMMARY:${escapeIcs(summary)}`);
     lines.push(`STATUS:${full ? 'CONFIRMED' : 'TENTATIVE'}`);
-    if (slot.note) lines.push(`DESCRIPTION:${escapeIcs(slot.note)}`);
+    const zoom = zoomFor(slot.date);
+    if (zoom) {
+      lines.push(`LOCATION:${escapeIcs(zoom)}`);
+      lines.push(`URL:${escapeIcs(zoom)}`);
+    }
+    const desc = [slot.note || '', zoom ? `קישור לראיון בזום: ${zoom}` : ''].filter(Boolean).join(' — ');
+    if (desc) lines.push(`DESCRIPTION:${escapeIcs(desc)}`);
     lines.push('END:VEVENT');
   }
 

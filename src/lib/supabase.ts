@@ -264,6 +264,10 @@ export type PracticumData = {
   // public_interview_slots so deleting/changing slots never deletes the link, and
   // every candidate interviewing that day gets the same link in their confirmation.
   interviewZoomLinks?: Record<string, string>;
+  // The PERMANENT default room, used for any interview day WITHOUT a link of its own
+  // (Yariv's personal Zoom — always open, never a per-date generated meeting). Means a
+  // newly published interview date needs no Zoom setup and can never go out linkless.
+  interviewZoomLinkDefault?: string;
   history?: { ts: string; who: string; action: string; entity: string; target: string }[];
   // System settings
   coordinatorEmail?: string;  // coordinator (Rachel) — receives employer feedback + candidate submissions
