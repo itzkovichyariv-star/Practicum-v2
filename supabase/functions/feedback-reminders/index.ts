@@ -135,6 +135,9 @@ function integrityAlertHtml(reason: string): string {
   <p style="font-size:14.5px;line-height:1.7;margin:0 0 12px">
     כדי למנוע שליחת מיילים למעסיקים על סמך נתונים פגומים — השליחה נעצרה. אנא בדוק/י את הנתונים (ושחזר/י מ‑practicum_snapshots אם צריך), ואז אפשר להריץ שוב את הפונקציה ידנית. הריצה הבאה תישלח כרגיל ברגע שהתקינות תשוחזר.
   </p>
+  <p style="font-size:14px;line-height:1.7;margin:0 0 16px;background:#fff;border:1px solid #e6d9c8;border-radius:8px;padding:12px 14px">
+    <strong>אם הירידה מכוונת</strong> (נמחקו שורות בדיקה או סטודנט/ית שפרש/ה) — אין תקלה, וניתן לשלוח בכל זאת עם הוספת <code style="background:#f4efe6;padding:1px 5px;border-radius:4px">?force=1</code> לכתובת הפונקציה.
+  </p>
   <div style="margin-top:26px;padding-top:16px;border-top:1px solid #ddd;font-size:11px;color:#aaa;letter-spacing:0.12em;text-transform:uppercase">פרקטיקום · אוניברסיטת אריאל · נשלח אוטומטית</div>
 </body></html>`;
 }
@@ -190,22 +193,41 @@ Deno.serve(async (req) => {
     const resendKey = Deno.env.get('RESEND_API_KEY');
 
     // ── Data-integrity guard ──────────────────────────────────────────────────────
-    // Feedback is MONOTONIC — an employer never un-submits. If the current data has FEWER
-    // feedbacks than any recent snapshot (or the student roster collapsed), a bad write likely
-    // clobbered data. Never email employers on corrupted data: abort the send and alert Yariv+Rachel
-    // so they can recover from practicum_snapshots. A ?dry=1 run reports the abort without alerting.
+    // Feedback is MONOTONIC — an employer never un-submits. If a student who is STILL in the
+    // roster has LOST their feedback (or the roster collapsed), a bad write likely clobbered
+    // data. Never email employers on corrupted data: abort the send and alert Yariv+Rachel so
+    // they can recover from practicum_snapshots. A ?dry=1 run reports the abort without alerting;
+    // ?force=1 runs anyway (escape hatch — see below).
+    //
+    // ⚠️ The comparison is INTERSECTED with the CURRENT roster (2026-07-27): a snapshot's
+    // feedback only counts if that student id still exists today. Otherwise DELIBERATE deletions
+    // (removing test rows, dropping a withdrawn student) look identical to corruption and the
+    // guard jams for as long as the tainted snapshots stay in the window — which is exactly what
+    // happened when this session's audit-seed students, which carried feedback, were cleaned up:
+    // 4 fake feedbacks vanished, curFb 20 < recent max 24, and every weekly send aborted. Real
+    // corruption still trips it, because a clobbered student REMAINS in the roster with their
+    // feedback missing; a mass roster wipe is caught by the student-count check below.
+    const curIds = new Set(students.map((s: any) => String(s?.id)));
     const curFbCount = students.filter(hasEmployerFeedback).length;
     const { data: snaps } = await supabase
       .from('practicum_snapshots').select('data').order('created_at', { ascending: false }).limit(25);
     const snapArr = (snaps || []) as any[];
-    const maxFb = Math.max(curFbCount, ...snapArr.map((r) => (r.data?.students || []).filter(hasEmployerFeedback).length));
+    const maxFb = Math.max(curFbCount, ...snapArr.map((r) =>
+      (r.data?.students || []).filter((s: any) => curIds.has(String(s?.id)) && hasEmployerFeedback(s)).length));
     const maxStu = Math.max(students.length, ...snapArr.map((r) => (r.data?.students || []).length));
     const integrityIssue = curFbCount < maxFb
-      ? `feedback count dropped — now ${curFbCount}, recent max ${maxFb}`
+      ? `feedback count dropped — now ${curFbCount}, recent max ${maxFb} (students still on the roster)`
       : (students.length < Math.floor(maxStu * 0.9)
         ? `student count dropped — now ${students.length}, recent max ${maxStu}`
         : null);
-    if (integrityIssue) {
+    // ?force=1 — send anyway despite the guard. Needed because the alert tells Yariv to "re-run
+    // manually", but a plain re-run re-trips the same guard: without this the only way out was to
+    // wait for the tainted snapshots to age out of the 25-row window (days).
+    const force = new URL(req.url).searchParams.get('force') === '1';
+    if (integrityIssue && force) {
+      console.warn(`[feedback-reminders] integrity issue OVERRIDDEN by ?force=1 — ${integrityIssue}`);
+    }
+    if (integrityIssue && !force) {
       if (!dry && resendKey && ccList.length) {
         await sendResend(resendKey, {
           from: FROM, to: ccList,
@@ -213,7 +235,7 @@ Deno.serve(async (req) => {
           html: integrityAlertHtml(integrityIssue),
         });
       }
-      return json({ ok: false, aborted: true, reason: 'data-integrity', detail: integrityIssue, curFbCount, maxFb, curStudents: students.length, maxStu, alerted: !dry && !!resendKey });
+      return json({ ok: false, aborted: true, reason: 'data-integrity', detail: integrityIssue, curFbCount, maxFb, curStudents: students.length, maxStu, alerted: !dry && !!resendKey, override: 'If the drop was intentional (deleted test/withdrawn rows), re-run with ?force=1 to send anyway.' });
     }
 
     const toRemind: Rec[] = [];
