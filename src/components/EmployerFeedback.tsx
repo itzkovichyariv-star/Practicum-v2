@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { publicSupabase as supabase } from '../lib/supabase';
 import { saveSnapshot } from '../lib/dataApi';
 import { useFormDraft, draftSavedLabel } from '../lib/useFormDraft';
 import type { Student, PracticumData } from '../lib/supabase';

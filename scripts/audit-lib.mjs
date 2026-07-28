@@ -24,7 +24,10 @@ import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 export const ROOT = '/Users/yarivitzkovich/Code/practicum-v2';
-export const BASE_URL = 'http://localhost:4325';
+// Default target is the dev server; set AUDIT_BASE_URL to run a cell against another
+// origin (e.g. AUDIT_BASE_URL=https://practicum.yarivitzkovich.org to verify PRODUCTION
+// after a deploy — the DB/storage are the same project either way).
+export const BASE_URL = process.env.AUDIT_BASE_URL || 'http://localhost:4325';
 
 // Supabase project — same constants the app uses. The publishable
 // "anon" key is intentionally readable; RLS gates real access.

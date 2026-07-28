@@ -7,6 +7,24 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: true, autoRefreshToken: true },
 });
 
+/**
+ * ANONYMOUS client for the PUBLIC forms (/register, /cv-update, /feedback).
+ *
+ * Why this exists (bug, Yariv 2026-07-28): the public pages share an origin with the admin
+ * app, and the client above persists the coordinator's magic-link session in localStorage.
+ * A public form therefore uploaded/inserted as whoever was logged in — and once that session
+ * EXPIRED, Supabase rejected the request with 401 instead of falling back to the anon key,
+ * so "העלאת קורות החיים נכשלה" hit the coordinator while every real (logged-out) candidate
+ * was fine. A public form must never depend on anyone's login state.
+ *
+ * persistSession:false + a distinct storageKey ⇒ this client never reads or writes the
+ * admin session, so it is always exactly the anon role. Use it for EVERY public-form
+ * read/write; keep `supabase` for the authenticated admin app.
+ */
+export const publicSupabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: false, autoRefreshToken: false, storageKey: 'practicum-public-anon' },
+});
+
 // ── Placement extension types ─────────────────────────────────────────────────
 
 export type VacancySlotStatus = 'available' | 'tentative' | 'under_review' | 'placed';

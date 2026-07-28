@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { supabase } from '../lib/supabase';
+import { publicSupabase as supabase } from '../lib/supabase';
 import { useFormDraft } from '../lib/useFormDraft';
 
 type Status = 'idle' | 'uploading' | 'saving' | 'done' | 'error';
@@ -39,18 +39,38 @@ const EMPTY_Q: Questionnaire = {
   expectations: '',
 };
 
+/** Last upload failure, surfaced to the candidate so a retry isn't blind guesswork. */
+let lastUploadError = '';
+
+/**
+ * Upload a CV. RETRIES up to 3× with backoff — a single transient network blip used to
+ * fail the whole submission after the candidate had filled the entire form (Yariv,
+ * 2026-07-28). Uses the ANONYMOUS client (see publicSupabase) so it can never inherit an
+ * expired admin session. Word (.doc/.docx) and PDF; the bucket caps a file at 50 MB.
+ */
 async function uploadFile(file: File, prefix: string): Promise<string | null> {
   const safeFolder = (prefix || '').replace(/[^a-zA-Z0-9._-]/g, '') || 'candidate';
   const ext = (file.name.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 8) || 'bin';
-  const randomTag = Math.random().toString(36).slice(2, 10);
-  const path = `${safeFolder}/${Date.now()}-${randomTag}.${ext}`;
-  const { error } = await supabase.storage.from('candidate-uploads').upload(path, file, {
-    cacheControl: '3600',
-    upsert: false,
-    contentType: file.type || 'application/octet-stream',
-  });
-  if (error) { console.error('upload failed:', error); return null; }
-  return path;
+  lastUploadError = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // A fresh path per attempt, so a half-written object never blocks the retry.
+    const path = `${safeFolder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+    try {
+      const { error } = await supabase.storage.from('candidate-uploads').upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type || 'application/octet-stream',
+      });
+      if (!error) return path;
+      lastUploadError = String((error as any)?.message || error);
+      console.error(`upload attempt ${attempt}/3 failed:`, error);
+    } catch (e: any) {
+      lastUploadError = String(e?.message || e);
+      console.error(`upload attempt ${attempt}/3 threw:`, e);
+    }
+    if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 800));
+  }
+  return null;
 }
 
 export default function RegistrationForm() {
@@ -175,7 +195,17 @@ export default function RegistrationForm() {
     setStatus('uploading');
     const prefix = (form.email.split('@')[0] || 'candidate').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 40) || `c${Date.now()}`;
     const cvPath = await uploadFile(cv, prefix);
-    if (!cvPath) { setStatus('error'); setErr('העלאת קורות החיים נכשלה. נסה/י שוב.'); return; }
+    if (!cvPath) {
+      setStatus('error');
+      // Name the real cause — a silent generic failure is what made this undiagnosable.
+      const size = (cv.size / (1024 * 1024)).toFixed(1);
+      setErr(
+        cv.size > 50 * 1024 * 1024
+          ? `הקובץ גדול מדי (${size}MB). המגבלה היא 50MB — נסה/י לשמור מחדש כ‑PDF.`
+          : `העלאת קורות החיים נכשלה לאחר 3 ניסיונות${lastUploadError ? ` (${lastUploadError})` : ''}. בדוק/י את החיבור לאינטרנט ונסה/י שוב — שאר הפרטים שמילאת נשמרו.`,
+      );
+      return;
+    }
 
     setStatus('saving');
     const slot = availableSlots.find(s => s.id === selectedSlotId) || null;

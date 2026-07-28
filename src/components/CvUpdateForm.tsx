@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, type FormEvent, type CSSProperties } from 'react';
-import { supabase } from '../lib/supabase';
+import { publicSupabase as supabase } from '../lib/supabase';
 import { employerStatus } from '../lib/orgAvailability';
 import { useFormDraft } from '../lib/useFormDraft';
 import { viewableCvUrl } from '../lib/cvUrl';
