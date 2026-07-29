@@ -86,8 +86,12 @@ if(seedOk){
 // The between-students line must be strictly heavier than the within-card hairline:
 //   thicker (≥2px vs ~1px) AND more opaque (strong token 0.42 vs weak 0.18), and NOT via
 //   the border-b class (which the !important rule would pin to the weak token).
-const hPrimary  = geo.hWidthPx>=2 && geo.hAlpha>0.3 && geo.hasBorderBClass===false;
-const vSecondary= geo.vWidthPx>0 && geo.vWidthPx<geo.hWidthPx && geo.vAlpha<0.25 && geo.vInsetTop>=2 && geo.vInsetBottom>=2;
+// Thresholds are RELATIVE, not absolute: the dark theme's tokens (0.22 / 0.09) are far
+// weaker than light's (0.42 / 0.18), so a hard-coded "> 0.3" red-flagged a perfectly
+// correct dark-mode render. What matters is the HIERARCHY — the row separator must be
+// both thicker and clearly more opaque than the within-card hairline, in either theme.
+const hPrimary  = geo.hWidthPx>=2 && geo.hasBorderBClass===false && geo.hAlpha >= geo.vAlpha*1.8;
+const vSecondary= geo.vWidthPx>0 && geo.vWidthPx<geo.hWidthPx && geo.vAlpha<geo.hAlpha && geo.vInsetTop>=2 && geo.vInsetBottom>=2;
 // The open-card (edit) pencil: BARE (no capsule), in the tag block (not the contact row so that
 // row mirrors the org's), and clear of — never crossing — the student↔org hairline.
 const editClear = geo.editClearance>=8;
@@ -98,7 +102,7 @@ const shot=await audit.shot('divider-hierarchy');
 audit.recordCell({
   id:'DIVIDER-hierarchy',
   tableRef:'StudentsPage StudentRow — divider weights + bare-pencil edit placement',
-  expected:'row separator (between students) is PRIMARY: ≥2px, strong token (α≈0.42), NOT the border-b class; student↔org split is SECONDARY: thinner (1px), lighter (α≈0.18), inset ≥2px top/bottom; open-card pencil is BARE (no capsule), sits in the tag block (not the contact row), and stays ≥8px clear of the hairline',
+  expected:'row separator (between students) is PRIMARY: ≥2px and ≥1.8× the hairline\'s opacity (theme-independent), NOT the border-b class; student↔org split is SECONDARY: thinner (1px), lighter (α≈0.18), inset ≥2px top/bottom; open-card pencil is BARE (no capsule), sits in the tag block (not the contact row), and stays ≥8px clear of the hairline',
   observed: seedOk?`H=${geo.hWidthPx}px α${geo.hAlpha} borderBClass=${geo.hasBorderBClass} | V=${geo.vWidthPx}px α${geo.vAlpha} inset(${geo.vInsetTop}/${geo.vInsetBottom}) | editClear=${geo.editClearance}px bare=${geo.editBare} inContactRow=${geo.editInContactRow} inTagBlock=${geo.editInTagBlock}${geo.error?' ERR:'+geo.error:''}`:'seed failed',
   pass,
   after:shot,

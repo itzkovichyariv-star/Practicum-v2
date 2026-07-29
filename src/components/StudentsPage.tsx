@@ -987,8 +987,11 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
                 {s.cvUrl && !prepPassed && !placed && !hired && !completed && <Tag label="📄" muted />}
                 {prepPassed && !placed && !hired && !completed && <Tag label="✓ הכנה" muted />}
                 {s.cvUpdatedUrl ? <Tag label="CV ✓" /> : prepPassed && <Tag label="CV נדרש" color="#b45309" />}
-                {placed && !hired && !completed && <Tag label="שובץ/ה" />}
-                {hired && !completed && <Tag label="נקלט/ה" solid />}
+                {/* Placement and completion are INDEPENDENT facts — "סיים" must not hide
+                    where the student did the practicum (Yariv 2026-07-29). A finished
+                    student shows both: נקלט/ה + ✓ סיים. */}
+                {placed && !hired && <Tag label="שובץ/ה" />}
+                {hired && <Tag label="נקלט/ה" solid />}
                 {completed && <Tag label="✓ סיים" color="#b45309" />}
                 {hasEmployerFeedback(s) && <Tag label="✓ משוב" color="#15803d" />}
                 {s.acceptanceEmailSent && <Tag label="✉ קבלה" muted />}
