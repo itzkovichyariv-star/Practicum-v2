@@ -22,6 +22,7 @@ async function sbPatchData(data) {
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'final-placement' });
+const pageErrors = [];
 const ts = Date.now();
 const EMP_ID = `audit-fp-emp-${ts}`, EMP_NAME = `ארגון שיבוץ ${ts}`, SLOT_ID = `${EMP_ID}-s1`;
 const STU_ID = `audit-fp-stu-${ts}`, STU_NAME = `סטודנט שיבוץ ${ts}`;
@@ -38,6 +39,7 @@ try {
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
 await audit.setup();
+audit.page.on('pageerror', e => { pageErrors.push(String(e.message || e).slice(0, 160)); });
 await audit.page.evaluate(({ cId }) => {
   localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: cId || '__all__', year: '__all__' }));
   localStorage.setItem('practicum_v2_page', 'students');
@@ -158,5 +160,6 @@ try {
   audit.log('Cleanup: removed temp student + employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 
+if (pageErrors.length) audit.log(`PAGE ERRORS: ${pageErrors.join(' || ')}`);
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);

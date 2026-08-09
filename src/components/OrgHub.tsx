@@ -253,6 +253,59 @@ export default function OrgHub({
    * 'בוטל', which is terminal and forced re-adding the organization from scratch
    * (Yariv 2026-08-09, after a CV was recorded as sent that Outlook never opened).
    */
+  async function handleResult(orgName: string, result: 'placed' | 'rejected' | 'withdrawn', openChannel?: 'whatsapp' | 'email') {
+    const { student } = materialise();
+    const pref = (student.preferences as any[]).find(p => p.orgName === orgName);
+    if (!pref) { setConfirmDialog(null); return; }
+    const emp = resolveEmployer(orgName);
+    if (!emp) { setConfirmDialog(null); return; }
+    const now = new Date().toISOString();
+    const empLive = employers.find(e => e.id === emp.id) || emp;
+    const isPlacedNow = student.submissionStatus === 'placed';
+
+    if (openChannel && result === 'withdrawn') {
+      const ctx = buildCtx(empLive);
+      let url = '';
+      if (openChannel === 'whatsapp') url = buildWhatsAppUrl(empLive.contactPhone || '', renderTemplate(placementSettings.whatsappWithdrawalTemplate, ctx));
+      else url = buildMailtoUrl(empLive.contactEmail || '', renderTemplate(placementSettings.emailWithdrawalSubjectTemplate, ctx), renderTemplate(placementSettings.emailWithdrawalBodyTemplate, ctx));
+      window.open(url, '_blank');
+    }
+
+    // Resolve the target slot robustly: the pref's slotId if present, else the slot this
+    // student actually holds at the employer (ground truth from the employers prop). A
+    // rapid send→נקלט could run before the form's slotId synced back; the held-slot
+    // fallback stops that from marking placement without freeing/occupying the slot.
+    const slotId = pref.slotId
+      || ((empLive as any).vacancySlots || []).find((s: any) => s.studentId === form.id && (s.status === 'under_review' || s.status === 'placed'))?.id
+      || null;
+    const newSlotStatus = result === 'placed' ? 'placed' : 'available';
+    const updatedSlots: VacancySlot[] = ((empLive as any).vacancySlots || []).map((s: any) => {
+      if (s.id !== slotId) return s;
+      const h: any = { at: now, from: s.status, to: newSlotStatus, by: 'admin', actorId: userName };
+      if (result === 'withdrawn') h.reason = isPlacedNow ? 'withdrawn-after-placement' : 'withdrawn-manual';
+      return { ...s, status: newSlotStatus, studentId: result === 'placed' ? (s.studentId || form.id) : null, prefRank: result === 'placed' ? s.prefRank : null, history: [...(s.history || []), h] };
+    });
+    const updatedEmp = reconcileEmployerCapacity({ ...empLive, vacancySlots: updatedSlots });
+    const updatedPrefs = (student.preferences as any[]).map(p => p.orgName === orgName
+      ? { ...p, slotId: slotId ?? p.slotId, status: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn' } : p);
+
+    let newSubmissionStatus = student.submissionStatus;
+    if (result === 'placed') newSubmissionStatus = 'placed';
+    else if (!updatedPrefs.some(p => p.status === 'tentative' || p.status === 'under_review') && !updatedPrefs.some(p => p.status === 'placed')) newSubmissionStatus = 'exhausted';
+
+    const updatedStudent: any = { ...student, preferences: updatedPrefs, submissionStatus: newSubmissionStatus };
+    if (result === 'placed') { updatedStudent.acceptedOrg = empLive.name; if (!updatedStudent.placedAt) updatedStudent.placedAt = now.slice(0, 10); }
+
+    const updatedDispatches = dispatches.map(d => (d.studentId === form.id && d.slotId === slotId && d.result === 'pending')
+      ? { ...d, result: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn', resultAt: now, resultBy: userName } : d);
+
+    const nextStudents = allStudents.map(s => s.id === form.id ? updatedStudent : s);
+    const nextEmployers = employers.map(e => e.id === updatedEmp.id ? updatedEmp : e);
+    await extras.onDataChange({ students: nextStudents, employers: nextEmployers, dispatches: updatedDispatches as Dispatch[] });
+    showToast(`✓ ${result === 'placed' ? 'שובץ!' : result === 'rejected' ? 'נדחה' : 'בוטל'}`, 'success');
+    setConfirmDialog(null);
+  }
+
   async function markNeverSent(orgName: string) {
     const { student } = materialise();
     const res = unsendOrg({ student, employers, dispatches, orgName, userName, mode: 'never_sent' });
