@@ -12,6 +12,9 @@ import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
+import PlacementStrip from './PlacementStrip';
+import { placementStatus, isPlacementCourse, TURN_LABEL, TURN_COLOR,
+  type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
 import type { Employer } from '../lib/supabase';
 
 // Resolve the hosting employer from a student's free-text acceptedOrg (exact → ci →
@@ -31,9 +34,10 @@ type Filters = {
   search: string;
   stage: 'all' | 'prep' | 'placed' | 'hired' | 'completed' | 'notplaced';
   dotFilter: 'all' | 'green' | 'amber' | 'gray';
+  turn: 'all' | PlacementTurn;
 };
 
-const emptyFilters: Filters = { search: '', stage: 'all', dotFilter: 'all' };
+const emptyFilters: Filters = { search: '', stage: 'all', dotFilter: 'all', turn: 'all' };
 
 // A student "has employer feedback" when either the public employer form was
 // submitted (feedbackSubmittedAt) or feedback text was recorded manually in the
@@ -247,6 +251,60 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
   const scoped = useMemo(() => all.filter(s => sameContext(s, context, courses)), [all, context, courses]);
 
+  // Every student's latest /cv-update submission — one query for the whole list, the
+  // same latest-per-email shape PendingSuggestionsBanner uses. This is what makes a
+  // waiting submission visible from the list: until now it was only discoverable by
+  // opening that student's card, which is how two lists sat unread for days.
+  const [subs, setSubs] = useState<{ latest: Map<string, CvSubmission>; unseen: Map<string, CvSubmission> }>(
+    { latest: new Map(), unseen: new Map() });
+  const [subsTick, setSubsTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('cv_updates')
+      .select('id, email, uploaded_at, seen_at, cv_file_path, org_pref_1, org_pref_2, org_pref_3')
+      .order('uploaded_at', { ascending: false })
+      .limit(500)
+      .then(({ data: rows }) => {
+        if (!alive || !rows) return;
+        const latest = new Map<string, CvSubmission>(), unseen = new Map<string, CvSubmission>();
+        for (const r of rows as any[]) {
+          const k = String(r.email || '').trim().toLowerCase();
+          if (!k) continue;
+          if (!latest.has(k)) latest.set(k, r);              // desc order → first = newest
+          if (!r.seen_at && !unseen.has(k)) unseen.set(k, r);
+        }
+        setSubs({ latest, unseen });
+      });
+    return () => { alive = false; };
+  }, [subsTick]);
+
+  // One classifier, one map — the strip, the turn filter and the counts can never
+  // disagree about a student's state.
+  const statusById = useMemo(() => {
+    const m = new Map<string, PlacementStatus>();
+    for (const s of scoped) {
+      const email = String(s.email || '').trim().toLowerCase();
+      const st = placementStatus({
+        student: s, employers, dispatches: (data as any).dispatches || [],
+        pending: subs.unseen.get(email) || null,
+        lastSubmissionAt: subs.latest.get(email)?.uploaded_at || null,
+        course: courses.find((c: any) => c.id === s.courseId),
+      });
+      if (st) m.set(s.id, st);
+    }
+    return m;
+  }, [scoped, employers, courses, subs, data]);
+
+  const turnCounts = useMemo(() => {
+    const c: Record<string, number> = { all: 0, ours: 0, student: 0, employer: 0, closed: 0 };
+    for (const s of scoped) {
+      const st = statusById.get(s.id);
+      if (!st) continue;
+      c.all++; c[st.turn] = (c[st.turn] || 0) + 1;
+    }
+    return c;
+  }, [scoped, statusById]);
+
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase();
     return scoped.filter(s => {
@@ -261,13 +319,14 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           : (s.preparation?.passed ? 'amber' : 'gray'));
         if (dot !== filters.dotFilter) return false;
       }
+      if (filters.turn !== 'all' && statusById.get(s.id)?.turn !== filters.turn) return false;
       if (q) {
         const hay = [s.name, s.phone, s.email, s.city, s.acceptedOrg, s.notes].filter(Boolean).join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
-  }, [scoped, filters]);
+  }, [scoped, filters, statusById]);
 
   const counts = useMemo(() => ({
     total: scoped.length,
@@ -289,6 +348,34 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     return (Array.from(selectedIds).map(id => all.find(s => s.id === id)).filter(Boolean) as Student[])
       .sort((a, b2) => (a.name || '').localeCompare(b2.name || '', 'he'));
   }, [mailMode, mailBucket, scoped, selectedIds, all]);
+
+  /**
+   * Row actions. Only ADOPT mutates from the list: it is the highest-volume, lowest-risk
+   * action (copy the submission onto the student, mark it seen — no slots, no messages),
+   * and it is the state that strands students today. Everything that reserves a place or
+   * marks a placement stays on its ONE tested path inside the card, so the two can never
+   * drift apart; those actions open the card instead of forking the logic.
+   * Mirrors StudentEditor.applyPendingCv, but persists immediately rather than waiting
+   * for a manual Save.
+   */
+  async function runPlacementAction(student: Student, action: PlacementAction) {
+    if (action.id !== 'adopt') { setEditing(student); return; }
+    const email = String(student.email || '').trim().toLowerCase();
+    const row = subs.unseen.get(email);
+    if (!row) { showToast('ההגשה כבר נקלטה', 'info'); return; }
+    const next = all.map(x => x.id === student.id ? {
+      ...x,
+      ...(row.cv_file_path ? { cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } : {}),
+      ...(row.org_pref_1 ? { firstChoiceOrg: row.org_pref_1 } : {}),
+      ...(row.org_pref_2 ? { secondChoiceOrg: row.org_pref_2 } : {}),
+      ...(row.org_pref_3 ? { thirdChoiceOrg: row.org_pref_3 } : {}),
+    } as Student : x);
+    await persistAndRefresh(next, '✓ ההגשה נקלטה לכרטיס', undefined,
+      { action: 'נקלטה הגשת קו״ח והעדפות', entity: 'סטודנט', target: student.name });
+    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', row.id);
+    setSubsTick(t => t + 1);
+    showToast(`✓ ההגשה של ${student.name} נקלטה לכרטיס`, 'success');
+  }
 
   async function persistAndRefresh(next: Student[], msg: string, nextEmployers?: any[], activity?: { action: string; entity: string; target: string }) {
     setSaving(true);
@@ -529,6 +616,40 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         })}
       </div>
 
+      {/* Whose-turn filter — the axis the placement strip is organised around, so the
+          list can be worked as a queue: what do WE owe, what are we waiting on. */}
+      {turnCounts.all > 0 && (
+        <div className="flex flex-wrap gap-2 mb-3 items-center">
+          <span className="mono text-[10px] uppercase tracking-[0.14em] shrink-0" style={{ color: 'var(--text-soft)' }}>אצל מי הכדור:</span>
+          {([
+            ['all', 'הכל', null],
+            ['ours', TURN_LABEL.ours, TURN_COLOR.ours],
+            ['student', TURN_LABEL.student, TURN_COLOR.student],
+            ['employer', TURN_LABEL.employer, TURN_COLOR.employer],
+            ['closed', TURN_LABEL.closed, TURN_COLOR.closed],
+          ] as const).map(([key, label, col]) => {
+            const active = filters.turn === key;
+            const n = turnCounts[key] ?? 0;
+            return (
+              <button
+                key={key}
+                data-turn-filter={key}
+                onClick={() => setFilters(f => ({ ...f, turn: key as Filters['turn'] }))}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full border mono text-[10px] uppercase tracking-[0.12em] font-semibold transition-colors"
+                style={{
+                  borderColor: active ? (col || 'var(--accent)') : 'var(--divider)',
+                  color: active ? (col || 'var(--accent)') : 'var(--text-soft)',
+                  background: active ? `${col || 'var(--accent)'}14` : 'transparent',
+                }}>
+                {col && <span style={{ width: 6, height: 6, borderRadius: '50%', background: col }} />}
+                {label}
+                <span style={{ opacity: 0.75 }}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Dot-color filter chips (item 9) */}
       <div className="flex flex-wrap gap-2 mb-6 items-center">
         <span className="mono text-[10px] uppercase tracking-[0.14em] shrink-0" style={{ color: 'var(--text-soft)' }}>סטטוס:</span>
@@ -610,6 +731,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <ul>
                 {group.items.map(s => (
                   <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
+                    status={statusById.get(s.id)} onAction={a => runPlacementAction(s, a)}
                     pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                     selected={selectedIds.has(s.id)}
                     onToggleSelect={() => {
@@ -625,6 +747,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           <ul>
             {filtered.map(s => (
               <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
+                    status={statusById.get(s.id)} onAction={a => runPlacementAction(s, a)}
                 pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                 selected={selectedIds.has(s.id)}
                 onToggleSelect={() => {
@@ -905,9 +1028,10 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
-function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, employers = [] }: {
+function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, employers = [], status, onAction }: {
   s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void; employers?: Employer[];
+  status?: PlacementStatus; onAction?: (a: PlacementAction) => void;
 }) {
   const placed = !!s.acceptedOrg;
   // Hosting org contact — so the coordinator can reach the EMPLOYER straight from the
@@ -1048,6 +1172,15 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
             )}
           </div>
         </div>
+
+        {/* Placement strip — always present on a practicum row, so an absent strip can
+            never be read as "no information" (Yariv 2026-08-09). The card grows; nothing
+            above it moves. */}
+        {status && onAction && (
+          <div style={{ marginTop: 12 }}>
+            <PlacementStrip status={status} employers={employers} onAction={onAction} />
+          </div>
+        )}
       </div>
 
       {/* Hover + pinned details popover */}
