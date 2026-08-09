@@ -39,6 +39,7 @@ import { btnSmall, btnSecondary, btnPrimary } from '../lib/design';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 import { openMailto } from '../lib/openMailto';
+import { planDispatch, applyDispatch, unsendOrg } from '../lib/dispatch';
 import { SILENCE_DAYS } from '../lib/placementStatus';
 
 export type OrgHubExtras = {
@@ -92,7 +93,7 @@ export default function OrgHub({
     commit: () => Promise<void>;
   } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'placed' | 'rejected' | 'withdrawn' | 'mark_cancelled' | 'place_direct';
+    type: 'placed' | 'rejected' | 'withdrawn' | 'mark_cancelled' | 'place_direct' | 'never_sent';
     orgName: string;
   } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set()); // orgNames checked to send
@@ -204,155 +205,63 @@ export default function OrgHub({
   // Send the CV to one-or-more checked orgs through a single channel, folded into ONE
   // persist (atomic) + a channel window per org. Sending TAKES a place; preconditions:
   // an updated CV, a resolved employer, and a free course-scoped place at each org.
-  async function dispatchMany(orgNames: string[], channel: 'whatsapp' | 'email') {
+  async function dispatchMany(orgNames: string[], channel: 'whatsapp' | 'email', allowResend = false) {
     setSendSheet(false);
-    if (!hasUpdatedCv) { showToast('אין קו"ח מעודכן לסטודנט/ית — לא ניתן לשלוח', 'error'); return; }
-    // Resolve against the CURRENT cards (by identity), not the raw `selected` name set —
-    // a card that was renamed/removed after being checked drops out here, so we never
-    // send to a stale name (which would otherwise reserve a slot no preference owns).
-    const targets = cards.filter(c => orgNames.includes(c.orgName) && c.status === 'tentative');
-    if (targets.length === 0) { setSelected(new Set()); showToast('לא נשלח — אין ארגון תקף שנבחר', 'error'); return; }
     const { student } = materialise();
-    let nextStudent = student;
-    let nextEmployers = employers;
-    const newDispatches: Dispatch[] = [];
-    const opened: string[] = [];
-    const skipped: string[] = [];
-    const usedEmployerIds = new Set<string>(); // one place per employer per batch (no double-book)
-    let openedIdx = 0;
+    // WHAT would be sent is decided by the shared planner (lib/dispatch), so the card and
+    // the students-list row can never disagree about slots, templates or skip rules.
+    const plan = planDispatch({
+      student, employers, orgNames, channel, courseId: form.courseId,
+      courseName: course?.name || '', cvLink, userName, settings: placementSettings, allowResend,
+    });
+    if (plan.blockedReason) { setSelected(new Set()); showToast(plan.blockedReason, 'error'); return; }
 
-    for (const card of targets) {
-      const orgName = card.orgName;
-      const emp = resolveEmployer(orgName);
-      if (!emp) { skipped.push(`${orgName} (לא זוהה מעסיק)`); continue; }
-      if (usedEmployerIds.has(emp.id)) { skipped.push(`${orgName} (אותו מעסיק כבר נשלח)`); continue; }
-      const pref = (nextStudent.preferences as any[]).find(p => p.orgName === orgName);
-      const empLive = nextEmployers.find(e => e.id === emp.id) || emp;
-      const already = pref?.slotId ? getSlot(empLive, pref.slotId) : null;
-      const target: any = already
-        || ((empLive as any).vacancySlots || []).find((s: any) => s.status === 'available' && s.courseId === form.courseId);
-      if (!target) { skipped.push(`${orgName} (אין מקום פנוי)`); continue; }
-
-      const ctx = buildCtx(empLive);
-      const now = new Date().toISOString();
-      let url = '', messageSnapshot = '';
-      if (channel === 'whatsapp') {
-        messageSnapshot = renderTemplate(placementSettings.whatsappTemplate || '', ctx);
-        url = buildWhatsAppUrl(empLive.contactPhone || '', messageSnapshot);
-      } else {
-        const subject = renderTemplate(placementSettings.emailSubjectTemplate || '', ctx);
-        const body = renderTemplate(placementSettings.emailBodyTemplate || '', ctx);
-        messageSnapshot = `${subject}\n\n${body}`;
-        url = buildMailtoUrl(empLive.contactEmail || '', subject, body);
-      }
-
-      // Open the channel FIRST. WhatsApp is https, so a null window really does mean the
-      // popup was blocked. mailto CANNOT be verified — iOS reports nothing either way —
-      // so we no longer pretend: everything opened here is provisional until the
-      // coordinator confirms below that the message actually went out.
-      // (The old guard was `!w && openedIdx > 0`, which let a BLOCKED FIRST window commit
-      // a reserved place and a dispatch for a CV that was never sent — exactly what
-      // happened to נטע נידם at Codeoasis on 2026-08-09.)
-      let openedOk = true;
-      if (channel === 'whatsapp') {
-        const w = window.open(url, '_blank');
-        openedOk = !!w;
-      } else {
-        openedOk = openMailto(url);
-      }
-      if (!openedOk) { skipped.push(`${orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
-      openedIdx++;
-      usedEmployerIds.add(emp.id);
-
-      const updatedSlots: VacancySlot[] = ((empLive as any).vacancySlots || []).map((s: any) => s.id !== target.id ? s : ({
-        ...s, status: 'under_review', studentId: form.id, prefRank: pref?.rank ?? null,
-        history: [...(s.history || []), { at: now, from: s.status, to: 'under_review', by: 'admin', actorId: userName }],
-      }));
-      const updatedEmp = reconcileEmployerCapacity({ ...empLive, vacancySlots: updatedSlots });
-      nextEmployers = nextEmployers.map(e => e.id === updatedEmp.id ? updatedEmp : e);
-      nextStudent = {
-        ...nextStudent,
-        preferences: (nextStudent.preferences as any[]).map(p => p.orgName === orgName ? { ...p, employerId: emp.id, slotId: target.id, status: 'under_review' } : p),
-      };
-      newDispatches.push({
-        id: randomId('d'), studentId: form.id, employerId: emp.id, slotId: target.id, channel,
-        sentBy: userName, sentAt: now, messageSnapshot, result: 'pending', resultAt: null, resultBy: null,
-      });
-      opened.push(orgName);
+    // Open the channel FIRST, per org. WhatsApp is https, so a null window really does
+    // mean the popup was blocked. mailto cannot be verified — iOS reports nothing either
+    // way — so nothing here is committed until the coordinator confirms below.
+    const opened: typeof plan.entries = [];
+    const skipped = [...plan.skipped];
+    for (const e of plan.entries) {
+      const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
+      if (!ok) { skipped.push(`${e.orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
+      opened.push(e);
     }
-
     if (opened.length === 0) {
       showToast(skipped.length ? `לא נשלח — ${skipped.join(', ')}` : 'לא נשלח', 'error');
       return;
     }
-    // The app can only OPEN a compose window — it never sends. Marking the place as
-    // taken before the coordinator has actually pressed send in Outlook/WhatsApp is what
-    // produced a phantom "קו״ח נשלח" with no message behind it. Ask, then commit.
+
     setPendingSend({
       channel,
-      orgNames: opened,
+      orgNames: opened.map(e => e.orgName),
       skipped,
       commit: async () => {
-        const nextStudents = allStudents.map(s => s.id === form.id ? nextStudent : s);
-        await extras.onDataChange({ students: nextStudents, employers: nextEmployers, dispatches: [...dispatches, ...newDispatches] });
+        const res = applyDispatch({
+          student, employers, dispatches, entries: opened, userName, newId: () => randomId('d'),
+        });
+        const nextStudents = allStudents.map(s => s.id === form.id ? res.student : s);
+        await extras.onDataChange({ students: nextStudents, employers: res.employers, dispatches: res.dispatches });
         setSelected(new Set());
         showToast(`✓ נרשם: קו״ח נשלחו ל‑${opened.length} ארגון${opened.length > 1 ? 'ים' : ''}`, 'success');
       },
     });
   }
 
-  async function handleResult(orgName: string, result: 'placed' | 'rejected' | 'withdrawn', openChannel?: 'whatsapp' | 'email') {
+  /**
+   * The message never actually went — free the place and put the org back on the list as
+   * not-yet-sent, so it can be sent again. Until now the only exit from a sent org was
+   * 'בוטל', which is terminal and forced re-adding the organization from scratch
+   * (Yariv 2026-08-09, after a CV was recorded as sent that Outlook never opened).
+   */
+  async function markNeverSent(orgName: string) {
     const { student } = materialise();
-    const pref = (student.preferences as any[]).find(p => p.orgName === orgName);
-    if (!pref) { setConfirmDialog(null); return; }
-    const emp = resolveEmployer(orgName);
-    if (!emp) { setConfirmDialog(null); return; }
-    const now = new Date().toISOString();
-    const empLive = employers.find(e => e.id === emp.id) || emp;
-    const isPlacedNow = student.submissionStatus === 'placed';
-
-    if (openChannel && result === 'withdrawn') {
-      const ctx = buildCtx(empLive);
-      let url = '';
-      if (openChannel === 'whatsapp') url = buildWhatsAppUrl(empLive.contactPhone || '', renderTemplate(placementSettings.whatsappWithdrawalTemplate, ctx));
-      else url = buildMailtoUrl(empLive.contactEmail || '', renderTemplate(placementSettings.emailWithdrawalSubjectTemplate, ctx), renderTemplate(placementSettings.emailWithdrawalBodyTemplate, ctx));
-      window.open(url, '_blank');
-    }
-
-    // Resolve the target slot robustly: the pref's slotId if present, else the slot this
-    // student actually holds at the employer (ground truth from the employers prop). A
-    // rapid send→נקלט could run before the form's slotId synced back; the held-slot
-    // fallback stops that from marking placement without freeing/occupying the slot.
-    const slotId = pref.slotId
-      || ((empLive as any).vacancySlots || []).find((s: any) => s.studentId === form.id && (s.status === 'under_review' || s.status === 'placed'))?.id
-      || null;
-    const newSlotStatus = result === 'placed' ? 'placed' : 'available';
-    const updatedSlots: VacancySlot[] = ((empLive as any).vacancySlots || []).map((s: any) => {
-      if (s.id !== slotId) return s;
-      const h: any = { at: now, from: s.status, to: newSlotStatus, by: 'admin', actorId: userName };
-      if (result === 'withdrawn') h.reason = isPlacedNow ? 'withdrawn-after-placement' : 'withdrawn-manual';
-      return { ...s, status: newSlotStatus, studentId: result === 'placed' ? (s.studentId || form.id) : null, prefRank: result === 'placed' ? s.prefRank : null, history: [...(s.history || []), h] };
-    });
-    const updatedEmp = reconcileEmployerCapacity({ ...empLive, vacancySlots: updatedSlots });
-    const updatedPrefs = (student.preferences as any[]).map(p => p.orgName === orgName
-      ? { ...p, slotId: slotId ?? p.slotId, status: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn' } : p);
-
-    let newSubmissionStatus = student.submissionStatus;
-    if (result === 'placed') newSubmissionStatus = 'placed';
-    else if (!updatedPrefs.some(p => p.status === 'tentative' || p.status === 'under_review') && !updatedPrefs.some(p => p.status === 'placed')) newSubmissionStatus = 'exhausted';
-
-    const updatedStudent: any = { ...student, preferences: updatedPrefs, submissionStatus: newSubmissionStatus };
-    if (result === 'placed') { updatedStudent.acceptedOrg = empLive.name; if (!updatedStudent.placedAt) updatedStudent.placedAt = now.slice(0, 10); }
-
-    const updatedDispatches = dispatches.map(d => (d.studentId === form.id && d.slotId === slotId && d.result === 'pending')
-      ? { ...d, result: result === 'placed' ? 'placed' : result === 'rejected' ? 'rejected' : 'withdrawn', resultAt: now, resultBy: userName } : d);
-
-    const nextStudents = allStudents.map(s => s.id === form.id ? updatedStudent : s);
-    const nextEmployers = employers.map(e => e.id === updatedEmp.id ? updatedEmp : e);
-    await extras.onDataChange({ students: nextStudents, employers: nextEmployers, dispatches: updatedDispatches as Dispatch[] });
-    showToast(`✓ ${result === 'placed' ? 'שובץ!' : result === 'rejected' ? 'נדחה' : 'בוטל'}`, 'success');
+    const res = unsendOrg({ student, employers, dispatches, orgName, userName, mode: 'never_sent' });
+    const nextStudents = allStudents.map(s => s.id === form.id ? res.student : s);
+    await extras.onDataChange({ students: nextStudents, employers: res.employers, dispatches: res.dispatches });
     setConfirmDialog(null);
+    showToast(`↩︎ ${orgName} חזר לרשימה — המקום שוחרר`, 'success');
   }
+
 
   // Path 2 (student-suggested private org): approval IS the placement — no CV sent.
   async function handlePlaceDirect(orgName: string) {
@@ -562,6 +471,18 @@ export default function OrgHub({
                 </button>
                 <button type="button" data-accept={idx} onClick={() => setConfirmDialog({ type: 'placed', orgName: card.orgName })} style={{ ...btnSmall(), color: '#15803d', borderColor: '#15803d' }}>✓ נקלט</button>
                 <button type="button" data-reject={idx} onClick={() => setConfirmDialog({ type: 'rejected', orgName: card.orgName })} style={btnSmall()}>✕ נדחה</button>
+                {/* Outlook didn't open, or they never replied — reopen the same message and
+                    keep the place. The send is re-confirmed like any other. */}
+                <button type="button" data-resend={idx}
+                  onClick={() => { setSelected(new Set([card.orgName])); setSendSheet(true); }}
+                  title="פתח שוב את ההודעה לאותו מעסיק — המקום נשמר"
+                  style={btnSmall()}>↻ שלח שוב</button>
+                {/* The exit that was missing: the message never went, so free the place and
+                    put the org back on the list instead of closing it off as 'בוטל'. */}
+                <button type="button" data-never-sent={idx}
+                  onClick={() => setConfirmDialog({ type: 'never_sent', orgName: card.orgName })}
+                  title="ההודעה לא נשלחה בפועל — שחרר את המקום והחזר לרשימה"
+                  style={{ ...btnSmall(), color: '#b45309', borderColor: '#b45309' }}>↩︎ לא נשלח</button>
               </div>
             )}
 
@@ -678,12 +599,13 @@ export default function OrgHub({
           <div className="fixed inset-0 z-[320] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
             <div className="rounded-2xl border p-6 max-w-[420px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
               <div className="serif text-[20px] mb-3" style={{ color: 'var(--ink)' }}>
-                {type === 'placed' ? '✅ אישור שיבוץ' : type === 'place_direct' ? '✅ שיבוץ ישיר (השמה)' : type === 'rejected' ? '❌ אישור דחייה' : isMarkCancelled ? '✓ סמן כבוטל' : '🚫 ביטול מועמדות'}
+                {type === 'placed' ? '✅ אישור שיבוץ' : type === 'place_direct' ? '✅ שיבוץ ישיר (השמה)' : type === 'rejected' ? '❌ אישור דחייה' : isMarkCancelled ? '✓ סמן כבוטל' : type === 'never_sent' ? '↩︎ ההודעה לא נשלחה' : '🚫 ביטול מועמדות'}
               </div>
               <div className="text-[13.5px] mb-5" style={{ color: 'var(--text-soft)' }}>
                 {type === 'placed' ? `לסמן שיבוץ של ${form.name} אצל ${emp?.name || orgName}?`
                   : type === 'place_direct' ? `${form.name} כבר במגעים מתקדמים עם ${emp?.name || orgName}. לאשר שיבוץ ישיר — ללא שליחת קו"ח? פעולה זו מסמנת השמה ותופסת מקום.`
                   : type === 'rejected' ? `לסמן שהמעסיק ${emp?.name || orgName} דחה את ${form.name}?`
+                  : type === 'never_sent' ? `הקו״ח ל${emp?.name || orgName} לא נשלחו בפועל? המקום בארגון ישוחרר, והארגון יחזור לרשימה כ"טרם נשלח" כדי שאפשר יהיה לשלוח שוב. לא נשלחת שום הודעה.`
                   : isMarkCancelled ? `לסמן ביטול מועמדות אצל ${emp?.name || orgName} ללא פתיחת ערוץ תקשורת?`
                   : `לבטל את מועמדות ${form.name} אצל ${emp?.name || orgName}?`}
               </div>
@@ -698,10 +620,15 @@ export default function OrgHub({
                 {!isWithdrawal && (
                   <button type="button" onClick={() => {
                     if (type === 'place_direct') handlePlaceDirect(orgName);
+                    else if (type === 'never_sent') markNeverSent(orgName);
                     else if (isMarkCancelled) handleResult(orgName, 'withdrawn');
                     else handleResult(orgName, type as 'placed' | 'rejected');
-                  }} style={btnPrimary()}>
-                    {type === 'placed' ? 'אשר שיבוץ →' : type === 'place_direct' ? 'אשר שיבוץ ישיר →' : type === 'rejected' ? 'אשר דחייה →' : 'סמן כבוטל →'}
+                  }} style={btnPrimary()} data-confirm-action={type}>
+                    {type === 'placed' ? 'אשר שיבוץ →'
+                      : type === 'place_direct' ? 'אשר שיבוץ ישיר →'
+                      : type === 'rejected' ? 'אשר דחייה →'
+                      : type === 'never_sent' ? 'שחרר והחזר לרשימה →'
+                      : 'סמן כבוטל →'}
                   </button>
                 )}
               </div>

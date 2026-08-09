@@ -13,6 +13,8 @@ import ExcelImport from './ExcelImport';
 import { openMailto } from '../lib/openMailto';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
+import { planDispatch, applyDispatch } from '../lib/dispatch';
+import { resolveCvUrl } from '../lib/cvUrl';
 import { placementStatus, isPlacementCourse, TURN_LABEL, TURN_COLOR,
   type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
 import type { Employer } from '../lib/supabase';
@@ -258,6 +260,8 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [subs, setSubs] = useState<{ latest: Map<string, CvSubmission>; unseen: Map<string, CvSubmission> }>(
     { latest: new Map(), unseen: new Map() });
   const [subsTick, setSubsTick] = useState(0);
+  // A send opened from the row, awaiting the "did it actually go?" confirmation.
+  const [rowSend, setRowSend] = useState<{ student: Student; entries: any[]; channel: 'whatsapp' | 'email' } | null>(null);
   useEffect(() => {
     let alive = true;
     supabase.from('cv_updates')
@@ -360,6 +364,33 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
    * for a manual Save.
    */
   async function runPlacementAction(student: Student, action: PlacementAction) {
+    // Sending happens HERE, in the row — Yariv 2026-08-09: "אם אפשר שהשליחה תהיה מהמלבן
+    // של הסטודנט זה יקל, במקום לגלול עד למטה ולחפש את השליחה". It runs through the SAME
+    // planner the card uses (lib/dispatch), so the two cannot drift, and it keeps every
+    // guard: an explicit target, a compose window that must actually open, and a
+    // confirmation that the message really went before any place is taken.
+    if (action.id === 'send_cv') {
+      const orgName = (action as any).targetOrg as string | undefined;
+      if (!orgName) { setEditing(student); return; }
+      const course = courses.find((c: any) => c.id === student.courseId);
+      const plan = planDispatch({
+        student, employers, orgNames: [orgName], channel: (action as any).channel || 'email',
+        courseId: student.courseId, courseName: course?.name || '',
+        cvLink: resolveCvUrl(student.cvUpdatedUrl || student.cvUrl || ''),
+        userName, settings: (data as any).placementSettings || {},
+      });
+      if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
+      const opened = [];
+      const skipped = [...plan.skipped];
+      for (const e of plan.entries) {
+        const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
+        if (!ok) { skipped.push(`${e.orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
+        opened.push(e);
+      }
+      if (opened.length === 0) { showToast(skipped.length ? `לא נשלח — ${skipped.join(', ')}` : 'לא נשלח', 'error'); return; }
+      setRowSend({ student, entries: opened, channel: opened[0].channel });
+      return;
+    }
     if (action.id !== 'adopt') { setEditing(student); return; }
     const email = String(student.email || '').trim().toLowerCase();
     const row = subs.unseen.get(email);
@@ -760,6 +791,54 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           </ul>
         )}
       </section>
+
+      {/* Row-level send confirmation. Same contract as the card's: the app opens the
+          compose window, and only an explicit "it went" takes the place. */}
+      {rowSend && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(26,22,18,0.6)' }}>
+          <div role="dialog" aria-modal="true" data-row-send-confirm
+            style={{ background: 'var(--bg)', border: '1px solid var(--divider)', borderRadius: 16, maxWidth: 460, width: '100%', padding: '22px 24px', textAlign: 'right', boxShadow: '0 24px 64px rgba(0,0,0,0.35)' }}>
+            <div className="serif" style={{ fontSize: 22, color: 'var(--ink)', marginBottom: 8 }}>
+              {rowSend.channel === 'whatsapp' ? 'נפתח WhatsApp' : 'נפתח חלון מייל'}
+            </div>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-soft)', margin: 0 }}>
+              המערכת פותחת את ההודעה — היא <b>לא שולחת בעצמה</b>. אשר/י רק אחרי שההודעה
+              נשלחה בפועל אל <b>{rowSend.entries.map(e => e.orgName).join(', ')}</b> עבור <b>{rowSend.student.name}</b>.
+            </p>
+            <div style={{ marginTop: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(185,28,28,0.08)', color: '#b91c1c', fontWeight: 600, fontSize: 12.5 }}>
+              ⚠ אישור תופס את המקום בארגון. אם לא נשלח — בחר/י "לא נשלח", והמקום יישאר פנוי.
+            </div>
+            <div style={{ display: 'flex', gap: 9, marginTop: 18, flexWrap: 'wrap' }}>
+              <button type="button" data-row-send-yes
+                onClick={async () => {
+                  const rs = rowSend; setRowSend(null);
+                  const res = applyDispatch({
+                    student: rs.student, employers, dispatches: (data as any).dispatches || [],
+                    entries: rs.entries, userName, newId: () => randomId('d'),
+                  });
+                  const nextStudents = all.map(x => x.id === rs.student.id ? res.student : x);
+                  setSaving(true);
+                  const saved = await saveSnapshot(
+                    { ...data, students: nextStudents, employers: res.employers, dispatches: res.dispatches },
+                    { name: userName },
+                    { action: 'קו״ח נשלחו', entity: 'סטודנט', target: rs.student.name },
+                  );
+                  setSaving(false);
+                  if (saved.ok) { onRefresh(); showToast(`✓ נרשם: קו״ח נשלחו ל‑${rs.entries.map(e => e.orgName).join(', ')}`, 'success'); }
+                  else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
+                }}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: '#15803d', color: '#fff', cursor: 'pointer' }}>
+                ✓ נשלח — סמן ותפוס מקום
+              </button>
+              <button type="button" data-row-send-no
+                onClick={() => { setRowSend(null); showToast('לא נרשמה שליחה — המקום נשאר פנוי', 'info'); }}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: '1px solid var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>
+                לא נשלח
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Outlook group email modal — works in two modes:
           • bucket  = email a whole division (course+year scoped), chosen here

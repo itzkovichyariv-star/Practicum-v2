@@ -98,7 +98,8 @@ function EmployerDetails({ emp, orgName, onClose }: { emp: any | null; orgName: 
 }
 
 function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
-  action: PlacementAction; tone: string; onCancel: () => void; onConfirm: () => void;
+  action: PlacementAction; tone: string; onCancel: () => void;
+  onConfirm: (channel?: 'whatsapp' | 'email') => void;
 }) {
   const goRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -129,11 +130,27 @@ function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
             פעולה חדשה — עדיין לא קיימת במערכת.
           </div>
         )}
-        <div style={{ display: 'flex', gap: 9, marginTop: 18 }}>
-          <button ref={goRef} type="button" data-confirm-go onClick={onConfirm}
-            style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: tone, color: '#fff', cursor: 'pointer' }}>
-            {action.confirmLabel}
-          </button>
+        <div style={{ display: 'flex', gap: 9, marginTop: 18, flexWrap: 'wrap' }}>
+          {action.id === 'send_cv' ? (
+            <>
+              {/* Choosing the channel IS the confirmation — one tap fewer, and the
+                  compose window opens straight from the row. */}
+              <button ref={goRef} type="button" data-confirm-go data-channel="email"
+                onClick={() => onConfirm('email')}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: tone, color: '#fff', cursor: 'pointer' }}>
+                ✉ פתח מייל
+              </button>
+              <button type="button" data-channel="whatsapp" onClick={() => onConfirm('whatsapp')}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: '#25D366', color: '#fff', cursor: 'pointer' }}>
+                WhatsApp
+              </button>
+            </>
+          ) : (
+            <button ref={goRef} type="button" data-confirm-go onClick={() => onConfirm()}
+              style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: tone, color: '#fff', cursor: 'pointer' }}>
+              {action.confirmLabel}
+            </button>
+          )}
           <button type="button" onClick={onCancel}
             style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: '1px solid var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>
             ביטול
@@ -308,7 +325,10 @@ export default function PlacementStrip({ status, employers, onAction }: {
         <ConfirmDialog
           action={confirm} tone={tone}
           onCancel={() => setConfirm(null)}
-          onConfirm={() => { const a = confirm; setConfirm(null); onAction(a); }}
+          onConfirm={(channel) => {
+            const a = confirm; setConfirm(null);
+            onAction({ ...a, targetOrg: chosen?.orgName, channel } as PlacementAction);
+          }}
         />
       )}
     </div>
