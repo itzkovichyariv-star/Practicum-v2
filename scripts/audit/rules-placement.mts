@@ -1,9 +1,9 @@
 /**
- * rules-placement.mts — the PURE half of audit cell 42.
+ * rules-placement.mts — the PURE half of audit cell 64.
  *
  * Runs under tsx because it imports lib/placementStatus.ts directly; plain node (22)
  * strips types but cannot resolve the extensionless import inside placement.ts. Emits
- * one JSON array on stdout, which 42-placement-strip.mjs turns into audit cells.
+ * one JSON array on stdout, which 64-placement-strip.mjs turns into audit cells.
  * Deliberately NOT named `NN-*.mjs`, so the gate does not pick it up as a cell of its own.
  */
 import { placementStatus, SILENCE_DAYS } from '../../src/lib/placementStatus.ts';

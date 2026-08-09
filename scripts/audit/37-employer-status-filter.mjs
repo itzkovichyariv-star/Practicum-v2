@@ -2,10 +2,18 @@
 /**
  * 37-employer-status-filter.mjs — filter the Employers list by status (רמזור).
  *
- *   FILTER-by-status   Clicking the 'בתהליך' status chip shows only in_process
+ *   FILTER-by-status   Clicking the 'בתהליך מול הארגון' status chip shows only in_process
  *                      employers; a מאושר employer drops out. 'כל הסטטוסים' restores.
+ *   FILTER-two-ambers  The filter bar offers BOTH amber states as separate chips.
  *
  * Seeds one approved + one in_process temp employer, filters, asserts, cleans up.
+ *
+ * EXPECTATION MOVED 2026-08-09 — deliberately, not to make a red go away. The chip used to
+ * read a bare 'בתהליך', which is exactly the ambiguity Yariv reported: it was read as "a
+ * student is in process here" when it means "I am mid-approval with this org". It is now
+ * 'בתהליך מול הארגון', beside a new 'סטודנט/ית בתהליך' chip. The BEHAVIOUR under test is
+ * unchanged — only the label the cell locates, plus a new assertion that the two amber
+ * states are offered separately.
  */
 import { Audit, sbQuery } from '../audit-lib.mjs';
 
@@ -49,17 +57,26 @@ await audit.page.waitForTimeout(1200);
 const res = await audit.page.evaluate((names) => {
   const present = (name) => !![...document.querySelectorAll('li')].find(li => li.querySelector('.serif')?.textContent?.trim() === name);
   const before = { approved: present(names.A), inproc: present(names.P) };
-  // click the 'בתהליך' status-filter chip (a button whose text is exactly בתהליך, in the filter bar, not inside a modal)
-  const chip = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'בתהליך');
-  if (!chip) return { error: 'no בתהליך chip' };
+  // The org-process filter chip, by its exact (renamed) label.
+  const labels = [...document.querySelectorAll('button')].map(b => b.textContent.trim());
+  const hasStudentChip = labels.includes('סטודנט/ית בתהליך');
+  const chip = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'בתהליך מול הארגון');
+  if (!chip) return { error: 'no בתהליך מול הארגון chip', hasStudentChip };
   chip.click();
   return new Promise(r => setTimeout(() => {
-    r({ before, afterInproc: present(names.P), afterApproved: present(names.A) });
+    r({ before, hasStudentChip, afterInproc: present(names.P), afterApproved: present(names.A) });
   }, 400));
 }, { A: A_NAME, P: P_NAME });
 
 if (res.error) audit.recordCell({ id: 'FILTER-by-status', expected: 'chip filters list', observed: res.error, pass: false });
 else {
+  // The two amber states must be reachable separately — that separation IS the fix.
+  audit.recordCell({
+    id: 'FILTER-two-ambers', tableRef: 'EmployersPage statusFilter — in_review vs in_process',
+    expected: 'both "סטודנט/ית בתהליך" and "בתהליך מול הארגון" chips exist',
+    observed: `studentChip=${res.hasStudentChip}, orgChip=true`,
+    pass: res.hasStudentChip === true,
+  });
   audit.log(`FILTER: before(approved=${res.before.approved},inproc=${res.before.inproc}) → after בתהליך: inproc=${res.afterInproc}, approved=${res.afterApproved}`);
   audit.recordCell({
     id: 'FILTER-by-status', tableRef: 'EmployersPage statusFilter',

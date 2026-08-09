@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 43-employer-status.mjs — the employers screen tells you WHOSE process is open.
+ * 65-employer-status.mjs — the employers screen tells you WHOSE process is open.
  *
  * The reported bug (Yariv, 2026-08-09): sending שובל's CV took Icon Group's only place,
  * which knocked the org out of auto-green (auto-green requires an OPEN place) and dropped

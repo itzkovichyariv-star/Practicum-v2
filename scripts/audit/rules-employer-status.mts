@@ -1,8 +1,8 @@
 /**
- * rules-employer-status.mts — the PURE half of audit cell 43.
+ * rules-employer-status.mts — the PURE half of audit cell 65.
  *
  * Runs under tsx (imports lib/orgAvailability.ts). Emits a JSON array on stdout that
- * 43-employer-status.mjs turns into audit cells. Not named `NN-*.mjs`, so the gate does
+ * 65-employer-status.mjs turns into audit cells. Not named `NN-*.mjs`, so the gate does
  * not pick it up as a cell of its own.
  */
 import { employerStatus, STATUS_COLORS } from '../../src/lib/orgAvailability.ts';

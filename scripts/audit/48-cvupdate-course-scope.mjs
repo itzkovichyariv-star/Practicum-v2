@@ -23,7 +23,7 @@
  * Seeds a temp student + two employers (one in the student's course, one in a DIFFERENT
  * course); removes all three.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, BASE_URL } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -86,7 +86,10 @@ async function optionsFor(url) {
   return audit.page.$$eval('[data-org-option]', els => els.map(e => e.getAttribute('data-org-option')));
 }
 
-const base = 'http://localhost:4325';
+// Honour AUDIT_BASE_URL like every other cell. This was the ONLY cell with a hard-coded
+// port, so it failed with ERR_CONNECTION_REFUSED whenever the gate ran against a dev
+// server on another port — a false red that says nothing about the code under test.
+const base = BASE_URL;
 
 audit.log('CVUP-scope-by-email: the emailed link (?email=, no ?course=) is course-scoped');
 {

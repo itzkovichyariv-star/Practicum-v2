@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 42-placement-strip.mjs — the placement strip on the student row.
+ * 64-placement-strip.mjs — the placement strip on the student row.
  *
  * Two layers, deliberately:
  *
