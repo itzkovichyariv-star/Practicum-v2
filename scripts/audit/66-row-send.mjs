@@ -184,6 +184,27 @@ if (!seedOk) {
     observed: returned.err ? returned.err : `pref=${afterReturn.prefStatus}, slot=${afterReturn.slotStatus}`,
     pass: !returned.err && afterReturn.prefStatus === 'tentative' && afterReturn.slotStatus === 'available',
   });
+
+  // ── 5. releasing a not-yet-sent org frees anything it held ──────────────────
+  // handleRelease was the one data-changing operation in this flow with no cell at all
+  // (found by the 2026-08-09 coverage sweep). It is the "✕ הסר ושחרר מקום" exit.
+  const released = await audit.page.evaluate(async () => {
+    const btn = document.querySelector('[data-release]');
+    if (!btn) return { err: 'no release control on a tentative org' };
+    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    await new Promise(r => setTimeout(r, 1500));
+    return { ok: true };
+  });
+  let afterRelease = await stateOf();
+  for (let i = 0; i < 10 && afterRelease.prefStatus === 'tentative'; i++) {
+    await audit.page.waitForTimeout(400); afterRelease = await stateOf();
+  }
+  audit.recordCell({
+    id: 'ROWSEND-release-frees-place', tableRef: 'OrgHub handleRelease — previously untested',
+    expected: 'removing a not-yet-sent org leaves no reserved place behind',
+    observed: released.err ? released.err : `pref=${afterRelease.prefStatus}, slot=${afterRelease.slotStatus}`,
+    pass: released.err ? null : afterRelease.slotStatus === 'available',
+  });
 }
 
 // ── cleanup: remove the seeded student, employer AND its dispatches ────────────

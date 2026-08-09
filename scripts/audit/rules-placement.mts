@@ -129,4 +129,41 @@ rule('STRIP-actions-list-org', 'Yariv: "שאר הארגונים — שלח קו�
 rule('STRIP-list-org-never-places', 'placement follows an interview, not a click',
   false, actionsForChip({ suggested: false }).some(a => a.id === 'place_direct'));
 
+// A9 — states the coverage sweep found unasserted (2026-08-09). Each is cheap to pin
+// and each is a sentence a coordinator will actually read on the row.
+{
+  const st = run({ student: { preparation: { passed: true } } });
+  rule('STRIP-not-submitted', 'brief §states row 0', 'not_submitted/student', `${st.key}/${st.turn}`);
+  rule('STRIP-not-submitted-copy', 'brief §states row 0',
+    'טרם הוגשו קו״ח מעודכנים והעדפות', st.headline);
+}
+{
+  const emp = { id: 'e9', name: 'ארגון שהוצע', restrictedToStudentId: 'stu1', approvalStatus: 'pending', contactPerson: 'דנה' };
+  const st = run({ employers: [emp], student: { firstChoiceOrg: 'ארגון שהוצע' } });
+  rule('STRIP-org-approval-pending', 'brief §states row 2', 'org_approval_pending/ours', `${st.key}/${st.turn}`);
+  rule('STRIP-org-approval-action', 'brief §states row 2', 'approve_org', st.action?.id);
+}
+{
+  const emps = [{ id: 'e1', name: 'A', approvalStatus: 'approved' }, { id: 'e2', name: 'B', approvalStatus: 'approved' }];
+  const st = run({ employers: emps, student: { cvUpdatedUrl: 'x', preferences: [
+    { rank: 1, orgName: 'A', employerId: 'e1', status: 'rejected', slotId: null },
+    { rank: 2, orgName: 'B', employerId: 'e2', status: 'rejected', slotId: null },
+  ] } });
+  rule('STRIP-exhausted', 'brief §states row 9', 'exhausted/ours', `${st.key}/${st.turn}`);
+  rule('STRIP-exhausted-copy', 'brief §states row 9',
+    'נדחה/תה ל‑2 מקומות — יש להציע ארגונים חדשים', st.headline);
+  rule('STRIP-exhausted-action', 'brief §states row 9', 'add_orgs', st.action?.id);
+}
+// The reminder action does not exist in the app yet. It must SAY so rather than look
+// like a working button — the flag is what the confirmation dialog renders.
+{
+  const emps = [{ id: 'e1', name: 'A', approvalStatus: 'approved' }];
+  const st = run({
+    employers: emps,
+    student: { cvUpdatedUrl: 'x', preferences: [{ rank: 1, orgName: 'A', employerId: 'e1', status: 'under_review', slotId: 's0' }] },
+    dispatches: [{ studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(SILENCE_DAYS + 5) }],
+  });
+  rule('STRIP-remind-flagged-new', 'not built yet — must not look built', true, st.action?.isNew === true);
+}
+
 process.stdout.write(JSON.stringify(cells));
