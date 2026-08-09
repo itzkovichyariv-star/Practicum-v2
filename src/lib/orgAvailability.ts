@@ -70,6 +70,11 @@ export function orgAvailability(emp: any, courseIds?: string[]): OrgAvailability
 // app ramzor) so "available/green" is unmistakable, and consistent across all surfaces.
 export const STATUS_COLORS = {
   approved: '#16a34a',       // green  — matches --tl-green; has a description + open places
+  // Yariv 2026-08-09: "orange is a color for in process… anyway not green. the status
+  // green says that there is no action currently we need to take." So a student's live
+  // process is the SAME amber as ours — the two are told apart by the words and the
+  // explanation line, never by hue.
+  in_review: '#f59e0b',      // amber  — a STUDENT is in process there (CV out, awaiting reply)
   in_process: '#f59e0b',     // amber  — contacted, in negotiation
   not_contacted: '#94a3b8',  // gray   — not contacted / no capacity set
   full: '#64748b',           // slate  — has places but all are taken
@@ -78,6 +83,9 @@ export const STATUS_COLORS = {
 
 export type EmployerStatusKey = keyof typeof STATUS_COLORS;
 
+/** Who is sitting in this employer's places right now, scoped to the same courses. */
+export type Occupant = { studentId: string; name: string; state: 'under_review' | 'placed'; days: number | null };
+
 export type EmployerStatus = {
   key: EmployerStatusKey;
   label: string;
@@ -85,49 +93,114 @@ export type EmployerStatus = {
   detail: string;    // short secondary line (e.g. "3 מקומות פנויים")
   note: string;      // free-text statusNote (shown for בתהליך)
   missing: string[]; // what's missing to turn green (תיאור / מקומות פנויים)
+  /** THE line. Yariv 2026-08-09: "the line that explains the status is the one that is
+   *  most important." Who, what and how long — a full sentence, not a chip. */
+  explain: string;
+  occupants: Occupant[];
 };
 
-export function employerStatus(emp: any, courseIds?: string[]): EmployerStatus {
+/** Optional live context. Without it employerStatus() behaves exactly as before plus an
+ *  `explain` line, so every existing caller keeps working untouched. */
+export type EmployerStatusCtx = {
+  students?: any[];
+  dispatches?: any[];
+  now?: number;
+};
+
+function occupantsOf(emp: any, courseIds: string[] | undefined, ctx?: EmployerStatusCtx): Occupant[] {
+  if (!ctx?.students?.length) return [];
+  const now = ctx.now ?? Date.now();
+  const slots = (emp?.vacancySlots || []).filter((s: any) =>
+    (!courseIds || courseIds.includes(s.courseId)) && s.studentId &&
+    (s.status === 'under_review' || s.status === 'placed'));
+  return slots.map((s: any) => {
+    const stu = ctx.students!.find((x: any) => x.id === s.studentId);
+    const d = (ctx.dispatches || [])
+      .filter((x: any) => x.slotId === s.id && x.result === 'pending')
+      .sort((a: any, b: any) => String(b.sentAt).localeCompare(String(a.sentAt)))[0];
+    const days = d?.sentAt ? Math.max(0, Math.floor((now - new Date(d.sentAt).getTime()) / 86400000)) : null;
+    return { studentId: s.studentId, name: stu?.name || 'סטודנט/ית', state: s.status, days };
+  });
+}
+
+const nameList = (o: Occupant[]) => o.map(x => x.name).join(', ');
+const agoText = (d: number | null) => d === null ? '' : d === 0 ? 'היום' : d === 1 ? 'אתמול' : `לפני ${d} ימים`;
+
+export function employerStatus(emp: any, courseIds?: string[], ctx?: EmployerStatusCtx): EmployerStatus {
   const note = String(emp?.statusNote || '').trim();
   const av = orgAvailability(emp, courseIds);
   const missing: string[] = [];
   if (!av.hasDesc) missing.push('תיאור');
   if (av.open === 0) missing.push('מקומות פנויים');
-  // Precedence: 🔴 נדחה blocks everything; then a manual 🟢 מאושר; then AUTO-GREEN once the
-  // org is READY (description + open places for this course×year) — which now beats בתהליך,
-  // so a ready org is never stuck orange; only then the not-yet-ready בתהליך state.
+
+  const occupants = occupantsOf(emp, courseIds, ctx);
+  const inReview = occupants.filter(o => o.state === 'under_review');
+  const placedOcc = occupants.filter(o => o.state === 'placed');
+  const capacityLine = av.open > 0
+    ? `נותרו ${av.open} מקומות פנויים — עדיין זמין לסטודנטים נוספים.`
+    : (av.total === 1 ? 'אין מקום פנוי — המקום היחיד תפוס.' : 'אין מקום פנוי — כל המקומות תפוסים.');
+
+  // ── Precedence ────────────────────────────────────────────────────────────────
+  // 🔴 נדחה blocks everything. Then a STUDENT'S live process — it is the fact that is
+  // true right now, and it carries a clock, whereas contactStatus is a note that may be
+  // months stale. That ordering is the actual bug fix (Yariv 2026-08-09): when a student
+  // took Icon Group's last place the org fell out of auto-green (which needs an OPEN
+  // place) and landed back on his own "פניתי לרנית…" recruiting note, so one pill was
+  // answering two unrelated questions.
   if (emp?.approvalStatus === 'rejected') {
-    return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note, missing: [] };
+    return { key: 'rejected', label: 'נדחה', color: STATUS_COLORS.rejected, detail: 'לא רלוונטי', note, missing: [],
+      explain: 'הארגון נדחה — לא רלוונטי לשיבוץ.', occupants };
   }
+
+  if (inReview.length > 0) {
+    const who = nameList(inReview);
+    const when = inReview[0].days !== null ? ` — קו״ח נשלחו ${agoText(inReview[0].days)}, ממתין לתשובת המעסיק` : ' — ממתין לתשובת המעסיק';
+    return {
+      key: 'in_review',
+      // No emoji in the pill: several gate cells locate it by a length-bounded text match,
+      // and the marker belongs on the sentence anyway. The WORDS carry the distinction.
+      label: 'סטודנט/ית בתהליך',
+      color: STATUS_COLORS.in_review,
+      detail: av.open > 0 ? `${av.open} מקומות פנויים · ${inReview.length} בתהליך` : 'המקום שמור — ממתין לתשובה',
+      note, missing: [],
+      explain: `👤 ${who} בתהליך אצלם${when}. ${capacityLine}`,
+      occupants,
+    };
+  }
+
   // Explicit manual APPROVAL — the coordinator confirmed the org (מאושר). Green independent
   // of the place count (the org agreed; capacity is a separate dimension shown in detail).
   if (emp?.contactStatus === 'approved') {
-    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: av.open > 0 ? `${av.open} מקומות פנויים` : (av.total > 0 ? 'מלא · אושר' : 'אושר — הוסף/י מקומות'), note, missing: av.open === 0 ? ['מקומות פנויים'] : [] };
+    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: av.open > 0 ? `${av.open} מקומות פנויים` : (av.total > 0 ? 'מלא · אושר' : 'אושר — הוסף/י מקומות'), note, missing: av.open === 0 ? ['מקומות פנויים'] : [],
+      explain: av.open > 0 ? `אין תהליך פתוח — ${av.open} מקומות פנויים, זמין לשיבוץ.` : 'הארגון אושר, אך אין כרגע מקום פנוי.', occupants };
   }
   // AUTO-GREEN when READY — a description AND open places in THIS (course × year) makes it
   // מאושר automatically, EVEN IF it was marked בתהליך. Yariv: בתהליך must not hold against a
-  // ready org — once it qualifies it advances on its own; only 🔴 נדחה blocks it. Runs BEFORE
-  // the in_process check so a ready org is never stuck orange.
+  // ready org — once it qualifies it advances on its own; only 🔴 נדחה blocks it.
   if (av.available) {
-    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note, missing: [] };
+    return { key: 'approved', label: 'מאושר', color: STATUS_COLORS.approved, detail: `${av.open} מקומות פנויים`, note, missing: [],
+      explain: `אין תהליך פתוח — ${av.open} מקומות פנויים, זמין לשיבוץ.`, occupants };
   }
-  // Contacted but NOT yet ready (missing a description or open places for this unit), or
-  // awaiting approval — stays בתהליך until it qualifies (then the auto-green above takes over).
+  // Contacted but NOT yet ready, or awaiting approval. Renamed from the bare "בתהליך":
+  // that bareness is exactly what let it be read as a student's process.
   if (emp?.contactStatus === 'in_process' || emp?.approvalStatus === 'pending') {
-    return { key: 'in_process', label: 'בתהליך', color: STATUS_COLORS.in_process, detail: note || 'בתהליך מול הארגון', note, missing };
+    return { key: 'in_process', label: 'בתהליך מול הארגון', color: STATUS_COLORS.in_process, detail: note || 'בתהליך מול הארגון', note, missing,
+      explain: `🏢 אני באמצע לסגור מולם${note ? ` — ${note}` : ''}. אף סטודנט/ית לא בתהליך אצלם.`, occupants };
   }
-  // FULL — this (year × course) has places and they're ALL taken. Year-scoped: a
-  // student belongs to one course+year and occupies exactly one vacancy, so a
-  // past-year placement (e.g. שגיא in תשפ״ו) NEVER makes another year read full.
+  // FULL — this (year × course) has places and they're ALL taken. Year-scoped.
   if (av.total > 0 && av.open === 0) {
-    return { key: 'full', label: 'מלא', color: STATUS_COLORS.full, detail: 'כל המקומות אוישו', note, missing: [] };
+    return { key: 'full', label: 'מלא', color: STATUS_COLORS.full, detail: 'כל המקומות אוישו', note, missing: [],
+      explain: placedOcc.length
+        ? `${nameList(placedOcc)} ${placedOcc.length > 1 ? 'שובצו' : 'שובץ/ה'} אצלם. כל המקומות אוישו — אין פעולה נדרשת.`
+        : 'כל המקומות אוישו — אין פעולה נדרשת.', occupants };
   }
-  // Year-scoped and NO places defined for this year yet — needs setup, NOT "full"
-  // and NOT "never contacted": the org may be active in another year.
+  // Year-scoped and NO places defined for this year yet — needs setup.
   if (courseIds && av.total === 0) {
-    return { key: 'not_contacted', label: 'טרם הוגדר לשנה', color: STATUS_COLORS.not_contacted, detail: 'הוסף/י מקומות לשנה זו', note: '', missing: av.hasDesc ? ['מקומות'] : ['תיאור', 'מקומות'] };
+    return { key: 'not_contacted', label: 'טרם הוגדר לשנה', color: STATUS_COLORS.not_contacted, detail: 'הוסף/י מקומות לשנה זו', note: '', missing: av.hasDesc ? ['מקומות'] : ['תיאור', 'מקומות'],
+      explain: 'טרם הוגדרו מקומות לשנה זו — יש להוסיף מקומות כדי שהארגון יוצג לסטודנטים.', occupants };
   }
-  return { key: 'not_contacted', label: 'טרם פניתי', color: STATUS_COLORS.not_contacted, detail: '', note: '', missing };
+  return { key: 'not_contacted', label: 'טרם פניתי', color: STATUS_COLORS.not_contacted, detail: '', note: '', missing,
+    explain: missing.length ? `טרם פניתי לארגון — חסר ${missing.join(' ו')}.` : 'טרם פניתי לארגון.', occupants };
 }
 
 // Set the workflow status on an employer, appending a dated statusHistory entry. Shared by

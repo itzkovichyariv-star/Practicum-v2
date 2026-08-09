@@ -19,6 +19,12 @@ function empCourseIds(e: Employer): string[] {
   return [];
 }
 
+// Live occupancy context for employerStatus(). Set once per render from the page's own
+// data; read by the row/card renderers below. Module-scoped deliberately — threading it
+// through six component signatures would touch far more code than the fix warrants, and
+// the page is a singleton.
+let STATUS_CTX: { students?: any[]; dispatches?: any[] } = {};
+
 // Detail line under an employer's name. The status pill is OVERALL (any year),
 // but this chip describes the SELECTED year specifically.
 function cardStatusChip(st: any, yearAv: any): string {
@@ -35,10 +41,10 @@ function cardStatusChip(st: any, yearAv: any): string {
 // Per-(course×year) rollup: counts of each ramzor status + open places, ALL scoped to
 // ONE courseId (a legitimate sum WITHIN a single unit — never across courses/years).
 function unitRollup(items: { emp: Employer; courseId: string }[]) {
-  const c = { approved: 0, in_process: 0, not_contacted: 0, full: 0, rejected: 0, open: 0, total: 0 };
+  const c = { approved: 0, in_review: 0, in_process: 0, not_contacted: 0, full: 0, rejected: 0, open: 0, total: 0 };
   for (const { emp, courseId } of items) {
     const scope = [courseId];
-    const k = employerStatus(emp, scope).key as keyof typeof c;
+    const k = employerStatus(emp, scope, STATUS_CTX).key as keyof typeof c;
     if (k in c) (c as any)[k] += 1;
     const av = orgAvailability(emp, scope);
     c.open += av.open; c.total += av.total;
@@ -48,7 +54,8 @@ function unitRollup(items: { emp: Employer; courseId: string }[]) {
 function rollupParts(r: ReturnType<typeof unitRollup>): { label: string; color: string }[] {
   const parts: { label: string; color: string }[] = [];
   if (r.approved) parts.push({ label: `${r.approved} מאושרים`, color: STATUS_COLORS.approved });
-  if (r.in_process) parts.push({ label: `${r.in_process} בתהליך`, color: STATUS_COLORS.in_process });
+  if (r.in_review) parts.push({ label: `${r.in_review} סטודנט/ית בתהליך`, color: STATUS_COLORS.in_review });
+  if (r.in_process) parts.push({ label: `${r.in_process} בתהליך מול הארגון`, color: STATUS_COLORS.in_process });
   if (r.not_contacted) parts.push({ label: `${r.not_contacted} טרם`, color: STATUS_COLORS.not_contacted });
   if (r.full) parts.push({ label: `${r.full} מלא`, color: STATUS_COLORS.full });
   if (r.rejected) parts.push({ label: `${r.rejected} נדחו`, color: STATUS_COLORS.rejected });
@@ -98,7 +105,7 @@ function StatusChips({ current, onPick, onClose }: { current: ManualStatusKey; o
 }
 
 type PosFilter = 'all' | 'open' | 'full' | 'none';
-type StatusFilter = 'all' | 'approved' | 'in_process' | 'rejected' | 'not_contacted';
+type StatusFilter = 'all' | 'approved' | 'in_review' | 'in_process' | 'rejected' | 'not_contacted';
 
 type ViewMode = 'list' | 'grid';
 
@@ -128,6 +135,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
   const all: Employer[] = data.employers || [];
   const courses = data.courses || [];
   const students: Student[] = data.students || [];
+  STATUS_CTX = { students, dispatches: data.dispatches || [] };
 
   // ── Pending candidate org-suggestions (from /cv-update) awaiting approval ──
   type Suggestion = { id: string; email: string; name: string | null; suggested_org: any };
@@ -262,7 +270,7 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
         if (posFilter === 'open' && av.open === 0) continue;
         if (posFilter === 'full' && (av.open > 0 || av.total === 0)) continue;
         if (posFilter === 'none' && av.total > 0) continue;
-        if (statusFilter !== 'all' && employerStatus(e, scope).key !== statusFilter) continue;
+        if (statusFilter !== 'all' && employerStatus(e, scope, STATUS_CTX).key !== statusFilter) continue;
         if (q) {
           const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) continue;
@@ -483,7 +491,8 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
               {([
                 ['all', 'כל הסטטוסים', 'var(--accent)'] as const,
                 ['approved', 'מאושר', STATUS_COLORS.approved] as const,
-                ['in_process', 'בתהליך', STATUS_COLORS.in_process] as const,
+                ['in_review', 'סטודנט/ית בתהליך', STATUS_COLORS.in_review] as const,
+                ['in_process', 'בתהליך מול הארגון', STATUS_COLORS.in_process] as const,
                 ['not_contacted', 'טרם', STATUS_COLORS.not_contacted] as const,
                 ['rejected', 'נדחה', STATUS_COLORS.rejected] as const,
               ]).map(([v, label, activeBg]) => (
@@ -593,12 +602,12 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
           {entries.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px', marginBottom: '16px', padding: '9px 14px', borderRadius: '10px', background: 'rgba(0,0,0,0.02)', border: '1px solid var(--divider)', fontSize: '12px', color: 'var(--text-soft)' }}>
               <span style={{ fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '11px' }}>מקרא</span>
-              {([['approved', 'מאושר'], ['in_process', 'בתהליך'], ['not_contacted', 'טרם פניתי'], ['full', 'מלא'], ['rejected', 'נדחה']] as const).map(([k, label]) => (
+              {([['approved', 'מאושר'], ['in_review', 'סטודנט/ית בתהליך'], ['in_process', 'בתהליך מול הארגון'], ['not_contacted', 'טרם פניתי'], ['full', 'מלא'], ['rejected', 'נדחה']] as const).map(([k, label]) => (
                 <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ width: 11, height: 11, borderRadius: '50%', background: (STATUS_COLORS as any)[k], flexShrink: 0 }} /> {label}
                 </span>
               ))}
-              {(() => { const na = entries.filter(en => { const k = employerStatus(en.emp, [en.courseId]).key; return k !== 'approved' && k !== 'rejected'; }).length; return na > 0
+              {(() => { const na = entries.filter(en => { const k = employerStatus(en.emp, [en.courseId], STATUS_CTX).key; return k !== 'approved' && k !== 'rejected'; }).length; return na > 0
                 ? <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.in_process }}>⚠ {na} טרם מוכנים לשיבוץ</span>
                 : <span style={{ marginInlineStart: 'auto', fontWeight: 700, color: STATUS_COLORS.approved }}>✓ כל המעסיקים מאושרים</span>; })()}
             </div>
@@ -702,7 +711,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
   const [statusOpen, setStatusOpen] = useState(false);
   // Every row is scoped to ONE (course × year) unit (scopeCourseIds is a single-id array),
   // so dot + pill + capacity all describe THAT unit — never summed across courses/years.
-  const st = employerStatus(emp, scopeCourseIds);
+  const st = employerStatus(emp, scopeCourseIds, STATUS_CTX);
   const av = orgAvailability(emp);               // unscoped — only for the `isPending` flag
   const yearAv = orgAvailability(emp, scopeCourseIds);
   const { isPending } = av;
@@ -754,6 +763,12 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
           </div>
         )}
         <div style={{ fontSize: '10.5px', fontWeight: 600, fontFamily: 'var(--font-mono,monospace)', letterSpacing: '0.1em', color: dotColor, paddingRight: '17px', marginTop: '2px', textTransform: 'uppercase' }}>{dotLabel}</div>
+        {st.explain && (
+          <div data-employer-explain={st.key}
+            style={{ fontSize: '13.5px', fontWeight: 600, lineHeight: 1.5, color: 'var(--ink)', paddingRight: '17px', marginTop: '5px' }}>
+            {st.explain}
+          </div>
+        )}
         {onSetStatus && statusOpen && (
           <StatusChips current={manualStatusKey(emp)} onPick={(k) => { onSetStatus(emp.id, k); setStatusOpen(false); }} onClose={() => setStatusOpen(false)} />
         )}
@@ -836,7 +851,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
 
   // Scoped to ONE (course × year) unit (scopeCourseIds is a single-id array): dot + pill +
   // capacity + detail all describe THAT unit only — never summed across courses/years.
-  const st = employerStatus(emp, scopeCourseIds);
+  const st = employerStatus(emp, scopeCourseIds, STATUS_CTX);
   const av = orgAvailability(emp);               // unscoped — only for the `isPending` flag
   const yearAv = orgAvailability(emp, scopeCourseIds);
   const { isPending } = av;
@@ -895,9 +910,17 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
           </div>
         )}
 
-        {/* Line 2: status detail / what's missing */}
-        {statusChip && (
-          <div style={{ marginTop: '4px', paddingInlineStart: '31px', fontSize: '11.5px', fontFamily: 'var(--font-mono,monospace)', fontWeight: 600, color: st.color, opacity: 0.92, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statusChip}>
+        {/* Line 2: THE explanation. Yariv 2026-08-09: "the line that explains the status
+            is the one that is most important" — so it is full ink at 14px, above the pill
+            in the hierarchy, and it wraps rather than truncating. Who, what, how long. */}
+        {st.explain && (
+          <div data-employer-explain={st.key}
+            style={{ marginTop: '5px', paddingInlineStart: '31px', fontSize: '14px', fontWeight: 600, lineHeight: 1.55, color: 'var(--ink)' }}>
+            {st.explain}
+          </div>
+        )}
+        {statusChip && statusChip !== st.explain && (
+          <div style={{ marginTop: '3px', paddingInlineStart: '31px', fontSize: '11.5px', fontFamily: 'var(--font-mono,monospace)', fontWeight: 600, color: st.color, opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={statusChip}>
             {statusChip}
           </div>
         )}
