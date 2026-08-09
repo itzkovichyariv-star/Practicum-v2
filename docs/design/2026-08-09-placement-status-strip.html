@@ -252,6 +252,35 @@
   }
   .empty{padding:34px 4px;color:var(--soft-2);font-size:13.5px}
 
+  /* ── confirmation dialog: every action states what it will do, before it does it ── */
+  .scrim{
+    position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:20px;
+    background:rgba(26,12,15,.55);backdrop-filter:blur(3px);
+  }
+  .scrim[hidden]{display:none}
+  .dlg{
+    background:var(--card);border:1px solid var(--divider);border-radius:16px;
+    max-width:470px;width:100%;padding:22px 24px;box-shadow:0 24px 64px rgba(0,0,0,.34);
+    display:flex;flex-direction:column;gap:12px;
+  }
+  .dlg-kicker{
+    font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--tone,var(--ours));display:inline-flex;align-items:center;gap:7px;
+  }
+  .dlg h3{font-family:var(--serif);font-weight:400;font-size:23px;margin:0}
+  .dlg-body{font-size:13.5px;line-height:1.7;color:var(--soft);margin:0}
+  .dlg-body b{color:var(--ink);font-weight:600}
+  .dlg-body .warnline{
+    display:block;margin-top:9px;padding:8px 11px;border-radius:8px;
+    background:var(--ours-bg);color:var(--ours);font-weight:600;font-size:12.5px;
+  }
+  .dlg-actions{display:flex;gap:9px;justify-content:flex-start;margin-top:2px}
+  .btn{font:inherit;font-size:13px;font-weight:700;padding:8px 18px;border-radius:9px;cursor:pointer}
+  .btn-go{background:var(--tone,var(--accent));border:1px solid transparent;color:var(--on-accent)}
+  .btn-no{background:transparent;border:1px solid var(--divider-strong);color:var(--soft)}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .demo-note{font-size:11.5px;color:var(--soft-2);margin:0}
+
   /* ── spec ── */
   section h3{
     font-family:var(--serif);font-weight:400;font-size:25px;margin:0 0 4px;
@@ -387,7 +416,7 @@
       <div class="ncard">
         <h4><span class="k">3</span>שתיקה של מעסיק היא כדור אצלנו</h4>
         <p>
-          קו״ח שנשלחו ולא נענו הם "אצל המעסיק" — עד סף ההמתנה (14 יום, מוגדר בקורס).
+          קו״ח שנשלחו ולא נענו הם "אצל המעסיק" — עד סף ההמתנה (7 ימים, לבקשתך).
           מעבר לו הרצועה מתהפכת לאדום ועוברת אלינו: אף אחד לא יזכור לתזכר בלי שהרשימה תגיד.
         </p>
       </div>
@@ -402,30 +431,91 @@
   </section>
 
   <section>
-    <h3>שלוש החלטות שצריכות אותך</h3>
-    <p class="sub">אחרי שתענה, זה נכנס לקוד. עד אז לא נגעתי בכלום.</p>
+    <h3>מה שנסגר, ומה שנשאר</h3>
+    <p class="sub">
+      שלוש ההחלטות שלך כבר מוטמעות בעמוד הזה. נשארה אחת — והיא קלה יותר להבנה כשרואים
+      אותה, אז היא למטה כשתי אפשרויות אמיתיות.
+    </p>
     <div class="cards">
-      <div class="ncard ask">
-        <h4><span class="k">א</span>רצועה תמיד, או רק כשיש מה לומר?</h4>
+      <div class="ncard">
+        <h4><span class="k">✓</span>הרצועה מוצגת תמיד</h4>
         <p>
-          כרגע: מוצגת רק כשיש מצב פעיל. אפשר גם להציג תמיד (גם "טרם הוגש") — יותר עקבי,
-          אבל מוסיף שורה ל‑53 סטודנטים שלא בתהליך.
+          בכל שורה, גם כשאין מה לעשות — כך העין לומדת מקום קבוע ואי‑הצגה אף פעם לא נקראת
+          כ"אין מידע". <b>הסתייגות אחת:</b> רק בקורסי פרקטיקום. לקורסים כמו "מיומנויות ייעוץ"
+          אין מסלול השמה בכלל, ושם הרצועה תהיה רעש. אם התכוונת ממש לכולם — תגיד ואשנה.
         </p>
       </div>
-      <div class="ncard ask">
-        <h4><span class="k">ב</span>הכפתור בתוך הרצועה — כן או לא?</h4>
+      <div class="ncard">
+        <h4><span class="k">✓</span>כפתור פעולה — ברשימה וגם בכרטיס</h4>
         <p>
-          "קלוט לכרטיס" / "שלח קו״ח" ישר מהרשימה חוסך פתיחה של הכרטיס, אבל מוסיף פעולה
-          לחיצה אחת מהמחיקה בטעות. אפשר גם בלי — הרצועה מודיעה, הפעולה בכרטיס.
+          אותה פעולה בשני המקומות. <b>לחיצה תמיד פותחת אזהרה</b> שאומרת בדיוק מה עומד לקרות,
+          ורק אישור מבצע. נסה — הכפתורים למעלה פותחים את האזהרה האמיתית לכל פעולה.
         </p>
       </div>
-      <div class="ncard ask">
-        <h4><span class="k">ג</span>סף השתיקה — 14 יום?</h4>
+      <div class="ncard">
+        <h4><span class="k">✓</span>סף שתיקה — 7 ימים</h4>
         <p>
-          זה הערך שכבר מוגדר בקורס. מעבר לו הרצועה הופכת לאדום "כדאי לתזכר". להשאיר,
-          או להוריד ל‑10?
+          במקום 14. אחרי שבוע בלי תשובה מהמעסיק הרצועה מתהפכת לאדום ועוברת אלינו.
+          זה יגרום ליותר אדום ברשימה — וזו הכוונה.
         </p>
       </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>השאלה שנשארה: סטודנט/ית עם שני מסלולים בו‑זמנית</h3>
+    <p class="sub">
+      זה המצב של הדר עוזירי היום. הארגון שהיא עצמה הביאה יושב בדירוג <b>1</b>, ומתחתיו שני
+      ארגונים רגילים מהרשימה. הכרטיס שלה צריך לומר שני דברים שונים בו‑זמנית: מול הארגון
+      שלה — <b>לשוחח ולאשר</b>; מול השניים האחרים — <b>לשלוח קו״ח</b>. השאלה היחידה היא
+      <b>מה נאמר ראשון</b>. אלה שתי האפשרויות, אחת מעל השנייה:
+    </p>
+
+    <div class="stage" style="padding-bottom:18px">
+      <div class="stage-head">
+        <span class="chapter">אפשרות א</span>
+        <h2>הארגון שלה קודם</h2>
+        <span class="pill-count">ברירת המחדל בעמוד</span>
+      </div>
+      <div class="strip" data-turn="ours" style="margin-top:14px">
+        <span class="turn"><i></i>אצלנו</span>
+        <div class="strip-body">
+          <div class="headline">ארגון בהצעת הסטודנט/ית — <em>לשוחח ולאשר</em> · ועוד 2 מהרשימה — <em>לשלוח קו״ח</em></div>
+          <div class="detail">
+            <span class="ochip own"><span class="rank">1</span><b>מערך הדיגיטל הלאומי</b> · בהצעתה</span>
+            <span class="ochip"><span class="rank">2</span><b>נישה פרו</b></span>
+            <span class="ochip"><span class="rank">3</span><b>עיריית אריאל</b></span>
+          </div>
+        </div>
+        <div class="age">ממתינה 6 ימים</div>
+      </div>
+      <p class="note" style="margin:12px 2px 0">
+        מוביל עם המסלול הקצר להשמה — שיחה אחת ואישור, ואפשר לסגור אותה. הסיכון: המילה
+        הראשונה שאתה קורא היא לא "רשימת העדפות", אז אולי ייקח רגע להתרגל.
+      </p>
+    </div>
+
+    <div class="stage" style="padding-bottom:18px">
+      <div class="stage-head">
+        <span class="chapter">אפשרות ב</span>
+        <h2>הרשימה קודם</h2>
+      </div>
+      <div class="strip" data-turn="ours" style="margin-top:14px">
+        <span class="turn"><i></i>אצלנו</span>
+        <div class="strip-body">
+          <div class="headline">רשימת העדפות נשלחה — <em>יש לטפל מול המעסיק</em> · כולל ארגון בהצעתה</div>
+          <div class="detail">
+            <span class="ochip"><span class="rank">2</span><b>נישה פרו</b></span>
+            <span class="ochip"><span class="rank">3</span><b>עיריית אריאל</b></span>
+            <span class="ochip own"><span class="rank">1</span><b>מערך הדיגיטל הלאומי</b> · בהצעתה</span>
+          </div>
+        </div>
+        <div class="age">ממתינה 6 ימים</div>
+      </div>
+      <p class="note" style="margin:12px 2px 0">
+        כל הסטודנטים במצב הזה נקראים אותו דבר — משפט פתיחה אחיד, בדיוק בנוסח שביקשת.
+        הסיכון: הארגון שהיא הביאה — זה שאפשר לסגור הכי מהר — נדחק לסוף.
+      </p>
     </div>
   </section>
 
@@ -436,6 +526,19 @@
   </footer>
 
 </div>
+
+  <div class="scrim" id="scrim" hidden>
+    <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+      <span class="dlg-kicker" id="dlg-kicker">אישור פעולה</span>
+      <h3 id="dlg-title"></h3>
+      <p class="dlg-body" id="dlg-body"></p>
+      <div class="dlg-actions">
+        <button class="btn btn-go" id="dlg-go" type="button"></button>
+        <button class="btn btn-no" id="dlg-no" type="button">ביטול</button>
+      </div>
+      <p class="demo-note">הדגמה — בעיצוב הזה שום כפתור לא מבצע פעולה אמיתית.</p>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -475,7 +578,7 @@
       detail:'<span class="ochip own"><span class="rank">1</span><b>מערך הדיגיטל הלאומי</b> · בהצעתה</span>'+
              '<span class="ochip"><span class="rank">2</span><b>נישה פרו</b></span>'+
              '<span class="ochip"><span class="rank">3</span><b>עיריית אריאל</b></span>',
-      age:"ממתינה 6 ימים", cta:"" },
+      age:"ממתינה 6 ימים", cta:"אשר השמה" },
 
     { id:"s2", turn:"ours", name:"אורין ספיר", dot:"amber",
       tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
@@ -508,7 +611,7 @@
       detail:'<span class="ochip late"><b>UCL Group</b> · 21 ימים</span>'+
              '<span class="ochip late"><b>קופת חולים מאוחדת</b> · 18 ימים</span>'+
              '<span class="ochip sent"><b>נישה פרו</b> · 9 ימים</span>'+
-             '<span>· מעל סף ההמתנה (14) — כדאי לתזכר</span>',
+             '<span>· מעל סף ההמתנה (7) — כדאי לתזכר</span>',
       age:"", cta:"תזכר מעסיקים" },
 
     { id:"s6", turn:"employer", name:"רותם אזולאי", dot:"amber",
@@ -541,11 +644,43 @@
     ["רשימה נקלטה, טרם נשלח","ours","ארגונים מהרשימה הכללית בדירוג, אף אחד לא «נשלח»","רשימת העדפות נשלחה — יש לטפל מול המעסיק"],
     ["חסום — חסר קו״ח","student","ארגון מהרשימה בדירוג ואין קו״ח מעודכן · לא חל על ארגון בהצעת הסטודנט/ית","רשימת העדפות נשלחה — חסר קו״ח מעודכן"],
     ["קו״ח נשלחו ל‑N","employer","N ארגונים בסטטוס «נשלח», הוותיק שבהם מתחת לסף","קו״ח נשלחו ל‑2 מקומות · ממתין לתשובת המעסיק"],
-    ["שתיקה מעבר לסף","ours","הוותיק שבשליחות מעל סף ההמתנה של הקורס (14 יום)","קו״ח נשלחו ל‑3 מקומות · 21 ימים ללא תשובה"],
+    ["שתיקה מעבר לסף","ours","הוותיק שבשליחות מעל סף ההמתנה של הקורס (7 ימים)","קו״ח נשלחו ל‑3 מקומות · 21 ימים ללא תשובה"],
     ["עבר/ה ראיון","employer","לאחד הארגונים סומן «עבר» והסטודנט/ית עדיין לא שובץ/ה","עבר/ה ראיון ב‑X — ממתין להחלטת המעסיק"],
     ["נדחה — מיצוי הרשימה","ours","יש דחיות, ולא נותר אף ארגון פעיל בדירוג","נדחה/תה ב‑2 מקומות — יש להציע ארגונים חדשים"],
     ["שובץ/ה","closed","נרשם ארגון קולט","שובץ/ה ב‑X · תאריך"]
   ];
+
+
+  // Every action names its consequence before it runs. Text derived from the real
+  // handlers: applyPendingCv (StudentEditor), the approve-suggestion handler
+  // (StudentsPage), handlePlaceDirect + dispatchMany (OrgHub).
+  var WARN = {
+    s1: { go:"קלוט לכרטיס", body:
+      'רשימת ההעדפות והקו״ח המעודכנים מההגשה יועתקו לכרטיס הסטודנט/ית, וההגשה תסומן כטופלה '+
+      'ולא תופיע יותר כממתינה.<b> לא נשלחת שום הודעה</b> — לא לסטודנט/ית ולא למעסיק.' },
+    s1b:{ go:"אשר ארגון", body:
+      'הארגון יאושר ויתווסף כארגון <b>פרטי של הסטודנט/ית בלבד</b>, ויוגדר כבחירה ראשונה בדירוג. '+
+      'לא נשלחת הודעה אוטומטית — עדכון הסטודנט/ית נעשה בנפרד מהכרטיס.' },
+    s2own:{ go:"אשר השמה", body:
+      'הסטודנט/ית תירשם כ<b>משובץ/ת</b> בארגון, ייתפס מקום בארגון, ותאריך ההשמה יירשם כהיום. '+
+      '<b>לא נשלחים קו״ח ולא נשלחת הודעה לאף אחד.</b>'+
+      '<span class="warnline">שאר הארגונים בדירוג יישארו פתוחים — יש לבטל אותם מול המעסיקים מתוך הכרטיס.</span>' },
+    s2mix:{ go:"אשר השמה", body:
+      'הסטודנט/ית תירשם כ<b>משובץ/ת</b> בארגון שהיא הציעה, ייתפס מקום בארגון, ותאריך ההשמה '+
+      'יירשם כהיום. <b>לא נשלחים קו״ח ולא נשלחת הודעה.</b>'+
+      '<span class="warnline">שני הארגונים האחרים בדירוג יישארו פתוחים — יש לבטל אותם מול המעסיקים.</span>' },
+    s2: { go:"המשך לשליחה", body:
+      'ייתפס מקום בארגון והסטטוס יעבור ל"ממתין לתשובת המעסיק". '+
+      'לאחר מכן ייפתח חלון WhatsApp או מייל עם ההודעה המוכנה — '+
+      '<b>ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם</b>, לא מכאן.' },
+    s5: { go:"פתח תזכורת", body:
+      'ייפתח חלון WhatsApp או מייל עם תזכורת מוכנה למעסיקים שטרם ענו. '+
+      '<b>ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם.</b>'+
+      '<span class="warnline">פעולה חדשה — עדיין לא קיימת במערכת. חלק מההצעה.</span>' },
+    s7: { go:"פתח כרטיס", body:
+      'ייפתח כרטיס הסטודנט/ית במקטע הארגונים, כדי להוסיף ארגונים חדשים לדירוג. '+
+      'לא מתבצע שום שינוי בנתונים.' }
+  };
 
   var TURN_HE = { ours:"אצלנו", student:"אצל הסטודנט/ית", employer:"אצל המעסיק", closed:"סגור" };
   var TONE = { ours:"var(--ours)", student:"var(--student)", employer:"var(--employer)", closed:"var(--closed)" };
@@ -562,7 +697,7 @@
     var cta = r.cta ? '<button class="cta" type="button">'+esc(r.cta)+'</button>' : "";
     var age = r.age ? '<div class="age">'+esc(r.age)+'</div>' : "";
     return ''+
-      '<li class="row" data-turn="'+r.turn+'">'+
+      '<li class="row" data-id="'+r.id+'" data-turn="'+r.turn+'">'+
         '<div class="row-main">'+
           '<div class="zone-student">'+
             '<div class="name-line"><span class="sdot '+r.dot+'"></span><span class="name">'+esc(r.name)+'</span></div>'+
@@ -618,6 +753,31 @@
       empty.hidden = shown > 0;
     });
   });
+
+  var scrim = document.getElementById("scrim");
+  var dlgGo = document.getElementById("dlg-go"), dlgNo = document.getElementById("dlg-no");
+  var lastFocus = null;
+  function closeDlg(){ scrim.hidden = true; if (lastFocus) lastFocus.focus(); }
+  list.addEventListener("click", function(e){
+    var btn = e.target.closest && e.target.closest(".cta");
+    if (!btn) return;
+    var li = btn.closest("li.row");
+    var w = WARN[li.getAttribute("data-id")];
+    if (!w) return;
+    lastFocus = btn;
+    var tone = TONE[li.getAttribute("data-turn")];
+    document.querySelector(".dlg").style.setProperty("--tone", tone);
+    document.getElementById("dlg-kicker").textContent = "אישור פעולה · " + TURN_HE[li.getAttribute("data-turn")];
+    document.getElementById("dlg-title").textContent = btn.textContent;
+    document.getElementById("dlg-body").innerHTML = w.body;
+    dlgGo.textContent = w.go;
+    scrim.hidden = false;
+    dlgGo.focus();
+  });
+  dlgNo.addEventListener("click", closeDlg);
+  dlgGo.addEventListener("click", closeDlg);
+  scrim.addEventListener("click", function(e){ if (e.target === scrim) closeDlg(); });
+  document.addEventListener("keydown", function(e){ if (e.key === "Escape" && !scrim.hidden) closeDlg(); });
 
   document.getElementById("tgl-mode").addEventListener("change", function(e){
     page.setAttribute("data-mode", e.target.checked ? "before" : "after");

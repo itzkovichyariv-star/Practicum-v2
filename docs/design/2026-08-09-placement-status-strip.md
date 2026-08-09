@@ -61,7 +61,7 @@ chrome.
 | 4 | רשימה נקלטה, טרם נשלח | ≥1 **list** pref `tentative`, 0 `under_review` | **רשימת העדפות נשלחה — יש לטפל מול המעסיק** | **ours** |
 | 5 | חסום — חסר קו״ח | **list** org ranked but no `cvUpdatedUrl` (OrgHub.tsx:428) | רשימת העדפות נשלחה — חסר קו״ח מעודכן | student |
 | 6 | קו״ח נשלחו ל‑N | N = prefs `under_review`, oldest dispatch under threshold | **קו״ח נשלחו ל‑2 מקומות · ממתין לתשובת המעסיק** | employer |
-| 7 | שתיקה מעבר לסף | oldest pending dispatch > `reviewAgingThresholdDays` (14) | קו״ח נשלחו ל‑3 מקומות · 21 ימים ללא תשובה | **ours** |
+| 7 | שתיקה מעבר לסף | oldest pending dispatch > `reviewAgingThresholdDays` (**7**, lowered from 14 by Yariv) | קו״ח נשלחו ל‑3 מקומות · 21 ימים ללא תשובה | **ours** |
 | 8 | עבר/ה ראיון | any pref `interviewResult === 'passed'`, not placed | עבר/ה ראיון ב‑X — ממתין להחלטת המעסיק | employer |
 | 9 | נדחה — מיצוי הרשימה | ≥1 `rejected`, no `tentative`/`under_review` left | נדחה/תה ב‑2 מקומות — יש להציע ארגונים חדשים | **ours** |
 | 10 | שובץ/ה | `acceptedOrg` | שובץ/ה ב‑X · תאריך | closed |
@@ -130,15 +130,32 @@ itself uses.
 5. Gate cells: one per state (9), asserting headline text + turn colour; plus a lint that
    every `turn` value has a colour and every state has a cell.
 
-## Open decisions — need Yariv's answer before coding
+## Decisions — answered by Yariv 2026-08-09
 
-- **א.** Strip always, or only when there is something to say? (Mockup: only when active.
-  Always = more consistent, adds a line to 53 students not in the flow.)
-- **ב.** Action button inside the strip ("קלוט לכרטיס" / "שלח קו״ח") — yes or no?
-  Saves opening the card; adds a one-click action to a list row.
-- **ג.** Silence threshold — keep the course's existing 14 days, or drop to 10?
-- **ד.** In the mixed case, is leading with the self-suggested org right? (It is the
-  shortest route to a placement, so the mockup leads with it.)
+- **א. Strip always.** Every row carries it, including "טרם הוגש" — a fixed position the
+  eye learns, so an absent strip can never read as "no information".
+  *Assumption stated back to him, not yet confirmed:* only within `type: 'practicum'`
+  courses. `מיומנויות ייעוץ א/ב` and `ניהול משאבי אנוש` (`type: 'other'`) have no
+  placement route at all, so a strip there is noise. 53 of the 83 students sit in those
+  courses.
+- **ב. Action button in BOTH places** — the list row and inside the card — and in both,
+  **one click opens a warning that states what the click will do**; only confirming
+  performs it. Reuse OrgHub's existing `setConfirmDialog` pattern. Warning copy must be
+  derived from what each handler really does (see below), never guessed.
+- **ג. Silence threshold: 7 days** (down from the course's 14). More red, deliberately.
+- **ד. OPEN** — in the mixed case (self-suggested at #1 + list at #2-3), does the strip
+  lead with the suggested org or with the list? Both renderings are laid out in the
+  mockup for a direct comparison.
+
+### Warning copy, derived from the handlers
+
+| Action | What it really does | Named in the warning |
+|---|---|---|
+| קלוט לכרטיס | `applyPendingCv` copies orgs + CV onto the student, stamps `seen_at` | "לא נשלחת שום הודעה" |
+| אשר ארגון | approve handler (StudentsPage.tsx:846-869) adds a private employer at rank #1 | no auto-message — verified, that path only saves + toasts |
+| אשר השמה | `handlePlaceDirect` (OrgHub.tsx:329-358): marks/mints a slot `placed`, sets `acceptedOrg` + `placedAt`, **leaves other prefs untouched** | "שאר הארגונים בדירוג יישארו פתוחים — יש לבטלם" (this is the orphan state OrgHub already warns about at :535) |
+| שלח קו״ח | `dispatchMany` reserves the slot, sets `under_review`, logs a `Dispatch`, then **opens** WhatsApp/mail | "ההודעה נשלחת רק אחרי שתלחץ «שלח» שם, לא מכאן" |
+| תזכר מעסיקים | **does not exist yet** — new work | flagged in the dialog as "פעולה חדשה" |
 
 ## Log
 
@@ -146,3 +163,7 @@ itself uses.
 - 2026-08-09 (later) — Yariv corrected the model mid-design: a self-suggested employer is
   talk-and-approve (direct placement), not send-CV. Added states 2 and 3, scoped the
   missing-CV blocker to list orgs only, added the mixed suggested+list shape. 9 states → 11.
+- 2026-08-09 (later²) — Yariv answered א/ב/ג: strip always · action button in the row AND
+  in the card, each behind a warning that states the consequence · threshold 7 days.
+  Mockup updated: 7 action buttons, 7 confirmation dialogs (asserted 1:1 by the verifier),
+  and the two mixed-case orderings laid out for decision ד, which is still open.
