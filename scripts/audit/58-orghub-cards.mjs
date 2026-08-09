@@ -10,9 +10,17 @@
  *                        #1, Save → the DB preference now ranked #1 is that org and it
  *                        STILL carries interviewResult 'passed' (result bound to the
  *                        org, not the rank slot) AND the legacy firstChoiceOrg synced.
- *   ORGHUB-send-takes-place  Tick a card's "שלח קו״ח" → send bar → WhatsApp → the
- *                        preference becomes under_review holding a real slot (send is
- *                        what takes a place; a card alone reserves nothing).
+ *   ORGHUB-send-takes-place  Tick a card's "שלח קו״ח" → send bar → WhatsApp → CONFIRM
+ *                        the message actually went → the preference becomes under_review
+ *                        holding a real slot (send is what takes a place).
+ *   ORGHUB-send-not-sent  Choosing "לא נשלח" at that confirmation leaves the place FREE
+ *                        and writes no dispatch.
+ *
+ * EXPECTATION MOVED 2026-08-09: the app only OPENS a compose window, it never sends. It
+ * used to commit the place the moment the window was opened — and when iOS silently
+ * refused to open Outlook, a CV was recorded as sent with no message behind it (נטע נידם
+ * → Codeoasis). Committing is now gated on an explicit confirmation, so this cell drives
+ * that step, and the second cell covers the path that previously corrupted the data.
  *
  * Drives the actual editor (localStorage session, open by ערוך) like the other cells.
  * Seeds temp students + employers; removes them (CAS retry).
@@ -132,7 +140,7 @@ if (seedOk) {
 }
 
 // ── Student B: add an org, then tick send → WhatsApp → the preference takes a place ─
-let sendStatus = '', sendSlot = '', addOrgWorked = false;
+let sendStatus = '', sendSlot = '', addOrgWorked = false, preConfirmStatus = '';
 if (seedOk) {
   const openedB = await openEditor(B_NAME);
   if (openedB) {
@@ -164,6 +172,11 @@ if (seedOk) {
     // WhatsApp opens a popup — swallow it so the click resolves.
     audit.page.context().on('page', p => p.close().catch(() => {}));
     await audit.page.locator('[data-dispatch="whatsapp"]').first().click().catch(() => {});
+    // Nothing may be written before the coordinator confirms the message really went.
+    await audit.page.waitForSelector('[data-send-confirm]', { timeout: 4000 }).catch(() => {});
+    const beforeConfirm = (await loadData()).students?.find(x => x.id === B_ID);
+    preConfirmStatus = ((beforeConfirm?.preferences || []).find(x => x.status === 'under_review')) ? 'committed-early' : 'not-yet';
+    await audit.page.locator('[data-send-confirm-yes]').first().click().catch(() => {});
     for (let i = 0; i < 16; i++) {
       const s = (await loadData()).students?.find(x => x.id === B_ID);
       const p = (s?.preferences || []).find(x => x.status === 'under_review');
@@ -175,9 +188,10 @@ if (seedOk) {
     id: 'ORGHUB-send-takes-place',
     tableRef: 'OrgHub send (checkbox → WhatsApp) — takes a real place',
     expected: 'ticking a card and sending via WhatsApp moves that preference to under_review holding a slot',
-    observed: `opened=${openedB}, status="${sendStatus}", slot="${sendSlot ? 'held' : 'none'}"`,
-    pass: seedOk ? (openedB && sendStatus === 'under_review' && !!sendSlot) : null,
-    notes: !sendStatus ? 'Send did not persist an under_review preference — the checkbox→send→WhatsApp flow is broken.'
+    observed: `opened=${openedB}, beforeConfirm=${preConfirmStatus}, status="${sendStatus}", slot="${sendSlot ? 'held' : 'none'}"`,
+    pass: seedOk ? (openedB && preConfirmStatus === 'not-yet' && sendStatus === 'under_review' && !!sendSlot) : null,
+    notes: preConfirmStatus === 'committed-early' ? 'A place was taken BEFORE the send was confirmed — the phantom-dispatch bug is back.'
+      : !sendStatus ? 'Send did not persist an under_review preference after confirmation.'
       : !sendSlot ? 'Under_review but no slot held — the place was not taken.' : '',
   });
 }

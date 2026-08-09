@@ -38,6 +38,7 @@ import { resolveCvUrl } from '../lib/cvUrl';
 import { btnSmall, btnSecondary, btnPrimary } from '../lib/design';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
+import { openMailto } from '../lib/openMailto';
 import { SILENCE_DAYS } from '../lib/placementStatus';
 
 export type OrgHubExtras = {
@@ -83,6 +84,13 @@ export default function OrgHub({
   form, employers, courses, extras, showAllOrgs, setShowAllOrgs, onFormChange, submittedCaption,
 }: Props) {
   const { allStudents, dispatches, placementSettings, userName } = extras;
+  // Set after a compose window was opened; nothing is written until it resolves.
+  const [pendingSend, setPendingSend] = useState<{
+    channel: 'whatsapp' | 'email';
+    orgNames: string[];
+    skipped: string[];
+    commit: () => Promise<void>;
+  } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     type: 'placed' | 'rejected' | 'withdrawn' | 'mark_cancelled' | 'place_direct';
     orgName: string;
@@ -238,11 +246,21 @@ export default function OrgHub({
         url = buildMailtoUrl(empLive.contactEmail || '', subject, body);
       }
 
-      // Open the channel FIRST and only commit if it actually opened. The first open is
-      // in-gesture (reliable); mobile blocks the 2nd+ popup — for those, skip the org
-      // rather than reserve a place + log a dispatch for a CV we never sent.
-      const w = window.open(url, '_blank');
-      if (!w && openedIdx > 0) { skipped.push(`${orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
+      // Open the channel FIRST. WhatsApp is https, so a null window really does mean the
+      // popup was blocked. mailto CANNOT be verified — iOS reports nothing either way —
+      // so we no longer pretend: everything opened here is provisional until the
+      // coordinator confirms below that the message actually went out.
+      // (The old guard was `!w && openedIdx > 0`, which let a BLOCKED FIRST window commit
+      // a reserved place and a dispatch for a CV that was never sent — exactly what
+      // happened to נטע נידם at Codeoasis on 2026-08-09.)
+      let openedOk = true;
+      if (channel === 'whatsapp') {
+        const w = window.open(url, '_blank');
+        openedOk = !!w;
+      } else {
+        openedOk = openMailto(url);
+      }
+      if (!openedOk) { skipped.push(`${orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
       openedIdx++;
       usedEmployerIds.add(emp.id);
 
@@ -267,10 +285,20 @@ export default function OrgHub({
       showToast(skipped.length ? `לא נשלח — ${skipped.join(', ')}` : 'לא נשלח', 'error');
       return;
     }
-    const nextStudents = allStudents.map(s => s.id === form.id ? nextStudent : s);
-    await extras.onDataChange({ students: nextStudents, employers: nextEmployers, dispatches: [...dispatches, ...newDispatches] });
-    setSelected(new Set());
-    showToast(`✓ ${channel === 'whatsapp' ? 'WhatsApp' : 'מייל'} נשלח ל‑${opened.length} ארגון${opened.length > 1 ? 'ים' : ''}${skipped.length ? ` · דילוג: ${skipped.join(', ')}` : ''}`, skipped.length ? 'warn' : 'success');
+    // The app can only OPEN a compose window — it never sends. Marking the place as
+    // taken before the coordinator has actually pressed send in Outlook/WhatsApp is what
+    // produced a phantom "קו״ח נשלח" with no message behind it. Ask, then commit.
+    setPendingSend({
+      channel,
+      orgNames: opened,
+      skipped,
+      commit: async () => {
+        const nextStudents = allStudents.map(s => s.id === form.id ? nextStudent : s);
+        await extras.onDataChange({ students: nextStudents, employers: nextEmployers, dispatches: [...dispatches, ...newDispatches] });
+        setSelected(new Set());
+        showToast(`✓ נרשם: קו״ח נשלחו ל‑${opened.length} ארגון${opened.length > 1 ? 'ים' : ''}`, 'success');
+      },
+    });
   }
 
   async function handleResult(orgName: string, result: 'placed' | 'rejected' | 'withdrawn', openChannel?: 'whatsapp' | 'email') {
@@ -551,6 +579,36 @@ export default function OrgHub({
           </div>
         );
       })}
+
+      {pendingSend && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(26,22,18,0.6)' }}>
+          <div role="dialog" aria-modal="true" data-send-confirm
+            style={{ background: 'var(--bg)', border: '1px solid var(--divider)', borderRadius: 16, maxWidth: 460, width: '100%', padding: '22px 24px', textAlign: 'right', boxShadow: '0 24px 64px rgba(0,0,0,0.35)' }}>
+            <div className="serif" style={{ fontSize: 22, color: 'var(--ink)', marginBottom: 8 }}>
+              {pendingSend.channel === 'whatsapp' ? 'נפתח WhatsApp' : 'נפתח חלון מייל'}
+            </div>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-soft)', margin: 0 }}>
+              המערכת פותחת את ההודעה — היא <b>לא שולחת בעצמה</b>.
+              אשר/י רק אחרי שההודעה נשלחה בפועל אל <b>{pendingSend.orgNames.join(', ')}</b>.
+            </p>
+            <div style={{ marginTop: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(185,28,28,0.08)', color: '#b91c1c', fontWeight: 600, fontSize: 12.5 }}>
+              ⚠ אישור תופס את המקום בארגון. אם לא נשלח — בחר/י "לא נשלח", והמקום יישאר פנוי.
+            </div>
+            <div style={{ display: 'flex', gap: 9, marginTop: 18, flexWrap: 'wrap' }}>
+              <button type="button" data-send-confirm-yes
+                onClick={async () => { const p = pendingSend; setPendingSend(null); await p.commit(); }}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: '#15803d', color: '#fff', cursor: 'pointer' }}>
+                ✓ נשלח — סמן ותפוס מקום
+              </button>
+              <button type="button" data-send-confirm-no
+                onClick={() => { setPendingSend(null); setSelected(new Set()); showToast('לא נרשמה שליחה — המקום נשאר פנוי', 'info'); }}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: '1px solid var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>
+                לא נשלח
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add-org row */}
       <div className="mt-1">
