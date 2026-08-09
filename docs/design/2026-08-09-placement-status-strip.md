@@ -1,6 +1,7 @@
 # Design brief — placement-status strip on the student card (2026-08-09)
 
-**Status: AWAITING YARIV'S APPROVAL. No code written.**
+**Status: design closed on all 4 decisions. No code written yet.**
+Covers TWO screens: the student card (part 1) and the employers list (part 2).
 Interactive mockup: `docs/design/2026-08-09-placement-status-strip.html`
 (published privately at https://claude.ai/code/artifact/5868f69e-7da3-4190-b04d-85f063791f3d)
 
@@ -143,9 +144,12 @@ itself uses.
   performs it. Reuse OrgHub's existing `setConfirmDialog` pattern. Warning copy must be
   derived from what each handler really does (see below), never guessed.
 - **ג. Silence threshold: 7 days** (down from the course's 14). More red, deliberately.
-- **ד. OPEN** — in the mixed case (self-suggested at #1 + list at #2-3), does the strip
-  lead with the suggested org or with the list? Both renderings are laid out in the
-  mockup for a direct comparison.
+- **ד. Lead with the self-suggested org** in the mixed case — the shortest route to a
+  placement goes first. Option B (list first) is kept in the mockup, dimmed, as a record
+  of the decision.
+- **Scope of "always" (א), confirmed:** practicum-type courses only. `מיומנויות ייעוץ א/ב`
+  and `ניהול משאבי אנוש` are `type: 'other'` with no placement route — 53 of the 83
+  students — and get no strip.
 
 ### Warning copy, derived from the handlers
 
@@ -167,3 +171,57 @@ itself uses.
   in the card, each behind a warning that states the consequence · threshold 7 days.
   Mockup updated: 7 action buttons, 7 confirmation dialogs (asserted 1:1 by the verifier),
   and the two mixed-case orderings laid out for decision ד, which is still open.
+
+
+---
+
+# Part 2 — the employers list shows the wrong status (Yariv, 2026-08-09)
+
+> כרגע שובל קוממי נמצאת בתהליך בארגון וההסטטוס של הארגון הפך להיות בתהליך, אבל זה סטטוס
+> שמתאים לארגון שאני נמצא מולו בתהליך של אישור. צריך להיות שם סטטוס של סטודנט בתהליך
+> או משהו בסגנון.
+
+## Confirmed on prod, not just reported
+
+`Icon Group/I digital` — `contactStatus: 'in_process'` (Yariv's own recruiting note,
+*"פניתי לרנית ויש צורך…"*), has a description, **1 slot total, 0 available, 1
+`under_review` held by שובל קוממי**. Walking `employerStatus()` (orgAvailability.ts:88):
+
+1. not `rejected` → continue
+2. `contactStatus !== 'approved'` → skip the manual-green branch
+3. **auto-green needs `av.available`, which requires `open > 0`** — her CV took the only
+   place, so `open === 0` → skip
+4. `contactStatus === 'in_process'` → **returns 🟠 בתהליך** ← what he sees
+5. the `full` branch at :117 is never reached
+
+Codeoasis, עיריית אריאל and LTS also carry `in_process` yet render green, because they
+still have open places and auto-green fires first. **The bug only appears when a student
+takes the last place** — which is exactly when the row matters most.
+
+## Root cause — the same mistake as part 1
+
+One pill answering two unrelated questions: *"where do I stand with this organization"*
+(`contactStatus`, manual, often stale) and *"what is happening with students there"*
+(slot occupancy, live). When capacity runs out, the second silently falls through to the
+first.
+
+## Proposed fix
+
+1. **Precedence:** check the live capacity facts **before** the manual `contactStatus`.
+   New order — `rejected` → `approved` (manual/auto, requires `open > 0`) →
+   **`in_review`** → `full` → `in_process` → `not_contacted`. `in_review`/`full` both
+   require `open === 0`, so they can never contend with auto-green.
+2. **New status key `in_review` — "סטודנט/ית בתהליך"**, colour `#3b5a8f` — deliberately
+   the same blue as "אצל המעסיק" on the student card, so the two screens speak one
+   language. Fires when the course's slots have ≥1 `under_review` and 0 available.
+3. **Occupancy line, independent of the status pill:** `👤 <name> · קו״ח נשלחו לפני N ימים`
+   / `✓ <name> · שובצה <date>`. Renders whenever students are in play, including on green
+   rows — so Manpower stays "מאושר · 4 מקומות פנויים" *and* names who is in process.
+   This is what keeps occupancy out of the status, rather than overloading it again.
+
+Result: "בתהליך" means only what Yariv meant by it — an org he is still closing.
+Nothing is lost; his recruiting note returns on its own if the place frees up.
+
+## Log
+
+- 2026-08-09 — reported, root-caused on prod data, fix designed. Awaiting approval.

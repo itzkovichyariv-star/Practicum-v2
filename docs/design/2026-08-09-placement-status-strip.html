@@ -1,4 +1,4 @@
-<title>סטטוס השמה על כרטיס הסטודנט — עיצוב לאישור</title>
+<title>סטטוס השמה — כרטיס הסטודנט + מסך המעסיקים</title>
 
 <style>
   :root{
@@ -281,6 +281,32 @@
   .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .demo-note{font-size:11.5px;color:var(--soft-2);margin:0}
 
+
+  /* ── employers list (second screen) ── */
+  .emp{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid var(--divider);flex-wrap:wrap}
+  .emp:last-child{border-bottom:none}
+  .edot{width:15px;height:15px;border-radius:50%;flex:none;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 16%,transparent)}
+  .ename{font-family:var(--serif);font-size:19px;flex:1;min-width:130px}
+  .epill{
+    font-size:11.5px;font-weight:700;padding:3px 13px;border-radius:999px;white-space:nowrap;
+    background:color-mix(in srgb,currentColor 12%,transparent);border:1px solid color-mix(in srgb,currentColor 34%,transparent);
+  }
+  .edetail{flex-basis:100%;font-size:12.5px;padding-inline-start:26px;font-variant-numeric:tabular-nums}
+  .eocc{
+    flex-basis:100%;margin-inline-start:26px;margin-top:5px;display:inline-flex;align-items:center;gap:7px;
+    width:fit-content;font-size:12px;font-weight:600;padding:4px 11px;border-radius:8px;
+    background:var(--employer-bg);color:var(--employer);border:1px solid color-mix(in srgb,var(--employer) 30%,transparent);
+  }
+  .eocc.placed{background:var(--closed-bg);color:var(--closed);border-color:color-mix(in srgb,var(--closed) 30%,transparent)}
+  .ba{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+  .ba .stage{padding:18px 20px 12px}
+  .ba-tag{
+    font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;
+    padding:2px 8px;border-radius:5px;
+  }
+  .ba-now{background:var(--ours-bg);color:var(--ours)}
+  .ba-new{background:var(--closed-bg);color:var(--closed)}
+
   /* ── spec ── */
   section h3{
     font-family:var(--serif);font-weight:400;font-size:25px;margin:0 0 4px;
@@ -333,17 +359,19 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">פרקטיקום · הצעת עיצוב לאישור</div>
+    <div class="eyebrow">פרקטיקום · עיצוב סגור — כל ההחלטות התקבלו</div>
     <h1>מה קורה עם הסטודנט/ית — בלי לפתוח את הכרטיס</h1>
     <p class="deck">
       היום רשימת הסטודנטים מראה <b>מי שובץ ומי לא</b>, ותו לא. כל מה שביניהם — הגישה רשימת
       העדפות, נשלחו קו״ח, למי, מתי, ומי תקוע — חבוי בתוך הכרטיס. ההצעה: <b>רצועת סטטוס אחת</b>
       בכל שורה, שעונה על שאלה אחת שלך ושל רחל — <b>אצל מי הכדור עכשיו.</b>
+      בסוף העמוד יש תיקון שני, במסך המעסיקים, שנובע מאותו שורש בדיוק.
     </p>
     <div class="meta">
       <span><b>מקור:</b> practicum-v2 · StudentsPage → StudentRow</span>
       <span><b>נתונים:</b> אמיתיים מהמערכת (9.8.26)</span>
       <span><b>שמות:</b> לדוגמה בלבד</span>
+      <span><b>סטטוס:</b> מוכן למימוש</span>
     </div>
   </header>
 
@@ -441,8 +469,9 @@
         <h4><span class="k">✓</span>הרצועה מוצגת תמיד</h4>
         <p>
           בכל שורה, גם כשאין מה לעשות — כך העין לומדת מקום קבוע ואי‑הצגה אף פעם לא נקראת
-          כ"אין מידע". <b>הסתייגות אחת:</b> רק בקורסי פרקטיקום. לקורסים כמו "מיומנויות ייעוץ"
-          אין מסלול השמה בכלל, ושם הרצועה תהיה רעש. אם התכוונת ממש לכולם — תגיד ואשנה.
+          כ"אין מידע". <b>בקורסי פרקטיקום בלבד</b> (פרקטיקום משאבי אנוש · פרקטיקום ייעוץ
+          ארגוני). ל"מיומנויות ייעוץ א/ב" ו"ניהול משאבי אנוש" אין מסלול השמה, ושם הרצועה
+          לא תוצג — 53 מתוך 83 הסטודנטים.
         </p>
       </div>
       <div class="ncard">
@@ -463,19 +492,19 @@
   </section>
 
   <section>
-    <h3>השאלה שנשארה: סטודנט/ית עם שני מסלולים בו‑זמנית</h3>
+    <h3>הוכרע: סטודנט/ית עם שני מסלולים בו‑זמנית</h3>
     <p class="sub">
       זה המצב של הדר עוזירי היום. הארגון שהיא עצמה הביאה יושב בדירוג <b>1</b>, ומתחתיו שני
       ארגונים רגילים מהרשימה. הכרטיס שלה צריך לומר שני דברים שונים בו‑זמנית: מול הארגון
-      שלה — <b>לשוחח ולאשר</b>; מול השניים האחרים — <b>לשלוח קו״ח</b>. השאלה היחידה היא
-      <b>מה נאמר ראשון</b>. אלה שתי האפשרויות, אחת מעל השנייה:
+      שלה — <b>לשוחח ולאשר</b>; מול השניים האחרים — <b>לשלוח קו״ח</b>.
+      <b>בחרת באפשרות א — הארגון שלה קודם.</b> אפשרות ב נשמרת כאן לתיעוד ההחלטה בלבד.
     </p>
 
     <div class="stage" style="padding-bottom:18px">
       <div class="stage-head">
         <span class="chapter">אפשרות א</span>
         <h2>הארגון שלה קודם</h2>
-        <span class="pill-count">ברירת המחדל בעמוד</span>
+        <span class="pill-count" style="background:var(--closed-bg);color:var(--closed)">✓ נבחר</span>
       </div>
       <div class="strip" data-turn="ours" style="margin-top:14px">
         <span class="turn"><i></i>אצלנו</span>
@@ -495,10 +524,11 @@
       </p>
     </div>
 
-    <div class="stage" style="padding-bottom:18px">
+    <div class="stage" style="padding-bottom:18px;opacity:.55">
       <div class="stage-head">
         <span class="chapter">אפשרות ב</span>
         <h2>הרשימה קודם</h2>
+        <span class="pill-count" style="background:transparent;border:1px solid var(--divider);color:var(--soft-2)">לא נבחר</span>
       </div>
       <div class="strip" data-turn="ours" style="margin-top:14px">
         <span class="turn"><i></i>אצלנו</span>
@@ -519,8 +549,99 @@
     </div>
   </section>
 
+  <section>
+    <h3>ותיקון אחד במסך המעסיקים — אותו שורש בדיוק</h3>
+    <p class="sub">
+      ברגע ששלחת את הקו״ח של שובל ל‑Icon Group, המקום היחיד בארגון נתפס, הארגון נפל מ"מאושר"
+      וחזר ל<b>הערת הגיוס הישנה שלך</b> ("פניתי לרנית…"). הבדיקה של "מאושר" דורשת מקום פנוי,
+      וכשאין — הקוד נופל ישר ל‑<code>contactStatus</code> ולא מגיע בכלל ל"מלא".
+      <b>שוב אותה טעות:</b> תווית אחת שעונה על שתי שאלות שונות — "איפה אני מול הארגון"
+      מול "מה קורה שם עם סטודנטים".
+    </p>
+
+    <div class="ba">
+      <div class="stage">
+        <div class="stage-head"><span class="ba-tag ba-now">היום</span><h2 style="font-size:19px">Icon Group/I digital</h2></div>
+        <div class="emp">
+          <span class="edot" style="background:#f59e0b;color:#f59e0b"></span>
+          <span class="ename">Icon Group/I digital</span>
+          <span class="epill" style="color:#f59e0b">בתהליך</span>
+          <span class="edetail" style="color:#b45309">פניתי לרנית ויש צורך — תעדכן כמ…</span>
+        </div>
+        <p class="note" style="margin:12px 2px 0">
+          קוראים "בתהליך" ומבינים: <b>אני</b> באמצע לגייס אותם. בפועל הם מגויסים מזמן —
+          סטודנטית ממתינה שם לתשובה. המידע היחיד שבאמת חשוב עכשיו לא מופיע.
+        </p>
+      </div>
+
+      <div class="stage">
+        <div class="stage-head"><span class="ba-tag ba-new">מוצע</span><h2 style="font-size:19px">Icon Group/I digital</h2></div>
+        <div class="emp">
+          <span class="edot" style="background:#3b5a8f;color:#3b5a8f"></span>
+          <span class="ename">Icon Group/I digital</span>
+          <span class="epill" style="color:#3b5a8f">סטודנט/ית בתהליך</span>
+          <span class="edetail" style="color:var(--soft)">המקום היחיד שמור · ממתין לתשובת המעסיק</span>
+          <span class="eocc">👤 שובל קוממי · קו״ח נשלחו לפני 5 ימים</span>
+        </div>
+        <p class="note" style="margin:12px 2px 0">
+          כחול — אותו כחול של "אצל המעסיק" בכרטיס הסטודנט, כך ששני המסכים מדברים אותה שפה.
+          הערת הגיוס שלך לא נעלמה; היא חוזרת מעצמה אם המקום ישתחרר.
+        </p>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top:22px">
+      התיקון עצמו הוא בסדר הבדיקות: <b>עובדות התפוסה נבדקות לפני הערת הסטטוס הידנית</b>.
+      וכדי שזה יעבוד גם כשיש מקומות פנויים, מי נמצא בארגון מוצג כשורה נפרדת — לא כתווית.
+      כך ארגון עם 5 מקומות ותלמידה אחת בתהליך נשאר ירוק וזמין, ועדיין אומר מי שם:
+    </p>
+
+    <div class="stage">
+      <div class="stage-head">
+        <span class="chapter">מוצע</span><h2>המסך אחרי התיקון</h2>
+      </div>
+      <div class="emp">
+        <span class="edot" style="background:#16a34a;color:#16a34a"></span>
+        <span class="ename">Manpower</span>
+        <span class="epill" style="color:#16a34a">מאושר</span>
+        <span class="edetail" style="color:#16a34a">4 מקומות פנויים</span>
+        <span class="eocc">👤 סטודנט/ית אחת בתהליך · נשלח לפני 3 ימים</span>
+      </div>
+      <div class="emp">
+        <span class="edot" style="background:#3b5a8f;color:#3b5a8f"></span>
+        <span class="ename">Icon Group/I digital</span>
+        <span class="epill" style="color:#3b5a8f">סטודנט/ית בתהליך</span>
+        <span class="edetail" style="color:var(--soft)">המקום היחיד שמור · ממתין לתשובת המעסיק</span>
+        <span class="eocc">👤 שובל קוממי · קו״ח נשלחו לפני 5 ימים</span>
+      </div>
+      <div class="emp">
+        <span class="edot" style="background:#64748b;color:#64748b"></span>
+        <span class="ename">עיריית אריאל</span>
+        <span class="epill" style="color:#64748b">מלא</span>
+        <span class="edetail" style="color:var(--soft)">כל המקומות אוישו</span>
+        <span class="eocc placed">✓ אלה לוי · שובצה 12.7</span>
+      </div>
+      <div class="emp">
+        <span class="edot" style="background:#f59e0b;color:#f59e0b"></span>
+        <span class="ename">LTS Device technologies</span>
+        <span class="epill" style="color:#f59e0b">בתהליך</span>
+        <span class="edetail" style="color:#b45309">ממתין לאישור סופי מול הארגון</span>
+      </div>
+      <div class="emp">
+        <span class="edot" style="background:#94a3b8;color:#94a3b8"></span>
+        <span class="ename">פסגות</span>
+        <span class="epill" style="color:#94a3b8">טרם הוגדר לשנה</span>
+        <span class="edetail" style="color:var(--soft)">הוסף/י מקומות לשנה זו</span>
+      </div>
+      <p class="note" style="margin:14px 2px 0">
+        "בתהליך" חוזר להיות מה שהתכוונת אליו — <b>רק</b> ארגון שאתה באמצע לסגור מולו.
+        שורת ה‑👤 מופיעה בכל מצב שיש בו סטודנט/ית, גם כשהארגון ירוק.
+      </p>
+    </div>
+  </section>
+
   <footer>
-    <span>עיצוב לאישור · לא מומש בקוד</span>
+    <span>עיצוב סגור · טרם מומש בקוד</span>
     <span>הצבעים והטיפוגרפיה נלקחו מ‑<code>global.css</code> של האפליקציה</span>
     <span>הגופנים כאן הם גופני מערכת — באפליקציה עצמה זה Rubik</span>
   </footer>
