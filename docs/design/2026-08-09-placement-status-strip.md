@@ -1,6 +1,6 @@
 # Design brief — placement-status strip on the student card (2026-08-09)
 
-**Status: design closed on all 4 decisions. No code written yet.**
+**Status: BUILT 2026-08-09. See "What actually shipped" at the foot of this file.**
 Covers TWO screens: the student card (part 1) and the employers list (part 2).
 Interactive mockup: `docs/design/2026-08-09-placement-status-strip.html`
 (published privately at https://claude.ai/code/artifact/5868f69e-7da3-4190-b04d-85f063791f3d)
@@ -244,3 +244,42 @@ colour, is what distinguishes one row from the next.
 ## Log
 
 - 2026-08-09 — reported, root-caused on prod data, fix designed. Awaiting approval.
+
+
+---
+
+# What actually shipped — deviations from the design, stated plainly
+
+Built 2026-08-09 after Yariv's "ok build". Two deliberate deviations and one bug the
+real data caught:
+
+1. **No emoji in the employer status pill.** The mockup showed `👤 סטודנט/ית בתהליך` /
+   `🏢 בתהליך מול הארגון`. Cells 33 and 35 locate that pill with a length-bounded text
+   match, and an emoji prefix would have broken them for no gain. The pill carries the
+   words; the 👤/🏢 markers moved to the explanation sentence — which is the element
+   Yariv said matters most anyway.
+
+2. **Only `adopt` mutates from the list row.** Decision ב put the action in both places.
+   Adopt (copy a submission onto the student, mark it seen — no slots, no messages) runs
+   inline: it is the highest-volume, lowest-risk action and the one stranding students
+   today. `place_direct` / `send_cv` / `approve_org` reserve places and mark placements,
+   so they open the card and run on their ONE already-tested path rather than being
+   reimplemented in a second place where the two could drift. The warning text is
+   identical either way.
+
+3. **BUG caught by production data, not by review.** The first `pendingOrgsDiffer`
+   compared the submission's three org fields position-by-position against the record. A
+   CV-only submission leaves all three empty, so the emptiness read as "different" — and
+   הדר עוזירי's re-uploaded CV (28.7) surfaced as "a list is waiting", *masking* her real
+   suggested-org state. Now only non-empty submitted orgs count, and a newer-CV-only
+   submission rides along as a note. Proven RED→GREEN by restoring the naive comparison.
+
+**Also unified:** the ⏱ chip inside the card read the per-course
+`reviewAgingThresholdDays` (14 on both practicum courses) while the strip used 7. Both
+now share `SILENCE_DAYS` — one constant, no data migration, and the card can no longer
+contradict the list.
+
+**Coverage:** cell 42 (placement strip, 23 cells) and cell 43 (employer status, 21 cells),
+both read-only — neither seeds or mutates production data. Their rule halves run through
+`tsx` via a sidecar, because plain node 22 strips types but cannot resolve the
+extensionless import inside placement.ts.

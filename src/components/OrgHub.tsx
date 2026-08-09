@@ -38,6 +38,7 @@ import { resolveCvUrl } from '../lib/cvUrl';
 import { btnSmall, btnSecondary, btnPrimary } from '../lib/design';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
+import { SILENCE_DAYS } from '../lib/placementStatus';
 
 export type OrgHubExtras = {
   allStudents: Student[];
@@ -422,7 +423,11 @@ export default function OrgHub({
         const isPending = !!emp && (emp as any).approvalStatus === 'pending';
         const sentDispatch = dispatches.filter(d => d.studentId === form.id && d.slotId === card.slotId && d.result === 'pending').slice(-1)[0];
         const aging = sentDispatch ? agingDays(sentDispatch.sentAt) : 0;
-        const agingThreshold = (course as any)?.reviewAgingThresholdDays ?? (placementSettings.defaultAgingThresholdDays ?? 14);
+        // ONE silence threshold for the whole app (Yariv 2026-08-09: 7 days, down from 14).
+        // Previously this chip read the per-course `reviewAgingThresholdDays`, which is 14
+        // on both practicum courses — so the card would have contradicted the list strip.
+        // Sharing the constant keeps them honest without a data migration.
+        const agingThreshold = SILENCE_DAYS;
         const isAging = !!sentDispatch && aging > agingThreshold;
         const isOrphan = isPlaced && (card.status === 'tentative' || card.status === 'under_review');
         const canSend = hasUpdatedCv && !!emp && (!!card.slotId || (cap ? cap.available > 0 : false));
