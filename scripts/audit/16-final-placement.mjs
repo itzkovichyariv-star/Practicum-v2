@@ -74,8 +74,33 @@ audit.log('PLACED-converges: dispatch → נקלט sets acceptedOrg + occupies t
         await audit.page.waitForTimeout(300);
         await audit.page.locator('[data-send-selected]').first().click().catch(() => {});
         await audit.page.waitForTimeout(300);
+        // This cell is about PLACEMENT CONVERGENCE, not popup blocking. By the time it
+        // dispatches, Chromium has spent its popup allowance on earlier clicks in the
+        // flow, so window.open returns null and the app correctly refuses to record a
+        // send whose window never opened. Stand in a compose window that DID open, so
+        // the cell can get to the thing it actually tests.
+        // (The blocked-popup path itself is asserted separately — see SEND-blocked-not-recorded.)
+        audit.page.context().on('page', p => p.close().catch(() => {}));
+        await audit.page.evaluate(() => {
+          window.__realOpen = window.open;
+          window.open = () => ({ closed: false, close() {}, focus() {} });
+        });
         const waBtn = audit.page.locator('[data-dispatch="whatsapp"]').first();
         if (await waBtn.count() > 0) { await waBtn.click().catch(() => {}); dispatched = true; }
+
+        // Sending is provisional until confirmed: the app opens a compose window and only
+        // then asks whether the message really went (2026-08-09 — committing on open
+        // recorded CVs as sent that iOS never opened). Drive that step.
+        await audit.page.waitForSelector('[data-send-confirm]', { timeout: 5000 }).catch(() => {});
+        await audit.page.locator('[data-send-confirm-yes]').first().click().catch(() => {});
+        // The commit saves + refreshes the editor; give the org panel time to re-render
+        // before looking for the "✓ נקלט" control.
+        for (let i = 0; i < 12; i++) {
+          const s2 = (await loadData()).students?.find(x => x.id === STU_ID);
+          if ((s2?.preferences || []).some(p => p.status === 'under_review')) break;
+          await audit.page.waitForTimeout(400);
+        }
+        await audit.page.waitForTimeout(600);
       }
 
       // Wait for the row to transition to under_review (the "✓ נקלט" button appears).

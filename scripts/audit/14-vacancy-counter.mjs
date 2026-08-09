@@ -93,6 +93,12 @@ audit.log('COUNTER-send-takes-place: build reserves nothing; ticking the send-CV
         await audit.page.locator('[data-send-selected]').first().click().catch(() => {}); // open channel sheet
         await audit.page.waitForTimeout(300);
         await audit.page.locator('[data-dispatch="whatsapp"]').first().click().catch(() => {});
+        // Sending is provisional until confirmed: the app opens a compose window and only
+        // then asks whether the message really went (2026-08-09 — committing on open
+        // recorded CVs as sent that iOS never opened). Drive that step.
+        await audit.page.waitForSelector('[data-send-confirm]', { timeout: 4000 }).catch(() => {});
+        await audit.page.locator('[data-send-confirm-yes]').first().click().catch(() => {});
+        await audit.page.waitForTimeout(400);
         // Wait until a slot is actually taken (send persisted).
         for (let i = 0; i < 12; i++) {
           const emp = (await loadData()).employers?.find(e => e.id === EMP_ID);

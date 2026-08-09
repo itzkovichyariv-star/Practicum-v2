@@ -141,6 +141,7 @@ if (seedOk) {
 
 // ── Student B: add an org, then tick send → WhatsApp → the preference takes a place ─
 let sendStatus = '', sendSlot = '', addOrgWorked = false, preConfirmStatus = '';
+let blockedOk = null, blockedObserved = 'not run';
 if (seedOk) {
   const openedB = await openEditor(B_NAME);
   if (openedB) {
@@ -165,6 +166,39 @@ if (seedOk) {
     });
 
     await audit.page.waitForSelector('[data-send-cv="0"]', { timeout: 4000 }).catch(() => {});
+
+    // ── SEND-blocked-not-recorded ───────────────────────────────────────────────
+    // The bug that cost נטע נידם a place: the app opened a compose window, iOS silently
+    // refused it, and the CV was recorded as sent anyway (the guard against a refused
+    // window only applied from the SECOND org onward). A refused window must leave NO
+    // trace: no place taken, no dispatch, no confirmation offered. Probed BEFORE the
+    // real send below, on the same card, then the state is restored.
+    try {
+      await audit.page.evaluate(() => { window.__realOpen = window.open; window.open = () => null; });
+      const b4 = (await loadData()).students?.find(x => x.id === B_ID);
+      const beforeUR = (b4?.preferences || []).filter(p => p.status === 'under_review').length;
+      const beforeDisp = ((await loadData()).dispatches || []).filter(d => d.studentId === B_ID).length;
+      await audit.page.locator('[data-send-cv="0"]').first().click().catch(() => {});
+      await audit.page.waitForTimeout(200);
+      await audit.page.locator('[data-send-selected]').first().click().catch(() => {});
+      await audit.page.waitForTimeout(250);
+      await audit.page.locator('[data-dispatch="whatsapp"]').first().click().catch(() => {});
+      await audit.page.waitForTimeout(900);
+      const af = (await loadData()).students?.find(x => x.id === B_ID);
+      const afterUR = (af?.preferences || []).filter(p => p.status === 'under_review').length;
+      const afterDisp = ((await loadData()).dispatches || []).filter(d => d.studentId === B_ID).length;
+      const confirmShown = await audit.page.evaluate(() => !!document.querySelector('[data-send-confirm]'));
+      blockedObserved = `under_review ${beforeUR}→${afterUR}, dispatches ${beforeDisp}→${afterDisp}, confirmOffered=${confirmShown}`;
+      blockedOk = afterUR === beforeUR && afterDisp === beforeDisp && !confirmShown;
+      await audit.page.evaluate(() => { if (window.__realOpen) window.open = window.__realOpen; });
+      // untick, so the real send below starts from the same state it always did
+      await audit.page.locator('[data-send-cv="0"]').first().click().catch(() => {});
+      await audit.page.waitForTimeout(200);
+    } catch (e) {
+      blockedObserved = `probe error: ${String(e.message || e).slice(0, 90)}`; blockedOk = null;
+      await audit.page.evaluate(() => { if (window.__realOpen) window.open = window.__realOpen; }).catch(() => {});
+    }
+
     await audit.page.locator('[data-send-cv="0"]').first().click().catch(() => {}); // select card 0
     await audit.page.waitForTimeout(250);
     await audit.page.locator('[data-send-selected]').first().click().catch(() => {}); // open channel sheet
@@ -195,6 +229,15 @@ if (seedOk) {
       : !sendSlot ? 'Under_review but no slot held — the place was not taken.' : '',
   });
 }
+
+audit.recordCell({
+  id: 'SEND-blocked-not-recorded',
+  tableRef: 'OrgHub dispatchMany — a refused compose window records nothing',
+  expected: 'window.open refused → no place taken, no dispatch written, no confirmation offered',
+  observed: blockedObserved,
+  pass: blockedOk,
+  notes: blockedOk === false ? 'A blocked send left a trace — the phantom-dispatch bug is back.' : '',
+});
 
 const shot = await audit.shot('orghub-cards');
 audit.cells.forEach(c => { if (!c.after) c.after = shot; });

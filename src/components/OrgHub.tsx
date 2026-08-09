@@ -580,8 +580,11 @@ export default function OrgHub({
         );
       })}
 
-      {pendingSend && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(26,22,18,0.6)' }}>
+      {/* Portalled to <body>, exactly like the send sheet above. Rendered inside the
+          editor's own tree it was clipped by the modal's stacking context — present in
+          the DOM but invisible, so a send looked like it did nothing at all. */}
+      {pendingSend && createPortal((
+        <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(26,22,18,0.6)' }}>
           <div role="dialog" aria-modal="true" data-send-confirm
             style={{ background: 'var(--bg)', border: '1px solid var(--divider)', borderRadius: 16, maxWidth: 460, width: '100%', padding: '22px 24px', textAlign: 'right', boxShadow: '0 24px 64px rgba(0,0,0,0.35)' }}>
             <div className="serif" style={{ fontSize: 22, color: 'var(--ink)', marginBottom: 8 }}>
@@ -608,7 +611,7 @@ export default function OrgHub({
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Add-org row */}
       <div className="mt-1">
