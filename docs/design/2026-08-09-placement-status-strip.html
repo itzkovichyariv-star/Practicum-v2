@@ -1,0 +1,629 @@
+<title>סטטוס השמה על כרטיס הסטודנט — עיצוב לאישור</title>
+
+<style>
+  :root{
+    /* Ground + identity — taken verbatim from src/styles/global.css so this reads as the app. */
+    --bg:#f4efe6;
+    --card:#fbf8f3;
+    --ink:#3d0f14;
+    --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08);
+    --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18);
+    --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.52);
+    --soft-2:rgba(61,15,20,0.34);
+
+    /* Semantic layer — deliberately NOT the wine accent. Encodes "whose turn is it". */
+    --ours:#b91c1c;        --ours-bg:rgba(185,28,28,0.075);
+    --student:#b45309;     --student-bg:rgba(180,83,9,0.06);
+    --employer:#3b5a8f;    --employer-bg:rgba(59,90,143,0.055);
+    --closed:#15803d;      --closed-bg:rgba(21,128,61,0.05);
+
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 12px 32px rgba(61,15,20,.07);
+    --sans:"Rubik","Heebo","Arial Hebrew","Noto Sans Hebrew",system-ui,-apple-system,sans-serif;
+    --serif:Georgia,"Frank Ruehl CLM","Times New Roman",serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+      --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+      --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+      --soft:rgba(242,231,221,0.56); --soft-2:rgba(242,231,221,0.36);
+      --ours:#f6817e;    --ours-bg:rgba(246,129,126,0.1);
+      --student:#e5a95e; --student-bg:rgba(229,169,94,0.09);
+      --employer:#9db6e2;--employer-bg:rgba(157,182,226,0.09);
+      --closed:#67ca8c;  --closed-bg:rgba(103,202,140,0.09);
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.34);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.56); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e;    --ours-bg:rgba(246,129,126,0.1);
+    --student:#e5a95e; --student-bg:rgba(229,169,94,0.09);
+    --employer:#9db6e2;--employer-bg:rgba(157,182,226,0.09);
+    --closed:#67ca8c;  --closed-bg:rgba(103,202,140,0.09);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 32px rgba(0,0,0,.34);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.52); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c;    --ours-bg:rgba(185,28,28,0.075);
+    --student:#b45309; --student-bg:rgba(180,83,9,0.06);
+    --employer:#3b5a8f;--employer-bg:rgba(59,90,143,0.055);
+    --closed:#15803d;  --closed-bg:rgba(21,128,61,0.05);
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 12px 32px rgba(61,15,20,.07);
+  }
+
+  .page{
+    direction:rtl; text-align:right;
+    font-family:var(--sans); background:var(--bg); color:var(--ink);
+    min-height:100%; padding:clamp(20px,4vw,52px) clamp(14px,4vw,28px) 80px;
+    font-size:15px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1010px;margin:0 auto;display:flex;flex-direction:column;gap:34px}
+
+  /* ── masthead ── */
+  .eyebrow{
+    font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);display:flex;align-items:center;gap:10px;
+  }
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--divider)}
+  h1{
+    font-family:var(--serif); font-weight:400;
+    font-size:clamp(30px,5.4vw,46px); line-height:1.12; letter-spacing:-.01em;
+    margin:.34em 0 0; text-wrap:balance;
+  }
+  .deck{max-width:62ch;color:var(--soft);font-size:16px;margin-top:.7em}
+  .deck b{color:var(--ink);font-weight:600}
+  .meta{
+    display:flex;flex-wrap:wrap;gap:6px 20px;margin-top:18px;
+    font-size:12px;color:var(--soft-2);font-variant-numeric:tabular-nums;
+  }
+  .meta span{display:inline-flex;gap:7px;align-items:center}
+  .meta b{color:var(--soft);font-weight:600}
+
+  /* ── control rail ── */
+  .rail{
+    position:sticky; top:0; z-index:20;
+    background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(10px);
+    border-block:1px solid var(--divider);
+    padding:12px 0; margin-block:-6px;
+    display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;
+  }
+  .rail-group{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+  .rail-label{font-size:11px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--soft-2)}
+  .chip{
+    font:inherit;font-size:12.5px;font-weight:600;
+    padding:5px 13px;border-radius:999px;cursor:pointer;
+    background:transparent;color:var(--soft);
+    border:1px solid var(--divider);
+    display:inline-flex;align-items:center;gap:7px;
+    transition:background .14s,color .14s,border-color .14s;
+  }
+  .chip:hover{border-color:var(--divider-strong);color:var(--ink)}
+  .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .chip .n{font-variant-numeric:tabular-nums;font-weight:700;opacity:.75}
+  .chip .swatch{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
+  .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+  .chip[aria-pressed="true"] .n{opacity:.85}
+  .chip--ours[aria-pressed="true"]{background:var(--ours);border-color:var(--ours)}
+  .chip--student[aria-pressed="true"]{background:var(--student);border-color:var(--student)}
+  .chip--employer[aria-pressed="true"]{background:var(--employer);border-color:var(--employer)}
+  .chip--closed[aria-pressed="true"]{background:var(--closed);border-color:var(--closed)}
+  .chip--ours .swatch{color:var(--ours)} .chip--student .swatch{color:var(--student)}
+  .chip--employer .swatch{color:var(--employer)} .chip--closed .swatch{color:var(--closed)}
+  .chip[aria-pressed="true"] .swatch{color:currentColor}
+
+  .switch{
+    display:inline-flex;align-items:center;gap:9px;cursor:pointer;
+    font-size:12.5px;font-weight:600;color:var(--soft);user-select:none;
+  }
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .track{
+    width:38px;height:21px;border-radius:999px;background:var(--divider);
+    position:relative;transition:background .16s;flex:none;
+  }
+  .track::after{
+    content:"";position:absolute;inset-block:2.5px;inset-inline-end:2.5px;
+    width:16px;border-radius:50%;background:var(--card);
+    box-shadow:0 1px 3px rgba(0,0,0,.22); transition:transform .16s;
+  }
+  .switch input:checked + .track{background:var(--accent)}
+  .switch input:checked + .track::after{transform:translateX(-17px)}
+  .switch input:focus-visible + .track{outline:2px solid var(--accent);outline-offset:2px}
+  .switch:has(input:checked){color:var(--ink)}
+
+  /* ── the list, as it renders in the app ── */
+  .stage{
+    background:var(--card);border:1px solid var(--divider);border-radius:16px;
+    padding:clamp(14px,2.6vw,26px) clamp(14px,3vw,30px) 8px;box-shadow:var(--shadow);
+  }
+  .stage-head{
+    display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    padding-bottom:12px;border-bottom:1px solid var(--divider);margin-bottom:4px;
+  }
+  .chapter{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  .stage-head h2{font-family:var(--serif);font-weight:400;font-size:22px;margin:0}
+  .pill-count{
+    font-size:11.5px;font-weight:700;padding:2px 10px;border-radius:999px;
+    background:var(--accent-soft);color:var(--accent);font-variant-numeric:tabular-nums;
+  }
+  ul.list{list-style:none;margin:0;padding:0}
+  .row{border-bottom:2px solid var(--divider-strong)}
+  .row:last-child{border-bottom:none}
+  .row-main{display:flex;align-items:stretch;gap:16px;padding:16px 0 14px}
+  .zone-student{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}
+  .name-line{display:flex;align-items:center;gap:9px;min-width:0}
+  .sdot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--soft-2)}
+  .sdot.green{background:#15803d} .sdot.amber{background:#b45309}
+  .name{font-family:var(--serif);font-size:21px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .tag{
+    font-size:11px;font-weight:600;padding:2.5px 9px;border-radius:999px;
+    background:var(--accent-soft);color:var(--accent);white-space:nowrap;
+  }
+  .tag.muted{background:transparent;border:1px solid var(--divider);color:var(--soft)}
+  .tag.warn{background:var(--student-bg);color:var(--student)}
+  .tag.ok{background:var(--closed-bg);color:var(--closed)}
+  .contacts{display:flex;gap:7px;margin-top:auto;padding-top:2px}
+  .cbtn{
+    width:31px;height:31px;border-radius:50%;flex:none;
+    border:.5px solid var(--divider-strong);color:var(--accent);
+    display:grid;place-items:center;font-size:13px;background:transparent;
+  }
+  .vrule{width:1px;background:var(--divider);flex:none;margin:4px 0}
+  .zone-org{width:37%;max-width:196px;flex:none;display:flex;flex-direction:column;justify-content:center;gap:5px}
+  .org-name{font-size:12.5px;font-weight:700;color:var(--accent);display:flex;gap:6px;align-items:center}
+  .org-none{font-size:11.5px;color:var(--soft-2)}
+
+  /* ── THE NEW ELEMENT: the placement strip ── */
+  .strip{
+    display:flex;gap:13px;align-items:flex-start;
+    margin:0 0 14px; padding:10px 13px 11px;
+    border-radius:10px; border:1px solid var(--divider);
+    border-inline-start:none;
+    box-shadow:inset 3px 0 0 0 var(--tone);
+    background:var(--tone-bg);
+    --tone:var(--soft-2); --tone-bg:transparent;
+  }
+  [dir="rtl"] .strip{box-shadow:inset -3px 0 0 0 var(--tone)}
+  .strip[data-turn="ours"]    {--tone:var(--ours);     --tone-bg:var(--ours-bg)}
+  .strip[data-turn="student"] {--tone:var(--student);  --tone-bg:var(--student-bg)}
+  .strip[data-turn="employer"]{--tone:var(--employer); --tone-bg:var(--employer-bg)}
+  .strip[data-turn="closed"]  {--tone:var(--closed);   --tone-bg:var(--closed-bg)}
+  .turn{
+    font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--tone);
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+    padding-top:2px;flex:none;
+  }
+  .turn i{width:7px;height:7px;border-radius:50%;background:var(--tone);flex:none}
+  .strip-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+  .headline{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.45}
+  .headline em{font-style:normal;color:var(--tone)}
+  .detail{font-size:12px;color:var(--soft);display:flex;flex-wrap:wrap;gap:5px 8px;align-items:center}
+  .ochip{
+    font-size:11px;font-weight:600;padding:2px 9px;border-radius:6px;
+    border:1px solid var(--divider);color:var(--soft);white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+  }
+  .ochip b{color:var(--ink);font-weight:700}
+  .ochip.sent{border-color:color-mix(in srgb,var(--employer) 45%,transparent);color:var(--employer)}
+  .ochip.sent b{color:var(--employer)}
+  .ochip.late{border-color:color-mix(in srgb,var(--ours) 55%,transparent);color:var(--ours);background:var(--ours-bg)}
+  .ochip.late b{color:var(--ours)}
+  .ochip.dead{text-decoration:line-through;opacity:.62}
+  /* An org the student brought themselves: marked by FORM (dashed edge + ◆), never by
+     a colour of its own — the turn colour must stay readable across the whole strip. */
+  .ochip.own{border-style:dashed;border-color:var(--divider-strong);font-weight:700}
+  .ochip.own::before{content:"◆";margin-inline-end:5px;opacity:.55;font-size:9px;vertical-align:1px}
+  .ochip.pass{border-color:color-mix(in srgb,var(--closed) 50%,transparent);color:var(--closed)}
+  .ochip.pass b{color:var(--closed)}
+  .rank{font-size:9.5px;font-weight:700;opacity:.6;margin-inline-end:2px}
+  .age{
+    font-size:11px;font-weight:600;color:var(--tone);white-space:nowrap;
+    padding-top:3px;flex:none;font-variant-numeric:tabular-nums;
+  }
+  .cta{
+    align-self:flex-start;font:inherit;font-size:11.5px;font-weight:700;
+    padding:4px 12px;border-radius:7px;margin-top:2px;cursor:pointer;
+    background:transparent;border:1px solid var(--tone);color:var(--tone);
+  }
+  .cta:hover{background:var(--tone-bg)}
+  .cta:focus-visible{outline:2px solid var(--tone);outline-offset:2px}
+
+  /* before/after + highlight */
+  .page[data-mode="before"] .strip{display:none}
+  .page[data-mode="before"] .newmark{display:none}
+  .page[data-hl="on"] .strip{
+    outline:2px dashed color-mix(in srgb,var(--accent) 55%,transparent);
+    outline-offset:3px;
+  }
+  .newmark{
+    font-size:9.5px;font-weight:800;letter-spacing:.1em;color:var(--accent);
+    border:1px solid var(--divider-strong);border-radius:4px;padding:1px 5px;
+  }
+  .empty{padding:34px 4px;color:var(--soft-2);font-size:13.5px}
+
+  /* ── spec ── */
+  section h3{
+    font-family:var(--serif);font-weight:400;font-size:25px;margin:0 0 4px;
+  }
+  section .sub{color:var(--soft);font-size:14px;margin:0 0 18px;max-width:64ch}
+  .tablewrap{overflow-x:auto;border:1px solid var(--divider);border-radius:12px;background:var(--card)}
+  table{border-collapse:collapse;width:100%;min-width:730px;font-size:12.5px}
+  th,td{padding:11px 14px;text-align:right;vertical-align:top;border-bottom:1px solid var(--divider)}
+  thead th{
+    font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--soft-2);
+    font-weight:700;background:var(--accent-soft);white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:none}
+  td.state{font-weight:700;white-space:nowrap}
+  td.state .bar{display:inline-block;width:3px;height:13px;border-radius:2px;margin-inline-end:8px;vertical-align:-2px}
+  code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    background:var(--accent-soft);padding:1px 5px;border-radius:4px;direction:ltr;display:inline-block;
+  }
+  .note{color:var(--soft);font-size:12px}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:14px}
+  .ncard{
+    background:var(--card);border:1px solid var(--divider);border-radius:12px;padding:16px 18px;
+    display:flex;flex-direction:column;gap:7px;
+  }
+  .ncard h4{margin:0;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .ncard h4 .k{
+    font-size:10px;font-weight:800;letter-spacing:.08em;padding:2px 7px;border-radius:5px;
+    background:var(--accent-soft);color:var(--accent);
+  }
+  .ncard p{margin:0;font-size:12.5px;color:var(--soft);line-height:1.6}
+  .ncard.ask{border-color:var(--divider-strong)}
+  .ncard.ask h4 .k{background:var(--ours-bg);color:var(--ours)}
+  footer{
+    border-top:1px solid var(--divider);padding-top:16px;
+    font-size:12px;color:var(--soft-2);display:flex;flex-wrap:wrap;gap:6px 18px;
+  }
+  @media (max-width:620px){
+    .row-main{flex-direction:column;gap:10px}
+    .vrule{display:none}
+    .zone-org{width:auto;max-width:none;border-top:1px solid var(--divider);padding-top:8px}
+    .strip{flex-wrap:wrap;gap:8px}
+    .age{order:3}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="page" dir="rtl" data-mode="after" data-hl="off">
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">פרקטיקום · הצעת עיצוב לאישור</div>
+    <h1>מה קורה עם הסטודנט/ית — בלי לפתוח את הכרטיס</h1>
+    <p class="deck">
+      היום רשימת הסטודנטים מראה <b>מי שובץ ומי לא</b>, ותו לא. כל מה שביניהם — הגישה רשימת
+      העדפות, נשלחו קו״ח, למי, מתי, ומי תקוע — חבוי בתוך הכרטיס. ההצעה: <b>רצועת סטטוס אחת</b>
+      בכל שורה, שעונה על שאלה אחת שלך ושל רחל — <b>אצל מי הכדור עכשיו.</b>
+    </p>
+    <div class="meta">
+      <span><b>מקור:</b> practicum-v2 · StudentsPage → StudentRow</span>
+      <span><b>נתונים:</b> אמיתיים מהמערכת (9.8.26)</span>
+      <span><b>שמות:</b> לדוגמה בלבד</span>
+    </div>
+  </header>
+
+  <div class="rail">
+    <div class="rail-group">
+      <span class="rail-label">אצל מי הכדור</span>
+      <button class="chip" data-filter="all" aria-pressed="true">הכל <span class="n" data-count="all"></span></button>
+      <button class="chip chip--ours" data-filter="ours" aria-pressed="false"><span class="swatch"></span>אצלנו <span class="n" data-count="ours"></span></button>
+      <button class="chip chip--student" data-filter="student" aria-pressed="false"><span class="swatch"></span>אצל הסטודנט/ית <span class="n" data-count="student"></span></button>
+      <button class="chip chip--employer" data-filter="employer" aria-pressed="false"><span class="swatch"></span>אצל המעסיק <span class="n" data-count="employer"></span></button>
+      <button class="chip chip--closed" data-filter="closed" aria-pressed="false"><span class="swatch"></span>שובצו <span class="n" data-count="closed"></span></button>
+    </div>
+    <div class="rail-group" style="margin-inline-start:auto">
+      <label class="switch"><input type="checkbox" id="tgl-mode"><span class="track"></span>הצג את המצב היום (לפני)</label>
+      <label class="switch"><input type="checkbox" id="tgl-hl"><span class="track"></span>סמן את החדש</label>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <span class="chapter">III · סטודנטים</span>
+      <h2>פרקטיקום משאבי אנוש</h2>
+      <span class="pill-count">תשפ״ז</span>
+      <span class="newmark">רצועה חדשה</span>
+    </div>
+    <ul class="list" id="list"></ul>
+    <div class="empty" id="empty" hidden>אין סטודנטים בסינון הזה.</div>
+  </div>
+
+  <section>
+    <h3>המצבים — הרשימה המלאה</h3>
+    <p class="sub">
+אחד‑עשר מצבים שמכסים את כל מסלול ההשמה. שניים מהם ביקשת במפורש; השאר נגזרים
+      מאותם נתונים בדיוק, ובלעדיהם הרצועה מציגה חורים. כולם מחושבים מנתונים שכבר קיימים —
+      אין צורך בשדה חדש. שים לב לשתי השורות על ארגון בהצעת הסטודנט/ית: שם הפעולה היא
+      שיחה ואישור, לא שליחת קו״ח.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>מצב</th><th>מתי מוצג (הנתון במערכת)</th><th>הטקסט בכרטיס</th><th>אצל מי</th>
+          </tr>
+        </thead>
+        <tbody id="spec"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h3>למה שווה לאשר גם את מה שלא ביקשת</h3>
+    <p class="sub">שלוש נקודות שעלו מהנתונים האמיתיים, לא מהתכנון.</p>
+    <div class="cards">
+      <div class="ncard">
+        <h4><span class="k">1</span>ההגשה נעצרת לפני הרשימה</h4>
+        <p>
+          הסטודנט/ית מגיש/ה קו״ח + העדפות בטופס <code>/cv-update</code>. ההגשה נוחתת בטבלה
+          נפרדת וממתינה ל<b>קליטה ידנית</b> לכרטיס. עד שלא נקלטה — הרשימה לא קיימת על
+          הסטודנט/ית, ואף מסך לא מספר על כך. זה מצב 1, והוא הכי דחוף.
+        </p>
+      </div>
+      <div class="ncard">
+        <h4><span class="k">2</span>ארגון בהצעת הסטודנט/ית הוא מסלול אחר</h4>
+        <p>
+          כשהסטודנט/ית כבר יצר/ה קשר עם המעסיק, הפעולה היא <b>שיחה ואישור</b> — ואישורך
+          כמוהו כהשמה, בלי לשלוח קו״ח. קו״ח יישלחו רק אם המעסיק יבקש. הרצועה אומרת בדיוק
+          את זה, ולא "שלח קו״ח". <b>שני הסטודנטים שבמצב הזה היום — כך בדיוק.</b>
+        </p>
+      </div>
+      <div class="ncard">
+        <h4><span class="k">3</span>שתיקה של מעסיק היא כדור אצלנו</h4>
+        <p>
+          קו״ח שנשלחו ולא נענו הם "אצל המעסיק" — עד סף ההמתנה (14 יום, מוגדר בקורס).
+          מעבר לו הרצועה מתהפכת לאדום ועוברת אלינו: אף אחד לא יזכור לתזכר בלי שהרשימה תגיד.
+        </p>
+      </div>
+      <div class="ncard">
+        <h4><span class="k">4</span>אין צורך בשדה חדש</h4>
+        <p>
+          "מחכה 6 ימים" נמדד מ<b>תאריך ההגשה של הסטודנט/ית</b> (נשמר בטבלת ההגשות),
+          ו"נשלח לפני 5 ימים" מתאריך שליחת הקו״ח (נשמר ברשומת השליחה). שניהם כבר במערכת.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>שלוש החלטות שצריכות אותך</h3>
+    <p class="sub">אחרי שתענה, זה נכנס לקוד. עד אז לא נגעתי בכלום.</p>
+    <div class="cards">
+      <div class="ncard ask">
+        <h4><span class="k">א</span>רצועה תמיד, או רק כשיש מה לומר?</h4>
+        <p>
+          כרגע: מוצגת רק כשיש מצב פעיל. אפשר גם להציג תמיד (גם "טרם הוגש") — יותר עקבי,
+          אבל מוסיף שורה ל‑53 סטודנטים שלא בתהליך.
+        </p>
+      </div>
+      <div class="ncard ask">
+        <h4><span class="k">ב</span>הכפתור בתוך הרצועה — כן או לא?</h4>
+        <p>
+          "קלוט לכרטיס" / "שלח קו״ח" ישר מהרשימה חוסך פתיחה של הכרטיס, אבל מוסיף פעולה
+          לחיצה אחת מהמחיקה בטעות. אפשר גם בלי — הרצועה מודיעה, הפעולה בכרטיס.
+        </p>
+      </div>
+      <div class="ncard ask">
+        <h4><span class="k">ג</span>סף השתיקה — 14 יום?</h4>
+        <p>
+          זה הערך שכבר מוגדר בקורס. מעבר לו הרצועה הופכת לאדום "כדאי לתזכר". להשאיר,
+          או להוריד ל‑10?
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>עיצוב לאישור · לא מומש בקוד</span>
+    <span>הצבעים והטיפוגרפיה נלקחו מ‑<code>global.css</code> של האפליקציה</span>
+    <span>הגופנים כאן הם גופני מערכת — באפליקציה עצמה זה Rubik</span>
+  </footer>
+
+</div>
+</div>
+
+<script>
+(function(){
+  var ROWS = [
+    { id:"s0", turn:"student", name:"נועם ברזילי", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV נדרש","warn"]], org:null,
+      head:'טרם הוגשו קו״ח מעודכנים והעדפות',
+      detail:'<span class="ochip">הקישור נשלח · אין הגשה במערכת</span>',
+      age:"", cta:"" },
+
+    { id:"s1", turn:"ours", name:"מיכל אדרי", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'רשימת העדפות התקבלה — <em>יש לקלוט לכרטיס</em>',
+      detail:'<span class="ochip"><span class="rank">1</span><b>UCL Group</b></span>'+
+             '<span class="ochip"><span class="rank">2</span><b>Codeoasis</b></span>'+
+             '<span class="ochip"><span class="rank">3</span><b>עיריית אריאל</b></span>',
+      age:"הוגשה לפני 3 ימים", cta:"קלוט לכרטיס" },
+
+    { id:"s1b", turn:"ours", name:"אילת נחמיאס", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'הצעת ארגון חדש — <em>יש לבדוק ולאשר את הארגון</em>',
+      detail:'<span class="ochip own"><b>סטארט אפ ניישן סנטרל</b></span>'+
+             '<span>· איש קשר: רונית מזרחי · הוצע ע״י הסטודנט/ית · טרם אושר</span>',
+      age:"הוצע לפני 2 ימים", cta:"בדוק ואשר ארגון" },
+
+    { id:"s2own", turn:"ours", name:"שיר לוינסון", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'ארגון בהצעת הסטודנט/ית — <em>יש לשוחח עם המעסיק ולאשר</em>',
+      detail:'<span class="ochip own"><b>מרקמן טומשין ושו״ת</b></span>'+
+             '<span>· איש קשר: שרון פלס · הסטודנט/ית כבר במגעים · אישור = השמה, ללא שליחת קו״ח</span>',
+      age:"ממתינה 12 ימים", cta:"אשר השמה" },
+
+    { id:"s2mix", turn:"ours", name:"נועה קמינר", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'ארגון בהצעת הסטודנט/ית — <em>לשוחח ולאשר</em> · ועוד 2 מהרשימה — <em>לשלוח קו״ח</em>',
+      detail:'<span class="ochip own"><span class="rank">1</span><b>מערך הדיגיטל הלאומי</b> · בהצעתה</span>'+
+             '<span class="ochip"><span class="rank">2</span><b>נישה פרו</b></span>'+
+             '<span class="ochip"><span class="rank">3</span><b>עיריית אריאל</b></span>',
+      age:"ממתינה 6 ימים", cta:"" },
+
+    { id:"s2", turn:"ours", name:"אורין ספיר", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'רשימת העדפות נשלחה — <em>יש לטפל מול המעסיק</em>',
+      detail:'<span class="ochip"><span class="rank">1</span><b>UCL Group</b></span>'+
+             '<span class="ochip"><span class="rank">2</span><b>Codeoasis</b></span>'+
+             '<span class="ochip"><span class="rank">3</span><b>TLVtech</b></span>'+
+             '<span>· 3 ארגונים בדירוג · טרם נשלחו קו״ח</span>',
+      age:"ממתינה 6 ימים", cta:'שלח קו״ח' },
+
+    { id:"s3", turn:"student", name:"תמר בן‑חיים", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV נדרש","warn"]], org:null,
+      head:'רשימת העדפות נשלחה — <em>חסר קו״ח מעודכן</em>',
+      detail:'<span class="ochip"><span class="rank">1</span><b>קופת חולים מאוחדת</b></span>'+
+             '<span class="ochip"><span class="rank">2</span><b>נישה פרו</b></span>'+
+             '<span>· לא ניתן לשלוח למעסיק · יש לפנות לסטודנט/ית</span>',
+      age:"ממתינה 9 ימים", cta:"" },
+
+    { id:"s4", turn:"employer", name:"יעל רוזן", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'קו״ח נשלחו ל‑<em>2 מקומות</em> · ממתין לתשובת המעסיק',
+      detail:'<span class="ochip sent"><b>Icon Group</b> · נשלח לפני 5 ימים</span>'+
+             '<span class="ochip sent"><b>TLVtech</b> · נשלח לפני 2 ימים</span>'+
+             '<span class="ochip">+1 בדירוג, טרם נשלח</span>',
+      age:"", cta:"" },
+
+    { id:"s5", turn:"ours", name:"דנה שקד", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'קו״ח נשלחו ל‑<em>3 מקומות</em> · <em>21 ימים ללא תשובה</em>',
+      detail:'<span class="ochip late"><b>UCL Group</b> · 21 ימים</span>'+
+             '<span class="ochip late"><b>קופת חולים מאוחדת</b> · 18 ימים</span>'+
+             '<span class="ochip sent"><b>נישה פרו</b> · 9 ימים</span>'+
+             '<span>· מעל סף ההמתנה (14) — כדאי לתזכר</span>',
+      age:"", cta:"תזכר מעסיקים" },
+
+    { id:"s6", turn:"employer", name:"רותם אזולאי", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'<em>עבר/ה ראיון</em> ב‑Codeoasis — ממתין להחלטת המעסיק',
+      detail:'<span class="ochip pass"><b>Codeoasis</b> · ✓ עבר/ה ראיון 3.8</span>'+
+             '<span class="ochip sent"><b>Icon Group</b> · נשלח לפני 6 ימים</span>',
+      age:"", cta:"" },
+
+    { id:"s7", turn:"ours", name:"ליאור פרץ", dot:"amber",
+      tags:[["✓ הכנה","muted"],["CV ✓",""]], org:null,
+      head:'נדחה/תה ב‑<em>2 מקומות</em> — יש להציע ארגונים חדשים',
+      detail:'<span class="ochip dead"><b>TLVtech</b> · נדחה 28.7</span>'+
+             '<span class="ochip dead"><b>נישה פרו</b> · נדחה 4.8</span>'+
+             '<span>· לא נותרו ארגונים בדירוג</span>',
+      age:"מיצה את הרשימה", cta:"הוסף ארגונים" },
+
+    { id:"s8", turn:"closed", name:"אורי גלעד", dot:"green",
+      tags:[["שובץ/ה",""],["✓ משוב","ok"]], org:"עיריית אריאל",
+      head:'שובץ/ה ב‑עיריית אריאל · 12.7.26',
+      detail:'<span class="ochip pass">✓ התקבל משוב מעסיק</span>',
+      age:"", cta:"" }
+  ];
+
+  var SPEC = [
+    ["טרם הוגש","student","אין הגשה בטבלת ההגשות, אין ארגונים בדירוג","טרם הוגשו קו״ח מעודכנים והעדפות"],
+    ["הגשה ממתינה לקליטה","ours","הגשה חדשה שההעדפות/הקו״ח שבה שונים מהרשום בכרטיס","רשימת העדפות התקבלה — יש לקלוט לכרטיס"],
+    ["הצעת ארגון ממתינה לאישור","ours","ארגון שהסטודנט/ית הציע/ה, בסטטוס «ממתין לאישור»","הצעת ארגון חדש — יש לבדוק ולאשר את הארגון"],
+    ["ארגון בהצעת הסטודנט/ית","ours","ארגון מאושר המשויך לסטודנט/ית בלבד, טרם שובץ/ה","ארגון בהצעת הסטודנט/ית — יש לשוחח עם המעסיק ולאשר"],
+    ["רשימה נקלטה, טרם נשלח","ours","ארגונים מהרשימה הכללית בדירוג, אף אחד לא «נשלח»","רשימת העדפות נשלחה — יש לטפל מול המעסיק"],
+    ["חסום — חסר קו״ח","student","ארגון מהרשימה בדירוג ואין קו״ח מעודכן · לא חל על ארגון בהצעת הסטודנט/ית","רשימת העדפות נשלחה — חסר קו״ח מעודכן"],
+    ["קו״ח נשלחו ל‑N","employer","N ארגונים בסטטוס «נשלח», הוותיק שבהם מתחת לסף","קו״ח נשלחו ל‑2 מקומות · ממתין לתשובת המעסיק"],
+    ["שתיקה מעבר לסף","ours","הוותיק שבשליחות מעל סף ההמתנה של הקורס (14 יום)","קו״ח נשלחו ל‑3 מקומות · 21 ימים ללא תשובה"],
+    ["עבר/ה ראיון","employer","לאחד הארגונים סומן «עבר» והסטודנט/ית עדיין לא שובץ/ה","עבר/ה ראיון ב‑X — ממתין להחלטת המעסיק"],
+    ["נדחה — מיצוי הרשימה","ours","יש דחיות, ולא נותר אף ארגון פעיל בדירוג","נדחה/תה ב‑2 מקומות — יש להציע ארגונים חדשים"],
+    ["שובץ/ה","closed","נרשם ארגון קולט","שובץ/ה ב‑X · תאריך"]
+  ];
+
+  var TURN_HE = { ours:"אצלנו", student:"אצל הסטודנט/ית", employer:"אצל המעסיק", closed:"סגור" };
+  var TONE = { ours:"var(--ours)", student:"var(--student)", employer:"var(--employer)", closed:"var(--closed)" };
+
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+  function rowHtml(r){
+    var tags = r.tags.map(function(t){
+      return '<span class="tag '+t[1]+'">'+esc(t[0])+'</span>';
+    }).join("");
+    var org = r.org
+      ? '<div class="org-name">🏢 '+esc(r.org)+'</div>'
+      : '<div class="org-none">טרם שובץ/ה בארגון</div>';
+    var cta = r.cta ? '<button class="cta" type="button">'+esc(r.cta)+'</button>' : "";
+    var age = r.age ? '<div class="age">'+esc(r.age)+'</div>' : "";
+    return ''+
+      '<li class="row" data-turn="'+r.turn+'">'+
+        '<div class="row-main">'+
+          '<div class="zone-student">'+
+            '<div class="name-line"><span class="sdot '+r.dot+'"></span><span class="name">'+esc(r.name)+'</span></div>'+
+            '<div class="tags">'+tags+'</div>'+
+            '<div class="contacts"><span class="cbtn">✆</span><span class="cbtn">✉</span></div>'+
+          '</div>'+
+          '<div class="vrule"></div>'+
+          '<div class="zone-org">'+org+'</div>'+
+        '</div>'+
+        '<div class="strip" data-turn="'+r.turn+'">'+
+          '<span class="turn"><i></i>'+TURN_HE[r.turn]+'</span>'+
+          '<div class="strip-body">'+
+            '<div class="headline">'+r.head+'</div>'+
+            '<div class="detail">'+r.detail+'</div>'+
+            cta+
+          '</div>'+
+          age+
+        '</div>'+
+      '</li>';
+  }
+
+  var list = document.getElementById("list");
+  list.innerHTML = ROWS.map(rowHtml).join("");
+
+  var spec = document.getElementById("spec");
+  spec.innerHTML = SPEC.map(function(s){
+    return '<tr><td class="state"><span class="bar" style="background:'+TONE[s[1]]+'"></span>'+esc(s[0])+'</td>'+
+           '<td class="note">'+esc(s[2])+'</td>'+
+           '<td>'+esc(s[3])+'</td>'+
+           '<td style="color:'+TONE[s[1]]+';font-weight:700;white-space:nowrap">'+TURN_HE[s[1]]+'</td></tr>';
+  }).join("");
+
+  // Counts reflect the live cohort (9.8.26): 11 active תשפ״ז students + 27 already placed.
+  var LIVE = { all:38, ours:4, student:6, employer:1, closed:27 };
+  Object.keys(LIVE).forEach(function(k){
+    var el = document.querySelector('[data-count="'+k+'"]');
+    if (el) el.textContent = LIVE[k];
+  });
+
+  var page = document.querySelector(".page");
+  var empty = document.getElementById("empty");
+  var chips = [].slice.call(document.querySelectorAll("[data-filter]"));
+  chips.forEach(function(c){
+    c.addEventListener("click", function(){
+      chips.forEach(function(o){ o.setAttribute("aria-pressed", String(o === c)); });
+      var f = c.getAttribute("data-filter");
+      var shown = 0;
+      [].slice.call(list.children).forEach(function(li){
+        var on = (f === "all") || li.getAttribute("data-turn") === f;
+        li.hidden = !on;
+        if (on) shown++;
+      });
+      empty.hidden = shown > 0;
+    });
+  });
+
+  document.getElementById("tgl-mode").addEventListener("change", function(e){
+    page.setAttribute("data-mode", e.target.checked ? "before" : "after");
+  });
+  document.getElementById("tgl-hl").addEventListener("change", function(e){
+    page.setAttribute("data-hl", e.target.checked ? "on" : "off");
+  });
+})();
+</script>
