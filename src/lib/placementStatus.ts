@@ -215,6 +215,18 @@ const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { labe
 
 const act = (id: PlacementActionId): PlacementAction => ({ ...ACTIONS[id] });
 
+/**
+ * The actions available for ONE ranked org, which depend on how it got there
+ * (Yariv 2026-08-09):
+ *   · an org the student brought   → אשר השמה (approval IS the placement) OR שלח קו״ח,
+ *                                    for the less common case where the employer asks.
+ *   · an org from the shared list  → שלח קו״ח only. Placement there follows a passed
+ *                                    interview, it is never the coordinator's first move.
+ */
+export function actionsForChip(chip: { suggested: boolean }): PlacementAction[] {
+  return chip.suggested ? [act('place_direct'), act('send_cv')] : [act('send_cv')];
+}
+
 /** Courses with no placement route at all (`type: 'other'` — מיומנויות ייעוץ, ניהול
  *  משאבי אנוש) get no strip: 53 of 83 students, for whom it would be pure noise.
  *  Yariv 2026-08-09, confirming the scope of "always". */
@@ -383,7 +395,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       sub: withCvNote([emp?.contactPerson && `איש קשר: ${emp.contactPerson}`, 'אישור = השמה, ללא שליחת קו״ח']
         .filter(Boolean).join(' · ')),
       // The suggested org leads — the shortest route to a placement (decision ד).
-      chips: [...tentativeSuggested.map(p => chipFor(p, 'plain', 'בהצעת הסטודנט/ית')),
+      chips: [...tentativeSuggested.map(p => chipFor(p, 'plain', '')),
               ...tentativeList.map(p => chipFor(p, 'plain', ''))],
       age: waitPhrase(waitDays),
       action: act('place_direct'),

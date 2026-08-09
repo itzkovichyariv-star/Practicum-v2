@@ -6,7 +6,7 @@
  * one JSON array on stdout, which 64-placement-strip.mjs turns into audit cells.
  * Deliberately NOT named `NN-*.mjs`, so the gate does not pick it up as a cell of its own.
  */
-import { placementStatus, SILENCE_DAYS } from '../../src/lib/placementStatus.ts';
+import { placementStatus, actionsForChip, SILENCE_DAYS } from '../../src/lib/placementStatus.ts';
 
 const cells: any[] = [];
 const audit = { recordCell: (c: any) => cells.push(c) };
@@ -118,5 +118,15 @@ rule('STRIP-practicum-only', 'brief §decision א scope', null,
 rule('STRIP-practicum-shown', 'brief §decision א scope', true,
   run({ student: {} }) !== null);
 
+
+// A8 — the actions offered depend on how the org got onto the list (Yariv 2026-08-09):
+// an org the student brought can be approved into a placement OR sent a CV; an org from
+// the shared list only ever gets a CV, and reaches placement via a passed interview.
+rule('STRIP-actions-suggested', 'Yariv: mixed list rule',
+  'place_direct,send_cv', actionsForChip({ suggested: true }).map(a => a.id).join(','));
+rule('STRIP-actions-list-org', 'Yariv: "שאר הארגונים — שלח קורות חיים"',
+  'send_cv', actionsForChip({ suggested: false }).map(a => a.id).join(','));
+rule('STRIP-list-org-never-places', 'placement follows an interview, not a click',
+  false, actionsForChip({ suggested: false }).some(a => a.id === 'place_direct'));
 
 process.stdout.write(JSON.stringify(cells));

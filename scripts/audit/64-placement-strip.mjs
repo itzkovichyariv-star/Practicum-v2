@@ -150,12 +150,17 @@ audit.recordCell({ id: 'STRIP-narrow-containment', tableRef: 'iPhone report 2026
   pass: contained.chips > 0 && contained.worst <= 0.5 && contained.bodyScroll <= 0 });
 
 
+// Sections D and E both drive selection state on the SAME page, so each starts from a
+// fresh load — otherwise the earlier section's clicks decide what the later one reads.
+await audit.page.reload({ waitUntil: 'networkidle' });
+await audit.page.waitForTimeout(1400);
+
 // ── D. pick-then-send, and a readable rank ──────────────────────────────────────
 // Yariv on v1.34.0: "לא ברור לאיזה מעסיק זה שילחץ", "המספור קטן ולא רואים", and the
 // system should say when the first choice is taken and point at the next open one.
 const pick = await audit.page.evaluate(async () => {
-  const strip = [...document.querySelectorAll('[data-placement-strip]')]
-    .find(s => s.querySelector('[data-strip-action="send_cv"]'));
+  const strip = [...document.querySelectorAll('[data-placement-strip="list_ready"]')]
+    .find(s => s.querySelectorAll('[data-org-chip][data-org-available="1"]').length > 1);
   if (!strip) return { skip: 'no send_cv row on screen' };
   const btn = strip.querySelector('[data-strip-action]');
   const chips = [...strip.querySelectorAll('[data-org-chip]')];
@@ -202,5 +207,34 @@ audit.recordCell({ id: 'STRIP-blocked-explains', tableRef: 'Yariv: "הבחירה
   expected: 'a full choice states why it is blocked and is not selectable',
   observed: blocked ? `"${blocked.text}" (available=${blocked.avail})` : 'no blocked chip on screen right now',
   pass: blocked ? (blocked.text.length > 3 && blocked.avail === '0') : null });
+
+
+// Sections D and E both drive selection state on the SAME page, so each starts from a
+// fresh load — otherwise the earlier section's clicks decide what the later one reads.
+await audit.page.reload({ waitUntil: 'networkidle' });
+await audit.page.waitForTimeout(1400);
+
+// ── E. mixed row: the buttons follow the SELECTED org ───────────────────────────
+const mixed = await audit.page.evaluate(async () => {
+  const strip = [...document.querySelectorAll('[data-placement-strip="suggested_org"]')][0];
+  if (!strip) return { skip: 'no mixed row on screen' };
+  const read = () => [...strip.querySelectorAll('[data-strip-action]')].map(b => b.getAttribute('data-strip-action'));
+  const suggestedFirst = read();
+  const listChip = [...strip.querySelectorAll('[data-org-chip]')]
+    .find(c => c.getAttribute('data-org-available') === '1' && c.getAttribute('data-org-selected') !== '1');
+  if (!listChip) return { skip: 'no second selectable org' };
+  listChip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  await new Promise(r => setTimeout(r, 300));
+  return { suggestedFirst, afterListPick: read(), org: listChip.getAttribute('data-org-chip') };
+});
+if (mixed.skip) {
+  audit.recordCell({ id: 'STRIP-mixed-actions', expected: 'a mixed row exists', observed: mixed.skip, pass: null });
+} else {
+  audit.recordCell({ id: 'STRIP-mixed-actions', tableRef: 'Yariv 2026-08-09: mixed suggested + list rule',
+    expected: 'suggested org → place_direct + send_cv; list org → send_cv only',
+    observed: `suggested=[${mixed.suggestedFirst}] → ${mixed.org}=[${mixed.afterListPick}]`,
+    pass: mixed.suggestedFirst.includes('place_direct') && mixed.suggestedFirst.includes('send_cv')
+       && mixed.afterListPick.join(',') === 'send_cv' });
+}
 
 await audit.teardown();

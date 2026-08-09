@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
-import { TURN_LABEL, TURN_COLOR } from '../lib/placementStatus';
+import { TURN_LABEL, TURN_COLOR, actionsForChip } from '../lib/placementStatus';
 import { openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
@@ -158,6 +158,12 @@ export default function PlacementStrip({ status, employers, onAction }: {
   const targets = status.chips.filter(c => c.available && (status.action?.id === 'send_cv' || status.action?.id === 'place_direct'));
   const [picked, setPicked] = useState<string | null>(null);
   const chosen = targets.find(c => c.orgName === picked) || targets.find(c => c.recommended) || targets[0] || null;
+  // An org the student brought can be approved straight into a placement OR sent a CV;
+  // an org from the shared list only ever gets a CV, and reaches placement through a
+  // passed interview (Yariv 2026-08-09). Selecting a list org must therefore never leave
+  // "אשר השמה" on the button — the bug he caught on נישה פרו.
+  const offered = chosen ? actionsForChip(chosen)
+    : (status.action ? [status.action] : []);
   const tone = TURN_COLOR[status.turn];
   const tinted = status.turn === 'ours';
 
@@ -188,7 +194,7 @@ export default function PlacementStrip({ status, employers, onAction }: {
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
         {/* The sentence IS the status — largest, darkest thing in the strip. */}
-        <div data-strip-headline style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
+        <div data-strip-headline style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5, overflowWrap: 'break-word' }}>
           {status.headline}
         </div>
         {status.sub && (
@@ -219,7 +225,7 @@ export default function PlacementStrip({ status, employers, onAction }: {
                       background: isChosen ? `${tone}12` : t.bg,
                       color: t.color, cursor: selectable ? 'pointer' : 'default',
                       whiteSpace: 'normal', textAlign: 'right', maxWidth: '100%',
-                      overflowWrap: 'anywhere', lineHeight: 1.45,
+                      overflowWrap: 'break-word', lineHeight: 1.45,
                       textDecoration: c.tone === 'dead' ? 'line-through' : 'none',
                       opacity: c.tone === 'dead' ? 0.7 : (c.available === false && selectableState ? 0.72 : 1),
                     }}>
@@ -262,19 +268,28 @@ export default function PlacementStrip({ status, employers, onAction }: {
           </div>
         )}
 
-        {status.action && (
-          <button
-            type="button"
-            data-strip-action={status.action.id}
-            data-strip-target={chosen?.orgName || ''}
-            onClick={() => setConfirm(status.action!)}
-            style={{
-              alignSelf: 'flex-start', font: 'inherit', fontSize: 11.5, fontWeight: 700,
-              padding: '4px 12px', borderRadius: 7, marginTop: 2, cursor: 'pointer',
-              background: 'transparent', border: `1px solid ${tone}`, color: tone,
-            }}>
-            {chosen ? `${status.action.label} ל‑${chosen.orgName}` : status.action.label}
-          </button>
+        {offered.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+            {offered.map((a, ai) => (
+              <button
+                key={a.id}
+                type="button"
+                data-strip-action={a.id}
+                data-strip-target={chosen?.orgName || ''}
+                onClick={() => setConfirm(a)}
+                style={{
+                  font: 'inherit', fontSize: 11.5, fontWeight: 700,
+                  padding: '4px 12px', borderRadius: 7, cursor: 'pointer',
+                  // The first action is the primary route; a secondary one (send a CV to
+                  // an org the student brought) stays visibly subordinate.
+                  background: 'transparent',
+                  border: `1px ${ai === 0 ? 'solid' : 'dashed'} ${ai === 0 ? tone : 'var(--divider-strong)'}`,
+                  color: ai === 0 ? tone : 'var(--text-soft)',
+                }}>
+                {chosen ? `${a.label} ל‑${chosen.orgName}` : a.label}
+              </button>
+            ))}
+          </div>
         )}
         {targets.length > 1 && (
           <div style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: -1 }}>
