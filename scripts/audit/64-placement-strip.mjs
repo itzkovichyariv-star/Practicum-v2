@@ -83,9 +83,12 @@ audit.recordCell({ id: 'STRIP-turn-filter', tableRef: 'brief §whose turn filter
 // an org chip opens the employer's real contact details — including a private org the
 // student proposed, which had no reachable details anywhere (Yariv 2026-08-09).
 const details = await audit.page.evaluate(async () => {
-  const chip = document.querySelector('[data-org-chip]');
-  if (!chip) return { ok: false, why: 'no chip' };
-  chip.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  // Details moved to a dedicated ⓘ control: tapping the chip now SELECTS the org to
+  // send to (Yariv 2026-08-09 — "מסמנים את אחת הבחירות ושולחים לה"), so the two
+  // gestures must not fight.
+  const info = document.querySelector('[data-org-info]');
+  if (!info) return { ok: false, why: 'no info control' };
+  info.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
   await new Promise(r => setTimeout(r, 300));
   const pop = document.querySelector('[data-employer-details]');
   return { ok: !!pop, text: (pop?.innerText || '').replace(/\s+/g, ' ').slice(0, 90) };
@@ -107,5 +110,97 @@ const warn = await audit.page.evaluate(async () => {
 });
 audit.recordCell({ id: 'STRIP-action-warns', tableRef: 'Yariv decision ב: 1 click opens a warning',
   expected: 'action opens a consequence warning', observed: warn.text || warn.why || 'no dialog', pass: warn.ok });
+
+
+// ── C. narrow-screen containment ────────────────────────────────────────────────
+// Reported from Yariv's iPhone on v1.34.0: the org chip sat outside the strip's border.
+// It fitted on the dev machine by ~15px and broke wherever the Hebrew font renders wider.
+// A nowrap chip cannot shrink, so this is a brittleness bug, not a width bug — the cell
+// therefore forces a wider font AND a phone viewport, which is what makes it discriminating
+// (restoring white-space:nowrap pushes the chip 65px out and turns this red).
+await audit.page.setViewportSize({ width: 375, height: 812 });
+await audit.page.reload({ waitUntil: 'networkidle' });
+await audit.page.waitForTimeout(1400);
+
+const contained = await audit.page.evaluate(async () => {
+  const st = document.createElement('style');
+  st.textContent = '[data-org-chip]{font-size:15.5px !important}';   // ~35% wider than dev
+  document.head.appendChild(st);
+  await new Promise(r => setTimeout(r, 250));
+  let worst = 0, who = '', chips = 0;
+  for (const strip of document.querySelectorAll('[data-placement-strip]')) {
+    const cs = getComputedStyle(strip), b = strip.getBoundingClientRect();
+    const innerL = b.left + parseFloat(cs.paddingLeft), innerR = b.right - parseFloat(cs.paddingRight);
+    for (const c of strip.querySelectorAll('[data-org-chip]')) {
+      chips++;
+      const r = c.getBoundingClientRect();
+      const over = Math.max(innerL - r.left, r.right - innerR);
+      if (over > worst) { worst = over; who = c.textContent.trim().slice(0, 26); }
+    }
+  }
+  const bodyScroll = document.documentElement.scrollWidth - document.documentElement.clientWidth;
+  st.remove();
+  return { worst: +worst.toFixed(1), who, chips, bodyScroll };
+});
+audit.recordCell({ id: 'STRIP-narrow-containment', tableRef: 'iPhone report 2026-08-09 (v1.34.0)',
+  expected: 'no org chip escapes the strip at 375px with a 35%-wider font, and the page never scrolls sideways',
+  observed: `${contained.chips} chips, worst overflow ${contained.worst}px${contained.who ? ` (${contained.who})` : ''}, bodyScrollX=${contained.bodyScroll}`,
+  // bodyScroll <= 0: sub-pixel rounding can make scrollWidth 1px LESS than clientWidth.
+  // Anything > 0 is real sideways scroll; -1 is not a failure.
+  pass: contained.chips > 0 && contained.worst <= 0.5 && contained.bodyScroll <= 0 });
+
+
+// ── D. pick-then-send, and a readable rank ──────────────────────────────────────
+// Yariv on v1.34.0: "לא ברור לאיזה מעסיק זה שילחץ", "המספור קטן ולא רואים", and the
+// system should say when the first choice is taken and point at the next open one.
+const pick = await audit.page.evaluate(async () => {
+  const strip = [...document.querySelectorAll('[data-placement-strip]')]
+    .find(s => s.querySelector('[data-strip-action="send_cv"]'));
+  if (!strip) return { skip: 'no send_cv row on screen' };
+  const btn = strip.querySelector('[data-strip-action]');
+  const chips = [...strip.querySelectorAll('[data-org-chip]')];
+  const badge = chips[0]?.querySelector('span[aria-label^="בחירה"]');
+  const before = { label: btn.textContent.trim(), target: btn.getAttribute('data-strip-target') };
+  // switch the target by ticking a different AVAILABLE org
+  const other = chips.find(c => c.getAttribute('data-org-available') === '1'
+    && c.getAttribute('data-org-selected') !== '1');
+  if (other) { other.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+               await new Promise(r => setTimeout(r, 250)); }
+  const after = { label: btn.textContent.trim(), target: btn.getAttribute('data-strip-target') };
+  return {
+    before, after,
+    switched: !!other,
+    badgePx: badge ? parseFloat(getComputedStyle(badge).fontSize) : 0,
+    badgeW: badge ? parseFloat(getComputedStyle(badge).width) : 0,
+    blockedShown: !!strip.querySelector('[data-org-blocked]'),
+    namesTarget: /ל‑/.test(before.label),
+  };
+});
+
+if (pick.skip) {
+  audit.recordCell({ id: 'STRIP-pick-then-send', expected: 'a send_cv row exists', observed: pick.skip, pass: null });
+} else {
+  audit.recordCell({ id: 'STRIP-action-names-target', tableRef: 'Yariv: "לא ברור לאיזה מעסיק זה יישלח"',
+    expected: 'the button names the employer it will send to',
+    observed: `${pick.before.label} (target=${pick.before.target})`, pass: pick.namesTarget && !!pick.before.target });
+  audit.recordCell({ id: 'STRIP-pick-then-send', tableRef: 'Yariv: "מסמנים את אחת הבחירות ושולחים לה"',
+    expected: 'ticking another available org retargets the send',
+    observed: pick.switched ? `${pick.before.target} → ${pick.after.target}` : 'only one available org (nothing to switch)',
+    pass: !pick.switched || pick.after.target !== pick.before.target });
+  audit.recordCell({ id: 'STRIP-rank-readable', tableRef: 'Yariv: "המספור קטן ולא רואים"',
+    expected: 'rank badge >= 10px text in a >= 15px badge',
+    observed: `${pick.badgePx}px in ${pick.badgeW}px`, pass: pick.badgePx >= 10 && pick.badgeW >= 15 });
+}
+
+// A blocked first choice must SAY it is blocked, on the row.
+const blocked = await audit.page.evaluate(() => {
+  const el = document.querySelector('[data-org-blocked]');
+  const chip = el?.closest('[data-org-chip]');
+  return el ? { text: el.textContent.trim(), avail: chip?.getAttribute('data-org-available') } : null;
+});
+audit.recordCell({ id: 'STRIP-blocked-explains', tableRef: 'Yariv: "הבחירה הראשונה תפוסה על ידי סטודנט אחר"',
+  expected: 'a full choice states why it is blocked and is not selectable',
+  observed: blocked ? `"${blocked.text}" (available=${blocked.avail})` : 'no blocked chip on screen right now',
+  pass: blocked ? (blocked.text.length > 3 && blocked.avail === '0') : null });
 
 await audit.teardown();

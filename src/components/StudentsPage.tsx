@@ -288,12 +288,13 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         student: s, employers, dispatches: (data as any).dispatches || [],
         pending: subs.unseen.get(email) || null,
         lastSubmissionAt: subs.latest.get(email)?.uploaded_at || null,
+        allStudents: all,
         course: courses.find((c: any) => c.id === s.courseId),
       });
       if (st) m.set(s.id, st);
     }
     return m;
-  }, [scoped, employers, courses, subs, data]);
+  }, [scoped, employers, courses, subs, data, all]);
 
   const turnCounts = useMemo(() => {
     const c: Record<string, number> = { all: 0, ours: 0, student: 0, employer: 0, closed: 0 };

@@ -22,7 +22,7 @@
  * come from buildUnifiedOrgList().
  */
 
-import { buildUnifiedOrgList, type UnifiedOrgPref } from './placement';
+import { buildUnifiedOrgList, countSlotsByStatus, type UnifiedOrgPref } from './placement';
 
 /** Days of employer silence before the ball comes back to us. Yariv 2026-08-09: 7,
  *  down from 14. Deliberately a constant here rather than the per-course
@@ -52,6 +52,14 @@ export type PlacementChip = {
   suggested: boolean;
   tone: 'plain' | 'sent' | 'late' | 'dead' | 'pass';
   suffix: string;
+  /** Can a CV actually go here right now? False when the course's places are all taken.
+   *  Yariv 2026-08-09: "איקון גרופ תפוס כרגע והייתי מצפה שהמערכת תגיד שהבחירה הראשונה
+   *  תפוסה על ידי סטודנט אחר … ומייד תעביר לבחירה השניה". */
+  available: boolean;
+  /** Why it is blocked, naming the student holding the place when we can. */
+  blockedReason: string;
+  /** True for the chip the row will act on unless the coordinator picks another. */
+  recommended: boolean;
 };
 
 export type PlacementActionId =
@@ -99,6 +107,8 @@ export type PlacementInput = {
   pending: CvSubmission | null;
   /** uploaded_at of the student's most recent submission of any kind, or null. */
   lastSubmissionAt?: string | null;
+  /** All students, so a blocked place can name who is holding it. */
+  allStudents?: any[];
   course?: any;
   now?: number;
 };
@@ -238,9 +248,36 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     return d ? daysSince(d.sentAt, now) : null;
   };
 
-  const chipFor = (p: UnifiedOrgPref, tone: PlacementChip['tone'], suffix = ''): PlacementChip => ({
-    rank: p.rank, orgName: p.orgName, suggested: isSug(p), tone, suffix,
-  });
+  // Who is holding this employer's places for THIS course, and is one free?
+  const capacityOf = (p: UnifiedOrgPref): { free: boolean; reason: string } => {
+    const emp = (employers || []).find((e: any) => e?.id === p.employerId)
+      || (employers || []).find((e: any) => norm(e?.name) === norm(p.orgName));
+    if (!emp) return { free: false, reason: 'לא זוהה מעסיק' };
+    // A place already reserved for THIS student is free to use for this student.
+    if (p.slotId) return { free: true, reason: '' };
+    const cap = countSlotsByStatus(emp, student.courseId);
+    if (cap.total === 0) return { free: false, reason: 'לא הוגדרו מקומות בקורס' };
+    if (cap.available > 0) return { free: true, reason: '' };
+    // Name the student occupying it — that is the fact that explains the block.
+    const holderSlot = ((emp as any).vacancySlots || [])
+      .filter((sl: any) => sl.courseId === student.courseId && sl.studentId && sl.studentId !== student.id)
+      .find((sl: any) => sl.status === 'under_review' || sl.status === 'placed' || sl.status === 'tentative');
+    const holder = holderSlot ? (input.allStudents || []).find((x: any) => x.id === holderSlot.studentId) : null;
+    if (holder?.name) {
+      return { free: false, reason: holderSlot.status === 'placed'
+        ? `תפוס — ${holder.name} שובץ/ה שם`
+        : `תפוס — ${holder.name} בתהליך שם` };
+    }
+    return { free: false, reason: 'אין מקום פנוי בקורס' };
+  };
+
+  const chipFor = (p: UnifiedOrgPref, tone: PlacementChip['tone'], suffix = ''): PlacementChip => {
+    const cap = capacityOf(p);
+    return {
+      rank: p.rank, orgName: p.orgName, suggested: isSug(p), tone, suffix,
+      available: cap.free, blockedReason: cap.reason, recommended: false,
+    };
+  };
 
   const waitDays = daysSince(input.lastSubmissionAt ?? null, now);
 
@@ -355,21 +392,44 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
 
   // ── 6. a list is ready to go out ────────────────────────────────────────────
   if (tentativeList.length > 0) {
+    const listChips = tentativeList.map(p => chipFor(p, 'plain', ''));
+    // Mark the choice the row will act on: the highest-ranked one that actually has a
+    // free place. Without this the coordinator cannot tell which employer a send would
+    // reach, and a full first choice looks identical to an open one (Yariv 2026-08-09).
+    const firstFree = listChips.find(c => c.available);
+    if (firstFree) firstFree.recommended = true;
+    const blockedAbove = listChips.filter(c => !c.available && c.rank < (firstFree?.rank ?? Infinity));
+
     if (!student.cvUpdatedUrl) {
       return {
         key: 'blocked_no_cv', turn: 'student',
         headline: 'רשימת העדפות נשלחה — חסר קו״ח מעודכן',
         sub: withCvNote('לא ניתן לשלוח למעסיק עד לקבלת קו״ח · יש לפנות לסטודנט/ית'),
-        chips: tentativeList.map(p => chipFor(p, 'plain', '')),
-        age: waitPhrase(waitDays), action: null,
+        chips: listChips, age: waitPhrase(waitDays), action: null,
       };
     }
+
+    // No free place anywhere on the list — that is its own dead end, not a "send" state.
+    if (!firstFree) {
+      return {
+        key: 'list_ready', turn: 'ours',
+        headline: 'כל הארגונים בדירוג תפוסים כרגע',
+        sub: withCvNote(listChips.map(c => `${c.orgName}: ${c.blockedReason}`).join(' · ')
+          + ' — יש להציע ארגון נוסף או להמתין לשחרור מקום'),
+        chips: listChips, age: waitPhrase(waitDays), action: act('add_orgs'),
+      };
+    }
+
+    const blockedNote = blockedAbove.length
+      ? blockedAbove.map(c => `בחירה ${c.rank} (${c.orgName}) ${c.blockedReason}`).join(' · ')
+        + ` — מוצע לשלוח לבחירה ${firstFree.rank}: ${firstFree.orgName}`
+      : `${tentativeList.length} ארגונים בדירוג · טרם נשלחו קו״ח`;
+
     return {
       key: 'list_ready', turn: 'ours',
       headline: 'רשימת העדפות נשלחה — יש לטפל מול המעסיק',
-      sub: withCvNote(`${tentativeList.length} ארגונים בדירוג · טרם נשלחו קו״ח`),
-      chips: tentativeList.map(p => chipFor(p, 'plain', '')),
-      age: waitPhrase(waitDays), action: act('send_cv'),
+      sub: withCvNote(blockedNote),
+      chips: listChips, age: waitPhrase(waitDays), action: act('send_cv'),
     };
   }
 

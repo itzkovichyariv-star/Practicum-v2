@@ -151,6 +151,13 @@ export default function PlacementStrip({ status, employers, onAction }: {
 }) {
   const [openOrg, setOpenOrg] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<PlacementAction | null>(null);
+  // Which org the action will act on. Mirrors the card's own tick-then-send mechanism
+  // (OrgHub's data-send-cv checkbox) — Yariv 2026-08-09: "מסמנים את אחת הבחירות ושולחים
+  // לה". Seeded with the classifier's recommendation, so the target is never ambiguous
+  // even before the coordinator touches anything.
+  const targets = status.chips.filter(c => c.available && (status.action?.id === 'send_cv' || status.action?.id === 'place_direct'));
+  const [picked, setPicked] = useState<string | null>(null);
+  const chosen = targets.find(c => c.orgName === picked) || targets.find(c => c.recommended) || targets[0] || null;
   const tone = TURN_COLOR[status.turn];
   const tinted = status.turn === 'ours';
 
@@ -179,9 +186,9 @@ export default function PlacementStrip({ status, employers, onAction }: {
         {TURN_LABEL[status.turn]}
       </span>
 
-      <div style={{ flex: 1, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
         {/* The sentence IS the status — largest, darkest thing in the strip. */}
-        <div data-strip-headline style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5 }}>
+        <div data-strip-headline style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>
           {status.headline}
         </div>
         {status.sub && (
@@ -189,30 +196,65 @@ export default function PlacementStrip({ status, employers, onAction }: {
         )}
 
         {status.chips.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 7px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 7px', alignItems: 'center', minWidth: 0 }}>
             {status.chips.map((c, i) => {
               const t = TONE_STYLE[c.tone];
               const emp = findEmp(c.orgName);
               const isOpen = openOrg === `${c.orgName}#${i}`;
+              const selectableState = status.action?.id === 'send_cv' || status.action?.id === 'place_direct';
+              const isTarget = selectableState && c.available;
+              const selectable = isTarget && targets.length > 1;
+              const isChosen = isTarget && chosen?.orgName === c.orgName;
               return (
-                <span key={`${c.orgName}#${i}`} style={{ position: 'relative' }}>
-                  <button
-                    type="button"
+                <span key={`${c.orgName}#${i}`} style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
+                  <span
                     data-org-chip={c.orgName}
-                    title={emp ? 'הצג פרטי מעסיק' : 'הארגון לא נמצא ברשימת המעסיקים'}
-                    onClick={() => setOpenOrg(isOpen ? null : `${c.orgName}#${i}`)}
+                    data-org-available={c.available ? '1' : '0'}
+                    data-org-selected={isTarget && chosen?.orgName === c.orgName ? '1' : '0'}
+                    onClick={() => { if (selectable) setPicked(c.orgName); }}
                     style={{
-                      font: 'inherit', fontSize: 11.5, fontWeight: 600, padding: '2.5px 9px', borderRadius: 6,
-                      border: `1px ${c.suggested ? 'dashed' : 'solid'} ${c.suggested ? 'var(--divider-strong)' : t.border}`,
-                      background: t.bg, color: t.color, cursor: 'pointer', whiteSpace: 'nowrap',
+                      display: 'inline-flex', alignItems: 'flex-start', gap: 6,
+                      font: 'inherit', fontSize: 11.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7,
+                      border: `${isChosen ? 2 : 1}px ${c.suggested ? 'dashed' : 'solid'} ${isChosen ? tone : (c.suggested ? 'var(--divider-strong)' : t.border)}`,
+                      background: isChosen ? `${tone}12` : t.bg,
+                      color: t.color, cursor: selectable ? 'pointer' : 'default',
+                      whiteSpace: 'normal', textAlign: 'right', maxWidth: '100%',
+                      overflowWrap: 'anywhere', lineHeight: 1.45,
                       textDecoration: c.tone === 'dead' ? 'line-through' : 'none',
-                      opacity: c.tone === 'dead' ? 0.7 : 1,
+                      opacity: c.tone === 'dead' ? 0.7 : (c.available === false && selectableState ? 0.72 : 1),
                     }}>
-                    {c.suggested && <span aria-hidden style={{ opacity: 0.55, fontSize: 9, marginInlineEnd: 4 }}>◆</span>}
-                    <span style={{ opacity: 0.6, fontSize: 9.5, fontWeight: 700, marginInlineEnd: 3 }}>{c.rank}</span>
-                    <b style={{ color: c.tone === 'plain' ? 'var(--ink)' : t.color }}>{c.orgName}</b>
-                    {c.suffix && <span style={{ fontWeight: 500 }}> · {c.suffix}</span>}
-                  </button>
+                    {/* Rank badge — was 9.5px at 60% opacity and unreadable on a phone
+                        (Yariv 2026-08-09: "המספור קטן ולא רואים"). Now a solid badge. */}
+                    <span aria-label={`בחירה ${c.rank}`} style={{
+                      flexShrink: 0, display: 'inline-grid', placeItems: 'center',
+                      width: 17, height: 17, borderRadius: '50%', marginTop: 1,
+                      background: isChosen ? tone : 'var(--accent-soft)',
+                      color: isChosen ? '#fff' : 'var(--accent)',
+                      fontSize: 10.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                    }}>{c.rank}</span>
+                    <span style={{ minWidth: 0 }}>
+                      {c.suggested && <span aria-hidden style={{ opacity: 0.55, fontSize: 9, marginInlineEnd: 4 }}>◆</span>}
+                      <b style={{ color: c.tone === 'plain' ? 'var(--ink)' : t.color }}>{c.orgName}</b>
+                      {c.suffix && <span style={{ fontWeight: 500 }}> · {c.suffix}</span>}
+                      {selectableState && !c.available && c.blockedReason && (
+                        <span data-org-blocked style={{ display: 'block', fontWeight: 700, color: '#b45309', fontSize: 11 }}>
+                          {c.blockedReason}
+                        </span>
+                      )}
+                    </span>
+                    {/* Details stay reachable without stealing the tap that selects. */}
+                    <span
+                      role="button" tabIndex={0} data-org-info={c.orgName}
+                      title={emp ? 'פרטי המעסיק' : 'הארגון לא נמצא ברשימת המעסיקים'}
+                      onClick={e => { e.stopPropagation(); setOpenOrg(isOpen ? null : `${c.orgName}#${i}`); }}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setOpenOrg(isOpen ? null : `${c.orgName}#${i}`); } }}
+                      style={{
+                        flexShrink: 0, display: 'inline-grid', placeItems: 'center', marginTop: 1,
+                        width: 17, height: 17, borderRadius: '50%', cursor: 'pointer',
+                        border: '1px solid var(--divider-strong)', color: 'var(--accent)',
+                        fontSize: 10, fontWeight: 800,
+                      }}>i</span>
+                  </span>
                   {isOpen && <EmployerDetails emp={emp} orgName={c.orgName} onClose={() => setOpenOrg(null)} />}
                 </span>
               );
@@ -224,19 +266,25 @@ export default function PlacementStrip({ status, employers, onAction }: {
           <button
             type="button"
             data-strip-action={status.action.id}
+            data-strip-target={chosen?.orgName || ''}
             onClick={() => setConfirm(status.action!)}
             style={{
               alignSelf: 'flex-start', font: 'inherit', fontSize: 11.5, fontWeight: 700,
               padding: '4px 12px', borderRadius: 7, marginTop: 2, cursor: 'pointer',
               background: 'transparent', border: `1px solid ${tone}`, color: tone,
             }}>
-            {status.action.label}
+            {chosen ? `${status.action.label} ל‑${chosen.orgName}` : status.action.label}
           </button>
+        )}
+        {targets.length > 1 && (
+          <div style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: -1 }}>
+            לשליחה לארגון אחר — סמן/י אותו למעלה
+          </div>
         )}
       </div>
 
       {status.age && (
-        <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: tone, whiteSpace: 'nowrap', paddingTop: 3, flexShrink: 0 }}>
+        <div className="mono" style={{ fontSize: 11, fontWeight: 600, color: tone, paddingTop: 3, flexShrink: 0, maxWidth: '100%' }}>
           {status.age}
         </div>
       )}
