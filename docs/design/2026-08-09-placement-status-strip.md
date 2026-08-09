@@ -211,16 +211,35 @@ first.
    New order — `rejected` → `approved` (manual/auto, requires `open > 0`) →
    **`in_review`** → `full` → `in_process` → `not_contacted`. `in_review`/`full` both
    require `open === 0`, so they can never contend with auto-green.
-2. **New status key `in_review` — "סטודנט/ית בתהליך"**, colour `#3b5a8f` — deliberately
-   the same blue as "אצל המעסיק" on the student card, so the two screens speak one
-   language. Fires when the course's slots have ≥1 `under_review` and 0 available.
-3. **Occupancy line, independent of the status pill:** `👤 <name> · קו״ח נשלחו לפני N ימים`
-   / `✓ <name> · שובצה <date>`. Renders whenever students are in play, including on green
-   rows — so Manpower stays "מאושר · 4 מקומות פנויים" *and* names who is in process.
-   This is what keeps occupancy out of the status, rather than overloading it again.
+2. **New status key `in_review` — "👤 סטודנט/ית בתהליך"**, in the **existing amber**
+   `#f59e0b`, not a new colour. Yariv, 2026-08-09: *"it should be orange as orange is a
+   color for in process… anyway not green. the status green says that there is no action
+   currently we need to take."* So green is reserved for "nothing open here", and any live
+   thread is amber. The two amber states are told apart by **words and an icon, never by
+   hue**: `👤 סטודנט/ית בתהליך` vs `🏢 בתהליך מול הארגון` (the latter renamed from the bare
+   "בתהליך" — that bareness is what caused the confusion).
+3. **Fires even when places are free.** An org with 4 open places and one student under
+   review leaves green: a place is taken and a thread is live. The "still available" fact
+   moves into the sentence, so nothing is lost.
+4. **The explanation line is the status.** Yariv: *"the line that explains the status is
+   the one that is most important."* It is set at 14px/600 in full ink — larger and
+   stronger than the pill, which drops to 10.5px. Who, what and how long all live in that
+   sentence: *"שובל קוממי בתהליך אצלם — קו״ח נשלחו לפני 5 ימים, ממתין לתשובת המעסיק.
+   המקום היחיד בארגון תפוס."* The dot and pill are scanning aids only. Same promotion
+   applied to the student-card strip (headline 13.5→14.5px, detail line out of grey).
+
+Precedence: `rejected` → **`in_review`** → `approved` → `in_process` → `full` →
+`not_contacted`. A student's process outranks everything but a rejection, because it is
+the live fact and it carries a clock (7 days).
 
 Result: "בתהליך" means only what Yariv meant by it — an org he is still closing.
-Nothing is lost; his recruiting note returns on its own if the place frees up.
+Nothing is lost; his recruiting note drops to a secondary line and returns to primary
+when the place frees up.
+
+**Known consequence, stated up front:** as a cohort progresses most orgs will carry an
+open thread, so the screen will read amber far more than today and green will be rare.
+That follows directly from "green = nothing to do" — which is why the sentence, not the
+colour, is what distinguishes one row from the next.
 
 ## Log
 
