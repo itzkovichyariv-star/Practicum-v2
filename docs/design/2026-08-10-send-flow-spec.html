@@ -1,0 +1,280 @@
+<title>אפיון תהליך השליחה — מצב קיים והצעות שיפור</title>
+
+<style>
+  :root{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c; --student:#b45309; --employer:#3b5a8f; --closed:#15803d;
+    --built:#15803d; --built-bg:rgba(21,128,61,0.08);
+    --prop:#7a1e2b;  --prop-bg:rgba(122,30,43,0.07);
+    --sans:"Rubik","Heebo","Arial Hebrew","Noto Sans Hebrew",system-ui,-apple-system,sans-serif;
+    --serif:Georgia,"Frank Ruehl CLM","Times New Roman",serif;
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 28px rgba(61,15,20,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+      --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+      --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+      --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+      --ours:#f6817e; --student:#e5a95e; --employer:#9db6e2; --closed:#67ca8c;
+      --built:#67ca8c; --built-bg:rgba(103,202,140,0.1);
+      --prop:#dd9aa4;  --prop-bg:rgba(221,154,164,0.1);
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.32);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --student:#e5a95e; --employer:#9db6e2; --closed:#67ca8c;
+    --built:#67ca8c; --built-bg:rgba(103,202,140,0.1);
+    --prop:#dd9aa4;  --prop-bg:rgba(221,154,164,0.1);
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.32);
+  }
+  :root[data-theme="light"]{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c; --student:#b45309; --employer:#3b5a8f; --closed:#15803d;
+    --built:#15803d; --built-bg:rgba(21,128,61,0.08);
+    --prop:#7a1e2b;  --prop-bg:rgba(122,30,43,0.07);
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 28px rgba(61,15,20,.06);
+  }
+
+  .page{direction:rtl;text-align:right;font-family:var(--sans);background:var(--bg);color:var(--ink);
+    min-height:100%;padding:clamp(18px,4vw,48px) clamp(13px,4vw,26px) 72px;font-size:15px;line-height:1.65;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:30px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:var(--accent);
+    display:flex;align-items:center;gap:10px}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--divider)}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(27px,5vw,42px);line-height:1.13;margin:.3em 0 0;text-wrap:balance}
+  .deck{max-width:64ch;color:var(--soft);font-size:15.5px;margin-top:.65em}
+  .deck b{color:var(--ink);font-weight:600}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(21px,3.4vw,27px);margin:0 0 4px}
+  .sub{color:var(--soft);font-size:14px;margin:0 0 16px;max-width:66ch}
+  section{display:flex;flex-direction:column}
+
+  /* journey */
+  .flow{display:flex;flex-direction:column;gap:0;background:var(--card);border:1px solid var(--divider);
+    border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+  .step{display:grid;grid-template-columns:auto 1fr;gap:0 14px;padding:14px 16px;border-bottom:1px solid var(--divider)}
+  .step:last-child{border-bottom:none}
+  .stepno{grid-row:1/span 3;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+    background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:12px;font-variant-numeric:tabular-nums;margin-top:2px}
+  .stepname{font-weight:700;font-size:14.5px}
+  .stepwho{font-size:11.5px;font-weight:700;letter-spacing:.05em}
+  .stepdesc{font-size:13px;color:var(--soft);line-height:1.6;margin-top:2px}
+  .guard{margin-top:6px;font-size:12px;font-weight:600;padding:5px 10px;border-radius:7px;
+    background:var(--accent-soft);color:var(--accent);width:fit-content;max-width:100%}
+
+  .tablewrap{overflow-x:auto;border:1px solid var(--divider);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:660px;font-size:12.5px}
+  th,td{padding:10px 13px;text-align:right;vertical-align:top;border-bottom:1px solid var(--divider)}
+  thead th{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--soft-2);font-weight:700;
+    background:var(--accent-soft);white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  td.k{font-weight:700;white-space:nowrap}
+  td.k .bar{display:inline-block;width:3px;height:12px;border-radius:2px;margin-inline-end:7px;vertical-align:-2px}
+  .yes{color:var(--built);font-weight:700}
+  .no{color:var(--soft-2)}
+
+  /* proposals */
+  .props{display:flex;flex-direction:column;gap:13px}
+  .prop{background:var(--card);border:1px solid var(--divider);border-radius:12px;padding:15px 17px;
+    display:flex;flex-direction:column;gap:7px;box-shadow:var(--shadow)}
+  .prop h3{margin:0;font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .tag{font-size:9.5px;font-weight:800;letter-spacing:.09em;padding:2px 8px;border-radius:5px;white-space:nowrap}
+  .tag-built{background:var(--built-bg);color:var(--built)}
+  .tag-prop{background:var(--prop-bg);color:var(--prop);border:1px dashed var(--divider-strong)}
+  .prop p{margin:0;font-size:13.5px;line-height:1.65;color:var(--soft)}
+  .prop p b{color:var(--ink);font-weight:600}
+  .cost{font-size:11.5px;color:var(--soft-2);font-weight:600}
+  .quote{border-inline-start:3px solid var(--divider-strong);padding-inline-start:11px;margin:2px 0;
+    font-size:13px;color:var(--ink);opacity:.85}
+
+  footer{border-top:1px solid var(--divider);padding-top:15px;font-size:12px;color:var(--soft-2);
+    display:flex;flex-wrap:wrap;gap:6px 18px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="page" dir="rtl">
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">פרקטיקום · אפיון לאישור</div>
+    <h1>תהליך שליחת קורות החיים — מה קורה היום, ומה צריך להשתנות</h1>
+    <p class="deck">
+      המסמך הזה היה חסר. בניתי קוד לפני שכתבתי אפיון, ושלושת הבאגים שדיווחת עליהם
+      אתמול — הסדר שהתהפך, "טרם נשלח" שלא הסביר למה, וכפתור שנעלם — כולם נובעים מזה.
+      כאן נמצא <b>כל התהליך</b>, כל מנגנון ההגנה שמונע שליחה בטעות, ו‑<b>שבע הצעות שיפור</b>
+      שממתינות להחלטה שלך.
+    </p>
+  </header>
+
+  <section>
+    <h2>המסע: מהגשת הסטודנט/ית ועד השמה</h2>
+    <p class="sub">כל שלב — מי מבצע אותו, איפה הוא נמצא במסך, ומה מונע ממנו לקרות בטעות.</p>
+    <div class="flow">
+      <div class="step">
+        <span class="stepno">1</span>
+        <span class="stepname">הגשה בטופס <span class="stepwho" style="color:var(--student)">· הסטודנט/ית</span></span>
+        <span class="stepdesc">קו״ח מעודכנים + עד שלושה ארגונים מדורגים דרך הקישור <code>/cv-update</code>. ההגשה נוחתת בטבלה נפרדת — היא עדיין לא על הכרטיס.</span>
+      </div>
+      <div class="step">
+        <span class="stepno">2</span>
+        <span class="stepname">קליטה לכרטיס <span class="stepwho" style="color:var(--ours)">· אצלנו</span></span>
+        <span class="stepdesc">הרשימה והקו״ח מועתקים לכרטיס. עד שזה קורה — הדירוג לא קיים על הסטודנט/ית. זה השלב שבו שתי רשימות שכבו ימים בלי שאף מסך אמר זאת.</span>
+        <span class="guard">אזהרה לפני: "לא נשלחת שום הודעה — לא לסטודנט/ית ולא למעסיק"</span>
+      </div>
+      <div class="step">
+        <span class="stepno">3</span>
+        <span class="stepname">בחירת יעד <span class="stepwho" style="color:var(--ours)">· אצלנו</span></span>
+        <span class="stepdesc">סימון הארגון שאליו שולחים. ארגון שאין בו מקום פנוי אינו ניתן לסימון, ואומר מי מחזיק בו.</span>
+        <span class="guard">היעד תמיד מופיע בשם על הכפתור: "שלח קו״ח ל‑UCL Group"</span>
+      </div>
+      <div class="step">
+        <span class="stepno">4</span>
+        <span class="stepname">פתיחת ההודעה <span class="stepwho" style="color:var(--ours)">· אצלנו</span></span>
+        <span class="stepdesc">המערכת פותחת Outlook או WhatsApp עם ההודעה המוכנה. <b>היא לא שולחת בעצמה — אף פעם.</b> אם הדפדפן חוסם את החלון, נאמר זאת ולא נרשם דבר.</span>
+        <span class="guard">בחירת הערוץ היא האישור — אין לחיצה מיותרת</span>
+      </div>
+      <div class="step">
+        <span class="stepno">5</span>
+        <span class="stepname">אישור שההודעה נשלחה <span class="stepwho" style="color:var(--ours)">· אצלנו</span></span>
+        <span class="stepdesc">רק אחרי שלחצת "שלח" ב‑Outlook: <b>✓ נשלח</b> תופס את המקום ורושם את השליחה. <b>לא נשלח</b> משאיר את המקום פנוי.</span>
+        <span class="guard">זה השער שנוסף אחרי שקו״ח נרשמו כנשלחים בלי שאף הודעה יצאה</span>
+      </div>
+      <div class="step">
+        <span class="stepno">6</span>
+        <span class="stepname">המתנה לתשובה <span class="stepwho" style="color:var(--employer)">· אצל המעסיק</span></span>
+        <span class="stepdesc">שבעה ימים. אחריהם הכדור חוזר אלינו והשורה מסמנת "ללא תשובה — כדאי לתזכר".</span>
+      </div>
+      <div class="step">
+        <span class="stepno">7</span>
+        <span class="stepname">תשובה: נקלט / נדחה <span class="stepwho" style="color:var(--employer)">· אצל המעסיק</span></span>
+        <span class="stepdesc">"נקלט" הופך לשיבוץ ותופס את המקום סופית. "נדחה" משחרר את המקום וחוזרים לבחירה הבאה.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>מה השורה מציגה ומה אפשר לעשות ממנה</h2>
+    <p class="sub">אחת‑עשרה מצבים. העמודה האחרונה היא ההבדל בין "רואים" ל"אפשר לפעול".</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>מצב</th><th>מה כתוב</th><th>פעולה מהשורה</th><th>קיים</th></tr></thead>
+        <tbody>
+          <tr><td class="k"><span class="bar" style="background:var(--student)"></span>טרם הוגש</td><td>טרם הוגשו קו״ח והעדפות</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--ours)"></span>הגשה ממתינה</td><td>רשימת העדפות התקבלה — יש לקלוט</td><td>קלוט לכרטיס</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--ours)"></span>הצעת ארגון</td><td>הצעת ארגון חדש — יש לאשר</td><td>פתיחת הכרטיס</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--ours)"></span>ארגון בהצעתו</td><td>לשוחח עם המעסיק ולאשר</td><td>אשר השמה · שלח קו״ח</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--ours)"></span>רשימה מוכנה</td><td>יש לטפל מול המעסיק</td><td>שלח קו״ח ל‑X</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--student)"></span>חסר קו״ח</td><td>חסר קו״ח מעודכן</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--employer)"></span>נשלח</td><td>נשלחו ל‑N · ממתין לתשובה</td><td>שלח לבחירה הבאה</td><td class="yes">✓ תוקן היום</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--ours)"></span>שתיקה מעל 7 ימים</td><td>N ימים ללא תשובה</td><td>תזכר מעסיקים</td><td class="no">טרם נבנה</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--employer)"></span>עבר ראיון</td><td>ממתין להחלטת המעסיק</td><td>שלח לבחירה הבאה</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--ours)"></span>מיצוי הרשימה</td><td>יש להציע ארגונים חדשים</td><td>הוסף ארגונים</td><td class="yes">✓</td></tr>
+          <tr><td class="k"><span class="bar" style="background:var(--closed)"></span>שובץ/ה</td><td>שובץ/ה ב‑X · תאריך</td><td class="no">—</td><td class="yes">✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>הצעות שיפור — להחלטתך</h2>
+    <p class="sub">
+      שבע. הראשונה היא הגדולה, ולדעתי היא זו שתחסוך לך הכי הרבה זמן. כל אחת עומדת
+      בפני עצמה — אפשר לאשר חלק ולדחות חלק.
+    </p>
+    <div class="props">
+
+      <div class="prop">
+        <h3><span class="tag tag-prop">הצעה 1</span>מסך "ממתינים לשליחה" — במקום לגלול את כל הרשימה</h3>
+        <p class="quote">"במקום לגלול עד למטה ולחפש את השליחה" · "לא נראה שהיא מומשה"</p>
+        <p>
+          פתרתי חצי מהבעיה: אפשר לשלוח מהשורה. אבל <b>עדיין צריך למצוא את השורה</b> בין
+          שלושים סטודנטים. ההצעה: מסך אחד שמרכז רק את מי שאפשר לפעול עבורו עכשיו —
+          ממוין לפי דחיפות, שורה אחת לכל אחד, שליחה במקום. סינון "אצלנו" כבר קיים
+          ומחזיר בדיוק את הרשימה הזו; זו הצגה ייעודית שלה.
+        </p>
+        <p class="cost">עלות: בינונית · מבוסס על מנוע הסיווג הקיים, ללא לוגיקה חדשה</p>
+      </div>
+
+      <div class="prop">
+        <h3><span class="tag tag-prop">הצעה 2</span>שליחה לכמה ארגונים בבת אחת מהשורה</h3>
+        <p class="quote">"כפתורים לא לחיצים יותר אם רוצים לשלוח ליותר ממקום אחד"</p>
+        <p>
+          היום השורה שולחת לארגון אחד בכל פעם. ההצעה: סימון מרובה — <b>"שלח קו״ח
+          ל‑2 ארגונים"</b> — עם אישור אחד שמונה את שניהם. הכרטיס כבר תומך בזה; השורה לא.
+          <b>הסתייגות שכדאי לשקול:</b> הדפדפן חוסם חלון שני, ולכן שליחה מרובה תמיד תיפתח
+          אחד־אחד. עדיף אולי לשמור על אחד בכל פעם ולהאיץ את המעבר לבא בתור.
+        </p>
+        <p class="cost">עלות: נמוכה · הלוגיקה כבר מקבלת רשימת ארגונים</p>
+      </div>
+
+      <div class="prop">
+        <h3><span class="tag tag-prop">הצעה 3</span>חלון ביטול של חמש שניות אחרי אישור</h3>
+        <p>
+          אחרי "✓ נשלח" תופיע הודעה קצרה עם <b>"בטל"</b>. לחיצה בתוך חמש שניות מחזירה את
+          המקום. זול, ומכסה את הטעות הכי נפוצה — אישור מהיר מדי.
+        </p>
+        <p class="cost">עלות: נמוכה · משתמש בפעולת "לא נשלח" שכבר קיימת</p>
+      </div>
+
+      <div class="prop">
+        <h3><span class="tag tag-prop">הצעה 4</span>לראות למי ההודעה נשלחת לפני שפותחים אותה</h3>
+        <p>
+          כרגע האישור אומר את שם הארגון. ההצעה: להוסיף את <b>שם איש הקשר והכתובת</b> —
+          "נוי דרעי · noyd@digital.gov.il". אם אין כתובת, לומר זאת מראש במקום לפתוח
+          חלון ריק.
+        </p>
+        <p class="cost">עלות: נמוכה · הנתון כבר נשלף בתכנון השליחה</p>
+      </div>
+
+      <div class="prop">
+        <h3><span class="tag tag-prop">הצעה 5</span>ארגון תפוס — להציע מה עושים</h3>
+        <p>
+          היום נאמר "תפוס — שובל קוממי בתהליך שם". ההצעה: להוסיף בחירה —
+          <b>להמתין לשחרור</b> (התראה כשמתפנה) או <b>להסיר מהדירוג</b>. בלי זה הבחירה
+          נשארת תקועה ברשימה בלי החלטה.
+        </p>
+        <p class="cost">עלות: בינונית · "המתן לשחרור" דורש מנגנון התראה חדש</p>
+      </div>
+
+      <div class="prop">
+        <h3><span class="tag tag-prop">הצעה 6</span>תזכורת למעסיק ששותק</h3>
+        <p>
+          המצב "7 ימים ללא תשובה" קיים ומוצג, אבל הכפתור <b>עדיין לא נבנה</b> — הוא
+          מסומן במפורש כ"פעולה חדשה" כדי שלא ייראה עובד. ההצעה: לבנות אותו — פתיחת
+          הודעת תזכורת עם אותו מנגנון אישור.
+        </p>
+        <p class="cost">עלות: נמוכה · תבנית הודעה חדשה + נתיב שליחה קיים</p>
+      </div>
+
+      <div class="prop">
+        <h3><span class="tag tag-built">נבנה היום</span>הסדר, הסיבה, והכפתור שנעלם</h3>
+        <p>
+          שלושת הדיווחים שלך: הדירוג נשמר תמיד לפי מספר הבחירה; ארגון שלא נשלח אליו
+          אומר <b>למה</b> ומי מחזיק במקום; והשליחה נשארת אפשרית גם כששליחה קודמת פתוחה,
+          עם משפט שמכוון לבחירה הפנויה הבאה.
+        </p>
+        <p class="cost">מכוסה בבדיקות: סדר הדירוג · הסיבה לחסימה · הכפתור שנשאר</p>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <span>אפיון · פרקטיקום v1.36.x</span>
+    <span>הצעות 1–6 ממתינות להחלטה</span>
+    <span>הצבעים והטיפוגרפיה מ‑global.css של האפליקציה</span>
+  </footer>
+
+</div>
+</div>

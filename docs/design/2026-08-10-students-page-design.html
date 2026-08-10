@@ -1,0 +1,292 @@
+<title>עיצוב מסך הסטודנטים — כמה זה תופס, וכמה זה צריך לתפוס</title>
+
+<style>
+  :root{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c; --ours-bg:rgba(185,28,28,0.06);
+    --student:#b45309; --employer:#3b5a8f; --closed:#15803d;
+    --sans:"Rubik","Heebo","Arial Hebrew","Noto Sans Hebrew",system-ui,-apple-system,sans-serif;
+    --serif:Georgia,"Frank Ruehl CLM","Times New Roman",serif;
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 26px rgba(61,15,20,.06);
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --ours-bg:rgba(246,129,126,0.09);
+    --student:#e5a95e; --employer:#9db6e2; --closed:#67ca8c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.32);}}
+  :root[data-theme="dark"]{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --ours-bg:rgba(246,129,126,0.09);
+    --student:#e5a95e; --employer:#9db6e2; --closed:#67ca8c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.32);}
+  :root[data-theme="light"]{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c; --ours-bg:rgba(185,28,28,0.06);
+    --student:#b45309; --employer:#3b5a8f; --closed:#15803d;
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 26px rgba(61,15,20,.06);}
+
+  .page{direction:rtl;text-align:right;font-family:var(--sans);background:var(--bg);color:var(--ink);
+    min-height:100%;padding:clamp(18px,4vw,44px) clamp(13px,4vw,24px) 70px;font-size:15px;line-height:1.6;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:var(--accent);
+    display:flex;align-items:center;gap:10px}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--divider)}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(26px,4.8vw,40px);line-height:1.13;margin:.3em 0 0;text-wrap:balance}
+  .deck{max-width:62ch;color:var(--soft);font-size:15.5px;margin-top:.6em}
+  .deck b{color:var(--ink);font-weight:600}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(20px,3.2vw,26px);margin:0 0 3px}
+  .sub{color:var(--soft);font-size:13.5px;margin:0 0 14px;max-width:66ch}
+
+  /* side-by-side phones */
+  .compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:18px;align-items:start}
+  .phone{background:var(--card);border:1px solid var(--divider);border-radius:18px;overflow:hidden;box-shadow:var(--shadow)}
+  .phonebar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 14px;
+    border-bottom:1px solid var(--divider);background:var(--accent-soft)}
+  .phonetag{font-size:10px;font-weight:800;letter-spacing:.1em;padding:2px 8px;border-radius:5px}
+  .t-now{background:rgba(185,28,28,.12);color:var(--ours)}
+  .t-new{background:rgba(21,128,61,.12);color:var(--closed)}
+  .measure{font-size:11px;font-weight:700;color:var(--soft);font-variant-numeric:tabular-nums}
+  .screen{padding:11px 12px;display:flex;flex-direction:column;gap:9px;max-height:560px;overflow-y:auto}
+
+  /* a student row */
+  .row{border-bottom:2px solid var(--divider-strong);padding-bottom:9px}
+  .row:last-child{border-bottom:none}
+  .rowtop{display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .nm{font-family:var(--serif);font-size:18px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+  .tg{font-size:10px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+  .contacts{display:flex;gap:6px;margin-top:6px}
+  .cb{width:27px;height:27px;border-radius:50%;border:.5px solid var(--divider-strong);color:var(--accent);
+    display:grid;place-items:center;font-size:11px}
+
+  /* the strip — today */
+  .strip{margin-top:9px;padding:9px 11px;border-radius:9px;border:1px solid var(--divider);
+    box-shadow:inset -3px 0 0 0 var(--tone);background:var(--tone-bg);--tone:var(--ours);--tone-bg:var(--ours-bg)}
+  .turn{font-size:10px;font-weight:700;color:var(--tone);display:inline-flex;align-items:center;gap:5px}
+  .turn i{width:6px;height:6px;border-radius:50%;background:var(--tone)}
+  .hl{font-size:14px;font-weight:700;line-height:1.45;margin-top:4px}
+  .sb{font-size:12px;color:var(--ink);opacity:.72;margin-top:3px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .chip{display:inline-flex;align-items:flex-start;gap:5px;font-size:11px;font-weight:600;padding:4px 8px;
+    border-radius:7px;border:1px solid var(--divider);max-width:100%}
+  .rk{flex:none;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;
+    background:var(--accent-soft);color:var(--accent);font-size:10px;font-weight:800}
+  .act{margin-top:7px;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:7px;
+    border:1px solid var(--tone);color:var(--tone);display:inline-block}
+
+  /* the strip — proposed compact */
+  .cline{margin-top:8px;display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;
+    border:1px solid var(--divider);box-shadow:inset -3px 0 0 0 var(--tone);background:var(--tone-bg);
+    --tone:var(--ours);--tone-bg:var(--ours-bg)}
+  .cmain{flex:1;min-width:0}
+  .ctitle{font-size:13.5px;font-weight:700;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cmeta{font-size:11px;color:var(--soft);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cbtn{flex:none;font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:8px;background:var(--tone);color:#fff}
+  :root[data-theme="dark"] .cbtn{color:#231317}
+  @media (prefers-color-scheme: dark){.cbtn{color:#231317}}
+  :root[data-theme="light"] .cbtn{color:#fff}
+  .cexp{flex:none;width:24px;height:24px;border-radius:6px;border:1px solid var(--divider);color:var(--soft);
+    display:grid;place-items:center;font-size:11px}
+  .drawer{margin-top:7px;padding:9px 11px;border:1px dashed var(--divider-strong);border-radius:9px}
+  .drawer .lbl{font-size:10px;font-weight:800;letter-spacing:.09em;color:var(--soft-2);margin-bottom:5px}
+
+  /* queue band */
+  .queue{border:1px solid var(--divider-strong);border-radius:11px;overflow:hidden;background:var(--card)}
+  .qhead{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--ours-bg);
+    border-bottom:1px solid var(--divider)}
+  .qtitle{font-weight:800;font-size:13px;color:var(--ours);flex:1}
+  .qcount{font-size:11px;font-weight:800;background:var(--ours);color:#fff;padding:1px 8px;border-radius:999px}
+  :root[data-theme="dark"] .qcount{color:#231317}
+  .qrow{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--divider)}
+  .qrow:last-child{border-bottom:none}
+  .qname{font-weight:700;font-size:13px;flex:none;min-width:74px}
+  .qwhat{flex:1;min-width:0;font-size:11.5px;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qgo{flex:none;font-size:11px;font-weight:700;padding:5px 10px;border-radius:7px;border:1px solid var(--ours);color:var(--ours)}
+
+  .notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:13px}
+  .note{background:var(--card);border:1px solid var(--divider);border-radius:11px;padding:14px 16px;
+    display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}
+  .note h3{margin:0;font-size:14px;font-weight:700;display:flex;gap:8px;align-items:center}
+  .note h3 .n{font-size:10px;font-weight:800;background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:5px}
+  .note p{margin:0;font-size:12.5px;color:var(--soft);line-height:1.6}
+  .note p b{color:var(--ink);font-weight:600}
+  footer{border-top:1px solid var(--divider);padding-top:14px;font-size:12px;color:var(--soft-2);
+    display:flex;flex-wrap:wrap;gap:6px 18px}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="page" dir="rtl">
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">פרקטיקום · עיצוב מסך לאישור</div>
+    <h1>מסך הסטודנטים — למצוא את מי שממתין, ולשלוח בלי לחפש</h1>
+    <p class="deck">
+      הבעיה האמיתית בצילום המסך שלך היא לא ניסוח — היא <b>גובה</b>, ומדדתי אותה על
+      האתר החי ברוחב 375px: שורה עם ארגונים תופסת <b>475–613 פיקסלים</b>. אחד‑עשר
+      סטודנטים = <b>4,163 פיקסלים, כ‑5 מסכי טלפון של גלילה</b> כדי למצוא את הארבעה
+      שממתינים לך. ההצעה מקצרת את השורה פי חמישה ומעלה את מי שממתין לראש המסך.
+      <b>גם ה‑ⓘ שפותח את פרטי המעסיק כבר קיים בכל צ׳יפ</b> — הוא פשוט קבור מתחת ל‑500 פיקסלים.
+    </p>
+  </header>
+
+  <section>
+    <h2>אותה שורה, שני עיצובים</h2>
+    <p class="sub">עדי גורביץ׳ — נתונים אמיתיים: נשלח ל‑TLVtech, Icon Group תפוס, UCL Group פנוי.</p>
+    <div class="compare">
+
+      <div class="phone">
+        <div class="phonebar"><span class="phonetag t-now">היום · v1.36.2</span><span class="measure">475px — נמדד</span></div>
+        <div class="screen">
+          <div class="row">
+            <div class="rowtop"><span class="dot" style="background:var(--student)"></span><span class="nm">עדי גורביץ׳</span></div>
+            <div class="tags"><span class="tg">✓ הכנה</span><span class="tg">CV ✓</span></div>
+            <div class="contacts"><span class="cb">✆</span><span class="cb">✉</span><span class="cb">◎</span></div>
+            <div class="strip" style="--tone:var(--employer);--tone-bg:transparent">
+              <span class="turn"><i></i>אצל המעסיק</span>
+              <div class="hl">קו״ח נשלחו למקום אחד · ממתין לתשובת המעסיק</div>
+              <div class="sb">אפשר לשלוח גם לבחירה 3: UCL Group</div>
+              <div class="chips">
+                <span class="chip"><span class="rk">1</span><span><b>Icon Group/I digital</b><br><span style="color:var(--student);font-weight:700">תפוס — שובל קוממי בתהליך שם</span></span></span>
+                <span class="chip" style="border-color:rgba(59,90,143,.45);color:var(--employer)"><span class="rk">2</span><span><b>TLVtech</b> · נשלח היום</span></span>
+                <span class="chip"><span class="rk">3</span><span><b>UCL Group</b> · טרם נשלח</span></span>
+              </div>
+              <span class="act" style="color:var(--employer);border-color:var(--employer)">שלח קו״ח ל‑UCL Group</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="phonebar"><span class="phonetag t-new">מוצע</span><span class="measure">≈ 95px</span></div>
+        <div class="screen">
+          <div class="row">
+            <div class="rowtop">
+              <span class="dot" style="background:var(--employer)"></span>
+              <span class="nm">עדי גורביץ׳</span>
+              <span class="cb">✆</span><span class="cb">✉</span>
+            </div>
+            <div class="cline" style="--tone:var(--employer);--tone-bg:transparent">
+              <div class="cmain">
+                <div class="ctitle">נשלח למקום אחד · ממתין לתשובה</div>
+                <div class="cmeta">אפשר לשלוח גם ל‑UCL Group (בחירה 3)</div>
+              </div>
+              <span class="cbtn" style="background:var(--employer)">שלח</span>
+              <span class="cexp">⌄</span>
+            </div>
+          </div>
+
+          <div class="row" style="border-bottom:none">
+            <div style="font-size:10.5px;font-weight:800;letter-spacing:.09em;color:var(--soft-2);margin-bottom:5px">
+              אותה שורה, פתוחה — רק כשצריך
+            </div>
+            <div class="cline" style="--tone:var(--employer);--tone-bg:transparent">
+              <div class="cmain">
+                <div class="ctitle">נשלח למקום אחד · ממתין לתשובה</div>
+                <div class="cmeta">אפשר לשלוח גם ל‑UCL Group (בחירה 3)</div>
+              </div>
+              <span class="cbtn" style="background:var(--employer)">שלח</span>
+              <span class="cexp">⌃</span>
+            </div>
+            <div class="drawer">
+              <div class="lbl">הדירוג</div>
+              <div class="chips">
+                <span class="chip"><span class="rk">1</span><span><b>Icon Group</b> · <span style="color:var(--student);font-weight:700">תפוס — שובל קוממי</span></span><span style="flex:none;width:16px;height:16px;border-radius:50%;border:1px solid var(--divider-strong);color:var(--accent);display:grid;place-items:center;font-size:9px;font-weight:800">i</span></span>
+                <span class="chip" style="border-color:rgba(59,90,143,.45);color:var(--employer)"><span class="rk">2</span><span><b>TLVtech</b> · נשלח היום</span><span style="flex:none;width:16px;height:16px;border-radius:50%;border:1px solid var(--divider-strong);color:var(--accent);display:grid;place-items:center;font-size:9px;font-weight:800">i</span></span>
+                <span class="chip"><span class="rk">3</span><span><b>UCL Group</b> · פנוי</span><span style="flex:none;width:16px;height:16px;border-radius:50%;border:1px solid var(--divider-strong);color:var(--accent);display:grid;place-items:center;font-size:9px;font-weight:800">i</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>ראש המסך: מי ממתין לך עכשיו</h2>
+    <p class="sub">
+      במקום לגלול ולחפש — הרשימה הקצרה למעלה, כל שורה עם הפעולה שלה. זהו הסינון
+      "אצלנו" שכבר קיים, מוצג כרשימת עבודה במקום כמסנן.
+    </p>
+    <div class="phone" style="max-width:420px">
+      <div class="phonebar"><span class="phonetag t-new">מוצע</span><span class="measure">ראש מסך הסטודנטים</span></div>
+      <div class="screen">
+        <div class="queue">
+          <div class="qhead"><span class="qtitle">ממתינים לך</span><span class="qcount">4</span></div>
+          <div class="qrow"><span class="qname">עינה נוימן</span><span class="qwhat">רשימה התקבלה — יש לקלוט</span><span class="qgo">קלוט</span></div>
+          <div class="qrow"><span class="qname">הדר עוזירי</span><span class="qwhat">ארגון בהצעתה — לשוחח ולאשר</span><span class="qgo">אשר</span></div>
+          <div class="qrow"><span class="qname">עדי גורביץ׳</span><span class="qwhat">אפשר לשלוח ל‑UCL Group</span><span class="qgo">שלח</span></div>
+          <div class="qrow"><span class="qname">שובל קוממי</span><span class="qwhat">7 ימים ללא תשובה מ‑Icon Group</span><span class="qgo">תזכר</span></div>
+        </div>
+        <div style="font-size:11px;color:var(--soft-2);padding:2px 2px">
+          מתחת — כל הסטודנטים, כרגיל.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>ההחלטות שמאחורי העיצוב</h2>
+    <p class="sub">כל אחת עומדת בפני עצמה — אפשר לאשר חלק.</p>
+    <div class="notes">
+      <div class="note">
+        <h3><span class="n">א</span>שורה מכווצת כברירת מחדל</h3>
+        <p>
+          משפט אחד + כפתור אחד. הדירוג המלא נפתח בלחיצה על ⌄, ורק עבור מי שאתה עובד
+          עליו כרגע. <b>פי חמישה יותר סטודנטים על מסך אחד.</b>
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ב</span>הכפתור אומר מילה אחת</h3>
+        <p>
+          "שלח" במקום "שלח קו״ח ל‑UCL Group". שם הארגון עובר לשורת המשנה ולאישור —
+          שם ממילא צריך לקרוא אותו לפני שמאשרים. <b>הכפתור לא נשבר לשתי שורות.</b>
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ג</span>רשימת עבודה בראש המסך</h3>
+        <p>
+          ארבעה שממתינים, לא שלושים. אותו מנוע סיווג, תצוגה אחרת. <b>זה מה שחוסך את
+          הגלילה</b> — לא קיצור השורה לבדו.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ד</span>פרטי המעסיק — ⓘ בכל צ׳יפ</h3>
+        <p>
+          כבר קיים וחי: לחיצה על ⓘ פותחת איש קשר, טלפון ומייל — גם לארגון שהסטודנט/ית
+          הציע/ה — עם שלושה כפתורים שלא מנסחים כלום. <b>בעיצוב המכווץ הוא נשאר במגירה</b>,
+          במרחק לחיצה אחת במקום 500 פיקסלים של גלילה.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ה</span>מה שלא משתנה</h3>
+        <p>
+          כל מנגנוני ההגנה נשארים: היעד בשם, חלון ההודעה חייב להיפתח, ואישור מפורש
+          שההודעה יצאה לפני שנתפס מקום. <b>העיצוב מקצר את הדרך, לא את הבלמים.</b>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>עיצוב לאישור · לא מומש</span>
+    <span>נמדד על האתר החי · v1.36.2 · 375px · 4,163px ל‑11 סטודנטים</span>
+  </footer>
+
+</div>
+</div>
