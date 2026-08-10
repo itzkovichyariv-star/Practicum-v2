@@ -193,7 +193,13 @@ export default function PlacementStrip({ status, employers, onAction }: {
   // an org from the shared list only ever gets a CV, and reaches placement through a
   // passed interview (Yariv 2026-08-09). Selecting a list org must therefore never leave
   // "אשר השמה" on the button — the bug he caught on נישה פרו.
-  const offered = chosen ? actionsForChip(chosen)
+  // Multi-select reopened exactly this: `chosen` is only the FIRST of the selection, so
+  // ticking נישה פרו on top of a suggested org left "אשר השמה" on the button again.
+  // place_direct is valid for ONE org the student brought and nothing else — you cannot
+  // place someone in two places at once, and a list org reaches placement through an
+  // interview. Any list org in the selection, or any second org, removes it.
+  const placeable = chosenList.length === 1 && !!chosenList[0].suggested;
+  const offered = chosenList.length ? actionsForChip({ suggested: placeable })
     : (status.action ? [status.action] : []);
   const tone = TURN_COLOR[status.turn];
   const tinted = status.turn === 'ours';
