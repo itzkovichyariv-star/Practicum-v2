@@ -18,11 +18,21 @@ import type {
 const DEFAULT_WHATSAPP = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
-אשמח לתאם ראיון בנוחיותכם.
+לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}
 תודה,
 {adminName}`;
 
 const DEFAULT_EMAIL_SUBJECT = `מועמדות {studentName} ל-{positionTitle}`;
+
+// The one line that carries the employer's answer link, per template. Used both by the
+// defaults above and by the migration in normalizeData() that repairs templates saved
+// before the link existed — so the two can never drift apart.
+const RESPONSE_LINK_LINES: Record<string, string> = {
+  whatsappTemplate: 'לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}',
+  emailBodyTemplate: 'לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}',
+  reminderWhatsappTemplate: 'לתשובה בלחיצה אחת: {responseLink}',
+  reminderEmailBodyTemplate: 'לתשובה בלחיצה אחת: {responseLink}',
+};
 
 // ── Reminder after silence ────────────────────────────────────────────────────
 // Sent when an employer has not responded. Deliberately short and un-pushy: it
@@ -31,7 +41,8 @@ const DEFAULT_EMAIL_SUBJECT = `מועמדות {studentName} ל-{positionTitle}`;
 const DEFAULT_REMINDER_WHATSAPP = `שלום {contactName},
 רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים.
 קישור לקו"ח: {cvLink}
-נשמח לדעת אם רלוונטי עבורכם, וגם "לא מתאים" עוזר לנו להתקדם.
+לתשובה בלחיצה אחת: {responseLink}
+גם "לא מתאים" עוזר לנו להתקדם.
 תודה,
 {adminName}`;
 
@@ -40,14 +51,15 @@ const DEFAULT_REMINDER_EMAIL_SUBJECT = `תזכורת — מועמדות {student
 const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactName},
 רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים, במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
-נשמח לדעת אם המועמדות רלוונטית עבורכם. גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
+לתשובה בלחיצה אחת: {responseLink}
+גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
 תודה רבה,
 {adminName}`;
 
 const DEFAULT_EMAIL_BODY = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת קורס {courseName} באוניברסיטת אריאל.
 קישור לקו"ח: {cvLink}
-אשמח לתאם ראיון בנוחיותכם.
+לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}
 תודה,
 {adminName}`;
 
@@ -265,6 +277,24 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       }
     }
     if (settingsChanged) changed = true;
+
+    // The four send templates were persisted before {responseLink} existed, and the
+    // additive pass above only fills keys that are *missing* — so a saved template
+    // would keep its old text for ever and the employer would never receive the
+    // answer link. That would leave the response page reachable but never reached.
+    //
+    // Insert the line rather than overwrite the template: the wording may have been
+    // edited by hand, and only the missing line is ours to add. It goes above the
+    // closing "תודה" so it reads as part of the ask, not after the signature.
+    for (const [key, line] of Object.entries(RESPONSE_LINK_LINES)) {
+      const tpl = ps[key];
+      if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{responseLink}')) continue;
+      const lines = tpl.split('\n');
+      const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
+      lines.splice(at === -1 ? lines.length : at, 0, line);
+      ps[key] = lines.join('\n');
+      changed = true;
+    }
   }
 
   // 4b. Materialize legacy global `positions`/`positionsTotal` into per-course
@@ -359,19 +389,29 @@ export function migratePlacementData(data: PracticumData): PracticumData {
 
 // ── Template rendering ────────────────────────────────────────────────────────
 
+// The original eight. Kept ONLY so that a template using one of them while the caller
+// omits it still renders empty, exactly as it did before this function became generic.
+const LEGACY_PLACEHOLDERS = ['contactName', 'studentName', 'positionTitle', 'adminName',
+  'courseName', 'cvLink', 'employerName', 'scope'];
+
+/**
+ * Substitute every {placeholder} the caller supplied.
+ *
+ * This was a hardcoded list of eight replaceAll() calls, which meant a placeholder added
+ * to a template but not to the list shipped LITERALLY to the employer. Two did: the
+ * reminder went out reading "לפני {daysWaiting} ימים", and {responseLink} would have put
+ * the words in the mail instead of the URL — the answer page reachable and never reached.
+ * Unknown placeholders are now left visible rather than blanked, so a typo in a template
+ * shows up in the preview instead of silently vanishing.
+ */
 export function renderTemplate(
   template: string,
   ctx: Partial<Record<string, string>>,
 ): string {
-  return template
-    .replaceAll('{contactName}', ctx.contactName ?? '')
-    .replaceAll('{studentName}', ctx.studentName ?? '')
-    .replaceAll('{positionTitle}', ctx.positionTitle ?? '')
-    .replaceAll('{adminName}', ctx.adminName ?? '')
-    .replaceAll('{courseName}', ctx.courseName ?? '')
-    .replaceAll('{cvLink}', ctx.cvLink ?? '')
-    .replaceAll('{employerName}', ctx.employerName ?? '')
-    .replaceAll('{scope}', ctx.scope ?? '');
+  return template.replace(/\{(\w+)\}/g, (whole, key: string) =>
+    key in ctx ? (ctx[key] ?? '')
+      : LEGACY_PLACEHOLDERS.includes(key) ? ''
+      : whole);
 }
 
 // ── Channel URL builders ──────────────────────────────────────────────────────

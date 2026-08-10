@@ -7,6 +7,8 @@
  * Deliberately NOT named `NN-*.mjs`, so the gate does not pick it up as a cell of its own.
  */
 import { placementStatus, actionsForChip, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../../src/lib/placementStatus.ts';
+import { responseStageOf, applyEmployerAnswer } from '../../src/lib/dispatch.ts';
+import { migratePlacementData, renderTemplate } from '../../src/lib/placement.ts';
 
 const cells: any[] = [];
 const audit = { recordCell: (c: any) => cells.push(c) };
@@ -236,6 +238,114 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
   rule('CLOCK-stops-after-3', 'Yariv: stop after three and mark אין מענה',
     'no_response/ours', `${spent.key}/${spent.turn}`);
   rule('CLOCK-stops-not-remind', 'a fourth reminder is not offered', true, spent.action?.id !== 'remind');
+}
+
+// A12 — the employer's own answer (routes א + ג). The question must follow the stage:
+// nobody is asked "was she accepted?" before an interview has happened.
+{
+  const stu = (over: any = {}) => ({ id: 'stu1', name: 'בדיקה', courseId: 'c1',
+    preferences: [{ rank: 1, orgName: 'Codeoasis', employerId: 'e1', status: 'under_review', slotId: 's0' }], ...over });
+  const emps = [{ id: 'e1', name: 'Codeoasis', vacancySlots: [{ id: 's0', courseId: 'c1', status: 'under_review', studentId: 'stu1' }] }];
+  const disp = [{ id: 'd1', studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(20) }];
+  const iso = (d: number) => new Date(NOW + d * 86400000).toISOString().slice(0, 10);
+
+  rule('ANSWER-stage-before-interview', 'ask about an interview, not a decision',
+    'awaiting_reply', responseStageOf({ student: stu(), orgName: 'Codeoasis', now: NOW }));
+  rule('ANSWER-stage-interview-booked', 'stage 2',
+    'interview_booked', responseStageOf({ student: stu({ placementInterviewDate: iso(5) }), orgName: 'Codeoasis', now: NOW }));
+  rule('ANSWER-stage-after-interview', 'only now ask about a decision',
+    'awaiting_decision', responseStageOf({ student: stu({ placementInterviewDate: iso(-3) }), orgName: 'Codeoasis', now: NOW }));
+
+  // an invitation records the date and does NOT free or take anything
+  const inv = applyEmployerAnswer({ student: stu(), employers: emps, dispatches: disp,
+    orgName: 'Codeoasis', answer: { kind: 'invite', interviewDate: iso(6) }, now: new Date(NOW).toISOString() });
+  rule('ANSWER-invite-records-date', 'stage 1 → 2', iso(6), inv.student.placementInterviewDate);
+  rule('ANSWER-invite-keeps-place', 'an invitation changes no place',
+    'under_review', (inv.employers[0] as any).vacancySlots[0].status);
+
+  // accepted places the student and takes the place for good
+  const acc = applyEmployerAnswer({ student: stu(), employers: emps, dispatches: disp,
+    orgName: 'Codeoasis', answer: { kind: 'accepted' }, now: new Date(NOW).toISOString() });
+  rule('ANSWER-accepted-places', 'the employer said yes', 'Codeoasis', acc.student.acceptedOrg);
+  rule('ANSWER-accepted-takes-slot', 'the place is taken for good',
+    'placed', (acc.employers[0] as any).vacancySlots[0].status);
+  rule('ANSWER-accepted-closes-dispatch', 'the send is resolved', 'placed', acc.dispatches[0].result);
+
+  // a refusal frees the place so the next choice can be used
+  const no = applyEmployerAnswer({ student: stu(), employers: emps, dispatches: disp,
+    orgName: 'Codeoasis', answer: { kind: 'not_accepted' }, now: new Date(NOW).toISOString() });
+  rule('ANSWER-refusal-frees-place', 'the next choice becomes possible',
+    'available', (no.employers[0] as any).vacancySlots[0].status);
+  rule('ANSWER-refusal-marks-pref', 'the choice is closed off', 'rejected', no.student.preferences[0].status);
+  rule('ANSWER-refusal-records-interview', 'a post-interview refusal records the result',
+    'failed', no.student.preferences[0].interviewResult);
+
+  // "still reviewing" is a real answer — it restarts the clock and changes nothing else
+  const wait = applyEmployerAnswer({ student: stu(), employers: emps, dispatches: disp,
+    orgName: 'Codeoasis', answer: { kind: 'still_reviewing' }, now: new Date(NOW).toISOString() });
+  rule('ANSWER-still-reviewing-holds', 'nothing is released', 'under_review', (wait.employers[0] as any).vacancySlots[0].status);
+  rule('ANSWER-still-reviewing-resets', 'the clock restarts', true, !!(wait.dispatches[0] as any).remindedAt);
+}
+
+// ── the answer link has to survive a template that predates it ────────────────
+// Yariv's four templates were saved long before {responseLink} existed, and the
+// settings backfill only fills keys that are MISSING — so without this migration the
+// response page would be reachable and never reached, and the feature would look
+// shipped while being dead. These prove the repair, and prove it is not a clobber.
+{
+  const saved = {
+    whatsappTemplate: 'שלום {contactName},\nמצורף קו"ח של {studentName}.\nתודה,\n{adminName}',
+    emailBodyTemplate: 'שלום {contactName},\nניסוח משלי שאסור לדרוס.\nתודה רבה,\n{adminName}',
+    reminderWhatsappTemplate: 'שלום {contactName},\nמזכיר לגבי {studentName}.\nתודה,\n{adminName}',
+    reminderEmailBodyTemplate: 'כבר מכיל {responseLink} ולא צריך שינוי\nתודה,\n{adminName}',
+  };
+  // migratePlacementData deep-clones and RETURNS — reading the input back shows nothing.
+  const ps: any = migratePlacementData({ placementSettings: { ...saved } } as any).placementSettings;
+
+  rule('LINK-added-to-saved-email', 'a template saved without the link gets it',
+    true, ps.emailBodyTemplate.includes('{responseLink}'));
+  rule('LINK-added-to-saved-whatsapp', 'both channels, not just mail',
+    true, ps.whatsappTemplate.includes('{responseLink}'));
+  rule('LINK-added-to-reminder', 'the reminder carries it too',
+    true, ps.reminderWhatsappTemplate.includes('{responseLink}'));
+  rule('LINK-keeps-custom-wording', 'hand-edited wording is preserved',
+    true, ps.emailBodyTemplate.includes('ניסוח משלי שאסור לדרוס'));
+  // NOTE the `>= 0`: without it this cell passes when the link is ABSENT (-1 < N), which
+  // is exactly how it read green while the migration was doing nothing at all.
+  rule('LINK-sits-above-signature', 'it reads as part of the ask, not after the sign-off',
+    true, ps.emailBodyTemplate.indexOf('{responseLink}') >= 0
+      && ps.emailBodyTemplate.indexOf('{responseLink}') < ps.emailBodyTemplate.indexOf('{adminName}'));
+  rule('LINK-not-duplicated', 'a template that already has it is left alone',
+    1, (ps.reminderEmailBodyTemplate.match(/\{responseLink\}/g) || []).length);
+
+  // ── and now what the employer ACTUALLY receives ───────────────────────────────
+  // Every cell above asserts the TEMPLATE. None of them asserts the MESSAGE, and that
+  // gap hid two live bugs: renderTemplate substituted a hardcoded list of eight keys, so
+  // {daysWaiting} and {responseLink} were shipped verbatim — the v1.39 reminder really
+  // did read "לפני {daysWaiting} ימים" to real employers. Assert the rendered text.
+  // Render the REAL shipping reminder body, not the stub above — that stub deliberately
+  // carries no {daysWaiting}, so composing it would prove nothing about the substitution.
+  const shipped: any = migratePlacementData({} as any).placementSettings;
+  const composed = renderTemplate(shipped.reminderEmailBodyTemplate, {
+    contactName: 'איש קשר', studentName: 'סטודנטית', positionTitle: 'ארגון', adminName: 'יריב',
+    courseName: 'פרקטיקום', cvLink: 'https://x/cv.pdf', employerName: 'ארגון',
+    daysWaiting: '8', responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
+  });
+  rule('RENDER-no-placeholder-left', 'nothing reaches the employer as {…}',
+    true, !/\{\w+\}/.test(composed));
+  rule('RENDER-link-is-a-url', 'the answer link is a URL, not the word',
+    true, composed.includes('https://practicum.yarivitzkovich.org/r?t=d1'));
+  rule('RENDER-days-substituted', 'the reminder says a number of days',
+    true, composed.includes('8') && !composed.includes('{daysWaiting}'));
+  rule('RENDER-unknown-stays-visible', 'a typo in a template is visible, not silently blanked',
+    '{notARealKey}', renderTemplate('{notARealKey}', { studentName: 'x' }));
+  rule('RENDER-legacy-key-still-blanks', 'an omitted original key renders empty as before',
+    '', renderTemplate('{scope}', { studentName: 'x' }));
+
+  // a second load must not append it again
+  const twice: any = migratePlacementData({ placementSettings: ps } as any).placementSettings;
+  rule('LINK-migration-is-idempotent', 'reloading adds nothing',
+    1, (twice.emailBodyTemplate.match(/\{responseLink\}/g) || []).length);
 }
 
 process.stdout.write(JSON.stringify(cells));
