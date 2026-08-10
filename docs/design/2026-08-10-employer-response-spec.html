@@ -1,0 +1,266 @@
+<title>איך יודעים שהמעסיק ענה — אפיון לאישור</title>
+
+<style>
+  :root{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c; --student:#b45309; --employer:#3b5a8f; --closed:#15803d;
+    --sans:"Rubik","Heebo","Arial Hebrew","Noto Sans Hebrew",system-ui,-apple-system,sans-serif;
+    --serif:Georgia,"Frank Ruehl CLM","Times New Roman",serif;
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 26px rgba(61,15,20,.06);
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --student:#e5a95e; --employer:#9db6e2; --closed:#67ca8c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.32);}}
+  :root[data-theme="dark"]{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --student:#e5a95e; --employer:#9db6e2; --closed:#67ca8c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.32);}
+  :root[data-theme="light"]{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --ours:#b91c1c; --student:#b45309; --employer:#3b5a8f; --closed:#15803d;
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 26px rgba(61,15,20,.06);}
+
+  .page{direction:rtl;text-align:right;font-family:var(--sans);background:var(--bg);color:var(--ink);
+    min-height:100%;padding:clamp(18px,4vw,44px) clamp(13px,4vw,24px) 70px;font-size:15px;line-height:1.6}
+  .wrap{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:var(--accent);
+    display:flex;align-items:center;gap:10px}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--divider)}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(26px,4.8vw,40px);line-height:1.13;margin:.3em 0 0;text-wrap:balance}
+  .deck{max-width:64ch;color:var(--soft);font-size:15.5px;margin-top:.6em}
+  .deck b{color:var(--ink);font-weight:600}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(20px,3.2vw,26px);margin:0 0 3px}
+  .sub{color:var(--soft);font-size:13.5px;margin:0 0 15px;max-width:66ch}
+
+  /* stage rail */
+  .stages{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--divider);
+    border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+  .stage{display:grid;grid-template-columns:auto 1fr auto;gap:0 13px;padding:14px 16px;
+    border-bottom:1px solid var(--divider);align-items:start}
+  .stage:last-child{border-bottom:none}
+  .sno{grid-row:1/span 4;width:9px;border-radius:5px;background:var(--tone);min-height:100%}
+  .snm{font-weight:700;font-size:15px;color:var(--tone)}
+  .swait{font-size:12.5px;color:var(--soft);margin-top:2px}
+  .sclock{grid-row:1/span 4;text-align:center;min-width:96px}
+  .sclockv{font-family:var(--serif);font-size:22px;color:var(--tone);line-height:1}
+  .sclockl{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--soft-2);margin-top:3px}
+  .srow{font-size:12.5px;margin-top:6px;padding:6px 10px;border-radius:7px;background:var(--accent-soft);width:fit-content;max-width:100%}
+  .srow b{color:var(--ink)}
+  .snudge{font-size:12px;margin-top:5px;color:var(--ours);font-weight:600}
+
+  /* the employer's screen */
+  .mail{background:var(--card);border:1px solid var(--divider);border-radius:14px;overflow:hidden;
+    box-shadow:var(--shadow);max-width:440px}
+  .mailhead{padding:10px 14px;border-bottom:1px solid var(--divider);background:var(--accent-soft);
+    font-size:11.5px;font-weight:700;color:var(--accent)}
+  .mailbody{padding:15px 16px;font-size:13.5px;line-height:1.75}
+  .mailbtns{display:flex;flex-direction:column;gap:7px;margin-top:13px}
+  .mb{padding:10px 14px;border-radius:9px;font-weight:700;font-size:13.5px;text-align:center;border:1px solid}
+  .mb-yes{background:var(--closed);color:#fff;border-color:var(--closed)}
+  .mb-no{background:transparent;color:var(--ours);border-color:var(--ours)}
+  .mb-wait{background:transparent;color:var(--soft);border-color:var(--divider-strong)}
+  :root[data-theme="dark"] .mb-yes{color:#231317}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;align-items:start}
+  .note{background:var(--card);border:1px solid var(--divider);border-radius:12px;padding:15px 17px;
+    display:flex;flex-direction:column;gap:7px;box-shadow:var(--shadow)}
+  .note h3{margin:0;font-size:14.5px;font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .k{font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px;background:var(--accent-soft);color:var(--accent)}
+  .k-have{background:rgba(21,128,61,.12);color:var(--closed)}
+  .note p{margin:0;font-size:13px;color:var(--soft);line-height:1.65}
+  .note p b{color:var(--ink);font-weight:600}
+  .quote{border-inline-start:3px solid var(--divider-strong);padding-inline-start:11px;font-size:13px;
+    color:var(--ink);opacity:.85;margin:0 0 4px}
+  footer{border-top:1px solid var(--divider);padding-top:14px;font-size:12px;color:var(--soft-2);
+    display:flex;flex-wrap:wrap;gap:6px 18px}
+</style>
+
+<div class="page" dir="rtl">
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">פרקטיקום · אפיון לאישור · מסלול א + ג</div>
+    <h1>איך יודעים שהמעסיק ענה — כשהתשובה לוקחת חודש וחצי</h1>
+    <p class="deck">
+      בחרת <b>א + ג</b>: קישור תשובה למעסיק, ותזכורות מתחתיו. ואז אמרת את הדבר שמשנה
+      את כל התכנון — <b>"הוא מזמין לראיון ואחרי ראיון הוא לוחץ על הקישור, וזה לוקח
+      לפעמים חודש וחצי"</b>. זה אומר ששעון אחד של שבעה ימים הוא טעות: ההמתנה לתשובה
+      ראשונה היא לא אותה המתנה כמו ההמתנה להחלטה אחרי ראיון. האפיון כאן מפצל אותן.
+    </p>
+  </header>
+
+  <section>
+    <h2>ארבעה שלבים, ולכל אחד שעון משלו</h2>
+    <p class="sub">
+      היום המערכת יודעת רק "נשלח" ו"נענה". זה מה שגורם לשורה לצעוק "7 ימים ללא תשובה"
+      גם כשהראיון בכלל נקבע לעוד שבועיים.
+    </p>
+    <div class="stages">
+
+      <div class="stage" style="--tone:var(--employer)">
+        <span class="sno"></span>
+        <div>
+          <div class="snm">1 · קו״ח נשלחו</div>
+          <div class="swait">ממתינים שהמעסיק יגיב בכלל — בדרך כלל הזמנה לראיון.</div>
+          <div class="srow">בשורה: <b>נשלח ל‑X · ממתין לתשובה</b></div>
+          <div class="snudge">אחרי 7 ימים → "כדאי לתזכר" + כפתור תזכורת</div>
+        </div>
+        <div class="sclock"><div class="sclockv">7</div><div class="sclockl">ימים</div></div>
+      </div>
+
+      <div class="stage" style="--tone:var(--student)">
+        <span class="sno"></span>
+        <div>
+          <div class="snm">2 · הוזמן/ה לראיון</div>
+          <div class="swait">ממתינים שהראיון יתקיים. יכול להיות בעוד שבועיים — וזה תקין.</div>
+          <div class="srow">בשורה: <b>ראיון ב‑Codeoasis · 12.9 בשעה 10:00</b></div>
+          <div class="snudge">אין תזכורת עד לתאריך. יום אחרי הראיון → "מה היה?"</div>
+        </div>
+        <div class="sclock"><div class="sclockv">עד<br>התאריך</div><div class="sclockl">לא שעון ימים</div></div>
+      </div>
+
+      <div class="stage" style="--tone:var(--employer)">
+        <span class="sno"></span>
+        <div>
+          <div class="snm">3 · אחרי הראיון</div>
+          <div class="swait">ממתינים להחלטה. זה החלק הארוך — לפי דבריך עד חודש וחצי מהשליחה.</div>
+          <div class="srow">בשורה: <b>אחרי ראיון · ממתין להחלטה, 12 ימים</b></div>
+          <div class="snudge">תזכורת כל 14 יום — לא כל 7. אחרת זו הצקה.</div>
+        </div>
+        <div class="sclock"><div class="sclockv">14</div><div class="sclockl">ימים · חוזר</div></div>
+      </div>
+
+      <div class="stage" style="--tone:var(--closed)">
+        <span class="sno"></span>
+        <div>
+          <div class="snm">4 · הוכרע</div>
+          <div class="swait">נקלט/ה או נדחה/תה. המקום נתפס סופית או משוחרר לבחירה הבאה.</div>
+          <div class="srow">בשורה: <b>שובץ/ה ב‑X</b> · או חזרה ל"יש לטפל" עם הבחירה הבאה</div>
+        </div>
+        <div class="sclock"><div class="sclockv">—</div><div class="sclockl">סגור</div></div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>מה המעסיק רואה</h2>
+    <p class="sub">
+      קישור אישי בתוך המייל של הקו״ח, ובכל תזכורת אחריו. אותו מנגנון בדיוק שכבר עובד
+      אצלך לטופס משוב המעסיק — קישור קצר עם טוקן, בלי סיסמה ובלי הרשמה.
+      <b>הכפתורים משתנים לפי השלב</b>, כך שלא שואלים "התקבל?" לפני שהיה ראיון.
+    </p>
+    <div class="grid2">
+      <div class="mail">
+        <div class="mailhead">שלב 1 — אחרי שליחת הקו״ח</div>
+        <div class="mailbody">
+          שלום נוי,<br>
+          מצורפים קו״ח של עדי גורביץ׳ לפרקטיקום במשאבי אנוש.<br>
+          <b>נשמח לדעת איך להתקדם:</b>
+          <div class="mailbtns">
+            <div class="mb mb-yes">📅 אשמח לזמן לראיון</div>
+            <div class="mb mb-wait">⏳ עדיין בבדיקה — חזרו אליי בעוד שבועיים</div>
+            <div class="mb mb-no">✕ לא מתאים לנו</div>
+          </div>
+        </div>
+      </div>
+      <div class="mail">
+        <div class="mailhead">שלב 3 — אחרי הראיון</div>
+        <div class="mailbody">
+          שלום נוי,<br>
+          הראיון עם עדי גורביץ׳ התקיים ב‑12.9.<br>
+          <b>מה הוחלט?</b>
+          <div class="mailbtns">
+            <div class="mb mb-yes">✓ מתקבלת אלינו</div>
+            <div class="mb mb-no">✕ לא מתקבלת</div>
+            <div class="mb mb-wait">⏳ טרם הוחלט</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>מה כבר קיים ומה צריך להיבנות</h2>
+    <p class="sub">רוב התשתית קיימת — זו הסיבה שמסלול א׳ ריאלי ולא פרויקט.</p>
+    <div class="grid2">
+      <div class="note">
+        <h3><span class="k k-have">קיים</span>קישור טוקן למעסיק</h3>
+        <p>
+          <b>feedbackToken</b> + הכתובת הקצרה <b>/f?t=</b> כבר עובדים לטופס משוב המעסיק
+          בסוף ההתנסות. אותו דפוס בדיוק — טוקן אחד לכל צירוף סטודנט×ארגון.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="k k-have">קיים</span>מנוע תזכורות</h3>
+        <p>
+          <b>feedback-reminders</b> כבר רץ ומתזכר מעסיקים שלא הגיבו. השלבים החדשים
+          מתווספים לו במקום להקים מנגנון שני.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="k k-have">קיים</span>שדות הראיון</h3>
+        <p>
+          <b>placementInterviewDate/Time/Org</b> על הסטודנט/ית ו‑<b>interviewResult</b>
+          לכל ארגון בנפרד. שלב 2 ממלא אותם במקום להמציא שדה חדש.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="k">לבנייה</span>דף התשובה + השלבים</h3>
+        <p>
+          דף <b>/r?t=</b> עם הכפתורים לפי שלב, שדה <b>responseStage</b> לכל ארגון,
+          והחלפת שעון ה‑7 ימים היחיד בשעון לפי שלב. <b>זה עיקר העבודה.</b>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>שלוש שאלות פתוחות</h2>
+    <p class="sub">אלה משנות את הבנייה — לכן הן כאן ולא בקוד.</p>
+    <div class="grid2">
+      <div class="note">
+        <h3><span class="k">1</span>מי מזין את תאריך הראיון?</h3>
+        <p>
+          המעסיק בקישור, או אתה/רחל כשהוא מודיע במייל? <b>הצעתי:</b> שניהם — המעסיק
+          יכול לבחור תאריך, ואם הוא רק כותב לך במייל, אתה מזין ידנית והשעון מתחיל.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="k">2</span>כמה תזכורות לפני שמפסיקים?</h3>
+        <p>
+          חודש וחצי בקצב 14 יום = שלוש תזכורות. <b>הצעתי:</b> אחרי שלוש — להפסיק
+          ולסמן "אין מענה", כדי שהמערכת לא תרדוף אחרי מעסיק ששכח אתכם.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="k">3</span>האם התזכורת נשלחת אוטומטית?</h3>
+        <p>
+          <b>הצעתי: לא.</b> המערכת מתריעה לך, ואתה לוחץ. שליחה אוטומטית בשם המחלקה
+          למעסיק אמיתי היא בדיוק סוג הדבר שכדאי שיישאר בידיים שלך.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>אפיון לאישור · לא מומש</span>
+    <span>מסלול א + ג · לפי בחירתך</span>
+    <span>נשען על feedbackToken · feedback-reminders · placementInterview*</span>
+  </footer>
+
+</div>
+</div>
