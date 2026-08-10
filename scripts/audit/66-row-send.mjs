@@ -100,7 +100,9 @@ const openRowSend = async () => audit.page.evaluate(async (name) => {
   dlg?.querySelector('[data-channel="email"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
   await new Promise(r => setTimeout(r, 700));
   const rowDlg = document.querySelector('[data-row-send-confirm]');
-  return { label, target, rowDialog: !!rowDlg, rowText: (rowDlg?.innerText || '').replace(/\s+/g, ' ') };
+  const rec = document.querySelector('[data-send-recipient]');
+  return { label, target, rowDialog: !!rowDlg, rowText: (rowDlg?.innerText || '').replace(/\s+/g, ' '),
+           recipient: rec ? rec.innerText.replace(/\s+/g, ' ').slice(0, 70) : null };
 }, STU_NAME);
 
 if (!seedOk) {
@@ -124,6 +126,12 @@ if (!seedOk) {
     ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })));
   await audit.page.waitForTimeout(1200);
   const afterNo = await stateOf();
+  audit.recordCell({
+    id: 'ROWSEND-names-recipient', tableRef: 'proposal 4 — say who it reaches, before it opens',
+    expected: 'the confirmation names the contact and the address',
+    observed: opened.recipient || 'no recipient block',
+    pass: !!opened.recipient && /נמען/.test(opened.recipient) });
+
   audit.recordCell({
     id: 'ROWSEND-not-sent-nothing', tableRef: 'the phantom-dispatch shape, from the row',
     expected: 'answering "לא נשלח" leaves the place free and writes no dispatch',
@@ -255,6 +263,7 @@ if (!seedOk) {
     observed: released.err ? released.err : `pref=${afterRelease.prefStatus}, slot=${afterRelease.slotStatus}`,
     pass: released.err ? null : afterRelease.slotStatus === 'available',
   });
+
 }
 
 // ── cleanup: remove the seeded student, employer AND its dispatches ────────────

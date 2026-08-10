@@ -29,6 +29,14 @@ import { buildUnifiedOrgList, countSlotsByStatus, type UnifiedOrgPref } from './
  *  `reviewAgingThresholdDays`, which still governs the ⏱ chip inside the card. */
 export const SILENCE_DAYS = 7;
 
+/** After an interview the wait is genuinely long — Yariv 2026-08-10: a decision can take
+ *  a month and a half. Chasing every 7 days there would be harassment, so the post-
+ *  interview clock is its own. */
+export const DECISION_DAYS = 14;
+
+/** Stop chasing after this many reminders and say so, rather than nag forever. */
+export const MAX_REMINDERS = 3;
+
 export type PlacementTurn = 'ours' | 'student' | 'employer' | 'closed';
 
 export type PlacementKey =
@@ -41,6 +49,9 @@ export type PlacementKey =
   | 'sent_stale'
   | 'interview_passed'
   | 'sent'
+  | 'interview_scheduled'
+  | 'awaiting_decision'
+  | 'no_response'
   | 'exhausted'
   | 'not_submitted';
 
@@ -63,7 +74,7 @@ export type PlacementChip = {
 };
 
 export type PlacementActionId =
-  | 'adopt' | 'approve_org' | 'place_direct' | 'send_cv' | 'remind' | 'add_orgs' | 'unsend';
+  | 'adopt' | 'approve_org' | 'place_direct' | 'send_cv' | 'remind' | 'add_orgs' | 'unsend' | 'drop_org';
 
 /** Every action states its consequence before it runs (Yariv 2026-08-09: "1 click opens
  *  a warning saying clicking will do..."). The copy is derived from what the real
@@ -205,14 +216,19 @@ const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { labe
     warnBody: 'ייתפס מקום בארגון והסטטוס יעבור ל"ממתין לתשובת המעסיק". לאחר מכן ייפתח חלון WhatsApp או מייל עם ההודעה המוכנה — ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם, לא מכאן.',
   },
   remind: {
-    id: 'remind', short: 'תזכר', label: 'תזכר מעסיקים', confirmLabel: 'פתח תזכורת', isNew: true,
-    warnTitle: 'תזכורת למעסיקים שטרם ענו',
-    warnBody: 'ייפתח חלון WhatsApp או מייל עם תזכורת מוכנה למעסיקים שטרם ענו. ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם.',
+    id: 'remind', short: 'תזכר', label: 'תזכר מעסיק', confirmLabel: 'פתח תזכורת',
+    warnTitle: 'תזכורת למעסיק שטרם ענה',
+    warnBody: 'ייפתח חלון WhatsApp או מייל עם תזכורת מוכנה — נוסח קצר שמזכיר מי המועמד/ת וכמה זמן עבר. המקום בארגון כבר תפוס ולא ייתפס שוב. ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם, ורק אישור שלך מפעיל מחדש את השעון.',
   },
   unsend: {
     id: 'unsend', short: 'בטל שליחה', label: 'לא נשלח — החזר לרשימה', confirmLabel: 'שחרר והחזר לרשימה',
     warnTitle: 'ההודעה לא נשלחה בפועל',
     warnBody: 'המקום בארגון ישוחרר, והארגון יחזור לרשימה כ"טרם נשלח" כדי שאפשר יהיה לשלוח שוב. רישום השליחה יסומן כבוטל ויישאר בהיסטוריה. לא נשלחת שום הודעה למעסיק.',
+  },
+  drop_org: {
+    id: 'drop_org', short: 'הסר', label: 'הסר מהדירוג', confirmLabel: 'הסר מהדירוג',
+    warnTitle: 'הסרת ארגון מהדירוג',
+    warnBody: 'הארגון יוסר מרשימת ההעדפות של הסטודנט/ית, ושאר הבחירות ימוספרו מחדש. אם הוא החזיק מקום — המקום ישוחרר. לא נשלחת שום הודעה. אפשר להוסיף אותו שוב מהכרטיס בכל שלב.',
   },
   add_orgs: {
     id: 'add_orgs', short: 'הוסף', label: 'הוסף ארגונים', confirmLabel: 'פתח כרטיס',
@@ -381,7 +397,63 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     const stillSendable = waitingChips.filter(c => c.available);
     if (stillSendable.length) stillSendable[0].recommended = true;
     const sendAction = stillSendable.length ? act('send_cv') : null;
+    // ── stage, not just elapsed days ────────────────────────────────────────
+    // One 7-day clock shouted "no reply" straight through a scheduled interview.
+    // Each stage now has its own (Yariv 2026-08-10).
+    const ivDate = String(student.placementInterviewDate || '').trim();
+    const ivTs = ivDate ? Date.parse(`${ivDate}T${student.placementInterviewTime || '23:59'}`) : NaN;
+    const ivKnown = Number.isFinite(ivTs);
+    const ivFuture = ivKnown && ivTs > now;
+    const ivPast = ivKnown && ivTs <= now;
+    const sinceIv = ivPast ? Math.floor((now - ivTs) / DAY) : null;
+    const remindersSent = Math.max(0, ...(dispatches || [])
+      .filter((d: any) => d.studentId === student.id && d.result === 'pending')
+      .map((d: any) => d.reminders || 0), 0);
+    const exhaustedReminders = remindersSent >= MAX_REMINDERS;
+
+    // Stage 2 — an interview is booked. Silent until the date arrives.
+    if (ivFuture) {
+      const when = new Date(ivTs).toLocaleDateString('he-IL');
+      return {
+        key: 'interview_scheduled', turn: 'employer',
+        headline: `ראיון ב‑${student.placementInterviewOrg || sent[0]?.orgName || ''} · ${when}`,
+        sub: withCvNote(`אין מה לעשות עד לראיון${student.placementInterviewTime ? ` (${student.placementInterviewTime})` : ''}`),
+        chips: allChips, age: '', action: sendAction,
+      };
+    }
+
+    // Stage 3 — the interview happened and no decision has been recorded.
+    if (ivPast) {
+      const overdue = (sinceIv ?? 0) > DECISION_DAYS;
+      if (exhaustedReminders) {
+        return {
+          key: 'no_response', turn: 'ours',
+          headline: `אין מענה מ‑${student.placementInterviewOrg || sent[0]?.orgName || 'המעסיק'} אחרי ${MAX_REMINDERS} תזכורות`,
+          sub: withCvNote('כדאי להתקדם לבחירה הבאה או להציע ארגון אחר'),
+          chips: allChips, age: '', action: sendAction || act('add_orgs'),
+        };
+      }
+      return {
+        key: 'awaiting_decision', turn: overdue ? 'ours' : 'employer',
+        headline: `הראיון התקיים · ממתין להחלטה${sinceIv !== null ? ` — ${sinceIv} ימים` : ''}`,
+        sub: withCvNote(overdue
+          ? `מעל ${DECISION_DAYS} ימים מהראיון — כדאי לתזכר${remindersSent ? ` (נשלחו ${remindersSent})` : ''}`
+          : `החלטה יכולה לקחת זמן. תזכורת אחרי ${DECISION_DAYS} ימים.`),
+        chips: allChips, age: '', action: overdue ? act('remind') : sendAction,
+      };
+    }
+
     const stale = oldest !== null && oldest > SILENCE_DAYS;
+
+    // Stage 1, chased to exhaustion — say so instead of nagging a fourth time.
+    if (stale && exhaustedReminders) {
+      return {
+        key: 'no_response', turn: 'ours',
+        headline: `אין מענה אחרי ${MAX_REMINDERS} תזכורות`,
+        sub: withCvNote('כדאי להתקדם לבחירה הבאה או להציע ארגון אחר'),
+        chips: allChips, age: '', action: sendAction || act('add_orgs'),
+      };
+    }
 
     if (stale) {
       return {

@@ -6,7 +6,7 @@
  * one JSON array on stdout, which 64-placement-strip.mjs turns into audit cells.
  * Deliberately NOT named `NN-*.mjs`, so the gate does not pick it up as a cell of its own.
  */
-import { placementStatus, actionsForChip, SILENCE_DAYS } from '../../src/lib/placementStatus.ts';
+import { placementStatus, actionsForChip, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../../src/lib/placementStatus.ts';
 
 const cells: any[] = [];
 const audit = { recordCell: (c: any) => cells.push(c) };
@@ -164,7 +164,8 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     student: { cvUpdatedUrl: 'x', preferences: [{ rank: 1, orgName: 'A', employerId: 'e1', status: 'under_review', slotId: 's0' }] },
     dispatches: [{ studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(SILENCE_DAYS + 5) }],
   });
-  rule('STRIP-remind-flagged-new', 'not built yet — must not look built', true, st.action?.isNew === true);
+  // Built on 2026-08-10 — it must no longer carry the "not yet built" flag.
+  rule('STRIP-remind-is-built', 'reminder shipped 2026-08-10', undefined, st.action?.isNew);
 }
 
 // A10 — the three faults Yariv reported from v1.36.1 (2026-08-10), on a row that has
@@ -198,6 +199,43 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     'send_cv', st.action?.id);
   rule('STRIP-recommends-next-free', 'points at the choice that can actually receive it',
     3, st.chips.find(c => c.recommended)?.rank);
+}
+
+// A11 — staged clocks. Yariv 2026-08-10: a decision can take a month and a half, so one
+// 7-day clock shouted "no reply" straight through a scheduled interview.
+{
+  const emps = [{ id: 'e1', name: 'Codeoasis', approvalStatus: 'approved' }];
+  const base = (over: any = {}) => ({
+    employers: emps,
+    student: { courseId: 'c1', cvUpdatedUrl: 'x',
+      preferences: [{ rank: 1, orgName: 'Codeoasis', employerId: 'e1', status: 'under_review', slotId: 's0' }],
+      ...over },
+    dispatches: [{ studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(30), reminders: over.__rem ?? 0 }],
+  });
+  const iso = (d: number) => new Date(NOW + d * 86400000).toISOString().slice(0, 10);
+
+  // an interview booked for next week must NOT read as "no reply"
+  const sched = run(base({ placementInterviewDate: iso(7), placementInterviewOrg: 'Codeoasis' }));
+  rule('CLOCK-interview-silences', 'stage 2 — silent until the date',
+    'interview_scheduled/employer', `${sched.key}/${sched.turn}`);
+  rule('CLOCK-interview-no-nag', 'stage 2 must not demand a reminder', true, sched.action?.id !== 'remind');
+
+  // the day after the interview: waiting on a decision, not overdue yet
+  const justAfter = run(base({ placementInterviewDate: iso(-2), placementInterviewOrg: 'Codeoasis' }));
+  rule('CLOCK-after-interview', 'stage 3 — awaiting a decision',
+    'awaiting_decision/employer', `${justAfter.key}/${justAfter.turn}`);
+
+  // past the decision window the ball comes back to us
+  const overdue = run(base({ placementInterviewDate: iso(-(DECISION_DAYS + 3)), placementInterviewOrg: 'Codeoasis' }));
+  rule('CLOCK-decision-overdue', 'stage 3 — past the window it is ours',
+    'awaiting_decision/ours', `${overdue.key}/${overdue.turn}`);
+  rule('CLOCK-decision-offers-remind', 'stage 3 overdue offers a reminder', 'remind', overdue.action?.id);
+
+  // and after three reminders we stop chasing and say so
+  const spent = run(base({ placementInterviewDate: iso(-(DECISION_DAYS + 3)), __rem: MAX_REMINDERS }));
+  rule('CLOCK-stops-after-3', 'Yariv: stop after three and mark אין מענה',
+    'no_response/ours', `${spent.key}/${spent.turn}`);
+  rule('CLOCK-stops-not-remind', 'a fourth reminder is not offered', true, spent.action?.id !== 'remind');
 }
 
 process.stdout.write(JSON.stringify(cells));

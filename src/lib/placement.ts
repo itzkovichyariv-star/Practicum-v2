@@ -24,6 +24,26 @@ const DEFAULT_WHATSAPP = `שלום {contactName},
 
 const DEFAULT_EMAIL_SUBJECT = `מועמדות {studentName} ל-{positionTitle}`;
 
+// ── Reminder after silence ────────────────────────────────────────────────────
+// Sent when an employer has not responded. Deliberately short and un-pushy: it
+// re-states who and what, and offers the easy exit ("if it is not relevant, tell us")
+// so a non-answer becomes an answer. {daysWaiting} is filled by the caller.
+const DEFAULT_REMINDER_WHATSAPP = `שלום {contactName},
+רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים.
+קישור לקו"ח: {cvLink}
+נשמח לדעת אם רלוונטי עבורכם, וגם "לא מתאים" עוזר לנו להתקדם.
+תודה,
+{adminName}`;
+
+const DEFAULT_REMINDER_EMAIL_SUBJECT = `תזכורת — מועמדות {studentName} ל{positionTitle}`;
+
+const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactName},
+רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים, במסגרת {courseName}.
+קישור לקו"ח: {cvLink}
+נשמח לדעת אם המועמדות רלוונטית עבורכם. גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
+תודה רבה,
+{adminName}`;
+
 const DEFAULT_EMAIL_BODY = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת קורס {courseName} באוניברסיטת אריאל.
 קישור לקו"ח: {cvLink}
@@ -77,6 +97,9 @@ export function getDefaultPlacementSettings(): PlacementSettings {
     defaultPreferenceCount: 3,
     defaultAgingThresholdDays: 14,
     whatsappTemplate: DEFAULT_WHATSAPP,
+    reminderWhatsappTemplate: DEFAULT_REMINDER_WHATSAPP,
+    reminderEmailSubjectTemplate: DEFAULT_REMINDER_EMAIL_SUBJECT,
+    reminderEmailBodyTemplate: DEFAULT_REMINDER_EMAIL_BODY,
     emailSubjectTemplate: DEFAULT_EMAIL_SUBJECT,
     emailBodyTemplate: DEFAULT_EMAIL_BODY,
     whatsappWithdrawalTemplate: DEFAULT_WHATSAPP_WITHDRAWAL,

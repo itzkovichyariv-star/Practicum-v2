@@ -13,7 +13,7 @@ import ExcelImport from './ExcelImport';
 import { openMailto } from '../lib/openMailto';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
-import { planDispatch, applyDispatch, unsendOrg } from '../lib/dispatch';
+import { planDispatch, applyDispatch, unsendOrg, dropOrg } from '../lib/dispatch';
 import { resolveCvUrl } from '../lib/cvUrl';
 import { placementStatus, isPlacementCourse, TURN_LABEL, TURN_COLOR,
   type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
@@ -264,6 +264,8 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [rowSend, setRowSend] = useState<{ student: Student; entries: any[]; channel: 'whatsapp' | 'email' } | null>(null);
   // The just-sent bar. Persistent by design — see runPlacementAction('unsend').
   const [sentBar, setSentBar] = useState<{ studentId: string; studentName: string; orgNames: string[] } | null>(null);
+  // A reminder awaiting confirmation that it really went out. Persistent, like the send bar.
+  const [remindBar, setRemindBar] = useState<{ studentId: string; studentName: string; orgName: string; days: number } | null>(null);
   useEffect(() => {
     let alive = true;
     supabase.from('cv_updates')
@@ -371,17 +373,56 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     // planner the card uses (lib/dispatch), so the two cannot drift, and it keeps every
     // guard: an explicit target, a compose window that must actually open, and a
     // confirmation that the message really went before any place is taken.
+    // A reminder re-opens the compose window for an organization whose CV is already
+    // out. The place is already held, so nothing is reserved; confirming only records
+    // that a reminder went, which restarts the silence clock.
+    if (action.id === 'remind') {
+      const course = courses.find((c: any) => c.id === student.courseId);
+      const st = statusById.get(student.id);
+      const target = (action as any).targetOrg
+        || st?.chips.find(c => c.tone === 'late')?.orgName
+        || st?.chips.find(c => c.tone === 'sent')?.orgName;
+      if (!target) { showToast('אין ארגון בהמתנה לתזכורת', 'error'); return; }
+      const disp = ((data as any).dispatches || [])
+        .filter((d: any) => d.studentId === student.id && d.result === 'pending')
+        .sort((a: any, b: any) => String(b.sentAt).localeCompare(String(a.sentAt)))[0];
+      const days = disp ? Math.max(0, Math.floor((Date.now() - new Date(disp.sentAt).getTime()) / 86400000)) : 0;
+      const plan = planDispatch({
+        student, employers, orgNames: [target], channel: (action as any).channel || 'email',
+        courseId: student.courseId, courseName: course?.name || '',
+        cvLink: resolveCvUrl(student.cvUpdatedUrl || student.cvUrl || ''),
+        userName, settings: (data as any).placementSettings || {},
+        allowResend: true, reminder: { daysWaiting: days },
+      });
+      if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
+      const opened: any[] = [];
+      for (const e of plan.entries) {
+        const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
+        if (ok) opened.push(e);
+      }
+      if (!opened.length) { showToast('חלון נחסם — שלח/י בנפרד', 'error'); return; }
+      setRemindBar({ studentId: student.id, studentName: student.name, orgName: target, days });
+      return;
+    }
     if (action.id === 'send_cv') {
-      const orgName = (action as any).targetOrg as string | undefined;
-      if (!orgName) { setEditing(student); return; }
+      const orgNames = ((action as any).targetOrgs as string[] | undefined)?.filter(Boolean)
+        || [(action as any).targetOrg].filter(Boolean) as string[];
+      if (!orgNames.length) { setEditing(student); return; }
       const course = courses.find((c: any) => c.id === student.courseId);
       const plan = planDispatch({
-        student, employers, orgNames: [orgName], channel: (action as any).channel || 'email',
+        student, employers, orgNames, channel: (action as any).channel || 'email',
         courseId: student.courseId, courseName: course?.name || '',
         cvLink: resolveCvUrl(student.cvUpdatedUrl || student.cvUrl || ''),
         userName, settings: (data as any).placementSettings || {},
       });
       if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
+      // Refuse rather than open a compose window with no recipient — an empty window
+      // looks like it worked and is exactly how a send goes missing.
+      const noContact = plan.entries.filter(e => e.missingContact).map(e => e.orgName);
+      if (noContact.length && noContact.length === plan.entries.length) {
+        showToast(`אין ${(action as any).channel === 'whatsapp' ? 'טלפון' : 'כתובת מייל'} ל‑${noContact.join(', ')} — הוסף/י פרטי קשר לארגון`, 'error');
+        return;
+      }
       const opened = [];
       const skipped = [...plan.skipped];
       for (const e of plan.entries) {
@@ -397,6 +438,20 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     // actually sent takes longer than any toast would last (Yariv 2026-08-10 — "it should
     // stay after it is created"), so the control lives on the organization itself and
     // remains until the send is resolved.
+    if (action.id === 'drop_org') {
+      const orgName = (action as any).targetOrg as string | undefined;
+      if (!orgName) return;
+      const res = dropOrg({ student, employers, orgName, userName });
+      const nextStudents = all.map(x => x.id === student.id ? res.student : x);
+      setSaving(true);
+      const saved = await saveSnapshot(
+        { ...data, students: nextStudents, employers: res.employers },
+        { name: userName }, { action: 'ארגון הוסר מהדירוג', entity: 'סטודנט', target: student.name });
+      setSaving(false);
+      if (saved.ok) { onRefresh(); showToast(`✕ ${orgName} הוסר מהדירוג`, 'success'); }
+      else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
+      return;
+    }
     if (action.id === 'unsend') {
       const orgName = (action as any).targetOrg as string | undefined;
       if (!orgName) return;
@@ -871,6 +926,42 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         )}
       </section>
 
+      {remindBar && (
+        <div data-remind-bar
+          style={{ position: 'fixed', insetInline: 12, bottom: 12, zIndex: 350, display: 'flex',
+            alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '11px 14px', borderRadius: 12,
+            background: 'var(--bg)', border: '1px solid var(--divider-strong)',
+            boxShadow: '0 12px 40px rgba(61,15,20,0.22)', maxWidth: 560, marginInline: 'auto' }}>
+          <span style={{ flex: 1, minWidth: 170, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+            נפתחה תזכורת ל‑{remindBar.orgName} · {remindBar.studentName} ({remindBar.days} ימים)
+            <span style={{ display: 'block', fontSize: 11.5, fontWeight: 500, color: 'var(--text-soft)' }}>
+              אשר/י רק אם התזכורת נשלחה בפועל — השעון יתחיל מחדש.
+            </span>
+          </span>
+          <button type="button" data-remind-confirm
+            onClick={async () => {
+              const b = remindBar; setRemindBar(null);
+              const now = new Date().toISOString();
+              const next = ((data as any).dispatches || []).map((d: any) =>
+                (d.studentId === b.studentId && d.result === 'pending')
+                  ? { ...d, remindedAt: now, reminders: (d.reminders || 0) + 1 } : d);
+              setSaving(true);
+              const saved = await saveSnapshot({ ...data, dispatches: next }, { name: userName },
+                { action: 'נשלחה תזכורת למעסיק', entity: 'סטודנט', target: b.studentName });
+              setSaving(false);
+              if (saved.ok) { onRefresh(); showToast(`✓ נרשמה תזכורת ל‑${b.orgName}`, 'success'); }
+              else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
+            }}
+            style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: '#15803d', color: '#fff', cursor: 'pointer' }}>
+            ✓ נשלחה
+          </button>
+          <button type="button" data-remind-close onClick={() => setRemindBar(null)} aria-label="סגור"
+            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--divider)',
+              background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
+
       {sentBar && (
         <div data-sent-bar
           style={{ position: 'fixed', insetInline: 12, bottom: 12, zIndex: 350, display: 'flex',
@@ -913,6 +1004,19 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               המערכת פותחת את ההודעה — היא <b>לא שולחת בעצמה</b>. אשר/י רק אחרי שההודעה
               נשלחה בפועל אל <b>{rowSend.entries.map(e => e.orgName).join(', ')}</b> עבור <b>{rowSend.student.name}</b>.
             </p>
+            {/* Who it actually reaches — the planner knew this all along and never said it. */}
+            <div data-send-recipient style={{ marginTop: 9, padding: '8px 11px', borderRadius: 8,
+              background: 'var(--accent-soft)', fontSize: 12.5, lineHeight: 1.6 }}>
+              {rowSend.entries.map(e => (
+                <div key={e.orgName}>
+                  <span style={{ color: 'var(--text-soft)' }}>נמען: </span>
+                  <b>{e.contactName || e.orgName}</b>
+                  {e.missingContact
+                    ? <span style={{ color: '#b91c1c', fontWeight: 700 }}> · אין {rowSend.channel === 'whatsapp' ? 'טלפון' : 'כתובת'} לארגון</span>
+                    : <span dir="ltr" style={{ color: 'var(--text-soft)' }}> · {e.recipient}</span>}
+                </div>
+              ))}
+            </div>
             <div style={{ marginTop: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(185,28,28,0.08)', color: '#b91c1c', fontWeight: 600, fontSize: 12.5 }}>
               ⚠ אישור תופס את המקום בארגון. אם לא נשלח — בחר/י "לא נשלח", והמקום יישאר פנוי.
             </div>

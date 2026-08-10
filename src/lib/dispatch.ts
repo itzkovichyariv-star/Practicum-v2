@@ -39,6 +39,9 @@ export type DispatchPlanEntry = {
   messageSnapshot: string;
   prefRank: number | null;
   contactName: string;
+  /** The actual address or number the window will open against — shown before sending,
+   *  so an empty compose window is never mistaken for a sent message. */
+  recipient: string;
   /** Missing phone/email means the compose window would open with no recipient. */
   missingContact: boolean;
 };
@@ -75,6 +78,9 @@ export type PlanInput = {
   settings: any;
   /** Allow orgs already `under_review` — a re-send to the same employer. */
   allowResend?: boolean;
+  /** Compose a REMINDER instead of a first send: different wording, and the place is
+   *  already held so nothing new is reserved. */
+  reminder?: { daysWaiting: number } | null;
 };
 
 /**
@@ -120,14 +126,19 @@ export function planDispatch(input: PlanInput): DispatchPlan {
       positionTitle: emp.name, adminName: userName,
       courseName: input.courseName || '', cvLink, employerName: emp.name,
     };
+    const rem = input.reminder;
+    const ctxR = { ...ctx, daysWaiting: String(rem?.daysWaiting ?? '') };
     let url = '', messageSnapshot = '', missingContact = false;
     if (channel === 'whatsapp') {
-      messageSnapshot = renderTemplate(settings?.whatsappTemplate || '', ctx);
+      messageSnapshot = renderTemplate(
+        (rem ? settings?.reminderWhatsappTemplate : settings?.whatsappTemplate) || '', ctxR);
       url = buildWhatsAppUrl(emp.contactPhone || '', messageSnapshot);
       missingContact = !String(emp.contactPhone || '').trim();
     } else {
-      const subject = renderTemplate(settings?.emailSubjectTemplate || '', ctx);
-      const body = renderTemplate(settings?.emailBodyTemplate || '', ctx);
+      const subject = renderTemplate(
+        (rem ? settings?.reminderEmailSubjectTemplate : settings?.emailSubjectTemplate) || '', ctxR);
+      const body = renderTemplate(
+        (rem ? settings?.reminderEmailBodyTemplate : settings?.emailBodyTemplate) || '', ctxR);
       messageSnapshot = `${subject}\n\n${body}`;
       url = buildMailtoUrl(emp.contactEmail || '', subject, body);
       missingContact = !String(emp.contactEmail || '').trim();
@@ -137,7 +148,9 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     entries.push({
       orgName, employerId: emp.id, slotId: target.id, reusingSlot: !!already,
       channel, url, messageSnapshot, prefRank: card.rank ?? null,
-      contactName: emp.contactPerson || emp.name, missingContact,
+      contactName: emp.contactPerson || emp.name,
+      recipient: channel === 'whatsapp' ? String(emp.contactPhone || '') : String(emp.contactEmail || ''),
+      missingContact,
     });
   }
 
@@ -191,6 +204,35 @@ export function applyDispatch(input: ApplyInput): { student: any; employers: Emp
   }
 
   return { student, employers, dispatches: [...input.dispatches, ...added] };
+}
+
+/**
+ * Drop an organization from the ranking entirely — the exit for a choice that is blocked
+ * and will not free up (Yariv 2026-08-10: a full organization said WHY but offered
+ * nothing to do). Frees any place it happened to hold, and renumbers the rest so the
+ * ranking never has a gap.
+ */
+export function dropOrg(input: { student: any; employers: Employer[]; orgName: string; userName: string; now?: string }):
+  { student: any; employers: Employer[] } {
+  const now = input.now || new Date().toISOString();
+  const pref = (input.student.preferences || []).find((p: any) => norm(p.orgName) === norm(input.orgName));
+  const slotId = pref?.slotId || null;
+  const employers = input.employers.map((e: any) => {
+    if (!slotId || !((e.vacancySlots || []) as any[]).some(s => s.id === slotId)) return e;
+    const slots = ((e.vacancySlots || []) as any[]).map(s => s.id !== slotId ? s : ({
+      ...s, status: 'available', studentId: null, prefRank: null,
+      history: [...(s.history || []), { at: now, from: s.status, to: 'available', by: 'admin',
+        actorId: input.userName, reason: 'dropped-from-ranking' }],
+    }));
+    return reconcileEmployerCapacity({ ...e, vacancySlots: slots });
+  });
+  const kept = (input.student.preferences || [])
+    .filter((p: any) => norm(p.orgName) !== norm(input.orgName))
+    .map((p: any, i: number) => ({ ...p, rank: i + 1 }));
+  const student = applyUnifiedList({ ...input.student, preferences: kept },
+    kept.map((p: any, i: number) => ({ rank: i + 1, orgName: p.orgName, employerId: p.employerId || null,
+      interviewResult: p.interviewResult || 'pending', status: p.status || 'tentative', slotId: p.slotId ?? null })));
+  return { student, employers };
 }
 
 export type UnsendInput = {

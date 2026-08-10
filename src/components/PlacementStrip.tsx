@@ -178,8 +178,17 @@ export default function PlacementStrip({ status, employers, onAction }: {
   // לה". Seeded with the classifier's recommendation, so the target is never ambiguous
   // even before the coordinator touches anything.
   const targets = status.chips.filter(c => c.available && (status.action?.id === 'send_cv' || status.action?.id === 'place_direct'));
-  const [picked, setPicked] = useState<string | null>(null);
-  const chosen = targets.find(c => c.orgName === picked) || targets.find(c => c.recommended) || targets[0] || null;
+  const [picked, setPicked] = useState<string[]>([]);
+  // Multi-select (Yariv: "אם רוצים לשלוח ליותר ממקום אחד"). Defaults to the recommended
+  // choice; ticking others adds them. NOTE: browsers refuse the second popup, so the
+  // planner still opens them one at a time and reports any it could not.
+  const chosenList = picked.length ? targets.filter(c => picked.includes(c.orgName))
+    : (targets.find(c => c.recommended) ? [targets.find(c => c.recommended)!] : targets.slice(0, 1));
+  const chosen = chosenList[0] || null;
+  const toggle = (name: string) => setPicked(prev => {
+    const base = prev.length ? prev : (chosen ? [chosen.orgName] : []);
+    return base.includes(name) ? base.filter(n => n !== name) : [...base, name];
+  });
   // An org the student brought can be approved straight into a placement OR sent a CV;
   // an org from the shared list only ever gets a CV, and reaches placement through a
   // passed interview (Yariv 2026-08-09). Selecting a list org must therefore never leave
@@ -237,14 +246,14 @@ export default function PlacementStrip({ status, employers, onAction }: {
               const selectableState = status.action?.id === 'send_cv' || status.action?.id === 'place_direct';
               const isTarget = selectableState && c.available;
               const selectable = isTarget && targets.length > 1;
-              const isChosen = isTarget && chosen?.orgName === c.orgName;
+              const isChosen = isTarget && chosenList.some(x => x.orgName === c.orgName);
               return (
                 <span key={`${c.orgName}#${i}`} style={{ position: 'relative', minWidth: 0, maxWidth: '100%' }}>
                   <span
                     data-org-chip={c.orgName}
                     data-org-available={c.available ? '1' : '0'}
-                    data-org-selected={isTarget && chosen?.orgName === c.orgName ? '1' : '0'}
-                    onClick={() => { if (selectable) setPicked(c.orgName); }}
+                    data-org-selected={isChosen ? '1' : '0'}
+                    onClick={() => { if (selectable) toggle(c.orgName); }}
                     style={{
                       display: 'inline-flex', alignItems: 'flex-start', gap: 6,
                       font: 'inherit', fontSize: 11.5, fontWeight: 600, padding: '4px 9px', borderRadius: 7,
@@ -286,6 +295,19 @@ export default function PlacementStrip({ status, employers, onAction }: {
                       }}>i</span>
                   </span>
                   {isOpen && <EmployerDetails emp={emp} orgName={c.orgName} onClose={() => setOpenOrg(null)} />}
+                  {/* A blocked choice now has an exit. Waiting is the default — doing
+                      nothing keeps it ranked — so the only control needed is the one
+                      that removes it (Yariv 2026-08-10). */}
+                  {!c.available && c.tone === 'plain' && c.blockedReason && (
+                    <button type="button" data-strip-drop={c.orgName}
+                      title={`הסר את ${c.orgName} מהדירוג — או השאר/י אותו והמתן/י שיתפנה`}
+                      onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.drop_org, targetOrg: c.orgName } as any); }}
+                      style={{
+                        marginInlineStart: 5, font: 'inherit', fontSize: 10.5, fontWeight: 700,
+                        padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                        border: '1px dashed var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)',
+                      }}>✕ הסר מהדירוג</button>
+                  )}
                   {(c.tone === 'sent' || c.tone === 'late') && (
                     <button type="button" data-strip-unsend={c.orgName}
                       title={`ההודעה ל${c.orgName} לא נשלחה בפועל — שחרר את המקום`}
@@ -304,7 +326,9 @@ export default function PlacementStrip({ status, employers, onAction }: {
 
         {open && targets.length > 1 && (
           <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>
-            לשליחה לארגון אחר — סמן/י אותו למעלה
+            {chosenList.length > 1
+              ? `${chosenList.length} ארגונים מסומנים · ייפתח חלון לכל אחד בנפרד`
+              : 'לשליחה לארגון נוסף — סמן/י אותו למעלה'}
           </div>
         )}
       </div>
@@ -321,7 +345,7 @@ export default function PlacementStrip({ status, employers, onAction }: {
             key={a.id}
             type="button"
             data-strip-action={a.id}
-            data-strip-target={chosen?.orgName || ''}
+            data-strip-target={chosenList.map(c => c.orgName).join('|')}
             onClick={() => setConfirm(a)}
             title={chosen ? `${a.label} ל‑${chosen.orgName}` : a.label}
             style={{
@@ -332,7 +356,9 @@ export default function PlacementStrip({ status, employers, onAction }: {
               border: ai === 0 ? '1px solid transparent' : `1px dashed var(--divider-strong)`,
               color: ai === 0 ? '#fff' : 'var(--text-soft)',
             }}>
-            {open && chosen ? `${a.label} ל‑${chosen.orgName}` : a.short}
+            {open && chosenList.length
+              ? (chosenList.length > 1 ? `${a.label} ל‑${chosenList.length} ארגונים` : `${a.label} ל‑${chosen!.orgName}`)
+              : a.short}
           </button>
         ))}
         {status.chips.length > 0 && (
@@ -359,7 +385,8 @@ export default function PlacementStrip({ status, employers, onAction }: {
           onCancel={() => setConfirm(null)}
           onConfirm={(channel) => {
             const a = confirm; setConfirm(null);
-            onAction({ ...a, targetOrg: chosen?.orgName, channel } as PlacementAction);
+            onAction({ ...a, targetOrg: chosen?.orgName,
+              targetOrgs: chosenList.map(c => c.orgName), channel } as PlacementAction);
           }}
         />
       )}
