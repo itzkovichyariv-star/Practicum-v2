@@ -29,6 +29,9 @@ import type { Employer, VacancySlot, Dispatch } from './supabase';
 export type DispatchChannel = 'whatsapp' | 'email';
 
 export type DispatchPlanEntry = {
+  /** Minted here so the employer's response link can carry it, and reused verbatim when
+   *  the send is confirmed — the link and the recorded dispatch must be the same id. */
+  dispatchId: string;
   orgName: string;
   employerId: string;
   slotId: string;
@@ -76,6 +79,10 @@ export type PlanInput = {
   cvLink: string;
   userName: string;
   settings: any;
+  /** Mints the dispatch id; also used to build the employer's response link. */
+  newId?: () => string;
+  /** Origin for the response link, e.g. https://practicum.yarivitzkovich.org */
+  origin?: string;
   /** Allow orgs already `under_review` — a re-send to the same employer. */
   allowResend?: boolean;
   /** Compose a REMINDER instead of a first send: different wording, and the place is
@@ -125,9 +132,12 @@ export function planDispatch(input: PlanInput): DispatchPlan {
       contactName: emp.contactPerson || emp.name, studentName: student.name,
       positionTitle: emp.name, adminName: userName,
       courseName: input.courseName || '', cvLink, employerName: emp.name,
-    };
+    } as Record<string, string>;
     const rem = input.reminder;
-    const ctxR = { ...ctx, daysWaiting: String(rem?.daysWaiting ?? '') };
+    const dispatchId = input.newId ? input.newId() : `d-${target.id}`;
+    const origin = input.origin || (typeof window !== 'undefined' ? window.location.origin : '');
+    const ctxR = { ...ctx, daysWaiting: String(rem?.daysWaiting ?? ''),
+      responseLink: origin ? `${origin}/r?t=${dispatchId}` : '' };
     let url = '', messageSnapshot = '', missingContact = false;
     if (channel === 'whatsapp') {
       messageSnapshot = renderTemplate(
@@ -146,6 +156,7 @@ export function planDispatch(input: PlanInput): DispatchPlan {
 
     usedEmployerIds.add(emp.id);
     entries.push({
+      dispatchId,
       orgName, employerId: emp.id, slotId: target.id, reusingSlot: !!already,
       channel, url, messageSnapshot, prefRank: card.rank ?? null,
       contactName: emp.contactPerson || emp.name,
@@ -197,7 +208,8 @@ export function applyDispatch(input: ApplyInput): { student: any; employers: Emp
         ? { ...p, employerId: e.employerId, slotId: e.slotId, status: 'under_review' } : p),
     };
     added.push({
-      id: newId(), studentId: student.id, employerId: e.employerId, slotId: e.slotId,
+      // the SAME id the response link was built with
+      id: e.dispatchId || newId(), studentId: student.id, employerId: e.employerId, slotId: e.slotId,
       channel: e.channel, sentBy: userName, sentAt: now, messageSnapshot: e.messageSnapshot,
       result: 'pending', resultAt: null, resultBy: null,
     } as Dispatch);
@@ -283,4 +295,117 @@ export function unsendOrg(input: UnsendInput): { student: any; employers: Employ
     ? { ...d, result: 'withdrawn', resultAt: now, resultBy: userName } as Dispatch : d);
 
   return { student, employers, dispatches };
+}
+
+
+// ── The employer's own answer ─────────────────────────────────────────────────
+// Yariv 2026-08-10 chose routes א + ג: the employer answers through a link, and we chase
+// underneath. The crucial fact he supplied is that the answer is NOT one step — "הוא
+// מזמין לראיון ואחרי ראיון הוא לוחץ על הקישור … לפעמים חודש וחצי". So the link asks a
+// stage-appropriate question and never asks "was she accepted?" before an interview.
+
+export type ResponseStage = 'awaiting_reply' | 'interview_booked' | 'awaiting_decision' | 'answered';
+
+/** What the employer should be asked, given where this dispatch has got to. */
+export function responseStageOf(input: {
+  student: any; orgName: string; interviewDate?: string | null; now?: number;
+}): ResponseStage {
+  const pref = (input.student?.preferences || [])
+    .find((p: any) => norm(p.orgName) === norm(input.orgName));
+  if (!pref) return 'awaiting_reply';
+  if (pref.status === 'placed' || pref.status === 'rejected') return 'answered';
+  const iv = String(input.interviewDate || input.student?.placementInterviewDate || '').trim();
+  if (!iv) return 'awaiting_reply';
+  const ts = Date.parse(`${iv}T23:59`);
+  if (!Number.isFinite(ts)) return 'awaiting_reply';
+  return ts > (input.now ?? Date.now()) ? 'interview_booked' : 'awaiting_decision';
+}
+
+export type EmployerAnswer =
+  | { kind: 'invite'; interviewDate?: string }
+  | { kind: 'still_reviewing' }
+  | { kind: 'not_suitable' }
+  | { kind: 'accepted' }
+  | { kind: 'not_accepted' };
+
+/**
+ * Fold an employer's answer into the data. Pure — the caller persists it.
+ * Deliberately conservative: 'accepted' marks the placement, everything else moves the
+ * stage or releases the place, and nothing here messages anybody.
+ */
+export function applyEmployerAnswer(input: {
+  student: any; employers: Employer[]; dispatches: Dispatch[];
+  orgName: string; answer: EmployerAnswer; now?: string;
+}): { student: any; employers: Employer[]; dispatches: Dispatch[] } {
+  const now = input.now || new Date().toISOString();
+  const { answer, orgName } = input;
+  const pref = (input.student.preferences || []).find((p: any) => norm(p.orgName) === norm(orgName));
+  const slotId = pref?.slotId || null;
+
+  if (answer.kind === 'invite') {
+    return {
+      student: {
+        ...input.student,
+        placementInterviewDate: answer.interviewDate || input.student.placementInterviewDate || '',
+        placementInterviewOrg: orgName,
+        preferences: (input.student.preferences || []).map((p: any) =>
+          norm(p.orgName) === norm(orgName) ? { ...p, interviewResult: 'pending' } : p),
+      },
+      employers: input.employers, dispatches: input.dispatches,
+    };
+  }
+
+  if (answer.kind === 'still_reviewing') {
+    // Restart the clock without changing anything else — a real answer, just not final.
+    return {
+      student: input.student, employers: input.employers,
+      dispatches: input.dispatches.map(d => (d.slotId === slotId && d.result === 'pending')
+        ? ({ ...d, remindedAt: now } as Dispatch) : d),
+    };
+  }
+
+  if (answer.kind === 'accepted') {
+    const employers = input.employers.map((e: any) => {
+      if (!slotId || !((e.vacancySlots || []) as any[]).some(s => s.id === slotId)) return e;
+      const slots = ((e.vacancySlots || []) as any[]).map(s => s.id !== slotId ? s : ({
+        ...s, status: 'placed', studentId: input.student.id,
+        history: [...(s.history || []), { at: now, from: s.status, to: 'placed', by: 'system', actorId: 'employer-link' }],
+      }));
+      return reconcileEmployerCapacity({ ...e, vacancySlots: slots });
+    });
+    return {
+      student: {
+        ...input.student, acceptedOrg: orgName, submissionStatus: 'placed',
+        placedAt: input.student.placedAt || now.slice(0, 10),
+        preferences: (input.student.preferences || []).map((p: any) =>
+          norm(p.orgName) === norm(orgName) ? { ...p, status: 'placed', interviewResult: 'passed' } : p),
+      },
+      employers,
+      dispatches: input.dispatches.map(d => (d.slotId === slotId && d.result === 'pending')
+        ? ({ ...d, result: 'placed', resultAt: now, resultBy: 'employer-link' } as Dispatch) : d),
+    };
+  }
+
+  // not_suitable / not_accepted — free the place and mark the choice rejected.
+  const employers = input.employers.map((e: any) => {
+    if (!slotId || !((e.vacancySlots || []) as any[]).some(s => s.id === slotId)) return e;
+    const slots = ((e.vacancySlots || []) as any[]).map(s => s.id !== slotId ? s : ({
+      ...s, status: 'available', studentId: null, prefRank: null,
+      history: [...(s.history || []), { at: now, from: s.status, to: 'available', by: 'system', actorId: 'employer-link' }],
+    }));
+    return reconcileEmployerCapacity({ ...e, vacancySlots: slots });
+  });
+  return {
+    student: {
+      ...input.student,
+      preferences: (input.student.preferences || []).map((p: any) =>
+        norm(p.orgName) === norm(orgName)
+          ? { ...p, status: 'rejected', slotId: null,
+              interviewResult: answer.kind === 'not_accepted' ? 'failed' : p.interviewResult }
+          : p),
+    },
+    employers,
+    dispatches: input.dispatches.map(d => (d.slotId === slotId && d.result === 'pending')
+      ? ({ ...d, result: 'rejected', resultAt: now, resultBy: 'employer-link' } as Dispatch) : d),
+  };
 }

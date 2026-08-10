@@ -1,0 +1,10 @@
+---
+// Short alias for the employer-response link: /r?t=<dispatchId>
+// Kept as short as /f for the same reason — a long URL gets split by plain-text email
+// line-wrap and then does not resolve. EmployerResponse reads both `t` and `token`.
+import Layout from '../layouts/Layout.astro';
+import EmployerResponse from '../components/EmployerResponse.tsx';
+---
+<Layout title="תשובת מעסיק — פרקטיקום">
+  <EmployerResponse client:only="react" />
+</Layout>

@@ -213,6 +213,7 @@ export default function OrgHub({
     const plan = planDispatch({
       student, employers, orgNames, channel, courseId: form.courseId,
       courseName: course?.name || '', cvLink, userName, settings: placementSettings, allowResend,
+      newId: () => randomId('d'), origin: typeof window !== 'undefined' ? window.location.origin : '',
     });
     if (plan.blockedReason) { setSelected(new Set()); showToast(plan.blockedReason, 'error'); return; }
 
