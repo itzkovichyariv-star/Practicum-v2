@@ -22,6 +22,7 @@ const run = (over, extra = {}) => placementStatus({
   dispatches: over.dispatches || [],
   pending: over.pending || null,
   lastSubmissionAt: over.lastSubmissionAt || null,
+  allStudents: over.allStudents || [],
   course: over.course === undefined ? COURSE : over.course,
   now: NOW, ...extra,
 });
@@ -164,6 +165,39 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     dispatches: [{ studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(SILENCE_DAYS + 5) }],
   });
   rule('STRIP-remind-flagged-new', 'not built yet — must not look built', true, st.action?.isNew === true);
+}
+
+// A10 — the three faults Yariv reported from v1.36.1 (2026-08-10), on a row that has
+// one CV already out and two organizations still waiting.
+{
+  const emps = [
+    { id: 'e1', name: 'Icon', approvalStatus: 'approved', vacancySlots: [{ id: 'i1', courseId: 'c1', status: 'under_review', studentId: 'other' }] },
+    { id: 'e2', name: 'TLV',  approvalStatus: 'approved', vacancySlots: [{ id: 't1', courseId: 'c1', status: 'under_review', studentId: 'stu1' }] },
+    { id: 'e3', name: 'UCL',  approvalStatus: 'approved', vacancySlots: [{ id: 'u1', courseId: 'c1', status: 'available', studentId: null }] },
+  ];
+  const st = run({
+    employers: emps,
+    allStudents: [{ id: 'other', name: 'שובל קוממי' }],
+    student: { courseId: 'c1', cvUpdatedUrl: 'x', preferences: [
+      { rank: 1, orgName: 'Icon', employerId: 'e1', status: 'tentative', slotId: null },
+      { rank: 2, orgName: 'TLV',  employerId: 'e2', status: 'under_review', slotId: 't1' },
+      { rank: 3, orgName: 'UCL',  employerId: 'e3', status: 'tentative', slotId: null },
+    ] },
+    dispatches: [{ studentId: 'stu1', slotId: 't1', employerId: 'e2', result: 'pending', sentAt: daysAgo(0) }],
+  });
+  // "אין מה לשנות את הסדר של המקומות ששתיים יהיה לפני 1"
+  rule('STRIP-chips-keep-rank-order', 'Yariv 2026-08-10: never reorder the ranking',
+    '1,2,3', st.chips.map(c => c.rank).join(','));
+  // "כתוב של‑1 עדיין לא נשלח אבל זה לא נשלח כי אין מקום"
+  rule('STRIP-blocked-says-why', 'Yariv 2026-08-10: say WHY it was not sent',
+    true, /תפוס/.test(st.chips.find(c => c.rank === 1)?.suffix || ''));
+  rule('STRIP-blocked-names-holder', 'Yariv 2026-08-10',
+    true, (st.chips.find(c => c.rank === 1)?.suffix || '').includes('שובל קוממי'));
+  // "כפתורים לא לחיצים יותר אם רוצים לשלוח ליותר ממקום אחד"
+  rule('STRIP-can-still-send-after-first', 'Yariv 2026-08-10: sending must stay possible',
+    'send_cv', st.action?.id);
+  rule('STRIP-recommends-next-free', 'points at the choice that can actually receive it',
+    3, st.chips.find(c => c.recommended)?.rank);
 }
 
 process.stdout.write(JSON.stringify(cells));

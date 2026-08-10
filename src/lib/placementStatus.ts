@@ -351,9 +351,24 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   if (sent.length > 0) {
     const ages = sent.map(p => ({ p, d: sentDays(p) }));
     const oldest = ages.reduce<number | null>((m, x) => (x.d === null ? m : (m === null ? x.d : Math.max(m, x.d))), null);
-    const chips = ages.map(({ p, d }) =>
+    const sentChips = ages.map(({ p, d }) =>
       chipFor(p, d !== null && d > SILENCE_DAYS ? 'late' : 'sent', d === null ? '' : `נשלח ${agoPhrase(d)}`));
-    const waitingChips = tentative.map(p => chipFor(p, 'plain', 'טרם נשלח'));
+    // A not-yet-sent org must say WHY. "טרם נשלח" on a full organization reads as an
+    // oversight when it is actually blocked — Yariv 2026-08-10: "כתוב של‑1 עדיין לא
+    // נשלח אבל זה לא נשלח כי אין מקום ולכן נשלח ל‑2".
+    const waitingChips = tentative.map(p => {
+      const c = chipFor(p, 'plain', '');
+      return { ...c, suffix: c.available ? 'טרם נשלח' : c.blockedReason || 'לא ניתן לשלוח' };
+    });
+    // RANK ORDER, always. Grouping by status put #2 above #1 and made the ranking look
+    // wrong (same report). The rank is the student's stated preference — never reorder it.
+    const allChips = [...sentChips, ...waitingChips].sort((a, b) => a.rank - b.rank);
+    // Sending is still possible while earlier sends are outstanding, as long as some
+    // ranked org actually has a free place. Without this the row offered no way to send
+    // the remaining choices once the first CV went out.
+    const stillSendable = waitingChips.filter(c => c.available);
+    if (stillSendable.length) stillSendable[0].recommended = true;
+    const sendAction = stillSendable.length ? act('send_cv') : null;
     const stale = oldest !== null && oldest > SILENCE_DAYS;
 
     if (stale) {
@@ -361,7 +376,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
         key: 'sent_stale', turn: 'ours',
         headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ${oldest} ימים ללא תשובה`,
         sub: withCvNote(`מעל סף ההמתנה (${SILENCE_DAYS} ימים) — כדאי לתזכר את המעסיקים`),
-        chips: [...chips, ...waitingChips], age: '', action: act('remind'),
+        chips: allChips, age: '', action: act('remind'),
       };
     }
     if (passed.length > 0) {
@@ -370,15 +385,19 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
         key: 'interview_passed', turn: 'employer',
         headline: `עבר/ה ראיון ב‑${p0.orgName} — ממתין להחלטת המעסיק`,
         sub: withCvNote(`קו״ח נשלחו ${placesPhrase(sent.length)}`),
-        chips: [...chips.map(c => (norm(c.orgName) === norm(p0.orgName) ? { ...c, tone: 'pass' as const } : c)), ...waitingChips],
-        age: '', action: null,
+        chips: allChips.map(c => (norm(c.orgName) === norm(p0.orgName) ? { ...c, tone: 'pass' as const } : c)),
+        age: '', action: sendAction,
       };
     }
+    const blockedWaiting = waitingChips.filter(c => !c.available);
     return {
       key: 'sent', turn: 'employer',
       headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ממתין לתשובת המעסיק`,
-      sub: withCvNote(tentative.length ? `${tentative.length} ארגונים נוספים בדירוג, טרם נשלחו` : ''),
-      chips: [...chips, ...waitingChips], age: '', action: null,
+      sub: withCvNote(
+        stillSendable.length ? `אפשר לשלוח גם לבחירה ${stillSendable[0].rank}: ${stillSendable[0].orgName}`
+        : blockedWaiting.length ? blockedWaiting.map(c => `בחירה ${c.rank} (${c.orgName}) ${c.blockedReason}`).join(' · ')
+        : ''),
+      chips: allChips, age: '', action: sendAction,
     };
   }
 

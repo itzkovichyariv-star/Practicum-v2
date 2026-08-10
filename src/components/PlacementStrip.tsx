@@ -259,7 +259,7 @@ export default function PlacementStrip({ status, employers, onAction }: {
                       {c.suggested && <span aria-hidden style={{ opacity: 0.55, fontSize: 9, marginInlineEnd: 4 }}>◆</span>}
                       <b style={{ color: c.tone === 'plain' ? 'var(--ink)' : t.color }}>{c.orgName}</b>
                       {c.suffix && <span style={{ fontWeight: 500 }}> · {c.suffix}</span>}
-                      {selectableState && !c.available && c.blockedReason && (
+                      {!c.available && c.blockedReason && (
                         <span data-org-blocked style={{ display: 'block', fontWeight: 700, color: '#b45309', fontSize: 11 }}>
                           {c.blockedReason}
                         </span>
