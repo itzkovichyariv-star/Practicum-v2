@@ -38,6 +38,17 @@ try {
 }
 for (const c of ruleCells) audit.recordCell(c);
 
+// Rows are COLLAPSED by default since 2026-08-10 (a row with organizations was ~500px
+// on a phone; eleven students spanned about five screens). Anything that inspects the
+// ranking, the ⓘ or the chips must open the row first — that is the design, not a bug.
+const expandAll = () => audit.page.evaluate(async () => {
+  for (const b of document.querySelectorAll('[data-strip-expand="closed"]')) {
+    b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  }
+  await new Promise(r => setTimeout(r, 350));
+  return document.querySelectorAll('[data-org-chip]').length;
+});
+
 // ── B. render cells ─────────────────────────────────────────────────────────────
 await audit.setup();
 await audit.page.evaluate(() => {
@@ -47,6 +58,7 @@ await audit.page.evaluate(() => {
 await audit.page.reload({ waitUntil: 'networkidle' });
 await audit.page.waitForTimeout(1600);
 
+await expandAll();
 const shape = await audit.page.evaluate(() => {
   const rows = [...document.querySelectorAll('li')].filter(li => li.querySelector('[data-placement-strip]'));
   const strips = [...document.querySelectorAll('[data-placement-strip]')];
@@ -82,6 +94,7 @@ audit.recordCell({ id: 'STRIP-turn-filter', tableRef: 'brief §whose turn filter
 
 // an org chip opens the employer's real contact details — including a private org the
 // student proposed, which had no reachable details anywhere (Yariv 2026-08-09).
+await expandAll();
 const details = await audit.page.evaluate(async () => {
   // Details moved to a dedicated ⓘ control: tapping the chip now SELECTS the org to
   // send to (Yariv 2026-08-09 — "מסמנים את אחת הבחירות ושולחים לה"), so the two
@@ -122,6 +135,7 @@ await audit.page.setViewportSize({ width: 375, height: 812 });
 await audit.page.reload({ waitUntil: 'networkidle' });
 await audit.page.waitForTimeout(1400);
 
+await expandAll();
 const contained = await audit.page.evaluate(async () => {
   const st = document.createElement('style');
   st.textContent = '[data-org-chip]{font-size:15.5px !important}';   // ~35% wider than dev
@@ -158,6 +172,7 @@ await audit.page.waitForTimeout(1400);
 // ── D. pick-then-send, and a readable rank ──────────────────────────────────────
 // Yariv on v1.34.0: "לא ברור לאיזה מעסיק זה שילחץ", "המספור קטן ולא רואים", and the
 // system should say when the first choice is taken and point at the next open one.
+await expandAll();
 const pick = await audit.page.evaluate(async () => {
   const strip = [...document.querySelectorAll('[data-placement-strip="list_ready"]')]
     .find(s => s.querySelectorAll('[data-org-chip][data-org-available="1"]').length > 1);
@@ -198,6 +213,7 @@ if (pick.skip) {
 }
 
 // A blocked first choice must SAY it is blocked, on the row.
+await expandAll();
 const blocked = await audit.page.evaluate(() => {
   const el = document.querySelector('[data-org-blocked]');
   const chip = el?.closest('[data-org-chip]');
@@ -215,6 +231,7 @@ await audit.page.reload({ waitUntil: 'networkidle' });
 await audit.page.waitForTimeout(1400);
 
 // ── E. mixed row: the buttons follow the SELECTED org ───────────────────────────
+await expandAll();
 const mixed = await audit.page.evaluate(async () => {
   const strip = [...document.querySelectorAll('[data-placement-strip="suggested_org"]')][0];
   if (!strip) return { skip: 'no mixed row on screen' };
@@ -236,5 +253,54 @@ if (mixed.skip) {
     pass: mixed.suggestedFirst.includes('place_direct') && mixed.suggestedFirst.includes('send_cv')
        && mixed.afterListPick.join(',') === 'send_cv' });
 }
+
+
+// ── F. the compact row and the waiting queue ────────────────────────────────────
+// Approved 2026-08-10 after measuring the live page: a row with organizations was
+// 475–613px at 375px wide, and eleven students came to 4,163px — about five phone
+// screens to reach the four that need action.
+await audit.page.setViewportSize({ width: 375, height: 812 });
+await audit.page.reload({ waitUntil: 'networkidle' });
+await audit.page.waitForTimeout(1600);
+
+const compact = await audit.page.evaluate(async () => {
+  const rows = [...document.querySelectorAll('li[data-student-row]')];
+  const h = rows.map(li => Math.round(li.getBoundingClientRect().height));
+  const exp = document.querySelector('[data-strip-expand="closed"]');
+  const li = exp?.closest('li');
+  const before = li ? Math.round(li.getBoundingClientRect().height) : 0;
+  const chipsClosed = li ? li.querySelectorAll('[data-org-chip]').length : -1;
+  if (exp) { exp.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); await new Promise(r => setTimeout(r, 350)); }
+  const after = li ? Math.round(li.getBoundingClientRect().height) : 0;
+  const chipsOpen = li ? li.querySelectorAll('[data-org-chip]').length : -1;
+  return { rows: rows.length, total: h.reduce((a, b) => a + b, 0), before, after, chipsClosed, chipsOpen,
+           sideScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+});
+audit.recordCell({ id: 'STRIP-collapsed-by-default', tableRef: 'page design 2026-08-10, decision א',
+  expected: 'a row with organizations hides its ranking until opened',
+  observed: `chips closed=${compact.chipsClosed}, open=${compact.chipsOpen}, height ${compact.before}→${compact.after}px`,
+  pass: compact.chipsClosed === 0 && compact.chipsOpen > 0 && compact.after > compact.before });
+audit.recordCell({ id: 'STRIP-total-height-reduced', tableRef: 'the 4,163px measurement that prompted the redesign',
+  expected: 'the whole cohort fits in well under the 4,163px it took before',
+  observed: `${compact.rows} rows, ${compact.total}px (${(compact.total / 812).toFixed(1)} screens)`,
+  pass: compact.rows > 0 && compact.total < 3400 });
+// The expanded state is where a nowrap, non-shrinking button pushed the row 90px past
+// the viewport — the redesign must not reintroduce sideways scroll.
+audit.recordCell({ id: 'STRIP-expanded-no-side-scroll', tableRef: 'regression 2026-08-10',
+  expected: 'no sideways scroll with a row expanded at 375px',
+  observed: `${compact.sideScroll}px`, pass: compact.sideScroll <= 0 });
+
+const queue = await audit.page.evaluate(() => {
+  const q = document.querySelector('[data-waiting-queue]');
+  if (!q) return { present: false };
+  const rows = [...q.querySelectorAll('[data-waiting-row]')];
+  return { present: true, count: +q.getAttribute('data-waiting-queue'), rows: rows.length,
+           actions: rows.map(r => r.querySelector('[data-waiting-action]')?.getAttribute('data-waiting-action')).filter(Boolean).length,
+           aboveTheFold: Math.round(q.getBoundingClientRect().top) < 812 };
+});
+audit.recordCell({ id: 'QUEUE-lists-who-waits', tableRef: 'page design 2026-08-10, decision ג',
+  expected: 'the waiting list appears with one action per row (or is absent when nobody waits)',
+  observed: queue.present ? `${queue.count} waiting, ${queue.rows} rows, ${queue.actions} actions, aboveFold=${queue.aboveTheFold}` : 'nobody waiting — band absent',
+  pass: queue.present ? (queue.rows === queue.count && queue.actions === queue.rows && queue.aboveTheFold) : null });
 
 await audit.teardown();

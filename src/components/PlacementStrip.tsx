@@ -167,6 +167,11 @@ export default function PlacementStrip({ status, employers, onAction }: {
   onAction: (action: PlacementAction) => void;
 }) {
   const [openOrg, setOpenOrg] = useState<string | null>(null);
+  // Collapsed by default. A row with organizations was 475–613px tall on a phone and
+  // eleven students came to 4,163px — about five screens to find the four that need
+  // action (measured on the live site, 2026-08-10). One line, and the detail opens for
+  // the student you are actually working on.
+  const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<PlacementAction | null>(null);
   // Which org the action will act on. Mirrors the card's own tick-then-send mechanism
   // (OrgHub's data-send-cv checkbox) — Yariv 2026-08-09: "מסמנים את אחת הבחירות ושולחים
@@ -210,15 +215,20 @@ export default function PlacementStrip({ status, employers, onAction }: {
       </span>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {/* The sentence IS the status — largest, darkest thing in the strip. */}
-        <div data-strip-headline style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5, overflowWrap: 'break-word' }}>
+        {/* The sentence IS the status — one line when collapsed, full when opened. */}
+        <div data-strip-headline
+          style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5,
+            ...(open ? { overflowWrap: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>
           {status.headline}
         </div>
         {status.sub && (
-          <div style={{ fontSize: 12.5, color: 'var(--ink)', opacity: 0.72, lineHeight: 1.5 }}>{status.sub}</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink)', opacity: 0.72, lineHeight: 1.5,
+            ...(open ? {} : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>
+            {status.sub}
+          </div>
         )}
 
-        {status.chips.length > 0 && (
+        {open && status.chips.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 7px', alignItems: 'center', minWidth: 0 }}>
             {status.chips.map((c, i) => {
               const t = TONE_STYLE[c.tone];
@@ -246,8 +256,6 @@ export default function PlacementStrip({ status, employers, onAction }: {
                       textDecoration: c.tone === 'dead' ? 'line-through' : 'none',
                       opacity: c.tone === 'dead' ? 0.7 : (c.available === false && selectableState ? 0.72 : 1),
                     }}>
-                    {/* Rank badge — was 9.5px at 60% opacity and unreadable on a phone
-                        (Yariv 2026-08-09: "המספור קטן ולא רואים"). Now a solid badge. */}
                     <span aria-label={`בחירה ${c.rank}`} style={{
                       flexShrink: 0, display: 'inline-grid', placeItems: 'center',
                       width: 17, height: 17, borderRadius: '50%', marginTop: 1,
@@ -265,7 +273,6 @@ export default function PlacementStrip({ status, employers, onAction }: {
                         </span>
                       )}
                     </span>
-                    {/* Details stay reachable without stealing the tap that selects. */}
                     <span
                       role="button" tabIndex={0} data-org-info={c.orgName}
                       title={emp ? 'פרטי המעסיק' : 'הארגון לא נמצא ברשימת המעסיקים'}
@@ -285,33 +292,48 @@ export default function PlacementStrip({ status, employers, onAction }: {
           </div>
         )}
 
-        {offered.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-            {offered.map((a, ai) => (
-              <button
-                key={a.id}
-                type="button"
-                data-strip-action={a.id}
-                data-strip-target={chosen?.orgName || ''}
-                onClick={() => setConfirm(a)}
-                style={{
-                  font: 'inherit', fontSize: 11.5, fontWeight: 700,
-                  padding: '4px 12px', borderRadius: 7, cursor: 'pointer',
-                  // The first action is the primary route; a secondary one (send a CV to
-                  // an org the student brought) stays visibly subordinate.
-                  background: 'transparent',
-                  border: `1px ${ai === 0 ? 'solid' : 'dashed'} ${ai === 0 ? tone : 'var(--divider-strong)'}`,
-                  color: ai === 0 ? tone : 'var(--text-soft)',
-                }}>
-                {chosen ? `${a.label} ל‑${chosen.orgName}` : a.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {targets.length > 1 && (
-          <div style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: -1 }}>
+        {open && targets.length > 1 && (
+          <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>
             לשליחה לארגון אחר — סמן/י אותו למעלה
           </div>
+        )}
+      </div>
+
+      {/* Actions + the expander stay on the collapsed line, so one tap sends and one
+          tap reveals the ranking. */}
+      {/* Collapsed: the buttons sit on the same line and stay short. Expanded: they take
+          their own line and may wrap — the full label carries the employer name, and a
+          nowrap non-shrinking button pushed the row 90px past the viewport at 375px. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 1,
+        ...(open ? { flexBasis: '100%', flexWrap: 'wrap', minWidth: 0 } : { flexShrink: 0 }) }}>
+        {offered.map((a, ai) => (
+          <button
+            key={a.id}
+            type="button"
+            data-strip-action={a.id}
+            data-strip-target={chosen?.orgName || ''}
+            onClick={() => setConfirm(a)}
+            title={chosen ? `${a.label} ל‑${chosen.orgName}` : a.label}
+            style={{
+              font: 'inherit', fontSize: 11.5, fontWeight: 700,
+              whiteSpace: open ? 'normal' : 'nowrap', maxWidth: '100%', overflowWrap: 'break-word',
+              padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+              background: ai === 0 ? tone : 'transparent',
+              border: ai === 0 ? '1px solid transparent' : `1px dashed var(--divider-strong)`,
+              color: ai === 0 ? '#fff' : 'var(--text-soft)',
+            }}>
+            {open && chosen ? `${a.label} ל‑${chosen.orgName}` : a.short}
+          </button>
+        ))}
+        {status.chips.length > 0 && (
+          <button type="button" data-strip-expand={open ? 'open' : 'closed'}
+            aria-expanded={open} aria-label={open ? 'סגור פירוט' : 'הצג את הדירוג'}
+            onClick={() => setOpen(o => !o)}
+            style={{ width: 26, height: 26, borderRadius: 7, cursor: 'pointer',
+              border: '1px solid var(--divider)', background: 'transparent',
+              color: 'var(--text-soft)', fontSize: 11, lineHeight: 1 }}>
+            {open ? '⌃' : '⌄'}
+          </button>
         )}
       </div>
 

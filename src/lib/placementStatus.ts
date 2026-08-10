@@ -71,6 +71,9 @@ export type PlacementActionId =
 export type PlacementAction = {
   id: PlacementActionId;
   label: string;
+  /** One word for the collapsed row. The full label + employer name stay in the
+   *  confirmation, so the button never wraps to two lines on a phone. */
+  short: string;
   warnTitle: string;
   warnBody: string;
   confirmLabel: string;
@@ -182,32 +185,32 @@ function pendingHasNewCv(pending: CvSubmission | null, student: any): boolean {
 
 const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { label: string }> = {
   adopt: {
-    id: 'adopt', label: 'קלוט לכרטיס', confirmLabel: 'קלוט לכרטיס',
+    id: 'adopt', short: 'קלוט', label: 'קלוט לכרטיס', confirmLabel: 'קלוט לכרטיס',
     warnTitle: 'קליטת ההגשה לכרטיס',
     warnBody: 'רשימת ההעדפות והקו״ח המעודכנים מההגשה יועתקו לכרטיס הסטודנט/ית, וההגשה תסומן כטופלה ולא תופיע יותר כממתינה. לא נשלחת שום הודעה — לא לסטודנט/ית ולא למעסיק.',
   },
   approve_org: {
-    id: 'approve_org', label: 'בדוק ואשר ארגון', confirmLabel: 'אשר ארגון',
+    id: 'approve_org', short: 'אשר ארגון', label: 'בדוק ואשר ארגון', confirmLabel: 'אשר ארגון',
     warnTitle: 'אישור ארגון שהוצע',
     warnBody: 'הארגון יאושר ויתווסף כארגון פרטי של הסטודנט/ית בלבד, ויוגדר כבחירה ראשונה בדירוג. לא נשלחת הודעה אוטומטית — עדכון הסטודנט/ית נעשה בנפרד.',
   },
   place_direct: {
-    id: 'place_direct', label: 'אשר השמה', confirmLabel: 'אשר השמה',
+    id: 'place_direct', short: 'אשר השמה', label: 'אשר השמה', confirmLabel: 'אשר השמה',
     warnTitle: 'אישור השמה ישירה',
     warnBody: 'הסטודנט/ית יירשם/תירשם כמשובץ/ת בארגון, ייתפס מקום בארגון, ותאריך ההשמה יירשם כהיום. לא נשלחים קו״ח ולא נשלחת הודעה לאף אחד.\n⚠ שאר הארגונים בדירוג יישארו פתוחים — יש לבטל אותם מול המעסיקים מתוך הכרטיס.',
   },
   send_cv: {
-    id: 'send_cv', label: 'שלח קו״ח', confirmLabel: 'המשך לשליחה',
+    id: 'send_cv', short: 'שלח', label: 'שלח קו״ח', confirmLabel: 'המשך לשליחה',
     warnTitle: 'שליחת קו״ח למעסיק',
     warnBody: 'ייתפס מקום בארגון והסטטוס יעבור ל"ממתין לתשובת המעסיק". לאחר מכן ייפתח חלון WhatsApp או מייל עם ההודעה המוכנה — ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם, לא מכאן.',
   },
   remind: {
-    id: 'remind', label: 'תזכר מעסיקים', confirmLabel: 'פתח תזכורת', isNew: true,
+    id: 'remind', short: 'תזכר', label: 'תזכר מעסיקים', confirmLabel: 'פתח תזכורת', isNew: true,
     warnTitle: 'תזכורת למעסיקים שטרם ענו',
     warnBody: 'ייפתח חלון WhatsApp או מייל עם תזכורת מוכנה למעסיקים שטרם ענו. ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם.',
   },
   add_orgs: {
-    id: 'add_orgs', label: 'הוסף ארגונים', confirmLabel: 'פתח כרטיס',
+    id: 'add_orgs', short: 'הוסף', label: 'הוסף ארגונים', confirmLabel: 'פתח כרטיס',
     warnTitle: 'הוספת ארגונים לדירוג',
     warnBody: 'ייפתח כרטיס הסטודנט/ית במקטע הארגונים, כדי להוסיף ארגונים חדשים לדירוג. לא מתבצע שום שינוי בנתונים.',
   },
