@@ -63,7 +63,7 @@ export type PlacementChip = {
 };
 
 export type PlacementActionId =
-  | 'adopt' | 'approve_org' | 'place_direct' | 'send_cv' | 'remind' | 'add_orgs';
+  | 'adopt' | 'approve_org' | 'place_direct' | 'send_cv' | 'remind' | 'add_orgs' | 'unsend';
 
 /** Every action states its consequence before it runs (Yariv 2026-08-09: "1 click opens
  *  a warning saying clicking will do..."). The copy is derived from what the real
@@ -209,6 +209,11 @@ const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { labe
     warnTitle: 'תזכורת למעסיקים שטרם ענו',
     warnBody: 'ייפתח חלון WhatsApp או מייל עם תזכורת מוכנה למעסיקים שטרם ענו. ההודעה נשלחת רק אחרי שתלחץ/י «שלח» שם.',
   },
+  unsend: {
+    id: 'unsend', short: 'בטל שליחה', label: 'לא נשלח — החזר לרשימה', confirmLabel: 'שחרר והחזר לרשימה',
+    warnTitle: 'ההודעה לא נשלחה בפועל',
+    warnBody: 'המקום בארגון ישוחרר, והארגון יחזור לרשימה כ"טרם נשלח" כדי שאפשר יהיה לשלוח שוב. רישום השליחה יסומן כבוטל ויישאר בהיסטוריה. לא נשלחת שום הודעה למעסיק.',
+  },
   add_orgs: {
     id: 'add_orgs', short: 'הוסף', label: 'הוסף ארגונים', confirmLabel: 'פתח כרטיס',
     warnTitle: 'הוספת ארגונים לדירוג',
@@ -217,6 +222,10 @@ const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { labe
 };
 
 const act = (id: PlacementActionId): PlacementAction => ({ ...ACTIONS[id] });
+
+/** The action catalogue, for callers that offer an action the state itself does not
+ *  carry — the per-organization undo on a sent chip, for instance. */
+export const ACTION_BY_ID = ACTIONS;
 
 /**
  * The actions available for ONE ranked org, which depend on how it got there

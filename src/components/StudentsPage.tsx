@@ -13,7 +13,7 @@ import ExcelImport from './ExcelImport';
 import { openMailto } from '../lib/openMailto';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
-import { planDispatch, applyDispatch } from '../lib/dispatch';
+import { planDispatch, applyDispatch, unsendOrg } from '../lib/dispatch';
 import { resolveCvUrl } from '../lib/cvUrl';
 import { placementStatus, isPlacementCourse, TURN_LABEL, TURN_COLOR,
   type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
@@ -262,6 +262,8 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   const [subsTick, setSubsTick] = useState(0);
   // A send opened from the row, awaiting the "did it actually go?" confirmation.
   const [rowSend, setRowSend] = useState<{ student: Student; entries: any[]; channel: 'whatsapp' | 'email' } | null>(null);
+  // The just-sent bar. Persistent by design — see runPlacementAction('unsend').
+  const [sentBar, setSentBar] = useState<{ studentId: string; studentName: string; orgNames: string[] } | null>(null);
   useEffect(() => {
     let alive = true;
     supabase.from('cv_updates')
@@ -389,6 +391,29 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       }
       if (opened.length === 0) { showToast(skipped.length ? `לא נשלח — ${skipped.join(', ')}` : 'לא נשלח', 'error'); return; }
       setRowSend({ student, entries: opened, channel: opened[0].channel });
+      return;
+    }
+    // Undo a send from the row. Deliberately NOT time-limited: checking whether Outlook
+    // actually sent takes longer than any toast would last (Yariv 2026-08-10 — "it should
+    // stay after it is created"), so the control lives on the organization itself and
+    // remains until the send is resolved.
+    if (action.id === 'unsend') {
+      const orgName = (action as any).targetOrg as string | undefined;
+      if (!orgName) return;
+      const res = unsendOrg({
+        student, employers, dispatches: (data as any).dispatches || [],
+        orgName, userName, mode: 'never_sent',
+      });
+      const nextStudents = all.map(x => x.id === student.id ? res.student : x);
+      setSaving(true);
+      const saved = await saveSnapshot(
+        { ...data, students: nextStudents, employers: res.employers, dispatches: res.dispatches },
+        { name: userName },
+        { action: 'בוטלה שליחת קו״ח', entity: 'סטודנט', target: student.name },
+      );
+      setSaving(false);
+      if (saved.ok) { setRowSend(null); onRefresh(); showToast(`↩︎ ${orgName} חזר לרשימה — המקום שוחרר`, 'success'); }
+      else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
       return;
     }
     if (action.id !== 'adopt') { setEditing(student); return; }
@@ -846,6 +871,35 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         )}
       </section>
 
+      {sentBar && (
+        <div data-sent-bar
+          style={{ position: 'fixed', insetInline: 12, bottom: 12, zIndex: 350, display: 'flex',
+            alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '11px 14px', borderRadius: 12,
+            background: 'var(--bg)', border: '1px solid var(--divider-strong)',
+            boxShadow: '0 12px 40px rgba(61,15,20,0.22)', maxWidth: 560, marginInline: 'auto' }}>
+          <span style={{ flex: 1, minWidth: 160, fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+            ✓ נרשם: קו״ח ל‑{sentBar.orgNames.join(', ')} · {sentBar.studentName}
+          </span>
+          <button type="button" data-sent-bar-undo
+            onClick={() => {
+              const b = sentBar; setSentBar(null);
+              // Re-read the student: the one captured when the send started still has
+              // slotId === null, so undoing from it freed the preference but left the
+              // place reserved.
+              const fresh = (data.students || []).find((x: Student) => x.id === b.studentId);
+              if (fresh) runPlacementAction(fresh, { id: 'unsend', targetOrg: b.orgNames[0] } as any);
+            }}
+            style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
+              border: '1px solid #b45309', background: 'transparent', color: '#b45309', cursor: 'pointer' }}>
+            ↩︎ לא נשלח — בטל
+          </button>
+          <button type="button" data-sent-bar-close onClick={() => setSentBar(null)}
+            aria-label="סגור"
+            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--divider)',
+              background: 'transparent', color: 'var(--text-soft)', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
+
       {/* Row-level send confirmation. Same contract as the card's: the app opens the
           compose window, and only an explicit "it went" takes the place. */}
       {rowSend && (
@@ -878,8 +932,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                     { action: 'קו״ח נשלחו', entity: 'סטודנט', target: rs.student.name },
                   );
                   setSaving(false);
-                  if (saved.ok) { onRefresh(); showToast(`✓ נרשם: קו״ח נשלחו ל‑${rs.entries.map(e => e.orgName).join(', ')}`, 'success'); }
-                  else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
+                  if (saved.ok) {
+                    onRefresh();
+                    // Stays on screen until dismissed — you may only discover Outlook
+                    // did not send after switching to it and back.
+                    setSentBar({ studentId: rs.student.id, studentName: rs.student.name, orgNames: rs.entries.map(e => e.orgName) });
+                  } else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
                 }}
                 style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: '#15803d', color: '#fff', cursor: 'pointer' }}>
                 ✓ נשלח — סמן ותפוס מקום

@@ -185,16 +185,66 @@ if (!seedOk) {
     pass: !returned.err && afterReturn.prefStatus === 'tentative' && afterReturn.slotStatus === 'available',
   });
 
-  // ── 5. releasing a not-yet-sent org frees anything it held ──────────────────
+  // ── 5. the undo stays put, and it works from the row ────────────────────────
+  // Yariv 2026-08-10: "it should be there but should stay after it is created" — a timed
+  // toast is useless, because confirming whether Outlook really sent means switching to
+  // Outlook and back, which outlasts any countdown. So the bar persists until dismissed
+  // and every sent organization keeps its own undo.
+  // Placed BEFORE the release test below, which removes the organization from the
+  // ranking and would leave nothing to send.
+  await audit.page.reload({ waitUntil: 'networkidle' });
+  await audit.page.waitForTimeout(1500);
+  await openRowSend();
+  await audit.page.evaluate(() => document.querySelector('[data-row-send-yes]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })));
+  let sent2 = await stateOf();
+  for (let i = 0; i < 14 && sent2.prefStatus !== 'under_review'; i++) { await audit.page.waitForTimeout(500); sent2 = await stateOf(); }
+
+  await audit.page.waitForTimeout(6500);   // well past any 5-second window
+  const bar = await audit.page.evaluate(() => {
+    const b = document.querySelector('[data-sent-bar]');
+    return { present: !!b, hasUndo: !!document.querySelector('[data-sent-bar-undo]'),
+             text: (b?.innerText || '').replace(/\s+/g, ' ').slice(0, 70) };
+  });
+  audit.recordCell({ id: 'ROWSEND-undo-bar-persists', tableRef: 'Yariv 2026-08-10: the undo must stay',
+    expected: 'the just-sent bar and its undo are still there after 6.5s',
+    observed: bar.present ? `present · ${bar.text}` : `gone (sent=${sent2.prefStatus})`,
+    pass: bar.present && bar.hasUndo });
+
+  await audit.page.evaluate(() => document.querySelector('[data-sent-bar-undo]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })));
+  await audit.page.waitForTimeout(450);
+  await audit.page.evaluate(() => {
+    const go = [...document.querySelectorAll('button')].find(b => /שחרר והחזר/.test(b.textContent || ''))
+      || document.querySelector('[data-confirm-go]');
+    go?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  });
+  let undone = await stateOf();
+  for (let i = 0; i < 14 && undone.prefStatus === 'under_review'; i++) { await audit.page.waitForTimeout(500); undone = await stateOf(); }
+  audit.recordCell({ id: 'ROWSEND-undo-frees-place', tableRef: 'Yariv 2026-08-10',
+    expected: 'the undo returns the org to the list and frees the place',
+    observed: `pref=${undone.prefStatus}, slot=${undone.slotStatus}`,
+    pass: undone.prefStatus === 'tentative' && undone.slotStatus === 'available' });
+
+  // ── 6. releasing a not-yet-sent org frees anything it held ──────────────────
+  // RUNS LAST: it removes the organization from the ranking entirely.
+
   // handleRelease was the one data-changing operation in this flow with no cell at all
   // (found by the 2026-08-09 coverage sweep). It is the "✕ הסר ושחרר מקום" exit.
-  const released = await audit.page.evaluate(async () => {
+  const released = await audit.page.evaluate(async (name) => {
+    // The release control lives inside the card, and the undo step above reloaded the
+    // page — so open the editor again before looking for it.
+    if (!document.querySelector('[data-release]')) {
+      const li = [...document.querySelectorAll('li')].find(l => (l.innerText || '').includes(name));
+      li?.querySelector('[title="ערוך"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      await new Promise(r => setTimeout(r, 1800));
+    }
     const btn = document.querySelector('[data-release]');
     if (!btn) return { err: 'no release control on a tentative org' };
     btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
     await new Promise(r => setTimeout(r, 1500));
     return { ok: true };
-  });
+  }, STU_NAME);
   let afterRelease = await stateOf();
   for (let i = 0; i < 10 && afterRelease.prefStatus === 'tentative'; i++) {
     await audit.page.waitForTimeout(400); afterRelease = await stateOf();

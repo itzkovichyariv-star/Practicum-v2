@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
-import { TURN_LABEL, TURN_COLOR, actionsForChip } from '../lib/placementStatus';
+import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID } from '../lib/placementStatus';
 import { openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
@@ -286,6 +286,16 @@ export default function PlacementStrip({ status, employers, onAction }: {
                       }}>i</span>
                   </span>
                   {isOpen && <EmployerDetails emp={emp} orgName={c.orgName} onClose={() => setOpenOrg(null)} />}
+                  {(c.tone === 'sent' || c.tone === 'late') && (
+                    <button type="button" data-strip-unsend={c.orgName}
+                      title={`ההודעה ל${c.orgName} לא נשלחה בפועל — שחרר את המקום`}
+                      onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.unsend, targetOrg: c.orgName } as any); }}
+                      style={{
+                        marginInlineStart: 5, font: 'inherit', fontSize: 10.5, fontWeight: 700,
+                        padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                        border: '1px dashed var(--divider-strong)', background: 'transparent', color: '#b45309',
+                      }}>↩︎ לא נשלח</button>
+                  )}
                 </span>
               );
             })}
