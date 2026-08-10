@@ -26,6 +26,13 @@ for (const vp of [{ width: 375, height: 812, tag: 'phone' }, { width: 1400, heig
     out.rowsWithoutStrip = [...document.querySelectorAll('li')].filter(li =>
       li.querySelector('.serif') && li.querySelector('[title="ערוך"]') && !li.querySelector('[data-placement-strip]')).length;
 
+    // Rows collapse by default since v1.37, so the chips — and the ⓘ beside each — are
+    // not in the DOM until a row is opened. Without this the probe found nothing and
+    // reported "0/0" as a FAILURE, which reads like the feature is gone when it was
+    // simply never asked for.
+    for (const b of document.querySelectorAll('[data-strip-expand="closed"]')) click(b);
+    await new Promise(r => setTimeout(r, 400));
+
     // every ⓘ opens employer details
     let infoOk = 0, infoTotal = 0;
     for (const info of [...document.querySelectorAll('[data-org-info]')].slice(0, 4)) {
