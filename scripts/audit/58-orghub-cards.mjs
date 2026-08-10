@@ -251,6 +251,9 @@ for (let i = 0; i < 6 && !cleaned; i++) {
     cleaned = await writeData({
       ...d,
       students: (d.students || []).filter(s => s.id !== A_ID && s.id !== B_ID),
+      // also drop their dispatches — cells that send through the UI left
+      // orphaned rows behind (221 of 228 by 2026-08-10).
+      dispatches: (d.dispatches || []).filter(x => x.studentId !== A_ID && x.studentId !== B_ID),
       employers: (d.employers || []).filter(e => !String(e.id).startsWith(`${A_ID}-`)),
     }, row.version);
   } catch (e) { audit.log(`cleanup ${i} failed: ${e.message.slice(0, 80)}`); }

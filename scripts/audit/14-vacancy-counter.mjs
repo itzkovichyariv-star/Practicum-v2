@@ -133,7 +133,10 @@ audit.log('COUNTER-send-takes-place: build reserves nothing; ticking the send-CV
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
+  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID),
+      // also drop their dispatches — cells that send through the UI left
+      // orphaned rows behind (221 of 228 by 2026-08-10).
+      dispatches: (data.dispatches || []).filter(x => x.studentId !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
   audit.log('Cleanup: removed temp student + employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 
