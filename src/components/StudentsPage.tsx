@@ -392,6 +392,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         courseId: student.courseId, courseName: course?.name || '',
         cvLink: resolveCvUrl(student.cvUpdatedUrl || student.cvUrl || ''),
         userName, settings: (data as any).placementSettings || {},
+        newId: () => randomId('d'), origin: typeof window !== 'undefined' ? window.location.origin : '',
         allowResend: true, reminder: { daysWaiting: days },
       });
       if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
@@ -414,6 +415,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         courseId: student.courseId, courseName: course?.name || '',
         cvLink: resolveCvUrl(student.cvUpdatedUrl || student.cvUrl || ''),
         userName, settings: (data as any).placementSettings || {},
+        newId: () => randomId('d'), origin: typeof window !== 'undefined' ? window.location.origin : '',
       });
       if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
       // Refuse rather than open a compose window with no recipient — an empty window
@@ -674,6 +676,60 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         </div>
       </section>
 
+      {/* ── ממתינים לך ──────────────────────────────────────────────────────────
+          The four students who need an action, at the head of the screen. The filter
+          below already returns this set; showing it as a worklist is what removes the
+          scrolling — a row with organizations is ~500px tall, so eleven students span
+          about five phone screens (measured 2026-08-10). */}
+      {(() => {
+        const waiting = scoped
+          .map(s => ({ s, st: statusById.get(s.id) }))
+          .filter(x => x.st && x.st.turn === 'ours' && x.st.action)
+          .sort((a, b) => (b.st!.key === 'submission_pending' ? 1 : 0) - (a.st!.key === 'submission_pending' ? 1 : 0));
+        if (!waiting.length) return null;
+        return (
+          <div data-waiting-queue={waiting.length} className="mb-5"
+            style={{ border: '1px solid var(--divider-strong)', borderRadius: 12, overflow: 'hidden', background: 'var(--bg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 13px',
+              background: 'rgba(185,28,28,0.06)', borderBottom: '1px solid var(--divider)' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#b91c1c' }} />
+              <span style={{ flex: 1, fontWeight: 800, fontSize: 13, color: '#b91c1c' }}>ממתינים לך</span>
+              <span style={{ fontSize: 11, fontWeight: 800, background: '#b91c1c', color: '#fff',
+                padding: '1px 9px', borderRadius: 999 }}>{waiting.length}</span>
+            </div>
+            {waiting.map(({ s, st }) => (
+              <div key={s.id} data-waiting-row={s.id}
+                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px',
+                  borderBottom: '1px solid var(--divider)' }}>
+                <button type="button" onClick={() => setEditing(s)}
+                  title="פתח כרטיס"
+                  style={{ flex: 'none', minWidth: 78, textAlign: 'right', fontWeight: 700, fontSize: 13,
+                    background: 'transparent', border: 'none', color: 'var(--ink)', cursor: 'pointer', padding: 0 }}>
+                  {s.name}
+                </button>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text-soft)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {st!.sub || st!.headline}
+                </span>
+                <button type="button" data-waiting-action={st!.action!.id}
+                  onClick={() => {
+                    // Jump to the student's own row and let the strip run the action, so the
+                    // queue never becomes a second implementation of the same flow.
+                    const el = document.querySelector(`[data-student-row="${s.id}"]`);
+                    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    const btn = el?.querySelector('[data-strip-action]') as HTMLButtonElement | null;
+                    if (btn) setTimeout(() => btn.click(), 320); else setEditing(s);
+                  }}
+                  style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 7,
+                    border: '1px solid #b91c1c', color: '#b91c1c', background: 'transparent', cursor: 'pointer' }}>
+                  {st!.action!.short}
+                </button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {showImport && (
         <div className="mb-8">
           <ExcelImport kind="students" data={data} userName={userName} onDone={() => { setShowImport(false); onRefresh(); }} />
@@ -728,59 +784,6 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         })}
       </div>
 
-      {/* ── ממתינים לך ──────────────────────────────────────────────────────────
-          The four students who need an action, at the head of the screen. The filter
-          below already returns this set; showing it as a worklist is what removes the
-          scrolling — a row with organizations is ~500px tall, so eleven students span
-          about five phone screens (measured 2026-08-10). */}
-      {(() => {
-        const waiting = scoped
-          .map(s => ({ s, st: statusById.get(s.id) }))
-          .filter(x => x.st && x.st.turn === 'ours' && x.st.action)
-          .sort((a, b) => (b.st!.key === 'submission_pending' ? 1 : 0) - (a.st!.key === 'submission_pending' ? 1 : 0));
-        if (!waiting.length) return null;
-        return (
-          <div data-waiting-queue={waiting.length} className="mb-5"
-            style={{ border: '1px solid var(--divider-strong)', borderRadius: 12, overflow: 'hidden', background: 'var(--bg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 13px',
-              background: 'rgba(185,28,28,0.06)', borderBottom: '1px solid var(--divider)' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#b91c1c' }} />
-              <span style={{ flex: 1, fontWeight: 800, fontSize: 13, color: '#b91c1c' }}>ממתינים לך</span>
-              <span style={{ fontSize: 11, fontWeight: 800, background: '#b91c1c', color: '#fff',
-                padding: '1px 9px', borderRadius: 999 }}>{waiting.length}</span>
-            </div>
-            {waiting.map(({ s, st }) => (
-              <div key={s.id} data-waiting-row={s.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px',
-                  borderBottom: '1px solid var(--divider)' }}>
-                <button type="button" onClick={() => setEditing(s)}
-                  title="פתח כרטיס"
-                  style={{ flex: 'none', minWidth: 78, textAlign: 'right', fontWeight: 700, fontSize: 13,
-                    background: 'transparent', border: 'none', color: 'var(--ink)', cursor: 'pointer', padding: 0 }}>
-                  {s.name}
-                </button>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text-soft)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {st!.sub || st!.headline}
-                </span>
-                <button type="button" data-waiting-action={st!.action!.id}
-                  onClick={() => {
-                    // Jump to the student's own row and let the strip run the action, so the
-                    // queue never becomes a second implementation of the same flow.
-                    const el = document.querySelector(`[data-student-row="${s.id}"]`);
-                    el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                    const btn = el?.querySelector('[data-strip-action]') as HTMLButtonElement | null;
-                    if (btn) setTimeout(() => btn.click(), 320); else setEditing(s);
-                  }}
-                  style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 7,
-                    border: '1px solid #b91c1c', color: '#b91c1c', background: 'transparent', cursor: 'pointer' }}>
-                  {st!.action!.short}
-                </button>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
 
       {/* Whose-turn filter — the axis the placement strip is organised around, so the
           list can be worked as a queue: what do WE owe, what are we waiting on. */}
