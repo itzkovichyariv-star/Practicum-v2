@@ -183,8 +183,19 @@ export class Audit {
     await this.ctx.close().catch(() => {});
     await this.browser.close().catch(() => {});
     const pass = this.cells.filter((c) => c.pass === true).length;
+    const failed = this.cells.filter((c) => c.pass === false);
     const total = this.cells.length;
     this.log(`Report: ${this.out}/report.html  (${pass}/${total} pass)`);
+
+    // A failing CELL has to fail the SUITE. Until 2026-08-10 teardown() only printed the
+    // tally, so a suite with red cells still exited 0 and the gate announced "PASSED" —
+    // only a crash ever failed it. Two real reds rode through exactly that way
+    // (STRIP-mixed-actions, QUEUE-lists-who-waits) on a run reported green. `pass: null`
+    // stays non-fatal: an honest "could not check" is not a failure.
+    if (failed.length) {
+      this.log(`❌ ${failed.length} cell(s) failed: ${failed.map((c) => c.id).join(', ')}`);
+      process.exitCode = 1;
+    }
   }
 
   observerMark() {

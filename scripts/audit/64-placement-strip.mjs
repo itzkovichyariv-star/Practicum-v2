@@ -291,16 +291,20 @@ audit.recordCell({ id: 'STRIP-expanded-no-side-scroll', tableRef: 'regression 20
   observed: `${compact.sideScroll}px`, pass: compact.sideScroll <= 0 });
 
 const queue = await audit.page.evaluate(() => {
+  // Measure from the top of the page, not from wherever the previous section left the
+  // scroll — "is it above the fold" means nothing against an arbitrary scroll offset.
+  window.scrollTo(0, 0);
   const q = document.querySelector('[data-waiting-queue]');
   if (!q) return { present: false };
   const rows = [...q.querySelectorAll('[data-waiting-row]')];
   return { present: true, count: +q.getAttribute('data-waiting-queue'), rows: rows.length,
            actions: rows.map(r => r.querySelector('[data-waiting-action]')?.getAttribute('data-waiting-action')).filter(Boolean).length,
+           top: Math.round(q.getBoundingClientRect().top),
            aboveTheFold: Math.round(q.getBoundingClientRect().top) < 812 };
 });
 audit.recordCell({ id: 'QUEUE-lists-who-waits', tableRef: 'page design 2026-08-10, decision ג',
   expected: 'the waiting list appears with one action per row (or is absent when nobody waits)',
-  observed: queue.present ? `${queue.count} waiting, ${queue.rows} rows, ${queue.actions} actions, aboveFold=${queue.aboveTheFold}` : 'nobody waiting — band absent',
+  observed: queue.present ? `${queue.count} waiting, ${queue.rows} rows, ${queue.actions} actions, top=${queue.top}px aboveFold=${queue.aboveTheFold}` : 'nobody waiting — band absent',
   pass: queue.present ? (queue.rows === queue.count && queue.actions === queue.rows && queue.aboveTheFold) : null });
 
 await audit.teardown();
