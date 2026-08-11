@@ -29,12 +29,20 @@ import { buildUnifiedOrgList, countSlotsByStatus, type UnifiedOrgPref } from './
  *  `reviewAgingThresholdDays`, which still governs the ⏱ chip inside the card. */
 export const SILENCE_DAYS = 7;
 
-/** After an interview the wait is genuinely long — Yariv 2026-08-10: a decision can take
- *  a month and a half. Chasing every 7 days there would be harassment, so the post-
- *  interview clock is its own. */
-export const DECISION_DAYS = 14;
+/** After an interview the answer comes FASTER, not slower — Yariv 2026-08-10, correcting
+ *  me: "החודש וחצי זה עד שיש זימון לראיון, אחר כך הזמן הוא יותר מצומצם". I had applied
+ *  the month and a half to the post-interview decision, which is backwards: the long
+ *  wait is BEFORE the invitation. Once an interview has happened, a week is enough. */
+export const DECISION_DAYS = 7;
 
-/** Stop chasing after this many reminders and say so, rather than nag forever. */
+/** The long one. An employer can genuinely take a month and a half to invite anyone to
+ *  an interview, so "no answer" must not be declared while that is still normal. */
+export const NO_RESPONSE_DAYS = 45;
+
+/** Stop chasing after this many reminders and go quiet, rather than nag forever. Note
+ *  this no longer decides when we give UP — it only caps the nudging. Giving up is
+ *  NO_RESPONSE_DAYS, because 3 reminders at a 7-day cadence runs out around day 21,
+ *  and abandoning an employer at 21 days would drop the ones still about to answer. */
 export const MAX_REMINDERS = 3;
 
 export type PlacementTurn = 'ours' | 'student' | 'employer' | 'closed';
@@ -438,20 +446,34 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
         headline: `הראיון התקיים · ממתין להחלטה${sinceIv !== null ? ` — ${sinceIv} ימים` : ''}`,
         sub: withCvNote(overdue
           ? `מעל ${DECISION_DAYS} ימים מהראיון — כדאי לתזכר${remindersSent ? ` (נשלחו ${remindersSent})` : ''}`
-          : `החלטה יכולה לקחת זמן. תזכורת אחרי ${DECISION_DAYS} ימים.`),
+          : `אחרי ראיון ההחלטה מגיעה מהר יחסית. תזכורת אחרי ${DECISION_DAYS} ימים.`),
         chips: allChips, age: '', action: overdue ? act('remind') : sendAction,
       };
     }
 
     const stale = oldest !== null && oldest > SILENCE_DAYS;
+    const abandoned = oldest !== null && oldest > NO_RESPONSE_DAYS;
 
-    // Stage 1, chased to exhaustion — say so instead of nagging a fourth time.
-    if (stale && exhaustedReminders) {
+    // Stage 1 is the LONG one: an invitation to interview can take a month and a half
+    // (Yariv 2026-08-10). Only silence past that is really silence.
+    if (abandoned) {
       return {
         key: 'no_response', turn: 'ours',
-        headline: `אין מענה אחרי ${MAX_REMINDERS} תזכורות`,
+        headline: `אין מענה כבר ${oldest} ימים — מעל ${NO_RESPONSE_DAYS} הימים הצפויים לזימון לראיון`,
         sub: withCvNote('כדאי להתקדם לבחירה הבאה או להציע ארגון אחר'),
         chips: allChips, age: '', action: sendAction || act('add_orgs'),
+      };
+    }
+
+    // Chased to exhaustion but still inside the normal window: stop nagging, and stop
+    // asking US to do anything — but do NOT call it dead. Giving up here (around day 21)
+    // would abandon exactly the employers who were still going to answer.
+    if (stale && exhaustedReminders) {
+      return {
+        key: 'sent', turn: 'employer',
+        headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ${oldest} ימים ללא תשובה`,
+        sub: withCvNote(`נשלחו ${MAX_REMINDERS} תזכורות — זימון לראיון יכול לקחת עד ${NO_RESPONSE_DAYS} ימים. אין מה לעשות בינתיים.`),
+        chips: allChips, age: '', action: sendAction,
       };
     }
 

@@ -134,6 +134,16 @@ if (!courseId) {
     observed: `date=${after.interviewDate || '(none)'}, slot ${before.slotStatus}→${after.slotStatus}`,
     pass: after.interviewDate === iso(6) && after.slotStatus === 'under_review' });
 
+  // Yariv 2026-08-10: "המעסיק צריך להבין שהוא מתקשר את מועד הראיון למועמד ולא אני או
+  // רחל." The old confirmation read "נעדכן את הסטודנט/ית שתוזמנו לראיון", which sounds
+  // like the university schedules it — so both sides sit waiting for the other.
+  const confirm = await audit.page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+  audit.recordCell({ id: 'RESP-invite-says-employer-coordinates', tableRef: 'Yariv: the employer contacts the candidate',
+    expected: 'names the student, says the coordination is theirs, and never promises that we will do it',
+    observed: confirm.slice(0, 130),
+    pass: confirm.includes(STU_NAME) && confirm.includes('ישירות מולכם')
+       && !confirm.includes('נעדכן את הסטודנט/ית שתוזמנו') });
+
   // stage 3 — with the interview in the past, the question changes
   await seed({ placementInterviewDate: iso(-3), placementInterviewOrg: ORG });
   const s3 = await openLink(DISP_ID);
@@ -141,6 +151,17 @@ if (!courseId) {
     expected: 'offers accepted / not accepted',
     observed: `${s3.stage} · ${s3.answers.join(',')}`,
     pass: s3.stage === 'awaiting_decision' && s3.answers.includes('accepted') && s3.answers.includes('not_accepted') });
+
+  // Yariv 2026-08-10: "הקבלה היא קבלה לפרקטיקום וצריך לדייק את הכיתוב." "מתקבל/ת אלינו"
+  // reads like a job offer; what is being decided is a practicum placement.
+  const decisionText = await audit.page.evaluate(() => ({
+    q: document.body.innerText.replace(/\s+/g, ' '),
+    accept: document.querySelector('[data-answer="accepted"]')?.textContent.trim() || '',
+  }));
+  audit.recordCell({ id: 'RESP-acceptance-is-practicum', tableRef: 'Yariv: acceptance is to the פרקטיקום',
+    expected: 'the question and the button both say פרקטיקום',
+    observed: `"${decisionText.accept}" · q includes פרקטיקום=${decisionText.q.includes('לפרקטיקום')}`,
+    pass: decisionText.accept.includes('פרקטיקום') && decisionText.q.includes('לפרקטיקום') });
 
   await audit.page.locator('[data-answer="accepted"]').first().click().catch(() => {});
   await audit.page.waitForTimeout(2200);

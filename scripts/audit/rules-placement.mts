@@ -6,7 +6,7 @@
  * one JSON array on stdout, which 64-placement-strip.mjs turns into audit cells.
  * Deliberately NOT named `NN-*.mjs`, so the gate does not pick it up as a cell of its own.
  */
-import { placementStatus, actionsForChip, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../../src/lib/placementStatus.ts';
+import { placementStatus, actionsForChip, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS, NO_RESPONSE_DAYS } from '../../src/lib/placementStatus.ts';
 import { responseStageOf, applyEmployerAnswer } from '../../src/lib/dispatch.ts';
 import { migratePlacementData, renderTemplate } from '../../src/lib/placement.ts';
 
@@ -346,6 +346,43 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
   const twice: any = migratePlacementData({ placementSettings: ps } as any).placementSettings;
   rule('LINK-migration-is-idempotent', 'reloading adds nothing',
     1, (twice.emailBodyTemplate.match(/\{responseLink\}/g) || []).length);
+}
+
+// ── the two clocks, the right way round ───────────────────────────────────────
+// Yariv 2026-08-10, correcting me: "החודש וחצי זה עד שיש זימון לראיון אחר כך הזמן הוא
+// יותר מצומצם". I had put the month and a half on the post-interview decision, which is
+// backwards. The long wait is BEFORE an invitation; after the interview it is short.
+{
+  const emps = [{ id: 'e1', name: 'A', approvalStatus: 'approved' }];
+  const waiting = (age, reminders = 0) => ({
+    employers: emps,
+    student: { cvUpdatedUrl: 'x', preferences: [{ rank: 1, orgName: 'A', employerId: 'e1', status: 'under_review', slotId: 's0' }] },
+    dispatches: [{ studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(age), reminders }],
+  });
+
+  rule('CLOCK-post-interview-is-shorter', 'after a ראיון the answer comes faster',
+    true, DECISION_DAYS < NO_RESPONSE_DAYS && DECISION_DAYS <= 7);
+  rule('CLOCK-invite-window-is-45', 'a זימון לראיון can take a month and a half',
+    45, NO_RESPONSE_DAYS);
+
+  // the state that burned before: chased out at ~21 days and declared dead
+  const chasedOut = run(waiting(24, MAX_REMINDERS));
+  rule('CLOCK-not-abandoned-at-21d', 'three reminders is not the same as no answer',
+    true, chasedOut.key !== 'no_response');
+  rule('CLOCK-quiet-wait-is-employers-turn', 'nothing for us to do while it is still normal',
+    'employer', chasedOut.turn);
+  rule('CLOCK-quiet-wait-explains', 'the row says why it went quiet',
+    true, chasedOut.sub.includes(String(NO_RESPONSE_DAYS)));
+
+  // and past the real horizon it IS dead
+  const past = run(waiting(NO_RESPONSE_DAYS + 2, MAX_REMINDERS));
+  rule('CLOCK-abandoned-past-45d', 'past the window it is genuinely no answer',
+    'no_response/ours', `${past.key}/${past.turn}`);
+
+  // still inside the window, un-chased: a reminder is the right move, not giving up
+  const nudge = run(waiting(SILENCE_DAYS + 1, 0));
+  rule('CLOCK-reminder-inside-window', 'a nudge, not an abandonment',
+    'sent_stale/remind', `${nudge.key}/${nudge.action?.id}`);
 }
 
 process.stdout.write(JSON.stringify(cells));

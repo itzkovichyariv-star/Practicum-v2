@@ -66,9 +66,14 @@ export default function EmployerResponse() {
     const saved = await saveSnapshot(next as any, { name: `מעסיק — ${ctx.empName}` },
       { action: 'תשובת מעסיק', entity: 'ארגון', target: `${ctx.empName} · ${ctx.student.name}` });
     if (!saved.ok) { setErr('השמירה נכשלה. נסו שוב, או השיבו במייל.'); setPhase('error'); return; }
+    // The invite wording is deliberate (Yariv 2026-08-10): the EMPLOYER contacts the
+    // candidate to set the interview — not Yariv and not Rachel. The old text read
+    // "נעדכן את הסטודנט/ית שתוזמנו לראיון", which sounds like the university does the
+    // scheduling, so both sides would sit waiting for the other.
     setOutcome(
-      a.kind === 'invite' ? 'תודה — נעדכן את הסטודנט/ית שתוזמנו לראיון.'
-      : a.kind === 'accepted' ? 'תודה רבה! נעדכן את הסטודנט/ית שהתקבל/ה.'
+      a.kind === 'invite'
+        ? `תודה! התיאום נעשה ישירות מולכם — נא ליצור קשר עם ${ctx.student.name} ולקבוע איתה את מועד הראיון. אנחנו לא מתאמים את הראיון עבורכם.`
+      : a.kind === 'accepted' ? `תודה רבה! נרשם ש‑${ctx.student.name} התקבל/ה לפרקטיקום אצלכם.`
       : a.kind === 'still_reviewing' ? 'תודה — נחזור אליכם בהמשך.'
       : 'תודה על העדכון. נמשיך עם הסטודנט/ית לארגון אחר.');
     setPhase('done');
@@ -110,15 +115,21 @@ export default function EmployerResponse() {
       {s.stage === 'awaiting_reply' && (
         <>
           <p style={{ fontSize: 14.5, lineHeight: 1.75, color: 'var(--ink)' }}>
-            שלחנו אליכם את קורות החיים של <b>{s.student.name}</b>.
+            שלחנו אליכם את קורות החיים של <b>{s.student.name}</b> להשמה ב<b>פרקטיקום</b>.
             נשמח לדעת איך להתקדם — גם תשובה שלילית עוזרת לנו.
           </p>
           <button type="button" data-answer="invite" style={btn('#15803d')}
             onClick={() => answer({ kind: 'invite', interviewDate: date })}>
             📅 אשמח לזמן לראיון
           </button>
+          <p data-invite-note style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--ink)', marginTop: 7,
+            background: 'rgba(21,128,61,0.07)', border: '1px solid rgba(21,128,61,0.25)',
+            borderRadius: 9, padding: '8px 10px' }}>
+            שימו לב: <b>התיאום נעשה ישירות מולכם</b> — לאחר הלחיצה תפנו אל {s.student.name} ותקבעו
+            איתה את מועד הראיון. אנחנו לא מתאמים את הראיון עבורכם.
+          </p>
           <label style={{ display: 'block', fontSize: 12.5, color: 'var(--text-soft)', marginTop: 7 }}>
-            תאריך הראיון (לא חובה — אפשר לתאם גם ישירות)
+            תאריך הראיון — אם כבר קבעתם (לא חובה, רק כדי שנדע איפה הדברים עומדים)
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
               style={{ display: 'block', width: '100%', marginTop: 4, padding: '9px 11px',
                 borderRadius: 9, border: '1px solid var(--divider)', fontFamily: 'inherit', fontSize: 14 }} />
@@ -134,7 +145,7 @@ export default function EmployerResponse() {
         <>
           <p style={{ fontSize: 14.5, lineHeight: 1.75, color: 'var(--ink)' }}>
             הראיון עם <b>{s.student.name}</b> קבוע ל‑{new Date(s.student.placementInterviewDate).toLocaleDateString('he-IL')}.
-            אם משהו השתנה — עדכנו אותנו כאן.
+            התיאום מולה נעשה ישירות על ידכם; אם משהו השתנה — עדכנו אותנו כאן.
           </p>
           <button type="button" data-answer="still_reviewing" style={ghost}
             onClick={() => answer({ kind: 'still_reviewing' })}>הראיון עדיין קבוע</button>
@@ -146,12 +157,13 @@ export default function EmployerResponse() {
       {s.stage === 'awaiting_decision' && (
         <>
           <p style={{ fontSize: 14.5, lineHeight: 1.75, color: 'var(--ink)' }}>
-            הראיון עם <b>{s.student.name}</b> כבר התקיים. <b>מה הוחלט?</b>
+            הראיון עם <b>{s.student.name}</b> כבר התקיים.
+            <b> האם היא מתקבלת לפרקטיקום אצלכם?</b>
           </p>
           <button type="button" data-answer="accepted" style={btn('#15803d')}
-            onClick={() => answer({ kind: 'accepted' })}>✓ מתקבל/ת אלינו</button>
+            onClick={() => answer({ kind: 'accepted' })}>✓ מתקבל/ת לפרקטיקום אצלנו</button>
           <button type="button" data-answer="not_accepted" style={{ ...ghost, color: '#b91c1c', borderColor: '#b91c1c' }}
-            onClick={() => answer({ kind: 'not_accepted' })}>✕ לא מתקבל/ת</button>
+            onClick={() => answer({ kind: 'not_accepted' })}>✕ לא מתקבל/ת לפרקטיקום</button>
           <button type="button" data-answer="still_reviewing" style={ghost}
             onClick={() => answer({ kind: 'still_reviewing' })}>⏳ טרם הוחלט</button>
         </>
