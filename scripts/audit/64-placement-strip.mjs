@@ -15,6 +15,12 @@
  *
  * No prod data is seeded or mutated: layer A needs none, and layer B only reads what is
  * already there and asserts structure, so it stays green as Yariv works the list.
+ *
+ * The price of that is real, and 69-strip-states-seeded pays it: when his board goes quiet
+ * layer B has nothing to look at and reports "no student is in the ours turn right now" —
+ * an honest skip, but not coverage. Cell 69 SEEDS each of those states so the same
+ * behaviours are asserted on every run. Keep both: 69 proves the rule, 64 proves it
+ * reaches the screen his students are actually on.
  */
 import { Audit, appReady } from '../audit-lib.mjs';
 import { execFileSync } from 'node:child_process';

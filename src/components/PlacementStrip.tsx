@@ -296,6 +296,32 @@ export default function PlacementStrip({ status, employers, onAction }: {
                           {c.blockedReason}
                         </span>
                       )}
+                      {/* The per-chip action lives INSIDE the chip's border. It used to be a
+                          sibling AFTER the box, so it floated between one chip and the next
+                          with nothing tying it to its owner — Yariv 2026-08-11, reading the
+                          "↩︎ לא נשלח" under choice 1 as a heading over choices 2 and 3:
+                          "זה לא מעוצב בצורה ברורה ונראה יותר חלק מ‑1 — מבלבל". Which chip an
+                          action belongs to must never be a matter of inference. */}
+                      {!c.available && c.tone === 'plain' && c.blockedReason && (
+                        <button type="button" data-strip-drop={c.orgName}
+                          title={`הסר את ${c.orgName} מהדירוג — או השאר/י אותו והמתן/י שיתפנה`}
+                          onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.drop_org, targetOrg: c.orgName } as any); }}
+                          style={{
+                            display: 'block', marginTop: 6, font: 'inherit', fontSize: 10.5, fontWeight: 700,
+                            padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                            border: '1px dashed var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)',
+                          }}>✕ הסר מהדירוג</button>
+                      )}
+                      {(c.tone === 'sent' || c.tone === 'late') && (
+                        <button type="button" data-strip-unsend={c.orgName}
+                          title={`ההודעה ל${c.orgName} לא נשלחה בפועל — שחרר את המקום`}
+                          onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.unsend, targetOrg: c.orgName } as any); }}
+                          style={{
+                            display: 'block', marginTop: 6, font: 'inherit', fontSize: 10.5, fontWeight: 700,
+                            padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
+                            border: '1px dashed #b45309', background: 'transparent', color: '#b45309',
+                          }}>↩︎ ההודעה הזו לא נשלחה</button>
+                      )}
                     </span>
                     <span
                       role="button" tabIndex={0} data-org-info={c.orgName}
@@ -313,26 +339,6 @@ export default function PlacementStrip({ status, employers, onAction }: {
                   {/* A blocked choice now has an exit. Waiting is the default — doing
                       nothing keeps it ranked — so the only control needed is the one
                       that removes it (Yariv 2026-08-10). */}
-                  {!c.available && c.tone === 'plain' && c.blockedReason && (
-                    <button type="button" data-strip-drop={c.orgName}
-                      title={`הסר את ${c.orgName} מהדירוג — או השאר/י אותו והמתן/י שיתפנה`}
-                      onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.drop_org, targetOrg: c.orgName } as any); }}
-                      style={{
-                        marginInlineStart: 5, font: 'inherit', fontSize: 10.5, fontWeight: 700,
-                        padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
-                        border: '1px dashed var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)',
-                      }}>✕ הסר מהדירוג</button>
-                  )}
-                  {(c.tone === 'sent' || c.tone === 'late') && (
-                    <button type="button" data-strip-unsend={c.orgName}
-                      title={`ההודעה ל${c.orgName} לא נשלחה בפועל — שחרר את המקום`}
-                      onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.unsend, targetOrg: c.orgName } as any); }}
-                      style={{
-                        marginInlineStart: 5, font: 'inherit', fontSize: 10.5, fontWeight: 700,
-                        padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
-                        border: '1px dashed var(--divider-strong)', background: 'transparent', color: '#b45309',
-                      }}>↩︎ לא נשלח</button>
-                  )}
                 </span>
               );
             })}

@@ -64,13 +64,22 @@ for (const vp of [{ width: 375, height: 812, tag: 'phone' }, { width: 1400, heig
 
     // turn filter narrows and restores
     const before = document.querySelectorAll('[data-placement-strip]').length;
+    // How many rows are in that turn to begin with. When nobody is, the filter correctly
+    // shows an empty list and there is nothing to narrow — reporting that as FAIL reads as
+    // a broken filter when the truth is a calm board. (Same defect as the ⓘ probe above,
+    // which reported 0/0 and looked like a missing feature — Yariv 2026-08-11.)
+    const oursCount = [...document.querySelectorAll('[data-placement-strip]')]
+      .filter(s => s.getAttribute('data-turn') === 'ours').length;
     const ours = document.querySelector('[data-turn-filter="ours"]');
-    if (ours) { click(ours); await new Promise(r => setTimeout(r, 350)); }
-    const filtered = [...document.querySelectorAll('[data-placement-strip]')].map(s => s.getAttribute('data-turn'));
+    if (ours && oursCount) { click(ours); await new Promise(r => setTimeout(r, 350)); }
+    const filtered = oursCount
+      ? [...document.querySelectorAll('[data-placement-strip]')].map(s => s.getAttribute('data-turn'))
+      : [];
     const all = document.querySelector('[data-turn-filter="all"]');
     if (all) { click(all); await new Promise(r => setTimeout(r, 350)); }
     const after = document.querySelectorAll('[data-placement-strip]').length;
-    out.filter = filtered.length && filtered.every(t => t === 'ours') ? `ok (${filtered.length} ours)` : `FAIL [${[...new Set(filtered)].join(',')}]`;
+    out.filter = !oursCount ? 'n/a — nobody is in the ours turn right now'
+      : (filtered.length && filtered.every(t => t === 'ours') ? `ok (${filtered.length} ours)` : `FAIL [${[...new Set(filtered)].join(',')}]`);
     out.filterRestores = before === after ? `ok (${after})` : `FAIL ${before}→${after}`;
 
     // chips never escape their strip
@@ -100,7 +109,7 @@ for (const vp of [{ width: 375, height: 812, tag: 'phone' }, { width: 1400, heig
   check(`[${vp.tag}] ⓘ opens employer details`, r.info.split('/')[0] === r.info.split('/')[1] && r.info !== '0/0', r.info);
   check(`[${vp.tag}] action opens its confirmation`, r.actions.split('/')[0] === r.actions.split('/')[1], `${r.actions} · kinds: ${r.actionKinds}`);
   check(`[${vp.tag}] cancel closes the dialog`, !r.dialogLeftOpen, r.dialogLeftOpen ? 'left open' : 'closed');
-  check(`[${vp.tag}] turn filter narrows`, r.filter.startsWith('ok'), r.filter);
+  check(`[${vp.tag}] turn filter narrows`, r.filter.startsWith('ok') || r.filter.startsWith('n/a'), r.filter);
   check(`[${vp.tag}] filter restores`, r.filterRestores.startsWith('ok'), r.filterRestores);
   check(`[${vp.tag}] chips inside the box`, parseFloat(r.chipOverflow) <= 0.5, r.chipOverflow);
   check(`[${vp.tag}] no sideways scroll`, r.sideScroll <= 0, `${r.sideScroll}px`);
