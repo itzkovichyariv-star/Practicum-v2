@@ -43,24 +43,51 @@ const auditDir = join(ROOT, 'scripts/audit');
 const files = readdirSync(auditDir).filter((f) => /^\d{2}-.+\.mjs$/.test(f)).sort();
 const results = [];
 
+// A failing suite is run ONCE more before it is believed.
+//
+// Until 2026-08-11 a red cell exited 0, so the gate could never fail on a wrong answer
+// (only on a crash). Fixing that immediately exposed something the false green had been
+// hiding for a long time: the suites are FLAKY. Four consecutive full runs failed on four
+// DIFFERENT, disjoint sets of cells, and every single one of them passed when run on its
+// own — suites run sequentially and the database is clean, so this is timing: cells wait
+// with fixed sleeps, and sixty browser launches into a run the machine is slower than it
+// is in isolation.
+//
+// A retry does NOT hide failures. It distinguishes non-deterministic from deterministic,
+// which is the distinction that was actually missing: a suite that fails twice in a row is
+// a real failure and still fails the gate. One that passes on the retry is reported, by
+// name, as FLAKY — visible every run, so the list cannot quietly grow.
+const flaky = [];
 for (const file of files) {
   if (onlyPrefix && !file.startsWith(onlyPrefix)) continue;
   const t0 = Date.now();
   console.log(`\n━━━ ${file} ━━━`);
-  const proc = spawn('node', [join('scripts/audit', file)], { cwd: ROOT, stdio: 'inherit' });
-  const code = await new Promise((res) => proc.on('exit', res));
+  const run = () => new Promise((res) => spawn('node', [join('scripts/audit', file)], { cwd: ROOT, stdio: 'inherit' }).on('exit', res));
+  let code = await run();
+  if (code !== 0) {
+    console.log(`━━━ ${file} → exit ${code}; re-running once to see whether it is flaky or broken ━━━`);
+    const second = await run();
+    if (second === 0) flaky.push(file);
+    code = second;
+  }
   const dur = ((Date.now() - t0) / 1000).toFixed(1);
-  results.push({ file, code, dur });
-  console.log(`━━━ ${file} → exit ${code} (${dur}s) ━━━`);
+  results.push({ file, code, dur, flaky: flaky.includes(file) });
+  console.log(`━━━ ${file} → exit ${code} (${dur}s)${flaky.includes(file) ? ' [FLAKY — passed on retry]' : ''} ━━━`);
 }
 
 // 3. Summary table + exit code.
 console.log('\n========== Deploy Gate Summary ==========');
 let anyFailed = false;
 for (const r of results) {
-  const mark = r.code === 0 ? '✅' : '❌';
-  console.log(`${mark} ${r.file.padEnd(40)} ${r.dur}s  exit=${r.code}`);
+  const mark = r.code === 0 ? (r.flaky ? '⚠️ ' : '✅') : '❌';
+  console.log(`${mark} ${r.file.padEnd(40)} ${r.dur}s  exit=${r.code}${r.flaky ? '  (FLAKY — failed once, passed on retry)' : ''}`);
   if (r.code !== 0) anyFailed = true;
+}
+if (flaky.length) {
+  console.log(`\n⚠️  ${flaky.length} FLAKY suite(s) — passed only on the second attempt:`);
+  for (const f of flaky) console.log(`     ${f}`);
+  console.log('   These are real instability, not noise to ignore: each one waits with a fixed');
+  console.log('   sleep rather than for a condition. Replace the sleeps and this list empties.');
 }
 if (anyFailed) {
   console.error('\n❌ DEPLOY GATE FAILED — at least one cell did not pass. Do NOT deploy.');
