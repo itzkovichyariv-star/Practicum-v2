@@ -299,7 +299,12 @@ function SubmissionCard({ s, selected, onToggle, onDelete }: {
           <input type="checkbox" checked={selected} onChange={onToggle} data-inbox-cb className="cursor-pointer" />
         </label>
         <div className="flex-1 min-w-0">
-          <div className="serif text-[18px] leading-[1.2]" style={{ color: 'var(--ink)' }}>
+          {/* A long unbroken token — an id, a machine-generated name, a long address — has
+              no break opportunity, so it overflowed the flex column and ran under the CV
+              circle beside it. Yariv 2026-08-11: "העיגול שמקיף אותם דורס את השם."
+              `anywhere` breaks mid-token only when there is no other option. */}
+          <div className="serif text-[18px] leading-[1.2]"
+            style={{ color: 'var(--ink)', overflowWrap: 'anywhere' }}>
             {s.name}
             {s.processed && (
               <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
@@ -308,7 +313,7 @@ function SubmissionCard({ s, selected, onToggle, onDelete }: {
           </div>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 mt-1" style={{ color: 'var(--text-soft)' }}>
             {s.phone && <span dir="ltr">{s.phone}</span>}
-            {s.email && <span>{s.email}</span>}
+            {s.email && <span style={{ overflowWrap: 'anywhere' }}>{s.email}</span>}
             {s.questionnaire?.studyTracks && <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>· {s.questionnaire.studyTracks}</span>}
             {s.questionnaire?.gpa && <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>· ממוצע {s.questionnaire.gpa}</span>}
             {s.course_name && <span>· {s.course_name}</span>}

@@ -1,18 +1,25 @@
 #!/usr/bin/env node
 /**
- * purge-orphan-dispatches.mjs — remove dispatch rows whose student no longer exists.
+ * purge-orphan-dispatches.mjs — remove what the audit suites left in Yariv's real data.
  *
- * By 2026-08-10, 221 of 228 dispatch rows pointed at audit students that had been
- * deleted, 101 of them still 'pending'. They are invisible in the UI (every screen
- * looks the student up first) but they inflate every dispatch scan and would surface
- * in any future report. Cells 14/16/58/66/67 now clean up after themselves; this
- * clears what they left behind.
+ * Started as orphaned dispatch rows (221 of 228 on 2026-08-10) and grew as each new
+ * hiding place turned up. It now covers, in the order they were found:
  *
- * Only a row whose studentId is absent from students[] is removed — a real send is
- * never touched. Run with --apply to write; default is a dry run.
+ *   • dispatch rows whose student no longer exists   — invisible, but they inflate every scan
+ *   • fixture students, employers, candidates        — 18 of 31 candidates were fixtures
+ *   • fixture rows in candidate_submissions          — 56 of 85 in the inbox Yariv reads
+ *   • fixture org-suggestions still in the banner    — suppressed, since anon cannot DELETE cv_updates
  *
- * Writes bump `version` exactly like saveSnapshot does. A write that skips the bump
- * gets silently overwritten the next time an open browser tab saves (this happened on
+ * Every removal is verified first, never guessed: no real send is touched, no fixture
+ * holds a place on a real employer, and no real student references a fixture org. An
+ * early attempt that identified fixtures by "a timestamp in the id" matched 16 REAL
+ * students (cp-tashpaz-*, s-rst-*), which is why the markers here are @audit.local and a
+ * 13-digit stamp in the NAME — checked against the live data before being widened.
+ *
+ * Run with --apply to write; the default is a dry run that prints what it would do.
+ *
+ * Writes to practicum_data bump `version` exactly like saveSnapshot does. A write that
+ * skips the bump is silently overwritten by any open browser tab (this happened on
  * 2026-08-09 and undid a release).
  */
 const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
@@ -26,7 +33,12 @@ const d = row.data;
 // Fixture students are identified ONLY by the @audit.local address the cells mint.
 // A looser guess ("the id ends in a timestamp") matched 16 REAL students — the
 // cp-tashpaz-* course import and s-rst-* both carry timestamps in their ids.
-const isFixtureStudent = (s) => /@audit\.local$/i.test(s.email || '');
+// @audit.local is the unambiguous marker, but two fixtures ("משוב יש/אין <stamp>") carry
+// NO email at all — a 13-digit epoch in the NAME catches those. Verified safe before
+// widening: no real person in this dataset has 4+ consecutive digits in their name, and
+// the earlier trap was a timestamp in the ID (cp-tashpaz-*, s-rst-*), never the name.
+const isFixtureStudent = (s) => /@audit\.local$/i.test(s.email || '') || /\d{13}/.test(s.name || '');
+const isFixtureCandidate = (c) => /@audit\.local$/i.test(c.email || '') || /\d{13}/.test(c.name || '');
 const fixtureStudentIds = new Set((d.students || []).filter(isFixtureStudent).map(s => s.id));
 const fixtureStudents = (d.students || []).filter(isFixtureStudent);
 
@@ -65,7 +77,11 @@ for (const x of keep) {
   console.log(`  ${s?.name || x.studentId} → ${e?.name || x.employerId}  [${x.result || 'pending'}]  ${(x.sentAt || '').slice(0, 16)}`);
 }
 
-console.log(`\nfixture students (@audit.local): ${fixtureStudents.length} of ${(d.students || []).length}`);
+const fixtureCandidates = (d.candidates || []).filter(isFixtureCandidate);
+console.log(`\nfixture candidates: ${fixtureCandidates.length} of ${(d.candidates || []).length}`);
+fixtureCandidates.slice(0, 8).forEach(c => console.log(`  ${c.name}`));
+if (fixtureCandidates.length > 8) console.log(`  … and ${fixtureCandidates.length - 8} more`);
+console.log(`\nfixture students: ${fixtureStudents.length} of ${(d.students || []).length}`);
 fixtureStudents.forEach(s => console.log(`  ${s.name}`));
 console.log(`fixture employers: ${fixtureEmployers.length} of ${(d.employers || []).length}`);
 console.log(phantomHolds.length
@@ -89,6 +105,14 @@ const strandedSuggestions = [...latestByEmail.values()].filter(r =>
 console.log(`\nfixture suggestions still showing in the banner: ${strandedSuggestions.length}`);
 strandedSuggestions.forEach(r => console.log(`  ${r.email}`));
 
+// The submissions inbox — the one Yariv actually looks at. 56 of 85 rows there were
+// audit fixtures on 2026-08-11, because two cells wrote their cleanup filter as
+// `%40audit.local`: %40 decodes to '@', so the intended wildcard disappeared and the
+// delete matched nothing. Those cells are fixed; this clears what they left.
+const subs = await (await fetch(`${SB_URL}/rest/v1/candidate_submissions?select=id,name,email&email=like.audit-*@audit.local`, { headers: H })).json();
+console.log(`\nfixture submissions in the inbox: ${Array.isArray(subs) ? subs.length : 'could not read'}`);
+if (Array.isArray(subs)) subs.slice(0, 5).forEach(x => console.log(`  ${x.name}`));
+
 if (!APPLY) { console.log('\nDRY RUN — pass --apply to write.'); process.exit(0); }
 
 const r = await fetch(`${SB_URL}/rest/v1/practicum_data?org_id=eq.default&version=eq.${row.version}`, {
@@ -97,6 +121,7 @@ const r = await fetch(`${SB_URL}/rest/v1/practicum_data?org_id=eq.default&versio
     data: {
       ...d, dispatches: keep,
       students: (d.students || []).filter(s => !isFixtureStudent(s)),
+      candidates: (d.candidates || []).filter(c => !isFixtureCandidate(c)),
       employers: (d.employers || []).filter(e => !fixtureEmpIds.has(e.id)),
       dismissedSuggestionIds: [...new Set([...(d.dismissedSuggestionIds || []), ...strandedSuggestions.map(r => r.id)])],
     },
@@ -104,6 +129,13 @@ const r = await fetch(`${SB_URL}/rest/v1/practicum_data?org_id=eq.default&versio
   }),
 });
 const j = await r.json().catch(() => null);
+// the submission rows are their own table, so they need their own delete
+if (Array.isArray(subs) && subs.length) {
+  const r2 = await fetch(`${SB_URL}/rest/v1/candidate_submissions?email=like.audit-*@audit.local`, { method: 'DELETE', headers: H });
+  console.log(r2.ok ? `✅ removed ${subs.length} fixture submission(s) from the inbox`
+                    : `⚠️  could not remove submissions (${r2.status}) — anon may lack DELETE here`);
+}
+
 console.log(Array.isArray(j) && j.length
   ? `\n✅ removed ${drop.length} dispatches · ${fixtureStudents.length} students · ${fixtureEmployers.length} employers — version ${row.version} → ${row.version + 1}`
   : `\n❌ CAS lost — someone else wrote first. Re-run.`);

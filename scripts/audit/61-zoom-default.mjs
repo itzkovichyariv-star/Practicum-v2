@@ -134,7 +134,11 @@ audit.recordCell({
 // ── cleanup: slot row, the per-day link, and the default if WE introduced it ──
 try {
   if (slotId) await sbDelete('public_interview_slots', `id=eq.${slotId}`);
-  await sbDelete('candidate_submissions', `email=like.audit-${ts}-%40audit.local`).catch(() => {});
+  // `%40` decodes to '@', so the intended wildcard vanished and this matched NOTHING —
+  // every run left its submissions behind. PostgREST takes `*` as the LIKE wildcard.
+  // Measured before and after: the old form matched 0 rows, this one matched all 56
+  // that had accumulated in Yariv's submissions inbox by 2026-08-11.
+  await sbDelete('candidate_submissions', `email=like.audit-${ts}-*@audit.local`).catch(() => {});
   const cleaned = await casBlob((d) => {
     const links = { ...(d.interviewZoomLinks || {}) };
     delete links[slotDate];

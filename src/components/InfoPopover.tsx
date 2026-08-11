@@ -48,8 +48,12 @@ export default function InfoPopover({ id, title, subtitle, rows, children }: Pro
         background: 'var(--bg)',
         borderColor: 'var(--divider)',
         boxShadow: '0 16px 48px rgba(26, 22, 18, 0.2)',
-        minWidth: 340,
-        maxWidth: 420,
+        // Capped to the viewport: at 390px this box was 440px wide and, because it is
+        // only `invisible` rather than unmounted, it widened the PAGE even when never
+        // opened — the candidates screen scrolled sideways by 64px on a phone
+        // (measured 2026-08-11).
+        minWidth: 'min(340px, calc(100vw - 28px))',
+        maxWidth: 'min(420px, calc(100vw - 28px))',
       }}
       onClick={(e) => e.stopPropagation()}
     >

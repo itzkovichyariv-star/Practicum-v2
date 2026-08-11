@@ -724,8 +724,13 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                   borderBottom: '1px solid var(--divider)' }}>
                 <button type="button" onClick={() => setEditing(s)}
                   title="פתח כרטיס"
-                  style={{ flex: 'none', minWidth: 78, textAlign: 'right', fontWeight: 700, fontSize: 13,
-                    background: 'transparent', border: 'none', color: 'var(--ink)', cursor: 'pointer', padding: 0 }}>
+                  style={{ flex: '0 1 auto', minWidth: 78, maxWidth: '48%', textAlign: 'right',
+                    fontWeight: 700, fontSize: 13, background: 'transparent', border: 'none',
+                    color: 'var(--ink)', cursor: 'pointer', padding: 0,
+                    // `flex: none` with no truncation meant a long name pushed this row —
+                    // and with it the whole page — wider than the screen. The row list
+                    // truncates its names; this queue did not (found 2026-08-11).
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {s.name}
                 </button>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: 'var(--text-soft)',
@@ -1507,7 +1512,11 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
       <Popover pinned={pinned} onRequestClose={onTogglePin}>
         <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
           <div>
-            <div className="serif text-[22px] leading-[1.15]" style={{ color: 'var(--ink)' }}>{s.name}</div>
+            {/* A name is user data and can be long; without a break rule it pushed the
+                popover — and the page — past the screen (found 2026-08-11 by stressing
+                the widest data-bearing name on each screen). */}
+            <div className="serif text-[22px] leading-[1.15]"
+              style={{ color: 'var(--ink)', overflowWrap: 'anywhere' }}>{s.name}</div>
             <div className="mono text-[10.5px] uppercase tracking-[0.14em] mt-1" style={{ color: 'var(--accent)' }}>
               שלב: {stage}
             </div>
@@ -1589,7 +1598,9 @@ export function Popover({ pinned, children, onRequestClose }: { pinned: boolean;
         background: 'var(--bg)',
         borderColor: 'var(--divider)',
         boxShadow: '0 16px 48px rgba(26, 22, 18, 0.2)',
-        minWidth: 360, maxWidth: 440,
+        // Capped to the viewport — see InfoPopover: an `invisible` absolute box wider than
+        // the screen still widens the PAGE, which is what made the list scroll sideways.
+        minWidth: 'min(360px, calc(100vw - 28px))', maxWidth: 'min(440px, calc(100vw - 28px))',
       }}
       onClick={e => e.stopPropagation()}
     >

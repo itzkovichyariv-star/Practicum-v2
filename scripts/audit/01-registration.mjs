@@ -33,7 +33,7 @@ const auditName = `Audit User ${auditTs}`;
 // known-empty starting state. RLS lets anon DELETE here only if the
 // table's policy allows it; if not, we'll surface the error.
 try {
-  await sbDelete('candidate_submissions', `email=like.audit-%@audit.local`);
+  await sbDelete('candidate_submissions', `email=like.audit-*@audit.local`);
 } catch (e) {
   // Anon may not have DELETE rights — that's fine; the unique email
   // per run means we never collide. Just log and continue.
@@ -317,6 +317,9 @@ audit.log('REG-happy-path: submit creates row with EXACT filled values');
   }
 
   // Clean up our happy-path row so it doesn't leak into real data.
+  // Every row this run created, not just the happy-path one — the others were left
+  // behind on each run and surfaced in the submissions inbox as audit clutter.
+  try { await sbDelete('candidate_submissions', `email=like.audit-${auditTs}*@audit.local`); } catch { /* non-fatal */ }
   try { await sbDelete('candidate_submissions', `email=eq.${encodeURIComponent(happyEmail)}`); }
   catch (e) { audit.log(`post-clean (non-fatal): ${e.message.slice(0, 100)}`); }
 

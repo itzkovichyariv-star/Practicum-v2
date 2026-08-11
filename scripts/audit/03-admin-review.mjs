@@ -19,7 +19,12 @@
  * IMPORTANT: we NEVER touch real candidates. We operate only on rows
  *            whose id starts with "audit-cand-".
  */
-import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady, mutateData } from '../audit-lib.mjs';
+
+// Cleanup keeps everything that is not ours. Rebuilt from FRESH data each attempt, so a
+// cleanup can no longer revert whatever another suite wrote between our read and write —
+// which is how 18 audit candidates piled up in Yariv's list (2026-08-11).
+const keepCandidate = (c) => !String(c.id || '').startsWith('audit-cand-');
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -67,9 +72,7 @@ try {
     notes: '',
   };
 
-  await sbPatch({
-    data: { ...current, candidates: [...existingCandidates, auditCandidate] },
-  });
+  await mutateData(data => ({ ...data, candidates: [...(data.candidates || []), auditCandidate] }));
   seedOk = true;
 } catch (e) {
   audit.startMs = Date.now(); // ensure log works before setup
@@ -259,7 +262,7 @@ try {
   const rows = await sbQuery('practicum_data', { select: 'data' });
   const current = rows?.[0]?.data || {};
   const cleaned = (current.candidates || []).filter((c) => !c.id?.startsWith('audit-cand-'));
-  await sbPatch({ data: { ...current, candidates: cleaned } });
+  await mutateData(data => ({ ...data, candidates: (data.candidates || []).filter(keepCandidate) }));
   audit.log(`Cleanup: removed audit candidates (kept ${cleaned.length} real ones)`);
 } catch (e) {
   audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`);

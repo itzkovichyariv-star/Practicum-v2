@@ -14,7 +14,12 @@
  * AND one with interviewResult="failed". Cleaned up at the end.
  * NEVER touches real candidates.
  */
-import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady, mutateData } from '../audit-lib.mjs';
+
+// Cleanup keeps everything that is not ours. Rebuilt from FRESH data each attempt, so a
+// cleanup can no longer revert whatever another suite wrote between our read and write —
+// which is how 18 audit candidates piled up in Yariv's list (2026-08-11).
+const keepCandidate = (c) => !String(c.id || '').startsWith('audit-cand-');
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -52,18 +57,12 @@ try {
   const courses  = current.courses || [];
   seedCourseId = courses[0]?.id || 'audit-course';
 
-  await sbPatch({
-    data: {
-      ...current,
-      candidates: [
-        ...existing,
+  await mutateData(data => ({ ...data, candidates: [...(data.candidates || []),
         { id: AUDIT_PASSED_ID, name: AUDIT_PASSED_NAME, email: AUDIT_EMAIL_PASS,
           courseId: seedCourseId, interviewResult: 'passed', interviewSummary: 'audit test summary', notes: '' },
         { id: AUDIT_FAILED_ID, name: AUDIT_FAILED_NAME, email: AUDIT_EMAIL_FAIL,
           courseId: seedCourseId, interviewResult: 'failed', interviewSummary: 'audit test summary', notes: '' },
-      ],
-    },
-  });
+  ] }));
   seedOk = true;
 } catch (e) {
   console.log(`Seed failed: ${e.message.slice(0, 200)}`);
@@ -364,7 +363,7 @@ try {
   const rows = await sbQuery('practicum_data', { select: 'data' });
   const current = rows?.[0]?.data || {};
   const cleaned = (current.candidates || []).filter((c) => !c.id?.startsWith('audit-cand-'));
-  await sbPatch({ data: { ...current, candidates: cleaned } });
+  await mutateData(data => ({ ...data, candidates: (data.candidates || []).filter(keepCandidate) }));
   audit.log(`Cleanup: removed audit candidates (kept ${cleaned.length} real ones)`);
 } catch (e) {
   audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`);

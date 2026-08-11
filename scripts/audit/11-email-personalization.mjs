@@ -13,7 +13,12 @@
  * Seeds two audit-tagged passed candidates and removes them at the end.
  * NEVER touches real candidates.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+
+// Cleanup keeps everything that is not ours. Rebuilt from FRESH data each attempt, so a
+// cleanup can no longer revert whatever another suite wrote between our read and write —
+// which is how 18 audit candidates piled up in Yariv's list (2026-08-11).
+const keepCandidate = (c) => !String(c.id || '').startsWith('audit-cand-');
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -45,16 +50,10 @@ try {
   const current = rows?.[0]?.data || {};
   const existing = current.candidates || [];
   seedCourseId = (current.courses || [])[0]?.id || 'audit-course';
-  await sbPatch({
-    data: {
-      ...current,
-      candidates: [
-        ...existing,
+  await mutateData(data => ({ ...data, candidates: [...(data.candidates || []),
         { id: A_ID, name: A_NAME, email: A_EMAIL, courseId: seedCourseId, interviewResult: 'passed', interviewSummary: 'audit', notes: '' },
         { id: B_ID, name: B_NAME, email: B_EMAIL, courseId: seedCourseId, interviewResult: 'passed', interviewSummary: 'audit', notes: '' },
-      ],
-    },
-  });
+  ] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 200)}`); }
 
@@ -174,7 +173,7 @@ try {
   const rows = await sbQuery('practicum_data', { select: 'data' });
   const current = rows?.[0]?.data || {};
   const cleaned = (current.candidates || []).filter((c) => !c.id?.startsWith('audit-cand-pp-'));
-  await sbPatch({ data: { ...current, candidates: cleaned } });
+  await mutateData(data => ({ ...data, candidates: (data.candidates || []).filter(keepCandidate) }));
   audit.log(`Cleanup: removed audit candidates (kept ${cleaned.length} real ones)`);
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 
