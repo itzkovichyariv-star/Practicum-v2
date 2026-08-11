@@ -209,9 +209,13 @@ const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { labe
     warnBody: 'רשימת ההעדפות והקו״ח המעודכנים מההגשה יועתקו לכרטיס הסטודנט/ית, וההגשה תסומן כטופלה ולא תופיע יותר כממתינה. לא נשלחת שום הודעה — לא לסטודנט/ית ולא למעסיק.',
   },
   approve_org: {
-    id: 'approve_org', short: 'אשר ארגון', label: 'בדוק ואשר ארגון', confirmLabel: 'אשר ארגון',
+    id: 'approve_org', short: 'אשר ארגון', label: 'בדוק ואשר ארגון', confirmLabel: 'פתח כרטיס לאישור',
     warnTitle: 'אישור ארגון שהוצע',
-    warnBody: 'הארגון יאושר ויתווסף כארגון פרטי של הסטודנט/ית בלבד, ויוגדר כבחירה ראשונה בדירוג. לא נשלחת הודעה אוטומטית — עדכון הסטודנט/ית נעשה בנפרד.',
+    // This one does NOT approve from the row, and used to say that it did — the same lie
+    // place_direct told (Yariv 2026-08-11: "ניכר ששום כפתור לא באמת עבד מחוץ למערכת").
+    // Here the card really is the right place: approving an org the student proposed
+    // means checking it and speaking to the employer first, not one click from a list.
+    warnBody: 'ייפתח כרטיס הסטודנט/ית במקטע הארגונים, כדי לבדוק את הארגון ולאשר אותו שם. האישור עצמו נעשה בכרטיס — לא מכאן — ולא מתבצע שום שינוי בנתונים בלחיצה הזו.',
   },
   place_direct: {
     id: 'place_direct', short: 'אשר השמה', label: 'אשר השמה', confirmLabel: 'אשר השמה',

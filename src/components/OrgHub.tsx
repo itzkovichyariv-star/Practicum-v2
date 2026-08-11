@@ -39,7 +39,7 @@ import { btnSmall, btnSecondary, btnPrimary } from '../lib/design';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 import { openMailto } from '../lib/openMailto';
-import { planDispatch, applyDispatch, unsendOrg } from '../lib/dispatch';
+import { planDispatch, applyDispatch, unsendOrg, placeDirect } from '../lib/dispatch';
 import { SILENCE_DAYS } from '../lib/placementStatus';
 
 export type OrgHubExtras = {
@@ -318,34 +318,19 @@ export default function OrgHub({
 
 
   // Path 2 (student-suggested private org): approval IS the placement — no CV sent.
+  // The placement itself lives in lib/dispatch.placeDirect, because the students LIST runs
+  // it too. It used to exist only here, and the row's button — which promised in its own
+  // confirmation that the place would be taken — merely opened this card and did nothing.
+  // One function now, so a fix to one is a fix to both.
   async function handlePlaceDirect(orgName: string) {
     const { student } = materialise();
-    const pref = (student.preferences as any[]).find(p => p.orgName === orgName);
-    const emp = resolveEmployer(orgName);
-    if (!pref || !emp) { setConfirmDialog(null); return; }
-    if (!form.courseId) { showToast('לא הוגדר קורס לסטודנט/ית', 'error'); setConfirmDialog(null); return; }
-    const now = new Date().toISOString();
-    const empLive = employers.find(e => e.id === emp.id) || emp;
-    const isRestricted = (empLive as any).restrictedToStudentId === form.id;
-    const existing = pref.slotId ? getSlot(empLive, pref.slotId) : null;
-    let target: any = existing || ((empLive as any).vacancySlots || []).find((s: any) => s.status === 'available' && s.courseId === form.courseId);
-    let updatedSlots: VacancySlot[];
-    if (target) {
-      updatedSlots = ((empLive as any).vacancySlots || []).map((s: any) => s.id !== target.id ? s : ({ ...s, status: 'placed', studentId: form.id, prefRank: pref.rank, history: [...(s.history || []), { at: now, from: s.status, to: 'placed', by: 'admin', actorId: userName, reason: 'placed-direct' }] }));
-    } else if (isRestricted) {
-      const newSlot: any = { id: `${empLive.id}-direct-${randomId('x')}`, courseId: form.courseId, status: 'placed', studentId: form.id, prefRank: pref.rank, history: [{ at: now, from: 'available', to: 'placed', by: 'admin', actorId: userName, reason: 'placed-direct-mint' }] };
-      target = newSlot;
-      updatedSlots = [...((empLive as any).vacancySlots || []), newSlot];
-    } else {
-      showToast('אין כרגע מקום פנוי בארגון זה עבור הקורס', 'error'); setConfirmDialog(null); return;
-    }
-    const updatedEmp = reconcileEmployerCapacity({ ...empLive, vacancySlots: updatedSlots });
-    const updatedPrefs = (student.preferences as any[]).map(p => p.orgName === orgName ? { ...p, status: 'placed', slotId: target.id } : p);
-    const updatedStudent: any = { ...student, preferences: updatedPrefs, submissionStatus: 'placed', acceptedOrg: empLive.name, placedAt: (form as any).placedAt || now.slice(0, 10) };
-    const nextStudents = allStudents.map(s => s.id === form.id ? updatedStudent : s);
-    const nextEmployers = employers.map(e => e.id === updatedEmp.id ? updatedEmp : e);
-    await extras.onDataChange({ students: nextStudents, employers: nextEmployers });
-    showToast(`✓ ${form.name} שובץ/ה ל"${empLive.name}" (השמה ישירה)`, 'success');
+    const res = placeDirect({ student, employers, orgName, userName, newSlotId: () => `${resolveEmployer(orgName)?.id || 'emp'}-direct-${randomId('x')}` });
+    if (!res.ok) { showToast(res.error || 'לא ניתן לאשר השמה', 'error'); setConfirmDialog(null); return; }
+    await extras.onDataChange({
+      students: allStudents.map(s => s.id === form.id ? res.student : s),
+      employers: res.employers,
+    });
+    showToast(`✓ ${form.name} שובץ/ה ל"${orgName}" (השמה ישירה)`, 'success');
     setConfirmDialog(null);
   }
 

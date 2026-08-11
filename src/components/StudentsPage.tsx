@@ -13,7 +13,7 @@ import ExcelImport from './ExcelImport';
 import { openMailto } from '../lib/openMailto';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
-import { planDispatch, applyDispatch, unsendOrg, dropOrg } from '../lib/dispatch';
+import { planDispatch, applyDispatch, unsendOrg, dropOrg, placeDirect } from '../lib/dispatch';
 import { resolveCvUrl } from '../lib/cvUrl';
 import { placementStatus, isPlacementCourse, TURN_LABEL, TURN_COLOR,
   type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
@@ -473,6 +473,27 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
       return;
     }
+    // Approving a placement from the row. This used to fall through to setEditing() while
+    // its confirmation dialog promised "הסטודנט/ית יירשם/תירשם כמשובץ/ת בארגון, ייתפס
+    // מקום" — so the card opened, the database was untouched, and the placement silently
+    // did not happen. Yariv hit it on הדר עוזירי → מערך הדיגיטל הלאומי and had to redo the
+    // whole thing inside the card ("ניכר ששום כפתור לא באמת עבד מחוץ למערכת").
+    // It runs the SAME lib/dispatch.placeDirect the card runs, so the two cannot drift.
+    if (action.id === 'place_direct') {
+      const orgName = (action as any).targetOrg
+        || (statusById.get(student.id)?.chips || []).find((c: any) => c.suggested)?.orgName;
+      if (!orgName) { setEditing(student); return; }
+      const res = placeDirect({ student, employers, orgName, userName });
+      if (!res.ok) { showToast(res.error || 'לא ניתן לאשר השמה', 'error'); return; }
+      await persistAndRefresh(
+        all.map(x => x.id === student.id ? res.student : x),
+        `✓ ${student.name} שובץ/ה ל"${orgName}"`,
+        res.employers,
+        { action: 'אישור השמה ישירה', entity: 'סטודנט', target: `${student.name} · ${orgName}` });
+      showToast(`✓ ${student.name} שובץ/ה ל"${orgName}" (השמה ישירה)`, 'success');
+      return;
+    }
+
     if (action.id !== 'adopt') { setEditing(student); return; }
     const email = String(student.email || '').trim().toLowerCase();
     const row = subs.unseen.get(email);

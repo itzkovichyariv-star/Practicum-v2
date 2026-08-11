@@ -83,14 +83,26 @@ audit.recordCell({ id: 'STRIP-render-turn', tableRef: 'brief §whose turn',
 // the turn filter must narrow to exactly the turn it names
 const filtered = await audit.page.evaluate(async () => {
   const btn = document.querySelector('[data-turn-filter="ours"]');
-  if (!btn) return { ok: false, why: 'no filter' };
+  if (!btn) return { skip: 'no filter control' };
+  // How many rows are in that turn BEFORE filtering. With none, the filter correctly
+  // shows an empty list and there is nothing to assert — that is a skip, not a failure.
+  const before = [...document.querySelectorAll('[data-placement-strip]')]
+    .filter(s => s.getAttribute('data-turn') === 'ours').length;
+  if (!before) return { skip: 'no student is in the "ours" turn right now' };
   btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
   await new Promise(r => setTimeout(r, 350));
   const turns = [...document.querySelectorAll('[data-placement-strip]')].map(s => s.getAttribute('data-turn'));
-  return { ok: turns.length > 0 && turns.every(t => t === 'ours'), turns: [...new Set(turns)].join(',') };
+  // Put the list back. Leaving it filtered starved every later cell on this page: with
+  // nobody in "ours" the page went empty and STRIP-org-details reported "no info
+  // control", which reads as a missing feature rather than an empty screen.
+  document.querySelector('[data-turn-filter="all"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+  await new Promise(r => setTimeout(r, 350));
+  return { ok: turns.length > 0 && turns.every(t => t === 'ours'), turns: [...new Set(turns)].join(','), before };
 });
 audit.recordCell({ id: 'STRIP-turn-filter', tableRef: 'brief §whose turn filter',
-  expected: 'only ours rows remain', observed: filtered.turns || filtered.why || 'none', pass: filtered.ok });
+  expected: 'only ours rows remain', observed: filtered.skip || `${filtered.before} ours → [${filtered.turns}]`,
+  pass: filtered.skip ? null : filtered.ok });
 
 // an org chip opens the employer's real contact details — including a private org the
 // student proposed, which had no reachable details anywhere (Yariv 2026-08-09).
@@ -211,6 +223,22 @@ if (pick.skip) {
     expected: 'rank badge >= 10px text in a >= 15px badge',
     observed: `${pick.badgePx}px in ${pick.badgeW}px`, pass: pick.badgePx >= 10 && pick.badgeW >= 15 });
 }
+
+// Yariv 2026-08-11: "הטלפון של הארגון שמוצג אינו לחיץ." The number is what you reach
+// for on a phone; there was only a call ICON beside it. The href must also survive the
+// U+202D/U+202C direction marks that Excel-pasted numbers carry — the live מערך הדיגיטל
+// הלאומי number is wrapped in exactly those, and they would break tel: silently.
+await expandAll();
+const contact = await audit.page.evaluate(async () => {
+  document.querySelector('[data-org-info]')?.click();
+  await new Promise(r => setTimeout(r, 500));
+  const a = document.querySelector('[data-org-phone-link]');
+  return a ? { href: a.getAttribute('href') || '', text: (a.textContent || '').trim() } : null;
+});
+audit.recordCell({ id: 'STRIP-phone-is-tappable', tableRef: 'Yariv 2026-08-11',
+  expected: 'the number itself is a tel: link carrying digits only',
+  observed: contact ? `${contact.text} → ${contact.href}` : 'no phone on screen right now',
+  pass: contact ? /^tel:\+?[0-9]+$/.test(contact.href) : null });
 
 // A blocked first choice must SAY it is blocked, on the row.
 await expandAll();

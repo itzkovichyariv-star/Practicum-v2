@@ -409,3 +409,72 @@ export function applyEmployerAnswer(input: {
       ? ({ ...d, result: 'rejected', resultAt: now, resultBy: 'employer-link' } as Dispatch) : d),
   };
 }
+
+// ── Direct placement ─────────────────────────────────────────────────────────
+/**
+ * Approve a placement without sending a CV — the student and the organization already
+ * spoke, which is the normal path for an org the student brought (Yariv 2026-08-09:
+ * "אשר השמה או שלח קורות חיים").
+ *
+ * This lives here, pure, because it has to run from TWO places. The row's confirmation
+ * dialog promised "הסטודנט/ית יירשם/תירשם כמשובץ/ת בארגון, ייתפס מקום" and then only
+ * called setEditing() — the placement never happened, the database was untouched, and
+ * the user was told it had been saved. Yariv hit exactly that on הדר עוזירי → מערך
+ * הדיגיטל הלאומי and had to redo it inside the card. Rather than fork the logic (which
+ * is what the row was avoiding), both callers now run this one function.
+ *
+ * Materialises first: a student whose organizations live only in the legacy
+ * firstChoiceOrg fields has an empty preferences[], and the placement would find nothing
+ * to place — the same trap applyDispatch documents.
+ */
+export function placeDirect(input: {
+  student: any;
+  employers: Employer[];
+  orgName: string;
+  userName: string;
+  now?: string;
+  newSlotId?: () => string;
+}): { ok: boolean; error?: string; student: any; employers: Employer[] } {
+  const now = input.now || new Date().toISOString();
+  const student = applyUnifiedList(input.student, buildUnifiedOrgList(input.student, input.employers));
+  const courseId = student.courseId;
+  if (!courseId) return { ok: false, error: 'לא הוגדר קורס לסטודנט/ית', student: input.student, employers: input.employers };
+
+  const pref = (student.preferences || []).find((p: any) => p.orgName === input.orgName);
+  const emp = (input.employers || []).find((e: any) => e.name === input.orgName || e.id === (pref || {}).employerId);
+  if (!pref || !emp) return { ok: false, error: 'לא זוהה ארגון', student: input.student, employers: input.employers };
+
+  const slots: any[] = ((emp as any).vacancySlots || []);
+  const existing = pref.slotId ? slots.find((s) => s.id === pref.slotId) : null;
+  let target: any = existing || slots.find((s) => s.status === 'available' && s.courseId === courseId);
+  let updatedSlots: VacancySlot[];
+  if (target) {
+    updatedSlots = slots.map((s) => s.id !== target.id ? s : ({
+      ...s, status: 'placed', studentId: student.id, prefRank: pref.rank,
+      history: [...(s.history || []), { at: now, from: s.status, to: 'placed', by: 'admin', actorId: input.userName, reason: 'placed-direct' }],
+    })) as VacancySlot[];
+  } else if ((emp as any).restrictedToStudentId === student.id) {
+    // An org this student brought has no shared capacity to draw on — mint the place.
+    target = {
+      id: input.newSlotId ? input.newSlotId() : `${emp.id}-direct-${now.replace(/\D/g, '').slice(-10)}`,
+      courseId, status: 'placed', studentId: student.id, prefRank: pref.rank,
+      history: [{ at: now, from: 'available', to: 'placed', by: 'admin', actorId: input.userName, reason: 'placed-direct-mint' }],
+    };
+    updatedSlots = [...slots, target] as VacancySlot[];
+  } else {
+    return { ok: false, error: 'אין כרגע מקום פנוי בארגון זה עבור הקורס', student: input.student, employers: input.employers };
+  }
+
+  const updatedEmp = reconcileEmployerCapacity({ ...(emp as any), vacancySlots: updatedSlots });
+  return {
+    ok: true,
+    student: {
+      ...student,
+      preferences: (student.preferences || []).map((p: any) => p.orgName === input.orgName
+        ? { ...p, status: 'placed', slotId: target.id } : p),
+      submissionStatus: 'placed', acceptedOrg: (emp as any).name,
+      placedAt: student.placedAt || now.slice(0, 10),
+    },
+    employers: (input.employers || []).map((e: any) => e.id === updatedEmp.id ? updatedEmp : e),
+  };
+}

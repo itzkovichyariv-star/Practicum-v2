@@ -36,10 +36,23 @@ if (!skipBuildProbe) {
   }
 }
 
+// 1b. Static lints first — they need no browser, take milliseconds, and catch whole
+//     CLASSES of bug rather than one instance. Any scripts/audit/lint-*.mjs is picked up,
+//     so adding one needs no wiring here.
+const auditDir = join(ROOT, 'scripts/audit');
+const lints = readdirSync(auditDir).filter((f) => /^lint-.+\.mjs$/.test(f)).sort();
+for (const lint of lints) {
+  console.log(`\n━━━ ${lint} ━━━`);
+  const code = await new Promise((res) => spawn('node', [join('scripts/audit', lint)], { cwd: ROOT, stdio: 'inherit' }).on('exit', res));
+  if (code !== 0) {
+    console.error(`\n❌ DEPLOY GATE FAILED — ${lint} found a problem. Do NOT deploy.`);
+    process.exit(1);
+  }
+}
+
 // 2. Run each audit file in sequence. We can't run in parallel because
 //    Supabase writes from concurrent runs can collide and the headed
 //    browsers compete for focus.
-const auditDir = join(ROOT, 'scripts/audit');
 const files = readdirSync(auditDir).filter((f) => /^\d{2}-.+\.mjs$/.test(f)).sort();
 const results = [];
 

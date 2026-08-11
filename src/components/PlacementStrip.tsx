@@ -69,8 +69,17 @@ function EmployerDetails({ emp, orgName, onClose }: { emp: any | null; orgName: 
           )}
           <div style={{ fontSize: 13, lineHeight: 1.75, color: 'var(--ink)' }}>
             {emp.contactPerson && <div><span style={{ color: 'var(--text-soft)' }}>איש קשר: </span><b>{emp.contactPerson}</b></div>}
-            {phone && <div><span style={{ color: 'var(--text-soft)' }}>טלפון: </span><span dir="ltr">{phone}</span></div>}
-            {email && <div style={{ wordBreak: 'break-all' }}><span style={{ color: 'var(--text-soft)' }}>מייל: </span><span dir="ltr">{email}</span></div>}
+            {/* The number itself is the tap target — Yariv 2026-08-11: "הטלפון של הארגון
+                שמוצג אינו לחיץ". There was a call icon below, but on a phone the number
+                is what you reach for. `tel:` gets digits and + only, which also strips the
+                U+202D/U+202C direction marks Excel-pasted numbers carry (the live
+                מערך הדיגיטל הלאומי number is wrapped in exactly those). */}
+            {phone && <div><span style={{ color: 'var(--text-soft)' }}>טלפון: </span>
+              <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} dir="ltr" data-org-phone-link
+                style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'underline' }}>{phone}</a></div>}
+            {email && <div style={{ wordBreak: 'break-all' }}><span style={{ color: 'var(--text-soft)' }}>מייל: </span>
+              <a href={`mailto:${encodeURIComponent(email)}`} dir="ltr" data-org-email-link
+                style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'underline' }}>{email}</a></div>}
             {emp.location && <div><span style={{ color: 'var(--text-soft)' }}>מיקום: </span>{emp.location}</div>}
             {!emp.contactPerson && !phone && !email && (
               <div style={{ color: '#b45309' }}>לא הוזנו פרטי קשר לארגון הזה.</div>
