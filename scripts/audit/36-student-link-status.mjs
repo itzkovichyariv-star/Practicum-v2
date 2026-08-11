@@ -13,17 +13,10 @@
  * Seeds one temp student + 5 temp employers on that student's course, loads the link,
  * asserts presence/absence, then removes all temp data. Touches no real data.
  */
-import { Audit, sbQuery, BASE_URL } from '../audit-lib.mjs';
+import { Audit, sbQuery, BASE_URL, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'student-link-status' });
@@ -54,7 +47,7 @@ try {
     base(`${STU_ID}-e-other`, N.other, { contactStatus: 'approved', approvalStatus: 'approved', courseIds: [otherCourseId], vacancySlots: [slot(`${STU_ID}-other-s1`, otherCourseId, 'available')] }),
   ];
   const stu = { id: STU_ID, name: `SL סטודנט ${ts}`, email: STU_EMAIL, courseId, year: courses.find(c => c.id === courseId)?.year || '', submissionStatus: 'submitted', preferences: [] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), ...emps], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), ...emps], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -79,7 +72,7 @@ audit.recordCell({
 try {
   const data = await loadData();
   const empIds = new Set([`${STU_ID}-e-inproc`, `${STU_ID}-e-inprocready`, `${STU_ID}-e-manual`, `${STU_ID}-e-auto`, `${STU_ID}-e-full`, `${STU_ID}-e-other`]);
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => !empIds.has(e.id)) });
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => !empIds.has(e.id)) }));
   audit.log('Cleanup: removed temp student + 5 employers');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

@@ -9,16 +9,10 @@
  * preference to it, opens the report, asserts the org + student + capacity +
  * status render, then removes both.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'org-report' });
@@ -44,7 +38,7 @@ try {
     submissionStatus: 'submitted',
     preferences: [{ rank: 1, employerId: EMP_ID, slotId: SLOT1, status: 'under_review' }],
   };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -92,7 +86,7 @@ audit.log('ORG-REPORT: per-org placement detail renders the seeded org + student
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) }));
   audit.log('Cleanup: removed temp student + employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

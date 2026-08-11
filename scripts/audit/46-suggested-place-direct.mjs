@@ -25,16 +25,10 @@
  * checkbox) is correctly DISABLED here even though the student HAS a CV — the block
  * reason is "no free place", not "no CV". Cell 47 covers the both-paths-offered case.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'suggested-place-direct' });
@@ -58,7 +52,7 @@ try {
   // StudentsPage.tsx:189-220 on coordinator mount). Path 2 is about NOT SENDING the
   // CV — never about lacking one — so the seed must carry one.
   const stu = { id: STU_ID, name: STU_NAME, email: `audit-pd-${ts}@audit.local`, courseId, cvUrl: 'storage://candidate-uploads/audit-pd-orig.pdf', cvUpdatedUrl: 'storage://candidate-uploads/audit-pd-updated.pdf', firstChoiceOrg: EMP_NAME, submissionStatus: 'submitted', preferences: [{ rank: 1, employerId: EMP_ID, slotId: null, status: 'tentative' }] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -163,7 +157,7 @@ audit.log('SUGGEST-place-direct: approve a suggested org directly → placement 
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) }));
   audit.log('Cleanup: removed temp student + employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

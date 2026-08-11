@@ -8,16 +8,10 @@
  *
  * Seeds a temp candidate (interviewResult pending), removes it after.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'candidate-autosave' });
@@ -29,7 +23,7 @@ let seedOk = false, courseId = '';
 try {
   const data = await loadData();
   courseId = (data.courses || [])[0]?.id || '';
-  await sbPatchData({ ...data, candidates: [...(data.candidates || []), { id: CAND_ID, name: CAND_NAME, email: `audit-as-${ts}@audit.local`, courseId, interviewDate: '2026-05-30', interviewResult: 'pending', interviewSummary: '' }] });
+  await mutateData(data => ({ ...data, candidates: [...(data.candidates || []), { id: CAND_ID, name: CAND_NAME, email: `audit-as-${ts}@audit.local`, courseId, interviewDate: '2026-05-30', interviewResult: 'pending', interviewSummary: '' }] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -108,7 +102,7 @@ audit.log('AUTOSAVE-pending: typing the summary persists without save / without 
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, candidates: (data.candidates || []).filter(c => c.id !== CAND_ID) });
+  await mutateData(data => ({ ...data, candidates: (data.candidates || []).filter(c => c.id !== CAND_ID) }));
   audit.log('Cleanup: removed temp candidate');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

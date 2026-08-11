@@ -21,18 +21,10 @@
  * PUBLIC link in a real browser for each state, asserts the visible outcome, then removes
  * every temp row. Touches no real employer/student.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'status-lifecycle-e2e' });
@@ -45,7 +37,7 @@ const SB_ID = `audit-e2e-stuB-${ts}`, SB_EMAIL = `e2e-b-${ts}@audit.local`;
 async function setEmpStatus(contactStatus) {
   const data = await loadData();
   const employers = (data.employers || []).map(e => e.id === EMP_ID ? { ...e, contactStatus } : e);
-  await sbPatchData({ ...data, employers });
+  await mutateData(data => ({ ...data, employers }));
 }
 // Does the seeded employer appear on the public link for this email, as a proper
 // org CARD? /organizations is now the read-only preview (2026-07-21) — choosing
@@ -86,11 +78,11 @@ try {
     vacancySlots: [{ id: `${EMP_ID}-a1`, courseId: courseA.id, status: 'available', studentId: null, prefRank: null, history: [] }],
   };
   const mkStu = (id, email, course) => ({ id, name: `E2E סטודנט ${id.slice(-4)}`, email, courseId: course.id, year: course.year, submissionStatus: 'submitted', preferences: [], acceptedOrg: null });
-  await sbPatchData({
+  await mutateData(data => ({
     ...data,
     employers: [...(data.employers || []), emp],
     students: [...(data.students || []), mkStu(SA_ID, SA_EMAIL, courseA), mkStu(SB_ID, SB_EMAIL, courseB)],
-  });
+  }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -146,11 +138,11 @@ try {
 } finally {
   try {
     const data = await loadData();
-    await sbPatchData({
+    await mutateData(data => ({
       ...data,
       employers: (data.employers || []).filter(e => e.id !== EMP_ID),
       students: (data.students || []).filter(s => s.id !== SA_ID && s.id !== SB_ID),
-    });
+    }));
     audit.log('Cleanup: removed temp employer + 2 students');
   } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 }

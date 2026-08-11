@@ -13,18 +13,10 @@
  * Seeds a temp course-mate pair + one private org with a reserved place, then removes
  * all three. Touches no real data.
  */
-import { Audit, sbQuery, BASE_URL } from '../audit-lib.mjs';
+import { Audit, sbQuery, BASE_URL, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'private-org' });
@@ -48,7 +40,7 @@ try {
   };
   const owner = { id: OWNER_ID, name: OWNER_NAME, email: OWNER_EMAIL, courseId, firstChoiceOrg: EMP_NAME, submissionStatus: 'submitted', preferences: [] };
   const other = { id: OTHER_ID, name: OTHER_NAME, email: OTHER_EMAIL, courseId, submissionStatus: 'submitted', preferences: [] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), owner, other] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), owner, other] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -101,11 +93,11 @@ audit.recordCell({
 // ── Cleanup ───────────────────────────────────────────────────────────────────
 try {
   const data = await loadData();
-  await sbPatchData({
+  await mutateData(data => ({
     ...data,
     students: (data.students || []).filter(s => s.id !== OWNER_ID && s.id !== OTHER_ID),
     employers: (data.employers || []).filter(e => e.id !== EMP_ID),
-  });
+  }));
   audit.log('Cleanup: removed temp private org + 2 students');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

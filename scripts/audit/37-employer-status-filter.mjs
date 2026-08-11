@@ -15,17 +15,10 @@
  * unchanged — only the label the cell locates, plus a new assertion that the two amber
  * states are offered separately.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'employer-status-filter' });
@@ -43,7 +36,7 @@ try {
   // NOT-ready (no description) so it genuinely stays בתהליך — a ready in_process org would
   // now auto-green (auto-green beats in_process) and drop out of the בתהליך filter.
   const inproc = mk(P_ID, P_NAME, { contactStatus: 'in_process', approvalStatus: 'approved', notes: '' });
-  await sbPatchData({ ...data, employers: [...(data.employers || []), approved, inproc] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), approved, inproc] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -88,7 +81,7 @@ else {
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, employers: (data.employers || []).filter(e => e.id !== A_ID && e.id !== P_ID) });
+  await mutateData(data => ({ ...data, employers: (data.employers || []).filter(e => e.id !== A_ID && e.id !== P_ID) }));
   audit.log('Cleanup: removed 2 temp employers');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

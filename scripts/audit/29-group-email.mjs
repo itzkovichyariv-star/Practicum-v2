@@ -12,18 +12,10 @@
  * Seeds one placed + one not-placed student (unique names, same course/year) so
  * the assertion is by NAME membership, independent of the other live students.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'group-email' });
@@ -39,7 +31,7 @@ try {
   year = course?.year || '';
   const placed = { id: S_PLACED, name: N_PLACED, email: `p${ts}@audit.local`, courseId, year, acceptedOrg: `ארגון ${ts}` };
   const unplaced = { id: S_UNPLACED, name: N_UNPLACED, email: `u${ts}@audit.local`, courseId, year };
-  await sbPatchData({ ...data, students: [...(data.students || []), placed, unplaced] });
+  await mutateData(data => ({ ...data, students: [...(data.students || []), placed, unplaced] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -137,7 +129,7 @@ audit.recordCell({
 // ── Cleanup ─────────────────────────────────────────────────────────────────
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== S_PLACED && s.id !== S_UNPLACED) });
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== S_PLACED && s.id !== S_UNPLACED) }));
   audit.log('Cleanup: removed temp students');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

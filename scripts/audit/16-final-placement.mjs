@@ -9,16 +9,10 @@
  *
  * Seeds a temp practicum student + a 1-slot employer; removes both.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'final-placement' });
@@ -34,7 +28,7 @@ try {
   if (!courseId) throw new Error('no course');
   const emp = { id: EMP_ID, name: EMP_NAME, approvalStatus: 'approved', addedBy: 'admin', restrictedToStudentId: null, courseIds: [courseId], positionsTotal: 1, positions: 1, filledPositions: 0, notes: 'audit', contactPhone: '0500000000', contactEmail: 'a@b.local', vacancySlots: [{ id: SLOT_ID, courseId, status: 'available', studentId: null, prefRank: null, history: [] }] };
   const stu = { id: STU_ID, name: STU_NAME, email: `audit-fp-${ts}@audit.local`, courseId, cvUpdatedUrl: 'storage://candidate-uploads/a.pdf', firstChoiceOrg: EMP_NAME, submissionStatus: 'submitted', preferences: [] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -156,10 +150,10 @@ audit.log('PLACED-converges: dispatch → נקלט sets acceptedOrg + occupies t
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID),
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID),
       // also drop their dispatches — cells that send through the UI left
       // orphaned rows behind (221 of 228 by 2026-08-10).
-      dispatches: (data.dispatches || []).filter(x => x.studentId !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
+      dispatches: (data.dispatches || []).filter(x => x.studentId !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) }));
   audit.log('Cleanup: removed temp student + employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

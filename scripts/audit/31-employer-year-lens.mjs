@@ -58,6 +58,16 @@ if (!target) {
 await audit.page.evaluate(() => { localStorage.setItem('practicum_v2_page', 'employers'); localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: '__all__', year: '__all__' })); });
 await audit.page.reload({ waitUntil: 'networkidle' });
 
+// The employers list is a client:only React island, so `networkidle` only means the
+// network went quiet — not that the rows exist yet. Reading straight after the reload is
+// a race the machine loses under load: this cell failed TWICE inside a full gate run with
+// "no row for Codeoasis" and passed every time in isolation, where the render happens to
+// beat the assertion. Wait for the row itself rather than for a proxy for it.
+await audit.page.waitForFunction(
+  (name) => [...document.querySelectorAll('li')].some((li) => li.textContent.includes(name)),
+  target.empName, { timeout: 25000 },
+).catch(() => {});   // fall through to the existing "no row" error, which reports honestly
+
 const result = await audit.page.evaluate((t) => {
   const rows = [...document.querySelectorAll('li')];
   const row = rows.find((li) => li.textContent.includes(t.empName));

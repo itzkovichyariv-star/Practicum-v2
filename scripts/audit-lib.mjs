@@ -57,6 +57,44 @@ export async function sbQuery(table, { filter = '', select = '*', headers = {} }
   return r.json();
 }
 
+/**
+ * Compare-and-swap write of the whole practicum_data blob, the way saveSnapshot does it.
+ *
+ * Cells used to PATCH `{ data }` blind. Every writer therefore did read → modify → write
+ * with no guard, so anything written between one cell's read and its write was silently
+ * reverted — including another cell's seed. That is why the gate went red on a DIFFERENT,
+ * disjoint set of cells on two consecutive runs (2026-08-11) while every one of them
+ * passed in isolation: not a regression, a race. A gate that fails at random is worth as
+ * little as one that passes at random, and until today it did both.
+ *
+ * `mutate` receives FRESH data each attempt and returns the new blob, so a lost race is
+ * re-applied rather than clobbering. Callers pass `data => ({ ...data, … })`: the
+ * parameter deliberately shadows the caller's earlier read.
+ */
+export async function mutateData(mutate, { tries = 10, orgId = 'default' } = {}) {
+  let lastErr = '';
+  for (let i = 0; i < tries; i++) {
+    const rows = await sbQuery('practicum_data', { select: 'data,version', filter: `org_id=eq.${orgId}` });
+    const cur = rows?.[0];
+    if (!cur) throw new Error('mutateData: practicum_data row not found');
+    const next = mutate(cur.data || {});
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.${orgId}&version=eq.${cur.version}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`,
+        'Content-Type': 'application/json', Prefer: 'return=representation',
+      },
+      body: JSON.stringify({ data: next, version: cur.version + 1, updated_at: new Date().toISOString() }),
+    });
+    if (!r.ok) { lastErr = `${r.status}`; continue; }
+    const j = await r.json().catch(() => null);
+    if (Array.isArray(j) && j.length) return next;   // we held the version — the write landed
+    lastErr = 'version moved under us';
+    await new Promise((res) => setTimeout(res, 120 + i * 80));
+  }
+  throw new Error(`mutateData: lost the CAS race after ${tries} tries (${lastErr})`);
+}
+
 export async function sbInsert(table, row, { headers = {} } = {}) {
   const url = `${SUPABASE_URL}/rest/v1/${table}`;
   const r = await fetch(url, {

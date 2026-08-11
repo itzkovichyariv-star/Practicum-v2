@@ -12,16 +12,10 @@
  * Guards the report that feedback couldn't be sent to שירי (acceptedOrg
  * "Icon Group" vs employer "Icon Group/I digital").
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'feedback-resolve' });
@@ -39,7 +33,7 @@ try {
   const emp = { id: EID, name: `${ORG}/סניף`, courseIds: [courseId], description: 'x', contactEmail: 'audit-emp@audit.local', contactPhone: '050-0000000', contactPerson: 'איש קשר', positions: 1, positionsTotal: 1, filledPositions: 1, vacancySlots: [] };
   const sMatch = { id: S_MATCH, name: NAME_M, email: `m${ts}@audit.local`, courseId, acceptedOrg: ORG, feedbackToken: `tok-m-${ts}` };
   const sMiss = { id: S_MISS, name: NAME_X, email: `x${ts}@audit.local`, courseId, acceptedOrg: `ארגון לא קיים ${ts}`, feedbackToken: `tok-x-${ts}` };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), sMatch, sMiss] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), sMatch, sMiss] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -102,7 +96,7 @@ audit.log('FEEDBACK-missing: unmatched org gives a clear alert (not silent)');
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, employers: (data.employers || []).filter(e => e.id !== EID), students: (data.students || []).filter(s => s.id !== S_MATCH && s.id !== S_MISS) });
+  await mutateData(data => ({ ...data, employers: (data.employers || []).filter(e => e.id !== EID), students: (data.students || []).filter(s => s.id !== S_MATCH && s.id !== S_MISS) }));
   audit.log('Cleanup: removed temp employer + students');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

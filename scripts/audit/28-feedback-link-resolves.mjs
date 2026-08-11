@@ -19,18 +19,10 @@
  * DB persistence, then prove resolution by opening the SAME token on the dev
  * server's /f route (which reads the same Supabase row).
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'feedback-link-resolves' });
@@ -49,7 +41,7 @@ try {
   // Student WITH acceptedOrg but NO feedbackToken — forces the create+verify path.
   const emp = { id: EID, name: ORG, courseIds: [courseId], description: 'x', contactEmail: 'audit-fbl@audit.local', contactPhone: '050-0000000', contactPerson: 'איש קשר', positions: 1, positionsTotal: 1, filledPositions: 1, vacancySlots: [] };
   const student = { id: SID, name: SNAME, email: `fbl${ts}@audit.local`, courseId, acceptedOrg: ORG };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), student] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), student] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -146,11 +138,11 @@ audit.recordCell({
 // ── Cleanup ────────────────────────────────────────────────────────────────
 try {
   const data = await loadData();
-  await sbPatchData({
+  await mutateData(data => ({
     ...data,
     employers: (data.employers || []).filter(e => e.id !== EID),
     students: (data.students || []).filter(s => s.id !== SID),
-  });
+  }));
   audit.log('Cleanup: removed temp employer + student');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

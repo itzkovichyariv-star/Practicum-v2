@@ -15,18 +15,10 @@
  * Seeds a temp practicum student (with an updated CV) + a temp employer with TWO
  * vacancy slots, then removes both. Touches no real data.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 const availSlots = (emp) => ((emp && emp.vacancySlots) || []).filter(s => s.status === 'available').length;
 
@@ -50,7 +42,7 @@ try {
     ],
   };
   const stu = { id: STU_ID, name: STU_NAME, email: `audit-vc-${ts}@audit.local`, courseId, cvUpdatedUrl: 'storage://candidate-uploads/a.pdf', firstChoiceOrg: EMP_NAME, submissionStatus: 'submitted', preferences: [] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -133,10 +125,10 @@ audit.log('COUNTER-send-takes-place: build reserves nothing; ticking the send-CV
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID),
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID),
       // also drop their dispatches — cells that send through the UI left
       // orphaned rows behind (221 of 228 by 2026-08-10).
-      dispatches: (data.dispatches || []).filter(x => x.studentId !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
+      dispatches: (data.dispatches || []).filter(x => x.studentId !== STU_ID), employers: (data.employers || []).filter(e => e.id !== EMP_ID) }));
   audit.log('Cleanup: removed temp student + employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

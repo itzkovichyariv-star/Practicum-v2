@@ -14,17 +14,10 @@
  * Seeds two in_process orgs (ready + not-ready) on one (course × year), verifies the two
  * dots, drives the one-tap toggle on the ready org, re-reads the DB, then removes temp data.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'status-quick-and-autogreen' });
@@ -38,7 +31,7 @@ try {
   const course = (data.courses || []).find(c => c?.year && c?.name);
   if (!course) throw new Error('no course'); year = course.year;
   const mk = (id, name, notes) => ({ id, name, addedBy: 'admin', restrictedToStudentId: null, notes, contactStatus: 'in_process', approvalStatus: 'approved', contactPhone: '0500000000', contactEmail: 'a@b.local', courseIds: [course.id], vacancySlots: [{ id: `${id}-s1`, courseId: course.id, status: 'available', studentId: null, prefRank: null, history: [] }] });
-  await sbPatchData({ ...data, employers: [...(data.employers || []), mk(READY_ID, READY_NAME, 'תיאור מלא — מוכן'), mk(NOT_ID, NOT_NAME, '')] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), mk(READY_ID, READY_NAME, 'תיאור מלא — מוכן'), mk(NOT_ID, NOT_NAME, '')] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -109,7 +102,7 @@ audit.recordCell({
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, employers: (data.employers || []).filter(e => e.id !== READY_ID && e.id !== NOT_ID) });
+  await mutateData(data => ({ ...data, employers: (data.employers || []).filter(e => e.id !== READY_ID && e.id !== NOT_ID) }));
   audit.log('Cleanup: removed 2 temp employers');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

@@ -16,18 +16,10 @@
  * Seeds one employer in two same-year courses (A full, B open), views all-courses × that year,
  * asserts the two differently-coloured rows in BOTH list and grid, then removes the temp data.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'employer-course-year-sections' });
@@ -60,7 +52,7 @@ try {
     ],
   };
   const stu = { id: STU_ID, name: `CYS סטודנט ${ts}`, email: `cys-${ts}@audit.local`, courseId: courseA.id, year: courseA.year, acceptedOrg: EMP_NAME, submissionStatus: 'placed', preferences: [] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -136,7 +128,7 @@ await audit.page.evaluate(() => localStorage.setItem('employers_view', 'list'));
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, employers: (data.employers || []).filter(e => e.id !== EMP_ID), students: (data.students || []).filter(s => s.id !== STU_ID) });
+  await mutateData(data => ({ ...data, employers: (data.employers || []).filter(e => e.id !== EMP_ID), students: (data.students || []).filter(s => s.id !== STU_ID) }));
   audit.log('Cleanup: removed temp employer + student');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

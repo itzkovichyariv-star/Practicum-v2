@@ -9,17 +9,11 @@
  *
  * Seeds a temp slot on a unique far-future date; cleans up the slot AND the link.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
 const H = { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` };
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 async function delSlotsForDate(date) {
   await fetch(`${SUPABASE_URL}/rest/v1/public_interview_slots?date=eq.${date}`, { method: 'DELETE', headers: { ...H, Prefer: 'return=minimal' } });
@@ -134,7 +128,15 @@ audit.log('ZOOM-recreate: new slots for the same day re-associate with the kept 
 try {
   await delSlotsForDate(TDATE);
   const d = await loadData();
-  if (d.interviewZoomLinks && d.interviewZoomLinks[TDATE]) { delete d.interviewZoomLinks[TDATE]; await sbPatchData(d); }
+  // In-place mutation of a stale read is the same clobber as the spread form, just
+  // less obvious: the whole blob still goes back, reverting anything written meanwhile.
+  if (d.interviewZoomLinks && d.interviewZoomLinks[TDATE]) {
+    await mutateData(data => {
+      const next = { ...data, interviewZoomLinks: { ...(data.interviewZoomLinks || {}) } };
+      delete next.interviewZoomLinks[TDATE];
+      return next;
+    });
+  }
   audit.log('Cleanup: removed temp slot + temp zoom link');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

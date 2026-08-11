@@ -64,7 +64,9 @@ await audit.page.evaluate(({ cId }) => {
   localStorage.setItem('practicum_v2_page', 'candidates');
 }, { cId: seedCourseId });
 await audit.page.reload({ waitUntil: 'networkidle' });
-await audit.page.waitForTimeout(800);
+// 800ms was a guess, and the guess is what made this suite flaky: it failed inside a full
+// gate run and passed on the retry (2026-08-11). Wait for the island to actually mount.
+await audit.page.waitForSelector('button, [role="tab"]', { timeout: 25000 }).catch(() => {});
 
 audit.log('GROUP-personalized: two passed candidates → two personalized drafts');
 {
@@ -73,6 +75,9 @@ audit.log('GROUP-personalized: two passed candidates → two personalized drafts
   if (await candidatesBtn.count() > 0) { await candidatesBtn.click(); await audit.page.waitForTimeout(1000); }
   const passedTab = audit.page.locator('button').filter({ hasText: /עבר|עברה/ }).first();
   if (await passedTab.count() > 0) { await passedTab.click(); await audit.page.waitForTimeout(700); }
+  // The rows this cell is about must exist before it starts ticking their checkboxes.
+  await audit.page.locator('li').filter({ hasText: A_NAME }).first()
+    .waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
 
   // Select both audit candidates.
   let selected = 0;

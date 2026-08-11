@@ -12,18 +12,10 @@
  * description + an open place), opens the Employers list, asserts its pill = מאושר,
  * then removes it. Touches no real data.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch failed ${r.status}: ${await r.text().catch(() => '')}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'manual-approve-status' });
@@ -44,7 +36,7 @@ try {
     contactPhone: '0500000000', contactEmail: 'a@b.local',
     vacancySlots: [{ id: `${EMP_ID}-s1`, courseId: course.id, status: 'available', studentId: null, prefRank: null, history: [] }],
   };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp] });
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -81,7 +73,7 @@ audit.recordCell({
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, employers: (data.employers || []).filter(e => e.id !== EMP_ID) });
+  await mutateData(data => ({ ...data, employers: (data.employers || []).filter(e => e.id !== EMP_ID) }));
   audit.log('Cleanup: removed temp employer');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

@@ -11,16 +11,10 @@
  * Seeds a candidate WITH a questionnaire + a student linked to it WITHOUT one,
  * so this exercises the backfill path specifically. Cleans both up.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'form-carryover' });
@@ -36,7 +30,7 @@ try {
   const cand = { id: CID, name: NAME, email: `audit-fc-${ts}@audit.local`, courseId, questionnaire, convertedToStudentId: SID };
   // Student linked to the candidate but WITHOUT questionnaire → exercises backfill.
   const stu = { id: SID, name: NAME, email: `audit-fc-${ts}@audit.local`, courseId, fromCandidate: true, fromCandidateId: CID, preparation: { passed: false }, preferences: [] };
-  await sbPatchData({ ...data, candidates: [...(data.candidates || []), cand], students: [...(data.students || []), stu] });
+  await mutateData(data => ({ ...data, candidates: [...(data.candidates || []), cand], students: [...(data.students || []), stu] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -86,7 +80,7 @@ audit.log('FORM-carryover: converted student shows the submitted "שאלון מ�
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, candidates: (data.candidates || []).filter(c => c.id !== CID), students: (data.students || []).filter(s => s.id !== SID) });
+  await mutateData(data => ({ ...data, candidates: (data.candidates || []).filter(c => c.id !== CID), students: (data.students || []).filter(s => s.id !== SID) }));
   audit.log('Cleanup: removed temp candidate + student');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 

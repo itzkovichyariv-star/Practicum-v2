@@ -11,16 +11,10 @@
  *
  * Seeds a temp employer + student with one under_review preference; cleans up.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH', headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'cancel-dialog' });
@@ -33,7 +27,14 @@ try {
   courseId = ((data.courses || []).find(c => c?.type === 'practicum') || (data.courses || [])[0])?.id || '';
   const emp = { id: EID, name: `מעסיק ${ts}`, courseIds: [courseId], description: 'x', positions: 1, positionsTotal: 1, filledPositions: 1, vacancySlots: [{ id: SLOT, courseId, status: 'under_review', studentId: SID, prefRank: 1, history: [] }] };
   const stu = { id: SID, name: NAME, email: `audit-cd-${ts}@audit.local`, phone: '0500000000', courseId, fromCandidate: true, preferences: [{ rank: 1, employerId: EID, slotId: SLOT, status: 'under_review' }] };
-  await sbPatchData({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu] });
+  // The confirm is reached by unticking "קו״ח נשלח", and that checkbox only renders
+  // when a dispatch exists — a preference alone is not a send. Without this the probe
+  // found no button and the cell skipped silently (it had been skipping since the
+  // OrgHub redesign 1d8fa560 renamed the old "בטל מועמדות" button out of existence).
+  const disp = { id: `${SID}-d1`, studentId: SID, employerId: EID, slotId: SLOT, channel: 'email',
+    sentBy: 'audit', sentAt: new Date().toISOString(), messageSnapshot: 'audit', result: 'pending' };
+  await mutateData(data => ({ ...data, employers: [...(data.employers || []), emp], students: [...(data.students || []), stu],
+    dispatches: [...(data.dispatches || []), disp] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -56,7 +57,7 @@ audit.log('CANCEL-dialog: "בטל מועמדות" opens a confirm dialog on top 
       await row.getByTitle('ערוך').first().click().catch(() => {});
       await audit.page.waitForTimeout(1400);
       opened = await audit.page.evaluate(() => !!document.querySelector('button[aria-label="סגור"]'));
-      const cancel = audit.page.locator('button').filter({ hasText: 'בטל מועמדות' }).first();
+      const cancel = audit.page.locator('[data-sent-cv]').first();
       btnSeen = await cancel.isVisible().catch(() => false);
       if (btnSeen) {
         await cancel.scrollIntoViewIfNeeded().catch(() => {});
@@ -87,8 +88,10 @@ audit.log('CANCEL-dialog: "בטל מועמדות" opens a confirm dialog on top 
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, employers: (data.employers || []).filter(e => e.id !== EID), students: (data.students || []).filter(s => s.id !== SID) });
-  audit.log('Cleanup: removed temp employer + student');
+  await mutateData(data => ({ ...data, employers: (data.employers || []).filter(e => e.id !== EID),
+    students: (data.students || []).filter(s => s.id !== SID),
+    dispatches: (data.dispatches || []).filter(d => d.studentId !== SID) }));
+  audit.log('Cleanup: removed temp employer + student + dispatch');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 
 await audit.teardown();

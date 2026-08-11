@@ -8,18 +8,10 @@
  *
  * Seeds a temp student, removes it after. No employer needed.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-async function sbPatchData(data) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.default`, {
-    method: 'PATCH',
-    headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify({ data }),
-  });
-  if (!r.ok) throw new Error(`sbPatch ${r.status}`);
-}
 const loadData = async () => (await sbQuery('practicum_data', { select: 'data' }))?.[0]?.data || {};
 
 const audit = new Audit({ name: 'pref-link' });
@@ -30,7 +22,7 @@ let seedOk = false, courseId = '';
 try {
   const data = await loadData();
   courseId = (data.courses || [])[0]?.id || '';
-  await sbPatchData({ ...data, students: [...(data.students || []), { id: STU_ID, name: STU_NAME, email: STU_EMAIL, phone: STU_PHONE, courseId }] });
+  await mutateData(data => ({ ...data, students: [...(data.students || []), { id: STU_ID, name: STU_NAME, email: STU_EMAIL, phone: STU_PHONE, courseId }] }));
   seedOk = true;
 } catch (e) { console.log(`Seed failed: ${e.message.slice(0, 160)}`); }
 
@@ -89,7 +81,7 @@ audit.log('PREFLINK-copy: student card copies the personalized stage-2 link');
 
 try {
   const data = await loadData();
-  await sbPatchData({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID) });
+  await mutateData(data => ({ ...data, students: (data.students || []).filter(s => s.id !== STU_ID) }));
   audit.log('Cleanup: removed temp student');
 } catch (e) { audit.log(`Cleanup (non-fatal): ${e.message.slice(0, 100)}`); }
 
