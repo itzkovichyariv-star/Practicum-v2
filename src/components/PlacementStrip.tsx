@@ -290,39 +290,48 @@ export default function PlacementStrip({ status, employers, onAction }: {
                     <span style={{ minWidth: 0 }}>
                       {c.suggested && <span aria-hidden style={{ opacity: 0.55, fontSize: 9, marginInlineEnd: 4 }}>◆</span>}
                       <b style={{ color: c.tone === 'plain' ? 'var(--ink)' : t.color }}>{c.orgName}</b>
-                      {c.suffix && <span style={{ fontWeight: 500 }}> · {c.suffix}</span>}
-                      {!c.available && c.blockedReason && (
-                        <span data-org-blocked style={{ display: 'block', fontWeight: 700, color: '#b45309', fontSize: 11 }}>
-                          {c.blockedReason}
-                        </span>
-                      )}
-                      {/* The per-chip action lives INSIDE the chip's border. It used to be a
-                          sibling AFTER the box, so it floated between one chip and the next
-                          with nothing tying it to its owner — Yariv 2026-08-11, reading the
-                          "↩︎ לא נשלח" under choice 1 as a heading over choices 2 and 3:
-                          "זה לא מעוצב בצורה ברורה ונראה יותר חלק מ‑1 — מבלבל". Which chip an
-                          action belongs to must never be a matter of inference. */}
-                      {!c.available && c.tone === 'plain' && c.blockedReason && (
-                        <button type="button" data-strip-drop={c.orgName}
-                          title={`הסר את ${c.orgName} מהדירוג — או השאר/י אותו והמתן/י שיתפנה`}
-                          onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.drop_org, targetOrg: c.orgName } as any); }}
-                          style={{
-                            display: 'block', marginTop: 6, font: 'inherit', fontSize: 10.5, fontWeight: 700,
-                            padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
-                            border: '1px dashed var(--divider-strong)', background: 'transparent', color: 'var(--text-soft)',
-                          }}>✕ הסר מהדירוג</button>
-                      )}
-                      {(c.tone === 'sent' || c.tone === 'late') && (
-                        <button type="button" data-strip-unsend={c.orgName}
-                          title={`ההודעה ל${c.orgName} לא נשלחה בפועל — שחרר את המקום`}
-                          onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.unsend, targetOrg: c.orgName } as any); }}
-                          style={{
-                            display: 'block', marginTop: 6, font: 'inherit', fontSize: 10.5, fontWeight: 700,
-                            padding: '3px 8px', borderRadius: 6, cursor: 'pointer', whiteSpace: 'nowrap',
-                            border: '1px dashed #b45309', background: 'transparent', color: '#b45309',
-                          }}>↩︎ ההודעה הזו לא נשלחה</button>
+                      {/* ONE sentence per chip. `suffix` already carries the blocked reason
+                          (placementStatus sets suffix = blockedReason for a full org), and a
+                          second block printed it again underneath — Yariv 2026-08-11 saw
+                          "TLVtech · תפוס — עדי גורביץ' בתהליך שם" with the identical line
+                          repeated below it: "לא צריך את ההכפלה". The marker moves onto the
+                          suffix itself so the cells still find it. */}
+                      {c.suffix && (
+                        <span
+                          {...(!c.available && c.blockedReason ? { 'data-org-blocked': '' } : {})}
+                          style={{ fontWeight: !c.available && c.blockedReason ? 700 : 500,
+                                   color: !c.available && c.blockedReason ? '#b45309' : 'inherit' }}> · {c.suffix}</span>
                       )}
                     </span>
+                    {/* Actions sit on the chip's line as small marks beside the ⓘ, not as
+                        labelled boxes under it. The old "↩︎ ההודעה הזו לא נשלחה" was a bold
+                        dashed banner directly beneath "נשלח אתמול" — it shouted over the very
+                        line it corrects, and read as a contradiction rather than an undo.
+                        Yariv 2026-08-11: "ללא הכותרות זה הרבה יותר ברור … לא צריך את הכותרת
+                        המנותקת והגדולה". The sentence states the state; the mark offers the fix. */}
+                    {(c.tone === 'sent' || c.tone === 'late') && (
+                      <span role="button" tabIndex={0} data-strip-unsend={c.orgName}
+                        title={`בעצם לא נשלחה הודעה ל${c.orgName} — שחרר/י את המקום והחזר/י לרשימה`}
+                        onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.unsend, targetOrg: c.orgName } as any); }}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.unsend, targetOrg: c.orgName } as any); } }}
+                        style={{
+                          flexShrink: 0, display: 'inline-grid', placeItems: 'center', marginTop: 1,
+                          width: 17, height: 17, borderRadius: '50%', cursor: 'pointer',
+                          border: '1px solid #b45309', color: '#b45309', fontSize: 10, fontWeight: 800,
+                        }}>↩</span>
+                    )}
+                    {!c.available && c.tone === 'plain' && c.blockedReason && (
+                      <span role="button" tabIndex={0} data-strip-drop={c.orgName}
+                        title={`הסר/י את ${c.orgName} מהדירוג — או השאר/י אותו והמתן/י שיתפנה`}
+                        onClick={e => { e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.drop_org, targetOrg: c.orgName } as any); }}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setConfirm({ ...ACTION_BY_ID.drop_org, targetOrg: c.orgName } as any); } }}
+                        style={{
+                          flexShrink: 0, display: 'inline-grid', placeItems: 'center', marginTop: 1,
+                          width: 17, height: 17, borderRadius: '50%', cursor: 'pointer',
+                          border: '1px solid var(--divider-strong)', color: 'var(--text-soft)',
+                          fontSize: 10, fontWeight: 800,
+                        }}>✕</span>
+                    )}
                     <span
                       role="button" tabIndex={0} data-org-info={c.orgName}
                       title={emp ? 'פרטי המעסיק' : 'הארגון לא נמצא ברשימת המעסיקים'}

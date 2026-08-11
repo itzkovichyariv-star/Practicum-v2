@@ -339,7 +339,14 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const chipFor = (p: UnifiedOrgPref, tone: PlacementChip['tone'], suffix = ''): PlacementChip => {
     const cap = capacityOf(p);
     return {
-      rank: p.rank, orgName: p.orgName, suggested: isSug(p), tone, suffix,
+      rank: p.rank, orgName: p.orgName, suggested: isSug(p), tone,
+      // A not-yet-sent chip always says where it stands, in every state — "טרם נשלח" when
+      // there is a place, and WHY when there is not. This used to be set only in the
+      // already-sent branch, so before any CV went out a full organization looked exactly
+      // like an open one on the chip: the very thing Yariv reported on 2026-08-10 ("כתוב
+      // של‑1 עדיין לא נשלח אבל זה לא נשלח כי אין מקום"), fixed then for one branch only.
+      // Callers that pass their own suffix (נשלח לפני X, נדחה, בוטל) still win.
+      suffix: suffix || (tone === 'plain' ? (cap.free ? 'טרם נשלח' : cap.reason || 'לא ניתן לשלוח') : ''),
       available: cap.free, blockedReason: cap.reason, recommended: false,
     };
   };

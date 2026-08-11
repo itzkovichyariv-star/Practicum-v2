@@ -164,19 +164,31 @@ if (!seeded) {
     pass: pick.skip ? null : pick.target.includes(ORG_SHARED) });
 
   // ── a blocked org says why, and names who is holding the place ────────────
-  const blocked = await audit.page.evaluate((name) => {
-    const li = [...document.querySelectorAll('li')].find(l => l.textContent.includes(name));
-    const strip = li?.querySelector('[data-placement-strip]');
-    const el = strip?.querySelector('[data-org-blocked]');
-    if (!el) return { skip: 'no blocked chip on the seeded row' };
-    const chip = el.closest('[data-org-chip]');
-    return { text: el.textContent.trim(), available: chip?.getAttribute('data-org-available') };
-  }, NAMES[PICK]);
+  // Target the chip by the organization it is about, rather than "any blocked chip on
+  // that row" — the row lookup was matching whichever element happened to carry the name.
+  const blocked = await audit.page.evaluate((org) => {
+    const chips = [...document.querySelectorAll(`[data-org-chip]`)].filter(c => c.getAttribute('data-org-chip') === org);
+    const chip = chips.find(c => c.getAttribute('data-org-available') === '0');
+    if (!chip) return { skip: `no blocked chip for ${org} (found ${chips.length} chip(s))` };
+    const el = chip.querySelector('[data-org-blocked]');
+    const reason = (el || chip).textContent.replace(/^\s*·\s*/, '').trim();
+    // How many times the reason appears in the WHOLE chip. innerText line-counting was
+    // the wrong ruler — the rank badge and the ✕/ⓘ marks are separate inline elements and
+    // each shows up as its own "line". What duplication actually means is the same
+    // sentence printed twice.
+    const whole = chip.textContent;
+    const times = reason ? whole.split(reason).length - 1 : 0;
+    return { text: (el || chip).textContent.trim(), marked: !!el,
+      available: chip.getAttribute('data-org-available'), times };
+  }, ORG_FULL);
   audit.recordCell({ id: 'SEEDED-blocked-explains', tableRef: 'Yariv: "הבחירה הראשונה תפוסה על ידי סטודנט אחר"',
-    expected: 'the blocked choice states why and names the holder, and is not selectable',
-    observed: blocked.skip || `"${blocked.text}" (available=${blocked.available})`,
+    expected: 'the blocked choice states why ONCE, names the holder, and is not selectable',
+    observed: blocked.skip || `"${blocked.text}" (available=${blocked.available}, marked=${blocked.marked}, printed ${blocked.times}×)`,
     pass: blocked.skip ? null
-      : blocked.available === '0' && blocked.text.includes(NAMES[HOLD].slice(0, 8)) });
+      : blocked.available === '0' && blocked.marked && blocked.text.includes(NAMES[HOLD].slice(0, 8))
+        // ONCE: the reason used to print twice — as the suffix AND again beneath it
+        // ("לא צריך את ההכפלה", Yariv 2026-08-11).
+        && blocked.times === 1 });
   // ── every per-chip action is INSIDE the chip it acts on ───────────────────
   // Yariv 2026-08-11, on his own board: the "↩︎ לא נשלח" under choice 1 rendered between
   // chips 1 and 2, so he read it as a HEADING over choices 2 and 3 — "זה לא מעוצב בצורה
