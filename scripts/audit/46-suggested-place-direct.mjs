@@ -25,7 +25,7 @@
  * checkbox) is correctly DISABLED here even though the student HAS a CV — the block
  * reason is "no free place", not "no CV". Cell 47 covers the both-paths-offered case.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -62,6 +62,7 @@ await audit.page.evaluate(({ cId }) => {
   localStorage.setItem('practicum_v2_page', 'students');
 }, { cId: courseId });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1000);
 
 audit.log('SUGGEST-place-direct: approve a suggested org directly → placement without a CV');

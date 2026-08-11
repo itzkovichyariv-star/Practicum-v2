@@ -25,7 +25,7 @@
  * Drives the actual editor (localStorage session, open by ערוך) like the other cells.
  * Seeds temp students + employers; removes them (CAS retry).
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -71,6 +71,7 @@ await audit.page.evaluate(({ c }) => {
 
 async function openEditor(name) {
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1000);
   const row = audit.page.locator('li').filter({ hasText: name }).first();
   if (!(await row.isVisible().catch(() => false))) return false;

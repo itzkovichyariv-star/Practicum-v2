@@ -19,7 +19,7 @@
  * Seeds a temp student; removes it. (The cv_updates row it creates is inert — keyed to
  * a @audit.local email no real student matches — and anon can't delete cv_updates.)
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -73,6 +73,7 @@ let prefilled = false, cvOptional = false, submitted = false, reusedPath = false
 if (seedOk) {
   const url = `${audit.baseUrl}/cv-update/?email=${encodeURIComponent(MAIL)}&name=${encodeURIComponent('עדכון חלקי')}`;
   await audit.page.goto(url, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(2500);
 
   const state = await audit.page.evaluate(({ o }) => ({

@@ -19,7 +19,7 @@
  *
  * Seeds a temp placed student + employer; removes both.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const SB='https://vpqgmcmavnszcnakhiat.supabase.co', ANON='sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
 const H={apikey:ANON,Authorization:`Bearer ${ANON}`,'Content-Type':'application/json'};
@@ -44,6 +44,7 @@ await audit.setup();
 await audit.page.setViewportSize({width:390,height:844}); // the user's device
 await audit.page.evaluate(({c})=>{localStorage.setItem('practicum_v2_context',JSON.stringify({courseId:c||'__all__',year:'__all__'}));localStorage.setItem('practicum_v2_page','students');},{c:courseId});
 await audit.page.reload({waitUntil:'networkidle'});
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 let geo={};

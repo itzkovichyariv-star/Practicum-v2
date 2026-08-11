@@ -20,7 +20,7 @@
  * `candidate-uploads`. We use a tiny in-memory text file so the upload
  * succeeds without disk I/O. The bucket should accept text/plain.
  */
-import { Audit, sbQuery, sbInsert, sbDelete } from '../audit-lib.mjs';
+import { Audit, sbQuery, sbInsert, sbDelete, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'registration' });
 await audit.setup();
@@ -124,6 +124,7 @@ async function fillQuestionnaire(page) {
 audit.log('REG-validation: questionnaire-missing submit blocked with specific error');
 {
   await audit.page.goto(`${audit.baseUrl}/register`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(800);
   const before = await audit.shot('REG-validation-before');
   audit.observerMark();
@@ -179,6 +180,7 @@ audit.log('REG-validation: questionnaire-missing submit blocked with specific er
 audit.log('REG-happy-path: submit creates row with EXACT filled values');
 {
   await audit.page.goto(`${audit.baseUrl}/register`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(800);
   const before = await audit.shot('REG-happy-before');
   audit.observerMark();

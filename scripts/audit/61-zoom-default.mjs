@@ -16,7 +16,7 @@
  *
  * Seeds its own future slot + (for the override cell) a per-day link, and removes both.
  */
-import { Audit, sbInsert, sbDelete } from '../audit-lib.mjs';
+import { Audit, sbInsert, sbDelete, appReady } from '../audit-lib.mjs';
 
 const SUPA = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -63,6 +63,7 @@ audit.log(`Seeded slot ${slotId} on ${slotDate}; default="${DEFAULT_LINK.slice(0
 
 async function fillAndSubmit(email) {
   await audit.page.goto(`${audit.baseUrl}/register`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(900);
   await audit.page.locator('input[type="text"]').nth(0).fill(`Audit Zoomdef ${ts}`);
   await audit.page.locator('input[type="email"]').first().fill(email);

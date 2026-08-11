@@ -13,7 +13,7 @@
  * takes the desktop (copy + toast) branch — exactly the environment where the
  * button used to look broken.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'contact-actions' });
 await audit.setup();
@@ -25,6 +25,7 @@ audit.log('CALL-desktop: 📞 copies the number + toasts when tel: cannot dial')
 {
   await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   audit.observerMark();
 

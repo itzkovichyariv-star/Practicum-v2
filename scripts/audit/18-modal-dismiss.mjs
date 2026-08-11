@@ -9,12 +9,13 @@
  * Read-only (opens/closes an editor, no edits → no DB writes). Guards the
  * "tried to switch screens, buttons don't respond — modal covered the nav" report.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'modal-dismiss' });
 await audit.setup();
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 // "Modal open" = the shared Modal's fixed ✕ is present.

@@ -19,7 +19,7 @@
  * DB persistence, then prove resolution by opening the SAME token on the dev
  * server's /f route (which reads the same Supabase row).
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -54,6 +54,7 @@ await audit.page.evaluate(({ c }) => {
 audit.page.on('dialog', d => d.dismiss().catch(() => {}));
 audit.page.on('popup', p => p.close().catch(() => {}));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1300);
 
 /** Open the student editor and click "🔗 העתק קישור"; return the URL shown in the box. */
@@ -106,6 +107,7 @@ audit.recordCell({
 let resolvedName = false, invalidPage = false;
 if (tokenMatch) {
   await audit.page.goto(`${audit.baseUrl}/f?t=${encodeURIComponent(tokenMatch)}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   const txt = await audit.page.evaluate(() => document.body.innerText || '');
   resolvedName = txt.includes(SNAME);
@@ -123,6 +125,7 @@ audit.recordCell({
 let second = { url: '' };
 if (tokenMatch) {
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1200);
   second = await generateLink();
 }

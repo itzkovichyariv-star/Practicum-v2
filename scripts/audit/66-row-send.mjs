@@ -20,7 +20,7 @@
  * Seeds its own student + employer and removes them afterwards, so it never depends on —
  * or disturbs — real coordinator data.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -109,6 +109,7 @@ if (!seedOk) {
   audit.recordCell({ id: 'ROWSEND-seed', expected: 'seed', observed: 'failed', pass: null });
 } else {
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1600);
 
   // ── 1. the row names its target ────────────────────────────────────────────
@@ -141,6 +142,7 @@ if (!seedOk) {
 
   // ── 3. confirming commits ──────────────────────────────────────────────────
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   await openRowSend();
   await audit.page.evaluate(() => document.querySelector('[data-row-send-yes]')
@@ -160,6 +162,7 @@ if (!seedOk) {
   // Reload first: the editor builds its org cards from its own form state, which was
   // loaded before the row send committed.
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1600);
   const returned = await audit.page.evaluate(async (name) => {
     const li = [...document.querySelectorAll('li')].find(l => (l.innerText || '').includes(name));
@@ -201,6 +204,7 @@ if (!seedOk) {
   // Placed BEFORE the release test below, which removes the organization from the
   // ranking and would leave nothing to send.
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   await openRowSend();
   await audit.page.evaluate(() => document.querySelector('[data-row-send-yes]')

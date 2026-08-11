@@ -15,7 +15,7 @@
  * Seeds a temp practicum student (with an updated CV) + a temp employer with TWO
  * vacancy slots, then removes both. Touches no real data.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -52,6 +52,7 @@ await audit.page.evaluate(({ cId }) => {
   localStorage.setItem('practicum_v2_page', 'students');
 }, { cId: courseId });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1000);
 
 audit.log('COUNTER-send-takes-place: build reserves nothing; ticking the send-CV checkbox takes a place');

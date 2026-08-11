@@ -9,7 +9,7 @@
  * preference to it, opens the report, asserts the org + student + capacity +
  * status render, then removes both.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -48,6 +48,7 @@ await audit.page.evaluate(() => {
   localStorage.setItem('practicum_v2_page', 'reports');
 });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 audit.log('ORG-REPORT: per-org placement detail renders the seeded org + student');

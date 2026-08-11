@@ -9,7 +9,7 @@
  * Seeds a temp passed+converted candidate and its student; removes both.
  * (User reported these cards "wouldn't open" — guards that path.)
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -36,6 +36,7 @@ const editorOpen = () => audit.page.evaluate(() => !!document.querySelector('but
 async function openCardOn(page) {
   await audit.page.evaluate((p) => localStorage.setItem('practicum_v2_page', p), page);
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1200);
   if (page === 'candidates') {
     const tab = audit.page.locator('button').filter({ hasText: /^עברו/ }).first();

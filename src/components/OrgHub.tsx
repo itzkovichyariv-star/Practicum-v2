@@ -399,11 +399,10 @@ export default function OrgHub({
         const isPending = !!emp && (emp as any).approvalStatus === 'pending';
         const sentDispatch = dispatches.filter(d => d.studentId === form.id && d.slotId === card.slotId && d.result === 'pending').slice(-1)[0];
         const aging = sentDispatch ? agingDays(sentDispatch.sentAt) : 0;
-        // ONE silence threshold for the whole app (Yariv 2026-08-09: 7 days, down from 14).
-        // Previously this chip read the per-course `reviewAgingThresholdDays`, which is 14
-        // on both practicum courses — so the card would have contradicted the list strip.
-        // Sharing the constant keeps them honest without a data migration.
-        const agingThreshold = SILENCE_DAYS;
+        // The course's own threshold when it sets one, else the shared default (14 —
+        // Yariv 2026-08-11). The row's classifier resolves it exactly the same way, so the
+        // card and the list can never disagree about whether an employer is late.
+        const agingThreshold = Number((course as any)?.reviewAgingThresholdDays) || SILENCE_DAYS;
         const isAging = !!sentDispatch && aging > agingThreshold;
         const isOrphan = isPlaced && (card.status === 'tentative' || card.status === 'under_review');
         const canSend = hasUpdatedCv && !!emp && (!!card.slotId || (cap ? cap.available > 0 : false));

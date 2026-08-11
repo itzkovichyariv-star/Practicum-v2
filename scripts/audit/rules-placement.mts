@@ -101,7 +101,7 @@ const rule = (id, tableRef, expected, got) =>
   rule('STRIP-sent-turn', 'brief §states row 6', 'employer', run(mk(2)).turn);
 }
 
-// A6 — silence past the threshold hands the ball back to us (7 days, Yariv 2026-08-09).
+// A6 — silence past the threshold hands the ball back to us (14 days, Yariv 2026-08-11).
 {
   const emps = [{ id: 'e1', name: 'A', approvalStatus: 'approved' }];
   const mk = (age) => ({
@@ -109,10 +109,24 @@ const rule = (id, tableRef, expected, got) =>
     student: { cvUpdatedUrl: 'x', preferences: [{ rank: 1, orgName: 'A', employerId: 'e1', status: 'under_review', slotId: 's0' }] },
     dispatches: [{ studentId: 'stu1', slotId: 's0', employerId: 'e1', result: 'pending', sentAt: daysAgo(age) }],
   });
-  rule('STRIP-silence-threshold', `brief §states row 7 (${SILENCE_DAYS}d)`, 7, SILENCE_DAYS);
+  // 14, not 7 — Yariv 2026-08-11 chose it over the 7 he asked for on 2026-08-09, to end
+  // the split where the row called an employer late at 7 while the card's ⏱ chip used the
+  // course's own 14. The cell states the DECISION, so a silent drift back goes red.
+  rule('STRIP-silence-threshold', 'Yariv 2026-08-11: the row and the card agree on 14', 14, SILENCE_DAYS);
   rule('STRIP-inside-window', 'brief §states row 6', 'employer', run(mk(SILENCE_DAYS)).turn);
   rule('STRIP-past-window', 'brief §states row 7', 'sent_stale/ours',
     `${run(mk(SILENCE_DAYS + 1)).key}/${run(mk(SILENCE_DAYS + 1)).turn}`);
+
+  // A course may set its own patience. The field was editable in the settings UI and read
+  // by NOTHING — a control claiming an effect it did not have, the same defect as the row
+  // button that said it placed someone. Both the rule and the card now honour it.
+  const patient = { ...COURSE, reviewAgingThresholdDays: 30 };
+  rule('STRIP-course-threshold-honoured', 'a course that sets 30 is not nagged at 15',
+    'employer', run(mk(SILENCE_DAYS + 1), { course: patient }).turn);
+  rule('STRIP-course-threshold-still-fires', 'and past ITS number the ball still comes back',
+    'sent_stale/ours', (() => { const r = run(mk(31), { course: patient }); return `${r.key}/${r.turn}`; })());
+  rule('STRIP-course-threshold-default', 'a course that sets none falls back to the default',
+    'sent_stale/ours', (() => { const r = run(mk(SILENCE_DAYS + 1)); return `${r.key}/${r.turn}`; })());
 }
 
 // A7 — scope of "always": practicum courses only (53 of 83 students are elsewhere).

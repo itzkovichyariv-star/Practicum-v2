@@ -23,7 +23,7 @@
  * Seeds a temp student + two employers (one in the student's course, one in a DIFFERENT
  * course); removes all three.
  */
-import { Audit, sbQuery, BASE_URL } from '../audit-lib.mjs';
+import { Audit, sbQuery, BASE_URL, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -78,6 +78,7 @@ await audit.setup();
 // Read every option the preference picker offers (open the first picker, list rows).
 async function optionsFor(url) {
   await audit.page.goto(url, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1800); // blob fetch + derive
   const picker = audit.page.locator('button:has-text("— ללא העדפה —")').first();
   if (await picker.count() === 0) return null; // section hidden ⇒ no orgs offered

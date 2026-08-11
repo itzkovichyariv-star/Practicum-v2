@@ -9,12 +9,13 @@
  * Pure UI interaction (pinning is local state) — no DB writes, no seeding.
  * Regression guard for "popover stuck, ✕ won't close it".
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'popover-dismiss' });
 await audit.setup();
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1500);
 
 const popVisible = () => audit.page.evaluate(() =>

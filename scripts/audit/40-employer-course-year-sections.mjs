@@ -16,7 +16,7 @@
  * Seeds one employer in two same-year courses (A full, B open), views all-courses × that year,
  * asserts the two differently-coloured rows in BOTH list and grid, then removes the temp data.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -61,6 +61,7 @@ if (!seedOk) { audit.recordCell({ id: 'CYS-seed', expected: 'seed', observed: 'f
 
 await audit.page.evaluate((y) => { localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: '__all__', year: y })); localStorage.setItem('practicum_v2_page', 'employers'); }, year);
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1400);
 
 // Read the emp's dot colour inside the section headed by a given course name.
@@ -110,6 +111,7 @@ audit.recordCell({
 // GRID view must also group into sections.
 await audit.page.evaluate(() => localStorage.setItem('employers_view', 'grid'));
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 const grid = await audit.page.evaluate((p) => {
   const secs = [...document.querySelectorAll('section[id^="unit-"]')];

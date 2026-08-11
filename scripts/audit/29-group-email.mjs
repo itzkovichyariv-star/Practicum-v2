@@ -12,7 +12,7 @@
  * Seeds one placed + one not-placed student (unique names, same course/year) so
  * the assertion is by NAME membership, independent of the other live students.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -42,6 +42,7 @@ await audit.page.evaluate(({ c, y }) => {
   localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: c || '__all__', year: y || '__all__' }));
 }, { c: courseId, y: year });
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1400);
 
 /** Read the recipient-names box text in the open modal. */

@@ -13,7 +13,7 @@
  * page also has non-row checkboxes (e.g. the "show processed" filter) — clicking
  * those is not a selection and previously produced a false "broken" reading.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'candidate-selection' });
 await audit.setup();
@@ -108,6 +108,7 @@ audit.log('HOVER-vs-CLICK: hover does NOT open the card; click does');
 audit.log('INBOX-select: submission checkboxes (incl. processed) are not disabled and toggle');
 {
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(900);
   audit.observerMark();
   // Reveal processed submissions so the previously-disabled ones are testable.

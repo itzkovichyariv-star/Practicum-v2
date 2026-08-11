@@ -21,7 +21,7 @@
  * PUBLIC link in a real browser for each state, asserts the visible outcome, then removes
  * every temp row. Touches no real employer/student.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -46,6 +46,7 @@ async function setEmpStatus(contactStatus) {
 // student can actually see and read it, not just find the name somewhere in the text.
 async function orgVisibleFor(email) {
   await audit.page.goto(`${audit.baseUrl}/organizations?email=${encodeURIComponent(email)}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1400);
   return audit.page.evaluate((name) => {
     const bodyHas = (document.body.textContent || '').includes(name);

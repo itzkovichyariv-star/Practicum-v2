@@ -15,7 +15,7 @@
  *
  * Seeds a temp student; removes it.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -56,6 +56,7 @@ await audit.page.evaluate(({ c }) => {
   localStorage.setItem('practicum_v2_page', 'students');
 }, { c: courseId });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 let opened = false, saved = false, persistedNewOrg = false;

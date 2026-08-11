@@ -13,7 +13,7 @@
  * Seeds a temp employer with a placed past-year slot + a next-year course attached
  * with 0 slots, checks the pill in both years, then removes it. Touches no real data.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -60,6 +60,7 @@ async function pillFor(year) {
     localStorage.setItem('practicum_v2_page', 'employers');
   }, year);
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1200);
   return audit.page.evaluate((name) => {
     const row = [...document.querySelectorAll('li')].find(li => li.querySelector('.serif')?.textContent?.trim() === name);

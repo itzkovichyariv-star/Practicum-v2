@@ -15,7 +15,7 @@
  * the past year, the history toggle reveals it, and show-all reveals every course.
  * Removes the temp data. Touches no real data.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -68,6 +68,7 @@ await audit.page.evaluate((ctx) => {
   localStorage.setItem('practicum_v2_page', 'employers');
 }, { name: sameName, year: nextCourse.year });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 const result = await audit.page.evaluate((t) => {

@@ -16,7 +16,7 @@
  * No prod data is seeded or mutated: layer A needs none, and layer B only reads what is
  * already there and asserts structure, so it stays green as Yariv works the list.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -56,6 +56,7 @@ await audit.page.evaluate(() => {
   localStorage.setItem('practicum_v2_page', 'students');
 });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1600);
 
 await expandAll();
@@ -145,6 +146,7 @@ audit.recordCell({ id: 'STRIP-action-warns', tableRef: 'Yariv decision ב: 1 cli
 // (restoring white-space:nowrap pushes the chip 65px out and turns this red).
 await audit.page.setViewportSize({ width: 375, height: 812 });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1400);
 
 await expandAll();
@@ -179,6 +181,7 @@ audit.recordCell({ id: 'STRIP-narrow-containment', tableRef: 'iPhone report 2026
 // Sections D and E both drive selection state on the SAME page, so each starts from a
 // fresh load — otherwise the earlier section's clicks decide what the later one reads.
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1400);
 
 // ── D. pick-then-send, and a readable rank ──────────────────────────────────────
@@ -256,6 +259,7 @@ audit.recordCell({ id: 'STRIP-blocked-explains', tableRef: 'Yariv: "הבחירה
 // Sections D and E both drive selection state on the SAME page, so each starts from a
 // fresh load — otherwise the earlier section's clicks decide what the later one reads.
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1400);
 
 // ── E. mixed row: the buttons follow the SELECTED org ───────────────────────────
@@ -289,6 +293,7 @@ if (mixed.skip) {
 // screens to reach the four that need action.
 await audit.page.setViewportSize({ width: 375, height: 812 });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1600);
 
 const compact = await audit.page.evaluate(async () => {

@@ -14,7 +14,7 @@
  *   ORG-no-auth      The page is accessible without the admin session
  *                    (public route — no login required).
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'organization' });
 await audit.setup();
@@ -35,6 +35,7 @@ audit.log(`(public org page scoped to course "${COURSE}")`);
 audit.log('ORG-loads: /organizations page loads and renders');
 {
   await audit.page.goto(ORGS_URL, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   const before = await audit.shot('ORG-loads-before');
   audit.observerMark();

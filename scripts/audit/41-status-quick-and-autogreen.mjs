@@ -14,7 +14,7 @@
  * Seeds two in_process orgs (ready + not-ready) on one (course × year), verifies the two
  * dots, drives the one-tap toggle on the ready org, re-reads the DB, then removes temp data.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -40,6 +40,7 @@ if (!seedOk) { audit.recordCell({ id: 'SQ-seed', expected: 'seed', observed: 'fa
 
 await audit.page.evaluate((y) => { localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: '__all__', year: y })); localStorage.setItem('practicum_v2_page', 'employers'); localStorage.setItem('employers_view', 'list'); }, year);
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1400);
 
 const dotOf = (name) => audit.page.evaluate((n) => {

@@ -15,7 +15,7 @@
  *                      that student's own ?course= — identification and explicit
  *                      scoping must agree.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const COURSE = 'hr-practicum-tashpaz'; // פרקטיקום משאבי אנוש תשפ״ז
 
@@ -38,6 +38,7 @@ await audit.page.setViewportSize({ width: 1200, height: 1000 });
 /** Load a /organizations URL and return the org names it renders. */
 async function orgsAt(query) {
   await audit.page.goto(`${audit.baseUrl}/organizations${query}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1800);
   return audit.page.$$eval('[data-org-name]', els => els.map(e => e.getAttribute('data-org-name')));
 }
@@ -88,6 +89,7 @@ audit.recordCell({
 // other courses. The number must be identical whichever way you arrive.
 const availBy = async (query) => {
   await audit.page.goto(`${audit.baseUrl}/organizations${query}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1800);
   return audit.page.$$eval('[data-org-name]', els =>
     Object.fromEntries(els.map(e => [e.getAttribute('data-org-name'), e.getAttribute('data-org-avail')])));
@@ -111,18 +113,21 @@ audit.recordCell({
 let rememberedAfterReload = null, forgotten = null;
 if (student) {
   await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   await audit.page.fill('input[type="email"]', student.email).catch(() => {});
   await audit.page.locator('button').filter({ hasText: 'המשך' }).first().click().catch(() => {});
   await audit.page.waitForTimeout(1800);
   // reload the BARE url — identity must survive
   await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1800);
   rememberedAfterReload = (await audit.page.$$('[data-org-name]')).length > 0;
   // now explicitly forget, and confirm it does NOT come back after a reload
   await audit.page.locator('button').filter({ hasText: 'זה לא אני' }).first().click().catch(() => {});
   await audit.page.waitForTimeout(600);
   await audit.page.goto(`${audit.baseUrl}/organizations`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1800);
   forgotten = (await audit.page.$$('[data-org-name]')).length === 0;
 }

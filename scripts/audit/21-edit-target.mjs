@@ -15,13 +15,14 @@
  *
  * Read-only (opens/closes an editor, no DB writes).
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'edit-target' });
 await audit.setup();
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
 await audit.page.setViewportSize({ width: 1440, height: 900 });
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1300);
 
 const P = audit.page;

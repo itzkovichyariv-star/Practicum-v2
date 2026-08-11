@@ -12,7 +12,7 @@
  * Guards the report that feedback couldn't be sent to שירי (acceptedOrg
  * "Icon Group" vs employer "Icon Group/I digital").
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -48,6 +48,7 @@ let lastDialog = '';
 audit.page.on('dialog', d => { lastDialog = d.message(); d.dismiss().catch(() => {}); });
 audit.page.on('popup', p => p.close().catch(() => {}));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1300);
 
 async function clickFeedback(name) {

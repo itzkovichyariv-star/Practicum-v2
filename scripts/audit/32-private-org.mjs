@@ -13,7 +13,7 @@
  * Seeds a temp course-mate pair + one private org with a reserved place, then removes
  * all three. Touches no real data.
  */
-import { Audit, sbQuery, BASE_URL, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, BASE_URL, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -58,6 +58,7 @@ await audit.page.evaluate(() => {
   localStorage.setItem('practicum_v2_page', 'employers');
 });
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 const adminBadge = await audit.page.evaluate((t) => {
@@ -77,6 +78,7 @@ audit.recordCell({
 // ── 2. Student-facing visibility (owner sees it, course-mate does not) ─────────
 async function orgVisibleFor(email) {
   await audit.page.goto(`${BASE_URL}/organizations?email=${encodeURIComponent(email)}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   return audit.page.evaluate((name) => (document.body.innerText || '').includes(name), EMP_NAME);
 }

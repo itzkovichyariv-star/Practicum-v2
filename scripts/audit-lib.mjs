@@ -24,6 +24,36 @@ import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 export const ROOT = '/Users/yarivitzkovich/Code/practicum-v2';
+
+// ── Every request gets a deadline ─────────────────────────────────────────────
+// 58-orghub-cards once took 5,477 SECONDS. Its assertions finished at +6s; the cleanup
+// ran to +5,365s. The loop is bounded (6 CAS tries), so those were `fetch` calls hanging
+// with no timeout — a gate that never returns is worse than one that fails, because it
+// gives no answer at all and burns the whole session waiting for it.
+//
+// Patched once here rather than at each call site: every cell imports this module, and
+// several carry their own private readRow/writeData helpers built on bare fetch. A caller
+// that passes its own signal is left alone.
+const FETCH_TIMEOUT_MS = Number(process.env.AUDIT_FETCH_TIMEOUT_MS) || 20000;
+if (!globalThis.__auditFetchPatched) {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    if (init.signal) return original(input, init);
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+    try {
+      return await original(input, { ...init, signal: ac.signal });
+    } catch (e) {
+      if (e?.name === 'AbortError') {
+        throw new Error(`fetch timed out after ${FETCH_TIMEOUT_MS}ms: ${String(input).slice(0, 90)}`);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  globalThis.__auditFetchPatched = true;
+}
 // Default target is the dev server; set AUDIT_BASE_URL to run a cell against another
 // origin (e.g. AUDIT_BASE_URL=https://practicum.yarivitzkovich.org to verify PRODUCTION
 // after a deploy — the DB/storage are the same project either way).
@@ -44,6 +74,28 @@ const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
 // dbExec is for INSERT/UPDATE/DELETE via PostgREST. Heavy lifting
 // (truncate / bulk reset) is best done in SQL Editor; the audit only
 // needs targeted seed mutations.
+/**
+ * Wait until the page has actually rendered, rather than sleeping and hoping.
+ *
+ * Every screen is a `client:only` React island, so `networkidle` means the network went
+ * quiet — NOT that anything is on screen. Cells then slept a fixed 800–1800ms and read the
+ * DOM. In isolation the render wins that race; sixty browser launches into a full gate the
+ * machine is slower and it does not, which is why four consecutive runs failed on four
+ * DIFFERENT disjoint sets of cells while every one passed on its own (2026-08-11).
+ *
+ * Deliberately generic — a marker every page has once React has mounted — so it can go
+ * after every reload without knowing which screen is being tested. It never throws: a
+ * timeout falls through to the cell's own assertion, which reports honestly.
+ */
+export async function appReady(page, { timeout = 25000 } = {}) {
+  await page.waitForFunction(
+    () => document.querySelectorAll('button, a, input, select, li').length > 3
+      && document.body.innerText.trim().length > 40,
+    undefined,
+    { timeout },
+  ).catch(() => {});
+}
+
 export async function sbQuery(table, { filter = '', select = '*', headers = {} } = {}) {
   const url = `${SUPABASE_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}${filter ? '&' + filter : ''}`;
   const r = await fetch(url, {
@@ -74,22 +126,28 @@ export async function sbQuery(table, { filter = '', select = '*', headers = {} }
 export async function mutateData(mutate, { tries = 10, orgId = 'default' } = {}) {
   let lastErr = '';
   for (let i = 0; i < tries; i++) {
-    const rows = await sbQuery('practicum_data', { select: 'data,version', filter: `org_id=eq.${orgId}` });
-    const cur = rows?.[0];
-    if (!cur) throw new Error('mutateData: practicum_data row not found');
-    const next = mutate(cur.data || {});
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.${orgId}&version=eq.${cur.version}`, {
-      method: 'PATCH',
-      headers: {
-        apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`,
-        'Content-Type': 'application/json', Prefer: 'return=representation',
-      },
-      body: JSON.stringify({ data: next, version: cur.version + 1, updated_at: new Date().toISOString() }),
-    });
-    if (!r.ok) { lastErr = `${r.status}`; continue; }
-    const j = await r.json().catch(() => null);
-    if (Array.isArray(j) && j.length) return next;   // we held the version — the write landed
-    lastErr = 'version moved under us';
+    try {
+      const rows = await sbQuery('practicum_data', { select: 'data,version', filter: `org_id=eq.${orgId}` });
+      const cur = rows?.[0];
+      if (!cur) throw new Error('mutateData: practicum_data row not found');
+      const next = mutate(cur.data || {});
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/practicum_data?org_id=eq.${orgId}&version=eq.${cur.version}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}`,
+          'Content-Type': 'application/json', Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ data: next, version: cur.version + 1, updated_at: new Date().toISOString() }),
+      });
+      if (!r.ok) { lastErr = `${r.status}`; continue; }
+      const j = await r.json().catch(() => null);
+      if (Array.isArray(j) && j.length) return next;   // we held the version — the write landed
+      lastErr = 'version moved under us';
+    } catch (e) {
+      // A timed-out request is worth another go; the whole point of the deadline is to
+      // keep moving rather than hang, so it must not kill the cell on the first blip.
+      lastErr = String(e?.message || e).slice(0, 80);
+    }
     await new Promise((res) => setTimeout(res, 120 + i * 80));
   }
   throw new Error(`mutateData: lost the CAS race after ${tries} tries (${lastErr})`);

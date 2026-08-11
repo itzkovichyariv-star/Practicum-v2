@@ -13,7 +13,7 @@
  *
  * Seeds one placed+completed and one hired+completed student; removes both.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 
 const SUPA = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -62,6 +62,7 @@ if (seeded) {
     localStorage.setItem('practicum_v2_page', 'students');
   }, { c: courseId });
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1200);
 
   seen = await audit.page.evaluate(({ pName, hName }) => {

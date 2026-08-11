@@ -14,7 +14,7 @@
  * Seeds a temp student; removes it. (cv_updates rows are inert — @audit.local email —
  * and anon can't delete them.)
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SB_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -57,6 +57,7 @@ await audit.setup();
 let toggleShown = false, toggleLabel = '', revealsOld = false, revealsNew = false, prevCvLinks = 0;
 if (seedOk) {
   await audit.page.goto(`${audit.baseUrl}/cv-update/?email=${encodeURIComponent(MAIL)}&name=${encodeURIComponent('היסטוריה')}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(2800);
 
   const toggle = audit.page.locator('button', { hasText: /היסטוריית ההגשות שלי/ }).first();

@@ -13,7 +13,7 @@
  * Seeds one temp student + 5 temp employers on that student's course, loads the link,
  * asserts presence/absence, then removes all temp data. Touches no real data.
  */
-import { Audit, sbQuery, BASE_URL, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, BASE_URL, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -55,6 +55,7 @@ await audit.setup();
 if (!seedOk) { audit.recordCell({ id: 'LINK-seed', expected: 'seed temp data', observed: 'seed failed', pass: null }); await audit.teardown(); process.exit(0); }
 
 await audit.page.goto(`${BASE_URL}/organizations?email=${encodeURIComponent(STU_EMAIL)}`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1800);
 const seen = await audit.page.evaluate((names) => {
   const body = document.body.innerText || '';

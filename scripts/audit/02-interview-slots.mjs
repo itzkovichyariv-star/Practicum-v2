@@ -16,7 +16,7 @@
  *   form. At the end we DELETE them. If anon INSERT is not permitted by
  *   RLS, cells degrade gracefully and report the reason.
  */
-import { Audit, sbQuery, sbInsert, sbDelete } from '../audit-lib.mjs';
+import { Audit, sbQuery, sbInsert, sbDelete, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'interview-slots' });
 await audit.setup();
@@ -60,6 +60,7 @@ try {
 audit.log('SLOT-available: available slot appears in /register picker');
 {
   await audit.page.goto(`${audit.baseUrl}/register`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1200);
   const before = await audit.shot('SLOT-available-before');
   audit.observerMark();
@@ -149,6 +150,7 @@ audit.log('SLOT-full: full slot does NOT appear in /register picker');
 audit.log('SLOT-mgmt: management page shows slots section');
 {
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(800);
   // Navigate to management tab
   const mgmtBtn = audit.page.getByRole('button', { name: /ניהול|ניהול מערכת/i });

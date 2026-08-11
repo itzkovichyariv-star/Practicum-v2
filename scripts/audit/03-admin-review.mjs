@@ -19,7 +19,7 @@
  * IMPORTANT: we NEVER touch real candidates. We operate only on rows
  *            whose id starts with "audit-cand-".
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -91,6 +91,7 @@ audit.log(`Context → courseId=${seedCourseId || '__all__'}`);
 audit.log('REVIEW-list: candidates page renders without crash');
 {
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(800);
   const btn = audit.page.locator('button, [role="tab"]').filter({ hasText: /מועמדים/ }).first();
   if (await btn.count() > 0) await btn.click();
@@ -209,6 +210,7 @@ audit.log('REVIEW-persist: notes survive save + page reload');
 
       // Reload + navigate back + re-open same candidate
       await audit.page.reload({ waitUntil: 'networkidle' });
+      await appReady(audit.page);
       await audit.page.waitForTimeout(800);
       const candidatesBtn = audit.page.locator('button, [role="tab"]').filter({ hasText: /מועמדים/ }).first();
       if (await candidatesBtn.count() > 0) await candidatesBtn.click();

@@ -26,7 +26,7 @@
  *
  * Seeds its own future slot; removes the slot, the submission row and the uploaded CV.
  */
-import { Audit, sbInsert, sbDelete } from '../audit-lib.mjs';
+import { Audit, sbInsert, sbDelete, appReady } from '../audit-lib.mjs';
 
 const SUPA = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -73,6 +73,7 @@ await audit.page.addInitScript(({ ref, sess }) => {
   } catch (e) { /* storage unavailable */ }
 }, { ref: PROJECT_REF, sess: staleSession });
 await audit.page.goto(`${audit.baseUrl}/register`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1000);
 
 const sessionPresent = await audit.page.evaluate(

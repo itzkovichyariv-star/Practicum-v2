@@ -19,7 +19,7 @@
  * Employers measurement before ever mounting StudentsPage keeps the expectation
  * stable.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'org-history-dedup' });
 await audit.setup();
@@ -59,6 +59,7 @@ audit.log(`DEDUP-suggestions: Employers shows latest-per-candidate suggestions (
 {
   await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   audit.observerMark();
   const after = await audit.shot('DEDUP-suggestions');
@@ -131,6 +132,7 @@ audit.log('CARD-history: student editor shows submitted-prefs panel + history to
   } else {
     await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'students'));
     await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+    await appReady(audit.page);
     await audit.page.waitForTimeout(1200);
     audit.observerMark();
 

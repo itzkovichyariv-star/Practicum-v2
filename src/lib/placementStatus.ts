@@ -24,10 +24,18 @@
 
 import { buildUnifiedOrgList, countSlotsByStatus, type UnifiedOrgPref } from './placement';
 
-/** Days of employer silence before the ball comes back to us. Yariv 2026-08-09: 7,
- *  down from 14. Deliberately a constant here rather than the per-course
- *  `reviewAgingThresholdDays`, which still governs the ⏱ chip inside the card. */
-export const SILENCE_DAYS = 7;
+/** The DEFAULT days of employer silence before the ball comes back to us, for a course
+ *  that does not set its own `reviewAgingThresholdDays`.
+ *
+ *  14 — Yariv 2026-08-11, reversing the 7 he asked for on 2026-08-09. It also squares with
+ *  the clocks below: three reminders at a 14-day cadence run to day 42, just inside the
+ *  45-day window before an invitation is genuinely overdue.
+ *
+ *  (For the record, because a stale note in the log said otherwise and I repeated it: the
+ *  card's ⏱ chip was NOT out of step at the time — it had already been switched to this
+ *  constant on 2026-08-09. What was actually wrong is that the per-course field was
+ *  editable in the settings UI and read by nothing.) */
+export const SILENCE_DAYS = 14;
 
 /** After an interview the answer comes FASTER, not slower — Yariv 2026-08-10, correcting
  *  me: "החודש וחצי זה עד שיש זימון לראיון, אחר כך הזמן הוא יותר מצומצם". I had applied
@@ -277,6 +285,11 @@ export function isPlacementCourse(course: any): boolean {
 
 export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const { student, employers = [], dispatches = [], pending = null, course, now = Date.now() } = input;
+  // A course may set its own patience. The field has been editable in the course settings
+  // all along and read by NOTHING — a control that claims an effect and has none, which is
+  // the same defect as a button that says it placed someone and does not. Honoured here,
+  // and by the card's ⏱ chip, so the two still agree with each other per course.
+  const silenceDays = Number((course as any)?.reviewAgingThresholdDays) || SILENCE_DAYS;
   if (!student) return null;
   if (!isPlacementCourse(course)) return null;
 
@@ -392,7 +405,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     const ages = sent.map(p => ({ p, d: sentDays(p) }));
     const oldest = ages.reduce<number | null>((m, x) => (x.d === null ? m : (m === null ? x.d : Math.max(m, x.d))), null);
     const sentChips = ages.map(({ p, d }) =>
-      chipFor(p, d !== null && d > SILENCE_DAYS ? 'late' : 'sent', d === null ? '' : `נשלח ${agoPhrase(d)}`));
+      chipFor(p, d !== null && d > silenceDays ? 'late' : 'sent', d === null ? '' : `נשלח ${agoPhrase(d)}`));
     // A not-yet-sent org must say WHY. "טרם נשלח" on a full organization reads as an
     // oversight when it is actually blocked — Yariv 2026-08-10: "כתוב של‑1 עדיין לא
     // נשלח אבל זה לא נשלח כי אין מקום ולכן נשלח ל‑2".
@@ -455,7 +468,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       };
     }
 
-    const stale = oldest !== null && oldest > SILENCE_DAYS;
+    const stale = oldest !== null && oldest > silenceDays;
     const abandoned = oldest !== null && oldest > NO_RESPONSE_DAYS;
 
     // Stage 1 is the LONG one: an invitation to interview can take a month and a half
@@ -485,7 +498,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       return {
         key: 'sent_stale', turn: 'ours',
         headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ${oldest} ימים ללא תשובה`,
-        sub: withCvNote(`מעל סף ההמתנה (${SILENCE_DAYS} ימים) — כדאי לתזכר את המעסיקים`),
+        sub: withCvNote(`מעל סף ההמתנה (${silenceDays} ימים) — כדאי לתזכר את המעסיקים`),
         chips: allChips, age: '', action: act('remind'),
       };
     }

@@ -13,7 +13,7 @@
  *
  * Seeds a temp placed student + a temp employer (with phone+email); removes both.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SB='https://vpqgmcmavnszcnakhiat.supabase.co', ANON='sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
 const H={apikey:ANON,Authorization:`Bearer ${ANON}`,'Content-Type':'application/json'};
@@ -37,6 +37,7 @@ const audit=new Audit({name:'org-contact-from-list'});
 await audit.setup();
 await audit.page.evaluate(({c})=>{localStorage.setItem('practicum_v2_context',JSON.stringify({courseId:c||'__all__',year:'__all__'}));localStorage.setItem('practicum_v2_page','students');},{c:courseId});
 await audit.page.reload({waitUntil:'networkidle'});
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 let callSeen=false, waSeen=false, mailSeen=false, waUrl='', mailUsedEmployer=false;

@@ -8,7 +8,7 @@
  *   STUDENT-hidden   The public /organizations list shows FEWER orgs than the
  *                    admin total — i.e. incomplete orgs are hidden from students.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'org-availability' });
 await audit.setup();
@@ -83,6 +83,7 @@ audit.log('ADMIN-legend: Employers list shows legend + purple incomplete badges'
 {
   await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   audit.observerMark();
   const before = await audit.shot('ADMIN-legend');
@@ -115,6 +116,7 @@ audit.log('ADMIN-legend: Employers list shows legend + purple incomplete badges'
 audit.log('STUDENT-hidden: /organizations hides incomplete orgs');
 {
   await audit.page.goto(`${audit.baseUrl}/organizations?course=${encodeURIComponent(scopeCourse)}`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1200);
   audit.observerMark();
   const after = await audit.shot('STUDENT-hidden');
@@ -159,6 +161,7 @@ audit.log('ADMIN-suggestions: pending candidate org-suggestions appear in the Em
 
   await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));
   await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
   audit.observerMark();
   const after = await audit.shot('ADMIN-suggestions');

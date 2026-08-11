@@ -9,7 +9,7 @@
  *
  * Seeds a temp slot on a unique far-future date; cleans up the slot AND the link.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -35,6 +35,7 @@ await audit.setup();
 await audit.page.setViewportSize({ width: 1280, height: 1100 });
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'management'));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1800);
 
 const P = audit.page;

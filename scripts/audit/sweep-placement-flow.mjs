@@ -1,6 +1,6 @@
 /** Functional sweep: every interactive control in the placement flow, on the live site.
  *  Read-only — opens things and closes them; confirms nothing. */
-import { Audit } from '/Users/yarivitzkovich/Code/practicum-v2/scripts/audit-lib.mjs';
+import { Audit, appReady } from '/Users/yarivitzkovich/Code/practicum-v2/scripts/audit-lib.mjs';
 const audit = new Audit({ name: 'sweep' });
 const errs = [];
 await audit.setup();
@@ -17,6 +17,7 @@ for (const vp of [{ width: 375, height: 812, tag: 'phone' }, { width: 1400, heig
     localStorage.setItem('practicum_v2_page', 'students');
   });
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1800);
 
   const r = await audit.page.evaluate(async () => {
@@ -109,6 +110,7 @@ for (const vp of [{ width: 375, height: 812, tag: 'phone' }, { width: 1400, heig
 // employers screen
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'employers'));
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1600);
 const e = await audit.page.evaluate(() => ({
   rows: document.querySelectorAll('[data-employer-explain]').length,

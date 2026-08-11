@@ -14,7 +14,7 @@
  * AND one with interviewResult="failed". Cleaned up at the end.
  * NEVER touches real candidates.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -77,6 +77,7 @@ await audit.page.reload({ waitUntil: 'networkidle' });
 
 // ── Navigate to candidates → passed tab ──────────────────────────────────────
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(800);
 const candidatesBtn = audit.page.locator('button, [role="tab"]').filter({ hasText: /מועמדים/ }).first();
 if (await candidatesBtn.count() > 0) await candidatesBtn.click();

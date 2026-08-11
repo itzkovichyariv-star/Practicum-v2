@@ -9,7 +9,7 @@
  * Seeds one approved (green) temp employer, reads the rendered dot via getComputedStyle,
  * asserts size + green fill, cleans up.
  */
-import { Audit, sbQuery, mutateData } from '../audit-lib.mjs';
+import { Audit, sbQuery, mutateData, appReady } from '../audit-lib.mjs';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -34,6 +34,7 @@ if (!seedOk) { audit.recordCell({ id: 'DOT-seed', expected: 'seed', observed: 'f
 
 await audit.page.evaluate((y) => { localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: '__all__', year: y })); localStorage.setItem('practicum_v2_page', 'employers'); }, year);
 await audit.page.reload({ waitUntil: 'networkidle' });
+await appReady(audit.page);
 await audit.page.waitForTimeout(1200);
 
 const dot = await audit.page.evaluate((name) => {

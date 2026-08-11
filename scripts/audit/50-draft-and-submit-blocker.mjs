@@ -23,7 +23,7 @@
  * submit is deliberately blocked by the missing score, so no feedback is ever written.
  * The draft it creates is local to the audit browser and cleared at the end.
  */
-import { Audit, sbQuery } from '../audit-lib.mjs';
+import { Audit, sbQuery, appReady } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'draft-and-submit-blocker' });
 
@@ -46,6 +46,7 @@ let restoredBanner = false, restoredStrengths = '', restoredImprove = '';
 if (token) {
   const url = `${audit.baseUrl}/f/?t=${encodeURIComponent(token)}`;
   await audit.page.goto(url, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(2500);
 
   // Fill the OPEN-ENDED fields only — deliberately leaving the required score empty,
@@ -72,6 +73,7 @@ if (token) {
 
   // ── Reload: the typing must come back ────────────────────────────────────
   await audit.page.goto(url, { waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(2800);
   const after = await audit.page.evaluate(() => {
     const tas = [...document.querySelectorAll('textarea')];

@@ -13,7 +13,7 @@
  *
  * Reads only; seeds nothing.
  */
-import { Audit } from '../audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -44,6 +44,7 @@ for (const view of ['list', 'grid']) {
     localStorage.setItem('employers_view', v);
   }, view);
   await audit.page.reload({ waitUntil: 'networkidle' });
+  await appReady(audit.page);
   await audit.page.waitForTimeout(1500);
 
   const shape = await audit.page.evaluate(() => {
