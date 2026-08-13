@@ -1,0 +1,224 @@
+<title>מסך המועמדים — מי שכבר נכנס, יוצא מהרשימה</title>
+
+<style>
+  :root{
+    --bg:#f4efe6; --card:#fbf8f3; --ink:#3d0f14; --accent:#7a1e2b;
+    --accent-soft:rgba(122,30,43,0.08); --on-accent:#fff;
+    --divider:rgba(122,30,43,0.18); --divider-strong:rgba(122,30,43,0.42);
+    --soft:rgba(61,15,20,0.55); --soft-2:rgba(61,15,20,0.34);
+    --tl-gray:#94a3b8; --tl-amber:#d97706; --tl-green:#16a34a; --tl-red:#dc2626;
+    --ours:#b91c1c; --keep:#15803d;
+    --sans:"Rubik","Heebo","Arial Hebrew","Noto Sans Hebrew",system-ui,-apple-system,sans-serif;
+    --serif:Georgia,"Frank Ruehl CLM","Times New Roman",serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --shadow:0 1px 2px rgba(61,15,20,.05), 0 10px 26px rgba(61,15,20,.06);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --keep:#67ca8c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.32);}}
+  :root[data-theme="dark"]{
+    --bg:#171013; --card:#1f171a; --ink:#f2e7dd; --accent:#dd9aa4;
+    --accent-soft:rgba(221,154,164,0.11); --on-accent:#231317;
+    --divider:rgba(221,154,164,0.2); --divider-strong:rgba(221,154,164,0.4);
+    --soft:rgba(242,231,221,0.58); --soft-2:rgba(242,231,221,0.36);
+    --ours:#f6817e; --keep:#67ca8c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 26px rgba(0,0,0,.32);}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);direction:rtl;text-align:right;
+    font-family:var(--sans);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:clamp(18px,4vw,44px) clamp(13px,4vw,24px) 70px;
+    display:flex;flex-direction:column;gap:26px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.17em;color:var(--accent);
+    display:flex;align-items:center;gap:10px}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--divider)}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(25px,4.6vw,38px);line-height:1.14;
+    margin:.3em 0 0;text-wrap:balance}
+  .deck{max-width:62ch;color:var(--soft);font-size:15.5px;margin-top:.6em}
+  .deck b{color:var(--ink);font-weight:600}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(20px,3.2vw,26px);margin:0 0 4px}
+  .sub{color:var(--soft);font-size:13.5px;margin:0 0 14px;max-width:66ch}
+  section{border-top:1px solid var(--divider);padding-top:20px}
+
+  .compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start}
+  .phone{background:var(--card);border:1px solid var(--divider);border-radius:16px;overflow:hidden;
+    box-shadow:var(--shadow)}
+  .phonebar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 13px;
+    border-bottom:1px solid var(--divider);background:var(--accent-soft)}
+  .ptag{font-size:10px;font-weight:800;letter-spacing:.1em;padding:2px 8px;border-radius:5px}
+  .t-now{background:rgba(185,28,28,.13);color:var(--ours)}
+  .t-new{background:rgba(21,128,61,.13);color:var(--keep)}
+  .measure{font-size:10.5px;font-weight:700;color:var(--soft);font-variant-numeric:tabular-nums}
+  .screen{padding:10px 12px}
+  .r{padding:12px 2px;border-bottom:1px solid var(--divider)}
+  .r:last-child{border-bottom:none}
+  .r-top{display:flex;align-items:center;gap:7px;min-width:0}
+  .cbx{width:15px;height:15px;border-radius:4px;border:2px solid var(--divider);flex:none}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .nm{font-family:var(--serif);font-size:18px;flex:1;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:9.5px;font-weight:700;letter-spacing:.12em;padding:3px 9px;border-radius:999px;flex:none;
+    background:var(--accent);color:var(--on-accent)}
+  .badge.soft{background:var(--accent-soft);color:var(--accent)}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .fc{font-size:10px;font-weight:700;letter-spacing:.12em;padding:2px 9px;border-radius:999px;
+    background:var(--accent-soft);color:var(--accent)}
+  .fc.off{background:transparent;color:var(--soft-2);border:1px dashed var(--divider)}
+  .fc.arch{background:transparent;color:var(--soft);border:1px solid var(--divider)}
+  .meta{font-size:11px;color:var(--soft);margin-top:6px;display:flex;align-items:center;gap:6px}
+  .meta span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ico{width:26px;height:26px;border-radius:50%;border:.5px solid rgba(122,30,43,.28);color:var(--accent);
+    display:grid;place-items:center;font-size:11px;flex:none;background:var(--bg)}
+  .ico.emoji{border-color:var(--divider);color:var(--ink)}
+  .tabs{display:flex;flex-wrap:wrap;gap:5px;padding-bottom:8px;font-size:10px;font-weight:700}
+  .tb{padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+  .tb.mut{background:rgba(0,0,0,.05);color:var(--soft)}
+  .toggle-line{font-size:10px;font-weight:700;letter-spacing:.09em;color:var(--soft-2);padding:2px 2px 7px}
+
+  .notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:13px}
+  .note{background:var(--card);border:1px solid var(--divider);border-radius:11px;padding:14px 16px;
+    display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}
+  .note h3{margin:0;font-size:14px;font-weight:700;display:flex;gap:8px;align-items:center}
+  .note h3 .n{font-size:10px;font-weight:800;background:var(--accent-soft);color:var(--accent);
+    padding:2px 7px;border-radius:5px;flex:none}
+  .note p{margin:0;font-size:12.5px;color:var(--soft);line-height:1.6}
+  .note p b{color:var(--ink);font-weight:600}
+  .note.rejected{opacity:.72}
+  .note.rejected h3 .n{background:rgba(0,0,0,.06);color:var(--soft)}
+  code{font-family:var(--mono);font-size:12px;background:var(--accent-soft);color:var(--accent);
+    padding:1px 5px;border-radius:4px}
+  footer{border-top:1px solid var(--divider);padding-top:14px;font-size:12px;color:var(--soft-2);
+    display:flex;flex-wrap:wrap;gap:6px 18px}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">פרקטיקום · עיצוב מסך · אושר ומומש</div>
+    <h1>מסך המועמדים — מי שכבר נכנס, יוצא מהרשימה</h1>
+    <p class="deck">
+      מועמד/ת שעבר/ה ראיון הפך/ה אוטומטית לסטודנט/ית — <b>ונשאר/ה ברשימת המועמדים</b>
+      עם נקודה ירוקה, בדיוק כמו מי שעדיין ממתין/ה. המילה «הועבר לסטודנטים» הייתה
+      קיימת, אבל רק בתוך הכרטיס. בנוסף, שני המסמכים שכל המועמדות תלויה בהם —
+      קו״ח וטופס — <b>לא הופיעו על השורה כלל</b>.
+    </p>
+  </header>
+
+  <section>
+    <h2>אותה שורה, לפני ואחרי</h2>
+    <p class="sub">דנה כהן עברה ראיון וכבר רשומה כסטודנטית. טל אבני טרם הגיש/ה מסמכים.</p>
+    <div class="compare">
+
+      <div class="phone">
+        <div class="phonebar"><span class="ptag t-now">היום · v1.42.3</span><span class="measure">4 שורות</span></div>
+        <div class="screen">
+          <div class="tabs"><span class="tb mut">הכל 4</span><span class="tb">הגישו מסמכים 2</span><span class="tb">עברו 1</span><span class="tb">לא עברו 1</span></div>
+          <div class="r">
+            <div class="r-top"><span class="cbx"></span><span class="dot" style="background:var(--tl-green)"></span><span class="nm">דנה כהן</span><span class="badge">עבר</span></div>
+            <div class="meta"><span>052-1234567 · dana@example.com</span>
+              <span class="ico emoji">📞</span><span class="ico emoji">💬</span><span class="ico emoji">✉</span></div>
+          </div>
+          <div class="r">
+            <div class="r-top"><span class="cbx"></span><span class="dot" style="background:var(--tl-gray)"></span><span class="nm">טל אבני</span><span class="badge soft">ממתין</span></div>
+            <div class="meta"><span>058-7778888 · tal@example.com</span>
+              <span class="ico emoji">📞</span><span class="ico emoji">💬</span><span class="ico emoji">✉</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="phonebar"><span class="ptag t-new">מומש</span><span class="measure">3 שורות + ארכיון</span></div>
+        <div class="screen">
+          <div class="tabs"><span class="tb mut">הכל 3</span><span class="tb">הגישו מסמכים 1</span><span class="tb">עברו 0</span><span class="tb">לא עברו 1</span></div>
+          <div class="toggle-line">☐ הצג ארכיון (1)</div>
+          <div class="r">
+            <div class="r-top"><span class="cbx"></span><span class="dot" style="background:var(--tl-gray)"></span><span class="nm">טל אבני</span><span class="badge soft">ממתין</span></div>
+            <div class="chips"><span class="fc off">CV —</span><span class="fc off">טופס —</span></div>
+            <div class="meta"><span>058-7778888 · tal@example.com</span>
+              <span class="ico">✆</span><span class="ico">◎</span><span class="ico">✉</span></div>
+          </div>
+          <div class="r" style="opacity:.9">
+            <div class="toggle-line" style="padding-top:0">☑ הצג ארכיון — דנה חוזרת, מסומנת</div>
+            <div class="r-top"><span class="cbx"></span><span class="dot" style="background:var(--tl-green)"></span><span class="nm">דנה כהן</span><span class="badge">עבר</span></div>
+            <div class="chips"><span class="fc">CV ✓</span><span class="fc">טופס ✓</span><span class="fc arch">↗ בארכיון</span></div>
+            <div class="meta"><span>052-1234567 · dana@example.com</span>
+              <span class="ico">✆</span><span class="ico">◎</span><span class="ico">✉</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>ההחלטות</h2>
+    <p class="sub">אושרו פריט־פריט ב‑13.8. אחת נדחתה, והיא רשומה כאן כדי שלא תחזור בטעות.</p>
+    <div class="notes">
+      <div class="note">
+        <h3><span class="n">א</span>ארכיון במקום מחיקה</h3>
+        <p>
+          «בארכיון» נגזר מ‑<code>convertedToStudentId</code>, שכבר נכתב ונמחק על ידי
+          ההמרה וההיפוך שלה. <b>אין דגל שני לתחזק</b>, ושינוי תוצאה בחזרה מחזיר את
+          השורה לרשימה הפעילה מעצמו.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ב</span>המונים סופרים את מה שמוצג</h3>
+        <p>
+          הסתרת הארכיון אינה מסנן נוסף — היא משנה מהו «הכל». כך לשוניות הרמזור
+          <b>תמיד מסכימות עם הרשימה שמתחתן</b>, בשני המצבים.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ג</span>המתג מופיע רק כשיש ארכיון</h3>
+        <p>
+          «הצג ארכיון (0)» הוא רעש בקורס חדש. המתג נעלם לגמרי כשאין מה להציג —
+          ובמכוון יושב <b>מחוץ לשורות</b>, כדי שתא הסימון של השורה יישאר הדבר היחיד
+          שבודקות תאי הביקורת.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ד</span>צ׳יפ מלא = קישור, מקווקו = לא הוגש</h3>
+        <p>
+          צ׳יפ בלי קובץ <b>אינו קישור כלל</b> — לא כפתור מת שנראה לחיץ. הלחיצה עוצרת
+          את עצמה כדי שלא תפתח את כרטיס המועמד/ת במקום את הקובץ.
+        </p>
+      </div>
+      <div class="note">
+        <h3><span class="n">ה</span>אותם איקונים כמו בדף הסטודנטים</h3>
+        <p>
+          <code>contactBtn</code> מוגדר <b>פעם אחת</b> ומיוצא, ושני המסכים מייבאים
+          אותו. <code>lint-contact-buttons-match</code> אוכף את זה בשער, כך שהשניים
+          לא יוכלו להתרחק שוב. מסכי המנחים וההרצאות עדיין על האמוג׳י — לא היו בהיקף.
+        </p>
+      </div>
+      <div class="note rejected">
+        <h3><span class="n">נדחה</span>ניקוי תיק המועמדות מכרטיס הסטודנט</h3>
+        <p>
+          הוצע להפסיק לכתוב את סיכום הראיון והציון אל <code>notes</code> של הסטודנט/ית.
+          <b>יריב דחה:</b> «אם טופס הגשת המועמדות וסיכום ראיון עוברים לדף הסטודנט זה
+          בסדר שימשיכו גם לעבור». ההמרה נשארה כפי שהייתה.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>מה לא השתנה</h2>
+    <p class="sub">
+      <b>דף הסטודנטים — אפס שינוי.</b> ה‑DOM שלו רונדר לפני ואחרי מול אותם נתונים
+      ויצא זהה, 35,952 תווים בשני הצדדים. ההמרה עצמה, ההיפוך, מייל הקבלה, הדירוג,
+      ההשמות והטפסים הציבוריים — כולם כפי שהיו. שום הודעה לא נשלחת בגלל השינוי הזה.
+    </p>
+  </section>
+
+  <footer>
+    <span>אושר ומומש · 13.8.2026</span>
+    <span>בסיס · <code>519c2460</code></span>
+    <span>נבדק במעבדה מקומית מול נתוני דמה — לא נגע בפרויקט החי</span>
+  </footer>
+</div>

@@ -1353,6 +1353,14 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
   );
 }
 
+/* The contact-button look — one 36px outline circle per channel, wine on the page
+   ground. Hoisted out of StudentRow (values unchanged) and exported so the
+   candidates page renders the SAME control instead of its own emoji set; Yariv
+   2026-08-13: "האיקונים של התקשורת בדף מועמד נראים מוזר … ידמו לאיקונים הקיימים
+   בדף סטודנט". One definition means the two rows cannot drift apart again. */
+export const contactBtn = 'inline-grid place-items-center w-9 h-9 rounded-full shrink-0 transition-colors hover:bg-[rgba(122,30,43,0.06)]';
+export const contactStyle = { background: 'var(--bg)', border: '0.5px solid rgba(122,30,43,0.25)', color: 'var(--accent)' } as const;
+
 function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, employers = [], status, onAction }: {
   s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void; employers?: Employer[];
@@ -1375,8 +1383,6 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
   const orgCall = (e: any) => { e.stopPropagation(); if (hostPhone) doCall(hostPhone, hostEmp?.name || ''); };
   const orgWa = (e: any) => { e.stopPropagation(); if (hostPhone) window.open(`https://wa.me/${toWa(hostPhone)}?text=${encodeURIComponent(`שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — `)}`, '_blank'); };
   const orgMail = (e: any) => { e.stopPropagation(); if (hostEmail) openMailto(`mailto:${hostEmail}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
-  const contactBtn = 'inline-grid place-items-center w-9 h-9 rounded-full shrink-0 transition-colors hover:bg-[rgba(122,30,43,0.06)]';
-  const contactStyle = { background: 'var(--bg)', border: '0.5px solid rgba(122,30,43,0.25)', color: 'var(--accent)' } as const;
   const hired = !!s.hired;
   const completed = !!s.practicumCompleted;
   const prepPassed = !!s.preparation?.passed;

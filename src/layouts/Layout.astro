@@ -89,7 +89,14 @@ const { title = 'פרקטיקום · Ariel University' } = Astro.props;
   </head>
   <body class="min-h-screen">
     <slot />
-    <!-- Version stamp for debugging -->
+    <!-- Version stamp — the FALLBACK, for pages that have no header of their own
+         (register, cv-update, organizations, feedback, f, r). On the admin app the
+         header prints the version in flow at the top instead and sets
+         data-has-header-version, which hides this one; two stamps on one screen
+         would be worse than the overlap this replaces. Deliberately not deleted:
+         the public pages still need it, and cell 67 reads the version off the
+         employer-response page. -->
+    <style>html[data-has-header-version] #version-stamp { display: none; }</style>
     <div id="version-stamp" style="position:fixed;bottom:4px;left:8px;font-family:monospace;font-size:11.5px;font-weight:700;color:#5a1020;background:rgba(255,255,255,0.7);padding:1px 5px;border-radius:5px;pointer-events:none;z-index:1">
       {VERSION}
     </div>

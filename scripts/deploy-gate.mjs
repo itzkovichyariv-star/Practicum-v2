@@ -14,10 +14,18 @@
  */
 import { execSync, spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-const ROOT = '/Users/yarivitzkovich/Code/practicum-v2';
-const DEV_URL = 'http://localhost:4325';
+// Derived, not pinned to one person's home directory — the gate has to run from
+// whatever checkout it happens to sit in.
+const ROOT = resolve(import.meta.dirname, '..');
+// Every cell resolves its target as `AUDIT_BASE_URL || localhost:4325`. This line
+// used to be a lone hard-coded literal, so the gate could demand one port while
+// the cells were pointed at another. 2026-08-09 lost a run to that mismatch (cell
+// 48); 2026-08-13 lost a deploy to its mirror image — the gate checked 4325 while
+// `npm run dev` served 4321, exited "not reachable", and the deploy that followed
+// ran unguarded. One expression now feeds both.
+const DEV_URL = process.env.AUDIT_BASE_URL || `http://localhost:${process.env.GATE_PORT || 4325}`;
 const args = process.argv.slice(2);
 const onlyPrefix = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
 const skipBuildProbe = args.includes('--skip-build');
