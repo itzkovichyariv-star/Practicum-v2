@@ -46,8 +46,8 @@ function stopDev() {
 process.on('SIGINT', () => { console.log('\ninterrupted — stopping the dev server'); stopDev(); process.exit(130); });
 process.on('SIGTERM', () => { stopDev(); process.exit(143); });
 
-const run = (cmd, argv) => new Promise(res => {
-  const p = spawn(cmd, argv, { cwd: ROOT, stdio: 'inherit', shell: false });
+const run = (cmd, argv, extraEnv) => new Promise(res => {
+  const p = spawn(cmd, argv, { cwd: ROOT, stdio: 'inherit', shell: false, env: { ...process.env, ...extraEnv } });
   p.on('exit', code => res(code ?? 1));
   p.on('error', () => res(1));
 });
@@ -111,7 +111,10 @@ if (dryRun) {
 }
 
 console.log('\n▸ deploying — predeploy stamps the version, then wrangler uploads dist/\n');
-const dep = await run('npm', ['run', 'deploy']);
+// The token scripts/require-gate.mjs demands. Set ONLY here, and only after the
+// gate has actually exited 0 — that is what makes a bare `npm run deploy`, or a
+// stale block pasted out of scrollback, refuse instead of shipping ungated.
+const dep = await run('npm', ['run', 'deploy'], { SHIP_GATE_PASSED: '1' });
 stopDev();
 
 if (dep !== 0) {
