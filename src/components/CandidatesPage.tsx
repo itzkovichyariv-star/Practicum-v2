@@ -8,7 +8,8 @@ import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
 import type { Student } from '../lib/supabase';
 import CandidateEditor from './CandidateEditor';
-import { RowActions, Popover, RefreshButton, StatusDot, type DotStatus } from './StudentsPage';
+import { Popover, RefreshButton, StatusDot, contactBtn, contactStyle, type DotStatus } from './StudentsPage';
+import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import SubmissionsInbox from './SubmissionsInbox';
 import ExcelImport from './ExcelImport';
 // Two acceptance-email channels:
@@ -17,9 +18,24 @@ import ExcelImport from './ExcelImport';
 import { openMailto } from '../lib/openMailto';
 import { sendAcceptanceEmail } from '../lib/emailApi';
 
+/** Archived = a student record already exists for this candidate. Single source
+ *  of truth for the toggle, the pool, the counts and the row's own marker, so
+ *  "in the archive" can never mean one thing in the tab bar and another in the
+ *  list. Deliberately derived rather than a stored flag: `convertedToStudentId`
+ *  is already written and cleared by the conversion and its reversal, so there
+ *  is no second field to keep in step. */
+export const isArchivedCandidate = (c: Candidate): boolean => !!c.convertedToStudentId;
+
 export default function CandidatesPage({ data, context, userName, onRefresh }: PageProps) {
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState<'all' | 'pending' | 'conducted' | 'passed' | 'failed' | 'submitted' | 'notsubmitted'>('all');
+  // Archive = candidates who already became students. They stay in the data —
+  // the candidacy file is their single source of truth — but they leave the
+  // working list, because the question this page answers is "who still needs
+  // handling". Off by default; the toggle only renders when the archive is
+  // non-empty. Yariv 2026-08-11: they used to sit here with a green dot,
+  // indistinguishable from a candidate still waiting on him.
+  const [showArchive, setShowArchive] = useState(false);
   const [editing, setEditing] = useState<Candidate | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -186,9 +202,19 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
 
   const scoped = useMemo(() => all.filter(c => sameContext(c, context, courses)), [all, context, courses]);
 
+  // A candidate is archived once a student record exists for them.
+  const archivedCount = useMemo(() => scoped.filter(isArchivedCandidate).length, [scoped]);
+  // The pool every count and filter below works on. Hiding the archive is not a
+  // filter on top of the others — it changes what "all" means, so the ramzor
+  // tabs keep agreeing with the list they sit above in both states.
+  const pool = useMemo(
+    () => (showArchive ? scoped : scoped.filter(c => !isArchivedCandidate(c))),
+    [scoped, showArchive],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return scoped.filter(c => {
+    return pool.filter(c => {
       const hasDocs = !!(c.cvUrl && c.applicationUrl);
       const result = c.interviewResult || 'pending';
       if (stage === 'submitted') return hasDocs;
@@ -203,17 +229,17 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       const hay = [c.name, c.phone, c.email].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
-  }, [scoped, search, stage]);
+  }, [pool, search, stage]);
 
   const counts = useMemo(() => ({
-    total: scoped.length,
-    pending: scoped.filter(c => (!c.interviewResult || c.interviewResult === 'pending') && !c.interviewConducted).length,
-    conducted: scoped.filter(c => c.interviewConducted && (!c.interviewResult || c.interviewResult === 'pending')).length,
-    passed: scoped.filter(c => c.interviewResult === 'passed').length,
-    failed: scoped.filter(c => c.interviewResult === 'failed').length,
-    submitted: scoped.filter(c => !!(c.cvUrl && c.applicationUrl)).length,
-    notsubmitted: scoped.filter(c => !(c.cvUrl && c.applicationUrl) && (!c.interviewResult || c.interviewResult === 'pending')).length,
-  }), [scoped]);
+    total: pool.length,
+    pending: pool.filter(c => (!c.interviewResult || c.interviewResult === 'pending') && !c.interviewConducted).length,
+    conducted: pool.filter(c => c.interviewConducted && (!c.interviewResult || c.interviewResult === 'pending')).length,
+    passed: pool.filter(c => c.interviewResult === 'passed').length,
+    failed: pool.filter(c => c.interviewResult === 'failed').length,
+    submitted: pool.filter(c => !!(c.cvUrl && c.applicationUrl)).length,
+    notsubmitted: pool.filter(c => !(c.cvUrl && c.applicationUrl) && (!c.interviewResult || c.interviewResult === 'pending')).length,
+  }), [pool]);
 
   async function persistAndRefresh(next: Candidate[], msg: string, activity?: { action: string; entity: string; target: string }) {
     setSaving(true); setSaveMsg(null);
@@ -649,9 +675,9 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         })}
       </div>
       {/* Status legend */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1 mb-5 text-[12px]" style={{ color: 'var(--text-soft)' }}>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5 text-[12px]" style={{ color: 'var(--text-soft)' }}>
         {([
-          ['green', 'עבר ראיון / הועבר לסטודנטים'],
+          ['green', 'עבר ראיון'],
           ['amber', 'הגיש/ה מסמכים'],
           ['gray',  'טרם הגיש/ה מסמכים'],
           ['red',   'לא התקבל/ה'],
@@ -661,6 +687,23 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
             <span>{label}</span>
           </span>
         ))}
+        {/* The archive switch lives with the legend because it answers the same
+            question — what am I looking at. Hidden entirely when the archive is
+            empty rather than shown reading "(0)", which is noise on a new course. */}
+        {archivedCount > 0 && (
+          <label
+            className="mono text-[11px] uppercase tracking-[0.14em] font-semibold cursor-pointer flex items-center gap-2"
+            style={{ color: showArchive ? 'var(--accent)' : 'var(--text-soft)' }}
+            title="מועמדים שכבר הפכו לסטודנטים">
+            <input
+              type="checkbox"
+              data-archive-toggle
+              checked={showArchive}
+              onChange={e => setShowArchive(e.target.checked)}
+            />
+            הצג ארכיון ({archivedCount})
+          </label>
+        )}
       </div>
 
       {/* Quick action strip for passed/failed groups */}
@@ -979,6 +1022,36 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
     hasDocs ? 'amber' :   // submitted both files → amber (visible, ready for interview)
     'gray';               // in list, hasn't submitted yet → gray
 
+  const archived = isArchivedCandidate(c);
+
+  // Same three handlers the student row uses, so the two rows behave identically:
+  // tel: on a touch device, copy-and-toast on desktop where tel: is a silent no-op.
+  const canDial = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+  const candCall = (e: any) => {
+    e.stopPropagation();
+    if (!c.phone) return;
+    const tel = c.phone.replace(/[^\d+]/g, '');
+    if (canDial) { window.location.href = `tel:${tel}`; return; }
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(c.phone).then(
+        () => showToast(`📞 ${c.phone} · המספר הועתק`, 'success'),
+        () => showToast(`📞 ${c.phone}`, 'info'),
+      );
+    } else { showToast(`📞 ${c.phone}`, 'info'); }
+  };
+  const candWa = (e: any) => {
+    e.stopPropagation();
+    if (!c.phone) return;
+    let n = c.phone.replace(/[^\d]/g, '');
+    if (n.startsWith('0')) n = '972' + n.slice(1);
+    window.open(`https://wa.me/${n}`, '_blank');
+  };
+  const candMail = (e: any) => {
+    e.stopPropagation();
+    if (!c.email) return;
+    openMailto(`mailto:${c.email}?subject=${encodeURIComponent(`פרקטיקום — ${c.name || ''}`)}`);
+  };
+
   return (
     <li className="relative group" data-info-row>
       <div onClick={onTogglePin}
@@ -1006,7 +1079,24 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
           </span>
         </div>
 
-        {/* Line 2: contact info · action icons */}
+        {/* Line 2: the file chips — the two documents the candidacy turns on, open
+            from the list instead of two clicks into the card. A chip that is filled
+            is a link; a dashed, dimmed one says the file was never submitted. The
+            archive marker rides the same line, because a row that is only "green"
+            reads as a candidate who passed rather than one already enrolled. */}
+        <div className="flex items-center gap-1.5 flex-wrap pr-5 mb-1.5" onClick={e => e.stopPropagation()}>
+          <FileChip label="CV" url={c.cvUrl} />
+          <FileChip label="טופס" url={c.applicationUrl} />
+          {archived && (
+            <span className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full shrink-0"
+              style={{ color: 'var(--text-soft)', background: 'transparent', border: '1px solid var(--divider)' }}
+              title="קיימת רשומת סטודנט/ית — השורה מוצגת מהארכיון">
+              ↗ בארכיון
+            </span>
+          )}
+        </div>
+
+        {/* Line 3: contact info · action icons */}
         <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
             {c.phone && <span dir="ltr">{c.phone}</span>}
@@ -1032,12 +1122,27 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
               {c.interviewTime && <span dir="ltr"> · {c.interviewTime.split(/[-–]/)[0]}</span>}
             </span>
           )}
-          <RowActions
-            phone={c.phone}
-            email={c.email}
-            name={c.name}
-            onEdit={onEdit}
-          />
+          {/* The same three controls the student row renders — same component, same
+              36px circle, same wine outline — instead of the emoji set RowActions
+              gives the lecturers/trainers pages. */}
+          {c.phone && (
+            <button type="button" onClick={candCall} title="התקשר למועמד/ת" aria-label="התקשר למועמד/ת"
+              className={contactBtn} style={contactStyle}><PhoneIcon size={16} /></button>
+          )}
+          {c.phone && (
+            <button type="button" onClick={candWa} title="WhatsApp למועמד/ת" aria-label="WhatsApp למועמד/ת"
+              className={contactBtn} style={contactStyle}><WhatsAppIcon size={16} /></button>
+          )}
+          {c.email && (
+            <button type="button" onClick={candMail} title="מייל למועמד/ת" aria-label="מייל למועמד/ת"
+              className={contactBtn} style={contactStyle}><MailIcon size={16} /></button>
+          )}
+          {/* title stays exactly "ערוך" — gate cells locate the editor by it. */}
+          <button type="button" onClick={e => { e.stopPropagation(); onEdit(); }} title="ערוך" aria-label="ערוך / פתח כרטיס מועמד/ת"
+            className="shrink-0 grid place-items-center w-9 h-9 rounded-md transition-colors hover:bg-[rgba(122,30,43,0.08)] active:scale-95"
+            style={{ color: 'var(--accent)', background: 'transparent', border: 'none' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
         </div>
       </div>
 
@@ -1105,6 +1210,31 @@ function LinkRowC({ label, url, onCopy }: { label: string; url: string; onCopy: 
       <a href={url} target="_blank" rel="noopener noreferrer" className="text-[12px] flex-1 min-w-0 truncate underline" style={{ color: 'var(--accent)' }} dir="ltr">{url}</a>
       <button type="button" onClick={onCopy} className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-md border shrink-0 hover:opacity-80" style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}>העתק</button>
     </div>
+  );
+}
+
+/** One of the two candidacy documents, shown on the row itself.
+ *  With a URL it is a real link that opens the file — `stopPropagation` keeps the
+ *  click off the row, which would otherwise toggle the detail popover. Without
+ *  one it is dashed and dimmed and is NOT a link, so "not submitted" is legible
+ *  at a glance instead of being a dead control that looks clickable. */
+function FileChip({ label, url }: { label: string; url?: string | null }) {
+  const base = 'mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full shrink-0';
+  if (!url) {
+    return (
+      <span className={base} title={`${label} — טרם הוגש`}
+        style={{ color: 'var(--text-soft)', background: 'transparent', border: '1px dashed var(--divider)' }}>
+        {label} —
+      </span>
+    );
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      onClick={e => e.stopPropagation()}
+      className={`${base} hover:opacity-75`} title={`פתח ${label}`}
+      style={{ color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' }}>
+      {label} ✓
+    </a>
   );
 }
 

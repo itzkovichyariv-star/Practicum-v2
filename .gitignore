@@ -12,6 +12,7 @@ test-results/
 e2e-report/
 playwright-report/
 supabase/.temp/
+scripts/.preview/
 
 # Session-handoff PreCompact marker (runtime alarm timestamp, not source)
 docs/.last-precompact
