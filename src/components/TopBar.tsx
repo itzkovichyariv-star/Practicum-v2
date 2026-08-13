@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Context } from '../lib/session';
+import { APP_VERSION } from '../lib/version';
 
 export type Page = 'dashboard' | 'lectures' | 'students' | 'employers' | 'trainers' | 'candidates' | 'calendar' | 'reports' | 'forms' | 'management' | 'settings';
 
@@ -49,6 +50,12 @@ export default function TopBar({
     const update = () =>
       document.documentElement.style.setProperty('--header-h', el.offsetHeight + 'px');
     update();
+    // The header now shows the version itself, so Layout's fixed bottom-left
+    // stamp is a duplicate here and is hidden by CSS keyed on this attribute.
+    // It is NOT removed from Layout: the public pages (register, cv-update,
+    // organizations, feedback) have no header, and cell 67 reads the version
+    // off the employer-response page. Scoping it this way leaves those alone.
+    document.documentElement.setAttribute('data-has-header-version', '1');
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
@@ -73,6 +80,27 @@ export default function TopBar({
           borderColor: 'var(--divider)',
         }}
       >
+        {/* ── Version, at the top and IN FLOW ──────────────────────────────────
+            It used to be a fixed overlay pinned bottom-left, so it sat on top of
+            whatever happened to be underneath — a candidate's status badge, the
+            submissions card. Yariv 2026-08-13: "מספר הגרסה מוסתר, הוא צריך
+            להופיע למעלה … באופן שכמובן לא יסתיר כלום אחר."
+
+            Living INSIDE the header is what makes "hides nothing" true rather
+            than hoped-for: the header's real height is measured into --header-h
+            by the effect above, and App renders a spacer of exactly that height,
+            so this line pushes the page down by its own height instead of
+            covering a row of it. dir=ltr because a version is a Latin token and
+            would otherwise be reordered inside an RTL document. */}
+        <div
+          data-version-line
+          dir="ltr"
+          className="mono text-[10px] tracking-[0.1em] text-center select-none"
+          style={{ color: 'var(--text-soft)', opacity: 0.7, paddingTop: '3px', lineHeight: 1.5 }}
+        >
+          {APP_VERSION}
+        </div>
+
         {/* ── Desktop Row 1: brand + context + user ── */}
         <div className="max-w-[1200px] mx-auto px-10 pt-5 pb-4 items-center justify-between gap-8 mono text-[12.5px] uppercase tracking-[0.18em] font-medium hidden md:flex">
           <button onClick={() => navigate('dashboard')} className="flex items-center gap-3 hover:opacity-70">
