@@ -1099,7 +1099,12 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
         {/* Line 3: contact info · action icons */}
         <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
-            {c.phone && <span dir="ltr">{c.phone}</span>}
+            {/* A phone number is one token to a human and useless broken across two
+                lines ("058-" / "7778888"), so it never wraps — it is short and fixed
+                width, and giving it the whole line costs nothing. The email is the
+                opposite: long, variable, and readable truncated, so it is the one
+                that gives way when the row is narrow. */}
+            {c.phone && <span dir="ltr" className="whitespace-nowrap">{c.phone}</span>}
             {c.email && <span className="truncate" style={{ maxWidth: 'clamp(120px, 40vw, 220px)' }}>{c.email}</span>}
             {c.interviewDate && <span className="whitespace-nowrap">· {new Date(c.interviewDate).toLocaleDateString('he-IL')}</span>}
           </div>
