@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Lecture } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear } from './pageShared';
@@ -59,6 +59,55 @@ export default function Dashboard({
     return true;
   });
   const scopedCandidates = candidates.filter(c => sameContext(c, context, allCourses));
+
+  // Which stat is expanded. Only one at a time — the panel replaces the reading
+  // position rather than stacking, so closing always returns to the same view.
+  const [openStat, setOpenStat] = useState<string | null>(null);
+
+  /** The list behind a number, plus where a click on it should go.
+   *  Derived from the SAME scoped arrays the numbers are computed from, so the
+   *  detail can never disagree with the figure above it — the failure that
+   *  makes a drill-down worse than no drill-down. */
+  function statDetail(id: string): {
+    title: string; page: string; gotoLabel: string;
+    rows: { key?: string; name: string; meta: string }[];
+  } {
+    const studentMeta = (s: any) =>
+      s.hired ? 'נקלט/ה לעבודה'
+      : s.practicumCompleted ? 'סיים/ה פרקטיקום'
+      : s.acceptedOrg ? `בהתנסות · ${s.acceptedOrg}`
+      : s.preparation?.passed ? 'בחיפוש ארגון'
+      : 'ממתין/ה להכנה';
+    switch (id) {
+      case 'students':
+        return { title: 'סטודנטים', page: 'students', gotoLabel: 'לדף הסטודנטים',
+          rows: scopedStudents.map(s => ({ key: s.id, name: s.name || 'ללא שם', meta: studentMeta(s) })) };
+      case 'completed':
+        return { title: 'סיימו פרקטיקום', page: 'students', gotoLabel: 'לדף הסטודנטים',
+          rows: scopedStudents.filter(s => s.practicumCompleted)
+            .map(s => ({ key: s.id, name: s.name || 'ללא שם', meta: s.acceptedOrg || '—' })) };
+      case 'employers':
+        return { title: 'מעסיקים', page: 'employers', gotoLabel: 'לדף המעסיקים',
+          rows: scopedEmployers.map(e => {
+            const places = totalVacancies(e);
+            const meta = places === 0 ? 'ללא מקומות' : places === 1 ? 'מקום אחד' : `${places} מקומות`;
+            return { key: e.id, name: e.name || 'ללא שם', meta };
+          }) };
+      case 'candidates':
+        return { title: 'מועמדים', page: 'candidates', gotoLabel: 'לדף המועמדים',
+          rows: scopedCandidates.map(c => ({
+            key: c.id, name: c.name || 'ללא שם',
+            meta: c.convertedToStudentId ? 'הועבר לסטודנטים'
+              : c.interviewResult === 'passed' ? 'עבר ראיון'
+              : c.interviewResult === 'failed' ? 'לא התקבל'
+              : c.interviewConducted ? 'ראיון בוצע'
+              : c.interviewDate ? `ראיון: ${new Date(c.interviewDate).toLocaleDateString('he-IL')}`
+              : 'ממתין/ה',
+          })) };
+      default:
+        return { title: '', page: 'dashboard', gotoLabel: '', rows: [] };
+    }
+  }
   const scopedLectures = lectures.filter(l => sameContext(l, context, allCourses));
 
   // Stats
@@ -264,16 +313,66 @@ export default function Dashboard({
           )}
         </div>
 
-        {/* Stats — no header, tight to hero */}
+        {/* Stats — no header, tight to hero.
+            Each number opens the list behind it: one click reveals the detail,
+            a click on any row goes to that page, ✕ collapses back to the
+            dashboard. Yariv 2026-08-13: "אפשר בלחיצה אחת להציג רשימה ולחיצה
+            נוספת לעבור לדף מעסיקים ואז סגירה מחזירה לדשבורד. אותו דבר עם כל
+            פרט — מועמדים סטודנטים וכו'." */}
         <section className="mb-10">
           <div className="grid grid-cols-2 md:grid-cols-4 stats-grid">
-            <Stat label="סטודנטים" num={String(scopedStudents.length)} delta={`${activeCount} בהתנסות · ${hiredCount} נקלטו`} primary />
+            <Stat label="סטודנטים" num={String(scopedStudents.length)} delta={`${activeCount} בהתנסות · ${hiredCount} נקלטו`} primary
+              open={openStat === 'students'} onClick={() => setOpenStat(openStat === 'students' ? null : 'students')} />
             <Stat label="סיימו פרקטיקום" num={String(completedCount)}
               delta={scopedStudents.length ? `${Math.round((completedCount/scopedStudents.length)*100)}% מהסטודנטים` : '—'}
-              color="#b45309" />
-            <Stat label="מעסיקים" num={String(scopedEmployers.length)} delta={`${totalPositions > 0 ? totalPositions + ' מקומות פרקטיקום' : '—'}`} />
-            <Stat label="מועמדים" num={String(scopedCandidates.length)} delta={candsWaiting ? `${candsWaiting} ממתינים` : '—'} />
+              color="#b45309"
+              open={openStat === 'completed'} onClick={() => setOpenStat(openStat === 'completed' ? null : 'completed')} />
+            <Stat label="מעסיקים" num={String(scopedEmployers.length)} delta={`${totalPositions > 0 ? totalPositions + ' מקומות פרקטיקום' : '—'}`}
+              open={openStat === 'employers'} onClick={() => setOpenStat(openStat === 'employers' ? null : 'employers')} />
+            <Stat label="מועמדים" num={String(scopedCandidates.length)} delta={candsWaiting ? `${candsWaiting} ממתינים` : '—'}
+              open={openStat === 'candidates'} onClick={() => setOpenStat(openStat === 'candidates' ? null : 'candidates')} />
           </div>
+
+          {openStat && (() => {
+            const d = statDetail(openStat);
+            return (
+              <div data-stat-detail={openStat} className="mt-4 rounded-xl border overflow-hidden"
+                style={{ borderColor: 'var(--divider)', background: 'var(--surface-1)' }}>
+                <div className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: 'var(--divider)' }}>
+                  <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold flex-1" style={{ color: 'var(--accent)' }}>
+                    {d.title} · {d.rows.length}
+                  </span>
+                  <button type="button" data-stat-goto onClick={() => { setOpenStat(null); onNavigate?.(d.page as any); }}
+                    className="mono text-[10.5px] uppercase tracking-[0.12em] font-semibold px-3 py-1.5 rounded-full border hover:opacity-75"
+                    style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                    {d.gotoLabel} →
+                  </button>
+                  <button type="button" data-stat-close onClick={() => setOpenStat(null)}
+                    title="סגור וחזור לדשבורד" aria-label="סגור וחזור לדשבורד"
+                    className="grid place-items-center w-7 h-7 rounded-full border hover:opacity-75"
+                    style={{ borderColor: 'var(--divider)', color: 'var(--ink)' }}>✕</button>
+                </div>
+
+                {d.rows.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-[13px]" style={{ color: 'var(--text-soft)' }}>אין מה להציג כאן.</div>
+                ) : (
+                  <ul className="max-h-[340px] overflow-y-auto">
+                    {d.rows.map((r, i) => (
+                      <li key={r.key || i}>
+                        <button type="button" data-stat-row
+                          onClick={() => { setOpenStat(null); onNavigate?.(d.page as any); }}
+                          className="w-full text-right flex items-baseline gap-3 px-4 py-2.5 border-b hover:bg-[rgba(122,30,43,0.04)] transition-colors"
+                          style={{ borderColor: 'var(--divider)' }}>
+                          <span className="text-[14px] flex-1 min-w-0 truncate" style={{ color: 'var(--ink)' }}>{r.name}</span>
+                          <span className="text-[12px] shrink-0" style={{ color: 'var(--text-soft)' }}>{r.meta}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
         </section>
 
         {/* Per-course breakdown — shown only when viewing all courses */}
@@ -491,14 +590,28 @@ function SectionHead({
    but no longer swamps the label. Delta is demoted to muted unless primary.
    Only the primary stat gets the accent delta — reduces color noise across 4 cards. */
 function Stat({
-  label, num, delta, primary, color,
-}: { label: string; num: string; delta: string; primary?: boolean; color?: string }) {
+  label, num, delta, primary, color, onClick, open,
+}: { label: string; num: string; delta: string; primary?: boolean; color?: string;
+     onClick?: () => void; open?: boolean }) {
   return (
     <div
-      className="px-4 md:px-7 py-4 md:py-0 border-b md:border-b-0 border-l first:border-l-0 first:pr-0 last:pl-0"
+      {...(onClick ? {
+        role: 'button', tabIndex: 0, 'data-stat': label,
+        'aria-expanded': !!open,
+        onClick,
+        onKeyDown: (e: any) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } },
+      } : {})}
+      className={`px-4 md:px-7 py-4 md:py-0 border-b md:border-b-0 border-l first:border-l-0 first:pr-0 last:pl-0${onClick ? ' cursor-pointer transition-colors hover:bg-[rgba(122,30,43,0.03)]' : ''}`}
       style={{ borderColor: 'var(--divider)' }}
     >
-      <div className="stat-label mb-2 md:mb-3">{label}</div>
+      <div className="stat-label mb-2 md:mb-3 flex items-center gap-1.5">
+        {label}
+        {onClick && (
+          <span aria-hidden style={{ fontSize: 9, opacity: open ? 0.9 : 0.45, color: 'var(--accent)' }}>
+            {open ? '▲' : '▼'}
+          </span>
+        )}
+      </div>
       <div className="stat-num serif text-[52px] md:text-[68px] font-normal leading-[0.9] tracking-tight"
         style={{ color: color || 'var(--ink)' }}>
         {num}
