@@ -5,6 +5,7 @@ import { sameContext, normalizeYear } from './pageShared';
 import { RefreshButton } from './StudentsPage';
 import { openMailto } from '../lib/openMailto';
 import { openVacancies, totalVacancies } from '../lib/placement';
+import { isArchivedCandidate } from './CandidatesPage';
 
 function hebDate(d: Date) {
   const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
@@ -58,7 +59,17 @@ export default function Dashboard({
     }
     return true;
   });
-  const scopedCandidates = candidates.filter(c => sameContext(c, context, allCourses));
+  // Candidates in scope, split the same way the candidates page splits them.
+  // Yariv 2026-08-13, on the dashboard drill-down: "פרוט מועמדים בדשבורד מראה 13
+  // בעוד רובם סטודנטים, הוא אמור להראות 2." He is right, and the two screens had
+  // drifted: the candidates page archives whoever already became a student, and
+  // the dashboard was still counting them. A number that means one thing on one
+  // screen and another on the next is worse than no number, so both now read
+  // the SAME predicate — imported, not re-implemented, so they cannot diverge
+  // again.
+  const candidatesInScope = candidates.filter(c => sameContext(c, context, allCourses));
+  const scopedCandidates = candidatesInScope.filter(c => !isArchivedCandidate(c));
+  const enrolledCandidates = candidatesInScope.length - scopedCandidates.length;
 
   // Which stat is expanded. Only one at a time — the panel replaces the reading
   // position rather than stacking, so closing always returns to the same view.
@@ -97,8 +108,10 @@ export default function Dashboard({
         return { title: 'מועמדים', page: 'candidates', gotoLabel: 'לדף המועמדים',
           rows: scopedCandidates.map(c => ({
             key: c.id, name: c.name || 'ללא שם',
-            meta: c.convertedToStudentId ? 'הועבר לסטודנטים'
-              : c.interviewResult === 'passed' ? 'עבר ראיון'
+            // No 'הועבר לסטודנטים' case: scopedCandidates excludes them by
+            // construction, so a branch for it would describe a row that cannot
+            // appear here.
+            meta: c.interviewResult === 'passed' ? 'עבר ראיון'
               : c.interviewResult === 'failed' ? 'לא התקבל'
               : c.interviewConducted ? 'ראיון בוצע'
               : c.interviewDate ? `ראיון: ${new Date(c.interviewDate).toLocaleDateString('he-IL')}`
@@ -329,7 +342,8 @@ export default function Dashboard({
               open={openStat === 'completed'} onClick={() => setOpenStat(openStat === 'completed' ? null : 'completed')} />
             <Stat label="מעסיקים" num={String(scopedEmployers.length)} delta={`${totalPositions > 0 ? totalPositions + ' מקומות פרקטיקום' : '—'}`}
               open={openStat === 'employers'} onClick={() => setOpenStat(openStat === 'employers' ? null : 'employers')} />
-            <Stat label="מועמדים" num={String(scopedCandidates.length)} delta={candsWaiting ? `${candsWaiting} ממתינים` : '—'}
+            <Stat label="מועמדים" num={String(scopedCandidates.length)}
+              delta={[candsWaiting ? `${candsWaiting} ממתינים` : '', enrolledCandidates ? `${enrolledCandidates} הפכו לסטודנטים` : ''].filter(Boolean).join(' · ') || '—'}
               open={openStat === 'candidates'} onClick={() => setOpenStat(openStat === 'candidates' ? null : 'candidates')} />
           </div>
 
