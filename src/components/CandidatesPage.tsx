@@ -26,6 +26,25 @@ import { sendAcceptanceEmail } from '../lib/emailApi';
  *  is no second field to keep in step. */
 export const isArchivedCandidate = (c: Candidate): boolean => !!c.convertedToStudentId;
 
+/** Did this person actually apply?
+ *
+ *  This used to read `cvUrl && applicationUrl` — two FILES — and was therefore
+ *  false for every single real candidate, so every dot was grey and «הגישו
+ *  מסמכים» counted 0 forever. Yariv 2026-08-13: "בכל מקרה מוגש מה שביקשנו —
+ *  טופס הגשה וקורות חיים ולכן זה צריך להיות כתום, כשלמעשה אין אפור."
+ *
+ *  He is right, and the cause is that the second file does not exist. The public
+ *  form collects a CV **and a questionnaire** — `RegistrationForm` literally
+ *  sends `application_file_path: null` — and the questionnaire IS the הגשה form;
+ *  it is required, so nobody reaches the candidates list without one.
+ *
+ *  So the test is evidence of a submission, in any of the forms it can take,
+ *  rather than a file that is never written. Grey survives only for a candidate
+ *  typed in by hand with nothing attached — which is a real state, and the one
+ *  case where "טרם הגיש/ה" is actually true. */
+export const hasSubmitted = (c: Candidate): boolean =>
+  !!(c.cvUrl || c.applicationUrl || c.questionnaire || c.submittedAt);
+
 export default function CandidatesPage({ data, context, userName, onRefresh }: PageProps) {
   const [search, setSearch] = useState('');
   const [stage, setStage] = useState<'all' | 'pending' | 'conducted' | 'passed' | 'failed' | 'submitted' | 'notsubmitted'>('all');
@@ -215,7 +234,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return pool.filter(c => {
-      const hasDocs = !!(c.cvUrl && c.applicationUrl);
+      const hasDocs = hasSubmitted(c);
       const result = c.interviewResult || 'pending';
       if (stage === 'submitted') return hasDocs;
       if (stage === 'notsubmitted') return !hasDocs && result === 'pending' && !c.interviewConducted;
@@ -237,8 +256,8 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     conducted: pool.filter(c => c.interviewConducted && (!c.interviewResult || c.interviewResult === 'pending')).length,
     passed: pool.filter(c => c.interviewResult === 'passed').length,
     failed: pool.filter(c => c.interviewResult === 'failed').length,
-    submitted: pool.filter(c => !!(c.cvUrl && c.applicationUrl)).length,
-    notsubmitted: pool.filter(c => !(c.cvUrl && c.applicationUrl) && (!c.interviewResult || c.interviewResult === 'pending')).length,
+    submitted: pool.filter(hasSubmitted).length,
+    notsubmitted: pool.filter(c => !hasSubmitted(c) && (!c.interviewResult || c.interviewResult === 'pending')).length,
   }), [pool]);
 
   async function persistAndRefresh(next: Candidate[], msg: string, activity?: { action: string; entity: string; target: string }) {
@@ -1007,7 +1026,7 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
   const conductedPending = !!c.interviewConducted && r === 'pending';
   const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : conductedPending ? 'ראיון בוצע' : 'ממתין';
   const isPass = r === 'passed';
-  const hasDocs = !!(c.cvUrl && c.applicationUrl);
+  const hasDocs = hasSubmitted(c);
   const stage = c.convertedToStudentId ? 'הועבר לסטודנטים' :
                 isPass ? 'עבר ראיון' :
                 r === 'failed' ? 'לא התקבל' :
@@ -1019,8 +1038,8 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
     c.convertedToStudentId ? 'green' :  // converted to student → always green regardless of result
     r === 'failed' ? 'red' :
     r === 'passed' ? 'green' :
-    hasDocs ? 'amber' :   // submitted both files → amber (visible, ready for interview)
-    'gray';               // in list, hasn't submitted yet → gray
+    hasDocs ? 'amber' :   // applied — CV + questionnaire — so: visible, ready for interview
+    'gray';               // no submission at all: typed in by hand with nothing attached
 
   const archived = isArchivedCandidate(c);
 
@@ -1086,7 +1105,14 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
             reads as a candidate who passed rather than one already enrolled. */}
         <div className="flex items-center gap-1.5 flex-wrap pr-5 mb-1.5" onClick={e => e.stopPropagation()}>
           <FileChip label="CV" url={c.cvUrl} />
-          <FileChip label="טופס" url={c.applicationUrl} />
+          {/* The הגשה form is a FILE only when someone attached one by hand. For
+              everyone who came through the public form it is the questionnaire,
+              which has no URL to open — so the chip opens the card, where
+              QuestionnaireView already renders it. Same evidence the dot uses;
+              they can never disagree. */}
+          <FileChip label="טופס" url={c.applicationUrl}
+            onOpen={!c.applicationUrl && c.questionnaire ? onEdit : undefined}
+            openTitle="פתח/י את שאלון המועמדות בכרטיס" />
           {archived && (
             <span className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full shrink-0"
               style={{ color: 'var(--text-soft)', background: 'transparent', border: '1px solid var(--divider)' }}
@@ -1223,8 +1249,23 @@ function LinkRowC({ label, url, onCopy }: { label: string; url: string; onCopy: 
  *  click off the row, which would otherwise toggle the detail popover. Without
  *  one it is dashed and dimmed and is NOT a link, so "not submitted" is legible
  *  at a glance instead of being a dead control that looks clickable. */
-function FileChip({ label, url }: { label: string; url?: string | null }) {
+function FileChip({ label, url, onOpen, openTitle }: {
+  label: string; url?: string | null; onOpen?: () => void; openTitle?: string;
+}) {
   const base = 'mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full shrink-0';
+  const filled = { color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' } as const;
+  // Submitted, but as something with no URL to open — the questionnaire. Looks
+  // identical to a submitted file, because to the reader it IS one; the click
+  // goes to the card instead of a download.
+  if (!url && onOpen) {
+    return (
+      <button type="button" onClick={e => { e.stopPropagation(); onOpen(); }}
+        className={`${base} hover:opacity-75`} title={openTitle || `פתח ${label}`}
+        style={{ ...filled, border: 'none', cursor: 'pointer' }}>
+        {label} ✓
+      </button>
+    );
+  }
   if (!url) {
     return (
       <span className={base} title={`${label} — טרם הוגש`}

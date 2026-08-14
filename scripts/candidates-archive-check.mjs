@@ -31,7 +31,8 @@ const DIST = join(ROOT, 'dist');
 const PORT = 4322;
 
 /* דנה = passed AND converted (the archived one) · מאיה = both files, waiting ·
-   רון = CV only, failed · טל = no files at all. Four rows chosen so every
+   רון = CV only, failed · טל = nothing at all · נועה = CV + questionnaire, the
+   shape every real applicant has. Five rows chosen so every
    assertion below has both a positive and a negative case in the same list. */
 const FIXTURE = {
   courses: [{ id: 'hr', name: 'פרקטיקום משאבי אנוש', year: 'תשפ״ז' }],
@@ -50,6 +51,13 @@ const FIXTURE = {
       interviewConducted: true, interviewResult: 'failed', interviewSummary: 'לא התאים.' },
     { id: 'c4', name: 'טל אבני', phone: '058-7778888', email: 'tal@example.com',
       courseId: 'hr', year: 'תשפ״ז' },
+    // The shape EVERY real applicant has: a CV and a questionnaire, and no
+    // second file — RegistrationForm sends application_file_path: null. This is
+    // the case that used to render grey and "טרם הגיש/ה" for the whole board.
+    { id: 'c5', name: 'נועה שקד', phone: '053-4445555', email: 'noa@example.com',
+      courseId: 'hr', year: 'תשפ״ז', cvUrl: 'https://example.com/noa-cv.pdf',
+      submittedAt: '2026-08-01T09:00:00.000Z',
+      questionnaire: { motivation: 'רוצה להתמחות בגיוס', experience: 'התנדבות' } },
   ],
   students: [
     { id: 's1', name: 'דנה כהן', phone: '052-1234567', email: 'dana@example.com',
@@ -126,10 +134,10 @@ console.log('ARCHIVE-hidden: a converted candidate is not in the working list');
 {
   const names = await rowNames(pg);
   check('דנה (converted) absent by default', !names.includes('דנה כהן'), `rows: ${names.join(', ')}`);
-  check('the other three are present', ['מאיה בר', 'רון שגב', 'טל אבני'].every(n => names.includes(n)), `${names.length} rows`);
+  check('the other four are present', ['מאיה בר', 'רון שגב', 'טל אבני', 'נועה שקד'].every(n => names.includes(n)), `${names.length} rows`);
   const all = await tabCount(pg, 'הכל');
   const passed = await tabCount(pg, 'עברו');
-  check('tab "הכל" counts the shown pool', all === 3, `expected 3, got ${all}`);
+  check('tab "הכל" counts the shown pool', all === 4, `expected 4 (5 minus the archived one), got ${all}`);
   check('tab "עברו" excludes the archived one', passed === 0, `expected 0, got ${passed}`);
 }
 
@@ -162,7 +170,7 @@ console.log('\nARCHIVE-toggle: the switch brings them back, marked');
     check('דנה returns when the archive is shown', names.includes('דנה כהן'), `rows: ${names.join(', ')}`);
     const all = await tabCount(pg, 'הכל');
     const passed = await tabCount(pg, 'עברו');
-    check('counts follow the shown pool', all === 4 && passed === 1, `הכל=${all} (want 4), עברו=${passed} (want 1)`);
+    check('counts follow the shown pool', all === 5 && passed === 1, `הכל=${all} (want 5), עברו=${passed} (want 1)`);
 
     const marked = await pg.evaluate(() => {
       const row = [...document.querySelectorAll('li[data-info-row]')]
@@ -173,7 +181,7 @@ console.log('\nARCHIVE-toggle: the switch brings them back, marked');
 
     // The row checkbox must remain the only checkbox INSIDE a row — cell 07 selects on it.
     const inRow = await pg.locator('li[data-info-row] input[type="checkbox"]').count();
-    check('archive toggle is outside the rows', inRow === 4, `row checkboxes: ${inRow}, want 4`);
+    check('archive toggle is outside the rows', inRow === 5, `row checkboxes: ${inRow}, want 5`);
 
     await box.uncheck();
     await pg.waitForTimeout(400);
@@ -206,6 +214,34 @@ console.log('\nCHIP-link: a submitted file is a link, a missing one is not');
     && ron.find(c => c.text.startsWith('CV'))?.tag === 'A'
     && ron.find(c => c.text.startsWith('טופס'))?.tag !== 'A',
     ron.map(c => `${c.text}=${c.tag}`).join(' '));
+}
+
+// ── APPLIED-not-grey ─────────────────────────────────────────────────────────
+console.log('\nAPPLIED-not-grey: a CV + questionnaire IS a submission');
+{
+  const noa = await pg.evaluate(() => {
+    const row = [...document.querySelectorAll('li[data-info-row]')]
+      .find(e => (e.querySelector('.serif')?.textContent || '').includes('נועה'));
+    if (!row) return null;
+    // The status dot is the small round span before the name.
+    const dot = [...row.querySelectorAll('span')]
+      .map(s => getComputedStyle(s))
+      .find(st => st.borderRadius.startsWith('50') && parseFloat(st.width) > 6 && parseFloat(st.width) < 14);
+    const form = [...row.querySelectorAll('a,span,button')]
+      .find(e => /^טופס\s/.test((e.textContent || '').trim()));
+    return {
+      dot: dot ? dot.backgroundColor : null,
+      formText: form ? form.textContent.trim() : null,
+      formTag: form ? form.tagName : null,
+    };
+  });
+  check('the applicant is on the board', !!noa, noa ? '' : 'row not found');
+  // --tl-amber is #d97706 → rgb(217, 119, 6). Grey (--tl-gray #94a3b8) is the bug.
+  check('dot is amber, not grey', noa?.dot === 'rgb(217, 119, 6)', `got ${noa?.dot}`);
+  check('טופס reads as submitted', /✓/.test(noa?.formText || ''), `chip: "${noa?.formText}"`);
+  check('and it is clickable (opens the card)', noa?.formTag === 'BUTTON', `tag: ${noa?.formTag}`);
+  const submitted = await tabCount(pg, 'הגישו מסמכים');
+  check('"הגישו מסמכים" counts them', submitted >= 2, `expected ≥2 (מאיה + נועה), got ${submitted}`);
 }
 
 // ── ICONS-shared ─────────────────────────────────────────────────────────────
