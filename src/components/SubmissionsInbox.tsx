@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { btnPrimary, btnSecondary } from '../lib/design';
 import { supabase } from '../lib/supabase';
+import { isCancelledSubmission } from '../lib/submissions';
 import JSZip from 'jszip';
 
 type Questionnaire = {
@@ -88,11 +89,15 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey, h
    * Stamped נקלט, yet no candidate card exists for them.
    *
    * Two roads lead here: an intake that stamped the submission without the save
-   * landing, or a candidate deleted afterwards — a withdrawal, say. The inbox
-   * cannot tell those apart, so it states the fact and leaves the judgement to
-   * the coordinator rather than accusing anything of having failed.
+   * landing, or a candidate deleted afterwards. The inbox cannot tell those
+   * apart, so it states the fact and leaves the judgement to the coordinator
+   * rather than accusing anything of having failed.
+   *
+   * A cancelled interview is the one case we CAN name, so it is excluded — a
+   * withdrawal is a finished story, not an open question.
    */
-  const isOrphan = (s: Submission) => !!hasCandidate && s.processed && !hasCandidate(s);
+  const isOrphan = (s: Submission) =>
+    !!hasCandidate && s.processed && !isCancelledSubmission(s.notes) && !hasCandidate(s);
   const orphans = submissions.filter(isOrphan);
   const visible = submissions.filter(s => showProcessed || !s.processed);
 
@@ -374,6 +379,13 @@ function SubmissionCard({ s, selected, orphan, onToggle, onDelete }: {
             {s.processed && (
               <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
                 style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>✓ נקלט</span>
+            )}
+            {isCancelledSubmission(s.notes) && (
+              <span data-cancelled-badge className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(100,116,139,0.16)', color: '#475569' }}
+                title="הראיון בוטל והמשבצת שוחררה">
+                בוטל
+              </span>
             )}
             {orphan && (
               <span data-orphan-badge className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
