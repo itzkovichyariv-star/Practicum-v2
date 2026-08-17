@@ -44,11 +44,17 @@ type Submission = {
 };
 
 type Props = {
-  onAcceptIntoCandidates: (sub: Submission) => Promise<void>;
+  /** Resolves to the OUTCOME. A submission is stamped נקלט only when this says ok. */
+  onAcceptIntoCandidates: (sub: Submission) => Promise<{ ok: boolean; error?: string }>;
   refreshKey?: number;
+  /**
+   * Does this submission already have a candidate card? Supplied by the page so the
+   * inbox and the intake answer it with the same rule and can never disagree.
+   */
+  hasCandidate?: (sub: Submission) => boolean;
 };
 
-export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }: Props) {
+export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey, hasCandidate }: Props) {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +62,7 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
   const [downloading, setDownloading] = useState(false);
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
   const [showProcessed, setShowProcessed] = useState(false);
+  const [acceptMsg, setAcceptMsg] = useState<string | null>(null);
 
   async function load() {
     setLoading(true); setError(null);
@@ -77,6 +84,16 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
 
   useEffect(() => { load(); }, [refreshKey]);
 
+  /**
+   * Stamped נקלט, yet no candidate card exists for them.
+   *
+   * Two roads lead here: an intake that stamped the submission without the save
+   * landing, or a candidate deleted afterwards — a withdrawal, say. The inbox
+   * cannot tell those apart, so it states the fact and leaves the judgement to
+   * the coordinator rather than accusing anything of having failed.
+   */
+  const isOrphan = (s: Submission) => !!hasCandidate && s.processed && !hasCandidate(s);
+  const orphans = submissions.filter(isOrphan);
   const visible = submissions.filter(s => showProcessed || !s.processed);
 
   function toggle(id: string) {
@@ -142,15 +159,37 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
   }
 
   async function acceptSelected() {
-    const selected = submissions.filter(s => selectedIds.has(s.id) && !s.processed);
+    // An orphan may be taken in again — that is the way back from an intake whose
+    // save never landed. Without it, a stamped submission is a dead end.
+    const selected = submissions.filter(s => selectedIds.has(s.id) && (!s.processed || isOrphan(s)));
     if (selected.length === 0) return;
+    setAcceptMsg(null);
+    const succeeded = new Set<string>();
+    let stopped = '';
     for (const sub of selected) {
-      await onAcceptIntoCandidates(sub);
-      await supabase.from('candidate_submissions')
+      const res = await onAcceptIntoCandidates(sub);
+      if (!res?.ok) {
+        // Deliberately do NOT stamp. The submission stays exactly as it was, so it
+        // can be retried once whatever failed has passed. Stamping here is what
+        // used to make someone disappear: marked taken-in, never created.
+        stopped = `נעצר על ${sub.name}: ${res?.error || 'השמירה נכשלה'} — לא סומן/ה כנקלט/ת, אפשר לנסות שוב`;
+        break;
+      }
+      const { error: stampErr } = await supabase.from('candidate_submissions')
         .update({ processed: true, processed_at: new Date().toISOString() })
         .eq('id', sub.id);
+      if (stampErr) {
+        // The candidate IS saved — say so, so nobody takes them in twice looking
+        // for a badge that never appeared.
+        stopped = `${sub.name} נקלט/ה בהצלחה, אך סימון ההגשה נכשל: ${stampErr.message}`;
+        succeeded.add(sub.id);
+        break;
+      }
+      succeeded.add(sub.id);
     }
-    setSelectedIds(new Set());
+    setAcceptMsg(stopped || (succeeded.size ? `✓ נקלטו ${succeeded.size}` : null));
+    // Keep whatever did not go through selected, ready for another try.
+    setSelectedIds(prev => new Set([...prev].filter(id => !succeeded.has(id))));
     load();
   }
 
@@ -232,6 +271,26 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
         </div>
       </div>
 
+      {/* Surfaced whether or not processed rows are shown — the whole point is that
+          nobody has to go looking to discover someone fell between the two lists. */}
+      {orphans.length > 0 && (
+        <div data-inbox-orphans={orphans.length} className="px-5 py-3 text-[13px] border-b"
+          style={{ borderColor: 'var(--divider)', background: 'rgba(217,119,6,0.10)', color: 'var(--ink)' }}>
+          {orphans.length === 1
+            ? <>הגשה אחת מסומנת כנקלטה, אך אין לה כרטיס מועמד: </>
+            : <><strong>{orphans.length}</strong> הגשות מסומנות כנקלטו, אך אין להן כרטיס מועמד: </>}
+          {orphans.map(o => o.name).join(', ')}.
+          <span style={{ color: 'var(--text-soft)' }}> ייתכן שהמועמד/ת נמחק/ה, או שהקליטה לא הושלמה.</span>
+          {!showProcessed && (
+            <button data-inbox-show-orphans onClick={() => setShowProcessed(true)}
+              className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mr-2"
+              style={{ color: 'var(--accent)' }}>
+              הצג אותן ←
+            </button>
+          )}
+        </div>
+      )}
+
       {error ? (
         <div className="p-6 text-[14px]" style={{ color: 'var(--accent)' }}>
           ⚠ {error}
@@ -276,8 +335,14 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
             </div>
           )}
 
+          {acceptMsg && (
+            <div data-inbox-accept-msg className="px-5 py-2 text-[12.5px]" style={{ color: 'var(--accent)' }}>
+              {acceptMsg}
+            </div>
+          )}
+
           <ul>
-            {visible.map(s => <SubmissionCard key={s.id} s={s} selected={selectedIds.has(s.id)} onToggle={() => toggle(s.id)} onDelete={() => deleteOne(s)} />)}
+            {visible.map(s => <SubmissionCard key={s.id} s={s} orphan={isOrphan(s)} selected={selectedIds.has(s.id)} onToggle={() => toggle(s.id)} onDelete={() => deleteOne(s)} />)}
           </ul>
         </>
       )}
@@ -285,8 +350,8 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey }:
   );
 }
 
-function SubmissionCard({ s, selected, onToggle, onDelete }: {
-  s: Submission; selected: boolean; onToggle: () => void; onDelete: () => void;
+function SubmissionCard({ s, selected, orphan, onToggle, onDelete }: {
+  s: Submission; selected: boolean; orphan?: boolean; onToggle: () => void; onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const hasQ = s.questionnaire && Object.values(s.questionnaire).some(v => v?.trim());
@@ -309,6 +374,13 @@ function SubmissionCard({ s, selected, onToggle, onDelete }: {
             {s.processed && (
               <span className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
                 style={{ background: 'rgba(122,30,43,0.08)', color: 'var(--accent)' }}>✓ נקלט</span>
+            )}
+            {orphan && (
+              <span data-orphan-badge className="mono text-[10px] uppercase tracking-[0.14em] font-semibold mr-2 px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(217,119,6,0.16)', color: '#b45309' }}
+                title="מסומן/ת כנקלט/ת, אך אין כרטיס מועמד. אפשר לבחור ולקלוט שוב.">
+                ללא כרטיס מועמד
+              </span>
             )}
           </div>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 mt-1" style={{ color: 'var(--text-soft)' }}>

@@ -26,6 +26,31 @@ import { sendAcceptanceEmail } from '../lib/emailApi';
  *  is no second field to keep in step. */
 export const isArchivedCandidate = (c: Candidate): boolean => !!c.convertedToStudentId;
 
+const normName = (n: string) => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * The candidate a submission already belongs to, or undefined.
+ *
+ * Exported so the intake and the inbox's "this was taken in but has no card"
+ * warning ask the SAME question. Two copies of this rule would drift, and the
+ * warning would then accuse the intake of losing people it had actually filed.
+ *
+ * Email first because it is the identifier a person owns; exact name second,
+ * for the re-intake of someone typed in by hand.
+ */
+export function findCandidateForSubmission(
+  candidates: Candidate[],
+  sub: { email?: string | null; name?: string | null },
+): Candidate | undefined {
+  const email = (sub.email || '').trim().toLowerCase();
+  if (email) {
+    const byEmail = candidates.find(c => (c.email || '').trim().toLowerCase() === email);
+    if (byEmail) return byEmail;
+  }
+  const name = normName(sub.name || '');
+  return name ? candidates.find(c => normName(c.name) === name) : undefined;
+}
+
 /** Did this person actually apply?
  *
  *  This used to read `cvUrl && applicationUrl` — two FILES — and was therefore
@@ -431,7 +456,15 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       { action: 'מחיקה', entity: 'מועמד', target: c?.name || id });
   }
 
-  async function handleAcceptSubmissionIntoCandidates(sub: any) {
+  /**
+   * Take a submission into the candidates list.
+   *
+   * RETURNS the outcome, and that is the point: the inbox stamps a submission
+   * "נקלט" only when this says ok. It used to return nothing and report failure
+   * as a toast, so the stamp went on regardless — leaving a submission marked
+   * taken-in with no candidate behind it, and no way to retry from the screen.
+   */
+  async function handleAcceptSubmissionIntoCandidates(sub: any): Promise<{ ok: boolean; error?: string }> {
     // Find course by name+year; fall back to name-only if year doesn't match
     const subYear = sub.year || '';
     const nameMatch = (c: typeof courses[0]) =>
@@ -449,28 +482,31 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     // Prevents race condition: onRefresh() from a previous intake may complete
     // AFTER the next intake begins, causing the app to regress to a stale list
     // and then overwrite a recently-saved candidate on the next save.
-    const { data: freshRow } = await supabase
+    // If that read FAILS we must stop. `|| []` on a failed read used to leave
+    // currentCandidates empty, and the save below would then write a candidates
+    // list containing only this one person — silently deleting everybody else.
+    // A refused intake costs a click; a wiped list costs the year.
+    const { data: freshRow, error: freshErr } = await supabase
       .from('practicum_data')
       .select('data')
       .eq('org_id', 'default')
       .single();
+    if (freshErr || !freshRow) {
+      const msg = freshErr?.message || 'לא ניתן לקרוא את רשימת המועמדים';
+      showToast(`הקליטה בוטלה — ${msg}`, 'error');
+      return { ok: false, error: msg };
+    }
     const currentCandidates: Candidate[] = (freshRow as any)?.data?.candidates || [];
-    function normN(n: string) { return (n || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
-    const byEmail = sub.email
-      ? currentCandidates.find((c: Candidate) => c.email && c.email.toLowerCase() === sub.email!.toLowerCase())
-      : undefined;
-    const byExactName = !byEmail
-      ? currentCandidates.find((c: Candidate) => normN(c.name) === normN(sub.name))
-      : undefined;
-    const subLastToken = normN(sub.name).split(' ').pop() || '';
-    const bySimilarName = !byEmail && !byExactName && subLastToken.length > 2
+    const matched = findCandidateForSubmission(currentCandidates, sub);
+    const subLastToken = normName(sub.name).split(' ').pop() || '';
+    const bySimilarName = !matched && subLastToken.length > 2
       ? currentCandidates.find((c: Candidate) => {
-          const t = normN(c.name).split(' ').pop() || '';
-          return t === subLastToken && normN(c.name) !== normN(sub.name);
+          const t = normName(c.name).split(' ').pop() || '';
+          return t === subLastToken && normName(c.name) !== normName(sub.name);
         })
       : undefined;
 
-    let existingRecord: Candidate | undefined = byEmail || byExactName;
+    let existingRecord: Candidate | undefined = matched;
     if (!existingRecord && bySimilarName) {
       // Use showToast instead of confirm() — Safari resets React state on confirm()
       // Auto-merge by email match, otherwise create new record (admin can merge manually)
@@ -501,8 +537,14 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         { action: 'עודכן מטופס הרשמה', entity: 'מועמד', target: sub.name }
       );
       setSaving(false);
-      if (res.ok) { (data.candidates as Candidate[]) = nextCandidates; onRefresh(); }
+      if (!res.ok) {
+        showToast('שגיאה בשמירה: ' + (res.error || 'לא ידוע'), 'error');
+        return { ok: false, error: res.error || 'save failed' };
+      }
+      (data.candidates as Candidate[]) = nextCandidates;
+      onRefresh();
       showToast(`✓ עודכן מועמד קיים: ${existingRecord.name}`, 'success');
+      return { ok: true };
     } else {
       // Create new candidate
       const newCandidate: Candidate = {
@@ -533,13 +575,14 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         { action: 'נקלט מטופס הרשמה', entity: 'מועמד', target: sub.name }
       );
       setSaving(false);
-      if (res.ok) {
-        (data.candidates as Candidate[]) = nextCandidates;
-        onRefresh();
-        showToast(`✓ נקלט מועמד חדש: ${sub.name}`, 'success');
-      } else {
+      if (!res.ok) {
         showToast('שגיאה בשמירה: ' + (res.error || 'לא ידוע'), 'error');
+        return { ok: false, error: res.error || 'save failed' };
       }
+      (data.candidates as Candidate[]) = nextCandidates;
+      onRefresh();
+      showToast(`✓ נקלט מועמד חדש: ${sub.name}`, 'success');
+      return { ok: true };
     }
   }
 
@@ -661,7 +704,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         </div>
       )}
 
-      <SubmissionsInbox onAcceptIntoCandidates={handleAcceptSubmissionIntoCandidates} />
+      <SubmissionsInbox
+        onAcceptIntoCandidates={handleAcceptSubmissionIntoCandidates}
+        hasCandidate={sub => !!findCandidateForSubmission(all, sub)}
+      />
 
       <div className="mono text-[12px] uppercase tracking-[0.16em] flex items-center gap-4 flex-wrap mb-10" style={{ color: 'var(--text-soft)' }}>
         <RefreshButton onRefresh={onRefresh} />
