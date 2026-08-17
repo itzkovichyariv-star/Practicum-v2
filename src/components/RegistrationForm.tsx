@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { publicSupabase as supabase } from '../lib/supabase';
-import { useFormDraft } from '../lib/useFormDraft';
+import { useFormDraft, draftSavedLabel } from '../lib/useFormDraft';
 
 type Status = 'idle' | 'uploading' | 'saving' | 'done' | 'error';
 
@@ -349,6 +349,15 @@ export default function RegistrationForm() {
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Say it out loud when answers come back, so nobody retypes what is already there. */}
+        {regDraft.restored && (
+          <div data-draft-restored="1" className="rounded-xl px-4 py-3 text-[13.5px]"
+            style={{ background: 'rgba(21,128,61,0.08)', border: '1px solid rgba(21,128,61,0.35)', color: '#15803d' }}>
+            ✓ המשכנו מהמקום שבו הפסקת — התשובות שכתבת קודם שוחזרו. את/ה יכול/ה לערוך אותן.
+            <br />
+            <span style={{ opacity: 0.85 }}>שים/י לב: קובץ קורות החיים צריך להיבחר מחדש.</span>
+          </div>
+        )}
 
         {/* ── פרטים אישיים ── */}
         <SectionTitle>פרטים אישיים</SectionTitle>
@@ -496,6 +505,15 @@ export default function RegistrationForm() {
         }}>
           {status === 'uploading' ? 'מעלה קורות חיים...' : status === 'saving' ? 'שומר...' : 'שלח הגשת מועמדות ←'}
         </button>
+
+        {/* The questionnaire is long. Saying it is being kept is what stops someone
+            filling it in one sitting out of fear of losing it. */}
+        <div className="text-[12px] text-center" data-draft-indicator={regDraft.savedAt ? '1' : '0'}
+          style={{ color: regDraft.savedAt ? '#15803d' : 'var(--text-soft)', fontWeight: regDraft.savedAt ? 600 : 400 }}>
+          {regDraft.savedAt
+            ? `✓ ${draftSavedLabel(regDraft.savedAt)} — אפשר לחזור לקישור הזה ולהמשיך מאותה נקודה`
+            : 'התשובות נשמרות אוטומטית במכשיר שלך בזמן ההקלדה'}
+        </div>
 
         <p className="mono text-[10.5px] uppercase tracking-[0.14em] text-center pt-1" style={{ color: 'var(--text-soft)' }}>
           הקבצים נשמרים באופן מאובטח. רק הצוות שלנו רואה אותם.
