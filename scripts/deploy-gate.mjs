@@ -58,6 +58,42 @@ for (const lint of lints) {
   }
 }
 
+// 1c. Offline checks — each serves dist/ locally and answers every off-origin call
+//     from a fixture, so they drive the real screens without touching the live
+//     project. They belong BEFORE the numbered cells: they are faster, they need no
+//     seeding, and they are the only place the draft, intake and cancellation
+//     guarantees are enforced at all.
+//
+//     Listed explicitly rather than globbed. scripts/ also holds health-check.mjs,
+//     which talks to live services and is not this kind of check — a pattern match
+//     would sweep it in and fail the gate for the wrong reason.
+//
+//     Skipped under --only, which means "run one suite".
+const OFFLINE_CHECKS = [
+  'candidates-archive-check.mjs',
+  'form-drafts-check.mjs',
+  'intake-safety-check.mjs',
+  'interview-cancel-check.mjs',
+];
+if (!onlyPrefix) {
+  console.log('\n━━━ building dist/ for the offline checks ━━━');
+  const built = await new Promise((res) =>
+    spawn('npx', ['astro', 'build'], { cwd: ROOT, stdio: 'inherit' }).on('exit', res));
+  if (built !== 0) {
+    console.error('\n❌ DEPLOY GATE FAILED — the build failed. Do NOT deploy.');
+    process.exit(1);
+  }
+  for (const check of OFFLINE_CHECKS) {
+    console.log(`\n━━━ ${check} ━━━`);
+    const code = await new Promise((res) =>
+      spawn('node', [join('scripts', check)], { cwd: ROOT, stdio: 'inherit' }).on('exit', res));
+    if (code !== 0) {
+      console.error(`\n❌ DEPLOY GATE FAILED — ${check} found a problem. Do NOT deploy.`);
+      process.exit(1);
+    }
+  }
+}
+
 // 2. Run each audit file in sequence. We can't run in parallel because
 //    Supabase writes from concurrent runs can collide and the headed
 //    browsers compete for focus.
