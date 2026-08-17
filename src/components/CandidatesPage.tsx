@@ -6,6 +6,7 @@ import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, outlookCalendarUrl } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
+import { markNotesCancelled } from '../lib/submissions';
 import type { Student } from '../lib/supabase';
 import CandidateEditor from './CandidateEditor';
 import { Popover, RefreshButton, StatusDot, contactBtn, contactStyle, type DotStatus } from './StudentsPage';
@@ -25,6 +26,31 @@ import { sendAcceptanceEmail } from '../lib/emailApi';
  *  is already written and cleared by the conversion and its reversal, so there
  *  is no second field to keep in step. */
 export const isArchivedCandidate = (c: Candidate): boolean => !!c.convertedToStudentId;
+
+const normName = (n: string) => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * The candidate a submission already belongs to, or undefined.
+ *
+ * Exported so the intake and the inbox's "this was taken in but has no card"
+ * warning ask the SAME question. Two copies of this rule would drift, and the
+ * warning would then accuse the intake of losing people it had actually filed.
+ *
+ * Email first because it is the identifier a person owns; exact name second,
+ * for the re-intake of someone typed in by hand.
+ */
+export function findCandidateForSubmission(
+  candidates: Candidate[],
+  sub: { email?: string | null; name?: string | null },
+): Candidate | undefined {
+  const email = (sub.email || '').trim().toLowerCase();
+  if (email) {
+    const byEmail = candidates.find(c => (c.email || '').trim().toLowerCase() === email);
+    if (byEmail) return byEmail;
+  }
+  const name = normName(sub.name || '');
+  return name ? candidates.find(c => normName(c.name) === name) : undefined;
+}
 
 /** Did this person actually apply?
  *
@@ -431,7 +457,15 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       { action: 'מחיקה', entity: 'מועמד', target: c?.name || id });
   }
 
-  async function handleAcceptSubmissionIntoCandidates(sub: any) {
+  /**
+   * Take a submission into the candidates list.
+   *
+   * RETURNS the outcome, and that is the point: the inbox stamps a submission
+   * "נקלט" only when this says ok. It used to return nothing and report failure
+   * as a toast, so the stamp went on regardless — leaving a submission marked
+   * taken-in with no candidate behind it, and no way to retry from the screen.
+   */
+  async function handleAcceptSubmissionIntoCandidates(sub: any): Promise<{ ok: boolean; error?: string }> {
     // Find course by name+year; fall back to name-only if year doesn't match
     const subYear = sub.year || '';
     const nameMatch = (c: typeof courses[0]) =>
@@ -449,28 +483,31 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     // Prevents race condition: onRefresh() from a previous intake may complete
     // AFTER the next intake begins, causing the app to regress to a stale list
     // and then overwrite a recently-saved candidate on the next save.
-    const { data: freshRow } = await supabase
+    // If that read FAILS we must stop. `|| []` on a failed read used to leave
+    // currentCandidates empty, and the save below would then write a candidates
+    // list containing only this one person — silently deleting everybody else.
+    // A refused intake costs a click; a wiped list costs the year.
+    const { data: freshRow, error: freshErr } = await supabase
       .from('practicum_data')
       .select('data')
       .eq('org_id', 'default')
       .single();
+    if (freshErr || !freshRow) {
+      const msg = freshErr?.message || 'לא ניתן לקרוא את רשימת המועמדים';
+      showToast(`הקליטה בוטלה — ${msg}`, 'error');
+      return { ok: false, error: msg };
+    }
     const currentCandidates: Candidate[] = (freshRow as any)?.data?.candidates || [];
-    function normN(n: string) { return (n || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
-    const byEmail = sub.email
-      ? currentCandidates.find((c: Candidate) => c.email && c.email.toLowerCase() === sub.email!.toLowerCase())
-      : undefined;
-    const byExactName = !byEmail
-      ? currentCandidates.find((c: Candidate) => normN(c.name) === normN(sub.name))
-      : undefined;
-    const subLastToken = normN(sub.name).split(' ').pop() || '';
-    const bySimilarName = !byEmail && !byExactName && subLastToken.length > 2
+    const matched = findCandidateForSubmission(currentCandidates, sub);
+    const subLastToken = normName(sub.name).split(' ').pop() || '';
+    const bySimilarName = !matched && subLastToken.length > 2
       ? currentCandidates.find((c: Candidate) => {
-          const t = normN(c.name).split(' ').pop() || '';
-          return t === subLastToken && normN(c.name) !== normN(sub.name);
+          const t = normName(c.name).split(' ').pop() || '';
+          return t === subLastToken && normName(c.name) !== normName(sub.name);
         })
       : undefined;
 
-    let existingRecord: Candidate | undefined = byEmail || byExactName;
+    let existingRecord: Candidate | undefined = matched;
     if (!existingRecord && bySimilarName) {
       // Use showToast instead of confirm() — Safari resets React state on confirm()
       // Auto-merge by email match, otherwise create new record (admin can merge manually)
@@ -501,8 +538,14 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         { action: 'עודכן מטופס הרשמה', entity: 'מועמד', target: sub.name }
       );
       setSaving(false);
-      if (res.ok) { (data.candidates as Candidate[]) = nextCandidates; onRefresh(); }
+      if (!res.ok) {
+        showToast('שגיאה בשמירה: ' + (res.error || 'לא ידוע'), 'error');
+        return { ok: false, error: res.error || 'save failed' };
+      }
+      (data.candidates as Candidate[]) = nextCandidates;
+      onRefresh();
       showToast(`✓ עודכן מועמד קיים: ${existingRecord.name}`, 'success');
+      return { ok: true };
     } else {
       // Create new candidate
       const newCandidate: Candidate = {
@@ -533,14 +576,124 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         { action: 'נקלט מטופס הרשמה', entity: 'מועמד', target: sub.name }
       );
       setSaving(false);
-      if (res.ok) {
-        (data.candidates as Candidate[]) = nextCandidates;
-        onRefresh();
-        showToast(`✓ נקלט מועמד חדש: ${sub.name}`, 'success');
-      } else {
+      if (!res.ok) {
         showToast('שגיאה בשמירה: ' + (res.error || 'לא ידוע'), 'error');
+        return { ok: false, error: res.error || 'save failed' };
+      }
+      (data.candidates as Candidate[]) = nextCandidates;
+      onRefresh();
+      showToast(`✓ נקלט מועמד חדש: ${sub.name}`, 'success');
+      return { ok: true };
+    }
+  }
+
+  /**
+   * A candidate withdraws.
+   *
+   * Booking a slot adds one to booked_count and writes the name on it. Until now
+   * nothing ever subtracted — there was no −1 anywhere in the system — so a
+   * withdrawal left the time occupied by someone who was not coming, and the only
+   * way to reopen it was to delete the slot in ניהול and build it again by hand.
+   *
+   * The slot is released FIRST and everything stops if that fails. The order is
+   * deliberate: the state worth avoiding is a deleted candidate whose slot is
+   * still held, which is exactly the mess this exists to clear.
+   *
+   * The slot is identified by day, start time and the name it was booked under.
+   * A candidate stores their interview time as free text, not as a reference to
+   * the row, so this is a match rather than a lookup — and when more than one row
+   * fits, it refuses and says so instead of guessing. Releasing the wrong slot
+   * would let two people book the same interview.
+   */
+  async function handleCancelInterview(c: Candidate) {
+    const day = (c.interviewDate || '').slice(0, 10);
+    const startTime = (c.interviewTime || '').split(/[-–]/)[0].trim().slice(0, 5);
+
+    const { data: rows, error: readErr } = await supabase
+      .from('public_interview_slots')
+      .select('id, date, start_time, end_time, capacity, booked_count, booked_by')
+      .eq('date', day);
+    if (readErr) {
+      showToast('לא ניתן לקרוא את מועדי הראיון: ' + readErr.message, 'error');
+      return;
+    }
+
+    const held = (rows || []).filter((r: any) => (r.booked_count || 0) > 0);
+    const byTime = startTime
+      ? held.filter((r: any) => String(r.start_time || '').slice(0, 5) === startTime)
+      : held;
+    const byName = byTime.filter((r: any) => normName(r.booked_by || '') === normName(c.name));
+    const match: any = byName.length === 1 ? byName[0] : (byTime.length === 1 ? byTime[0] : null);
+    const ambiguous = !match && byTime.length > 1;
+
+    const lost: string[] = [];
+    if (c.interviewConducted) lost.push('סימון "ראיון בוצע"');
+    if (c.evalScore != null || c.evalEnglish || c.evalMotivation || c.evalCommunication || c.evalCommitment || c.evalAcquaintance) lost.push('ציוני ההערכה');
+    if (c.interviewSummary) lost.push('סיכום הראיון');
+    if (c.interviewResult === 'passed' || c.interviewResult === 'failed') lost.push('תוצאת הראיון');
+
+    const slotLine = match
+      ? `• המשבצת ${day} ${String(match.start_time).slice(0, 5)}–${String(match.end_time).slice(0, 5)} תשוחרר ותהיה פנויה להרשמה`
+      : ambiguous
+        ? `• ⚠️ נמצאו ${byTime.length} משבצות תפוסות באותו מועד — לא ניתן לזהות איזו שייכת ל${c.name}, ולכן אף אחת לא תשוחרר. שחרור ידני: ניהול → מועדי ראיון`
+        : `• לא נמצאה משבצת תפוסה בתאריך ${day || '—'} — ייתכן שכבר שוחררה`;
+
+    const warning =
+      `לבטל את הראיון של ${c.name}?\n\n` +
+      `${slotLine}\n` +
+      `• ההגשה תסומן כמבוטלת (הקבצים יישמרו)\n` +
+      `• כרטיס המועמד/ת יימחק` +
+      (lost.length ? `, והנתונים הבאים יימחקו:\n  · ${lost.join('\n  · ')}` : '') +
+      `\n\n(שחזור אפשרי מגיבויי המערכת — מסך ניהול → גרסאות)`;
+    if (!confirm(warning)) return;
+
+    // ── 1. Release the slot, guarded ──────────────────────────────────────────
+    // The write only lands if booked_count is still what we read. If someone
+    // booked in the meantime the update matches nothing, and we stop rather than
+    // overwrite their booking with a stale number.
+    if (match) {
+      const next = Math.max(0, (match.booked_count || 0) - 1);
+      const { data: updated, error: relErr } = await supabase
+        .from('public_interview_slots')
+        .update({ booked_count: next, booked_by: null })
+        .eq('id', match.id)
+        .eq('booked_count', match.booked_count)
+        .select('id');
+      if (relErr) {
+        showToast('שחרור המשבצת נכשל — הביטול הופסק: ' + relErr.message, 'error');
+        return;
+      }
+      if (!updated || updated.length === 0) {
+        showToast('המשבצת השתנתה באותו רגע — הביטול הופסק. נסה/י שוב', 'error');
+        return;
       }
     }
+
+    // ── 2. Mark the submission cancelled (best effort) ────────────────────────
+    // Failing here is not worth aborting an already-released slot for; it only
+    // means the inbox shows her as taken-in-without-a-card until someone tidies.
+    const today = new Date().toISOString().slice(0, 10);
+    let subRow: any = null;
+    if (c.email) {
+      const { data } = await supabase.from('candidate_submissions')
+        .select('id, notes').ilike('email', c.email).order('submitted_at', { ascending: false }).limit(1);
+      subRow = data?.[0] || null;
+    }
+    if (!subRow && c.name) {
+      const { data } = await supabase.from('candidate_submissions')
+        .select('id, notes').ilike('name', c.name).order('submitted_at', { ascending: false }).limit(1);
+      subRow = data?.[0] || null;
+    }
+    if (subRow) {
+      await supabase.from('candidate_submissions')
+        .update({ notes: markNotesCancelled(subRow.notes, today) })
+        .eq('id', subRow.id);
+    }
+
+    // ── 3. Remove the candidate ───────────────────────────────────────────────
+    await persistAndRefresh(all.filter(x => x.id !== c.id),
+      match ? '✓ הראיון בוטל והמשבצת שוחררה' : '✓ הראיון בוטל',
+      { action: 'ביטול ראיון', entity: 'מועמד', target: c.name });
   }
 
   async function handleRevertToSubmission(c: Candidate) {
@@ -661,7 +814,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
         </div>
       )}
 
-      <SubmissionsInbox onAcceptIntoCandidates={handleAcceptSubmissionIntoCandidates} />
+      <SubmissionsInbox
+        onAcceptIntoCandidates={handleAcceptSubmissionIntoCandidates}
+        hasCandidate={sub => !!findCandidateForSubmission(all, sub)}
+      />
 
       <div className="mono text-[12px] uppercase tracking-[0.16em] flex items-center gap-4 flex-wrap mb-10" style={{ color: 'var(--text-soft)' }}>
         <RefreshButton onRefresh={onRefresh} />
@@ -895,6 +1051,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   setSelectedIds(next);
                 }}
                 onRevert={() => handleRevertToSubmission(c)}
+                onCancelInterview={c.interviewDate ? () => handleCancelInterview(c) : undefined}
               />
             ))}
           </ul>
@@ -1017,10 +1174,12 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert }: {
+function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert, onCancelInterview }: {
   c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void;
   onRevert?: () => void;
+  /** Only supplied when there is an interview to cancel. */
+  onCancelInterview?: () => void;
 }) {
   const r = c.interviewResult || 'pending';
   const conductedPending = !!c.interviewConducted && r === 'pending';
@@ -1142,6 +1301,17 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
               style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
               title="החזר לתיבת ההגשות">
               ↩ הגשות
+            </button>
+          )}
+          {onCancelInterview && (
+            <button
+              type="button"
+              data-cancel-interview
+              onClick={e => { e.stopPropagation(); onCancelInterview(); }}
+              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
+              title="המועמד/ת ביטל/ה — שחרור משבצת הראיון ומחיקת הכרטיס">
+              ✕ בטל ראיון
             </button>
           )}
           {c.interviewDate && (
