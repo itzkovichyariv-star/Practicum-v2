@@ -13,9 +13,13 @@
  * page also has non-row checkboxes (e.g. the "show processed" filter) — clicking
  * those is not a selection and previously produced a false "broken" reading.
  */
-import { Audit, appReady } from '../audit-lib.mjs';
+import { Audit, appReady, seedCandidate } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'candidate-selection' });
+// Needs a candidate row to click. Without one this did not fail — it CRASHED on a
+// 30s locator timeout, which takes the whole gate down with a stack trace instead of a
+// verdict (2026-08-11, once the candidates list emptied).
+const seeded = await seedCandidate();
 await audit.setup();
 
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
@@ -145,5 +149,6 @@ audit.log('INBOX-select: submission checkboxes (incl. processed) are not disable
   }
 }
 
+await seeded.remove();
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);

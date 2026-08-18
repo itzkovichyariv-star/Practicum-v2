@@ -153,6 +153,37 @@ export async function mutateData(mutate, { tries = 10, orgId = 'default' } = {})
   throw new Error(`mutateData: lost the CAS race after ${tries} tries (${lastErr})`);
 }
 
+/**
+ * Seed one candidate for cells that need a row to work on, and hand back its remover.
+ *
+ * Cells 12 / 21 / 22 drive the candidates screen and had always found real rows there.
+ * On 2026-08-11 that stopped being true — the fixtures were purged, every remaining
+ * candidate had been converted to a student (so the list hides them as archived), and the
+ * one active candidate was removed. All three then reported FAILURES: "opened=false",
+ * which reads as a broken popover rather than an empty screen. A cell that depends on
+ * whoever happens to be mid-process is not testing the feature; it is testing the roster.
+ */
+export async function seedCandidate(over = {}) {
+  const ts = Date.now();
+  const id = over.id || `audit-cand-seed-${ts}`;
+  const rows = await sbQuery('practicum_data', { select: 'data' });
+  const d = rows?.[0]?.data || {};
+  const course = (d.courses || []).find((c) => c?.type === 'practicum' && c?.year) || (d.courses || [])[0];
+  const candidate = {
+    id, name: `מועמד/ת בדיקה ${ts}`, email: `${id}@audit.local`, phone: '050-1234567',
+    courseId: course?.id, year: course?.year, interviewResult: 'pending',
+    interviewSummary: '', notes: '', ...over,
+  };
+  await mutateData((data) => ({ ...data, candidates: [...(data.candidates || []), candidate] }));
+  return {
+    ...candidate,
+    context: { courseId: course?.id, year: course?.year },
+    remove: () => mutateData((data) => ({
+      ...data, candidates: (data.candidates || []).filter((c) => c.id !== id),
+    })).catch(() => {}),
+  };
+}
+
 export async function sbInsert(table, row, { headers = {} } = {}) {
   const url = `${SUPABASE_URL}/rest/v1/${table}`;
   const r = await fetch(url, {

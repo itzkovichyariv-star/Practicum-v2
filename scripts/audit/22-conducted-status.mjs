@@ -10,9 +10,13 @@
  *
  * Read-only — opens an editor and inspects options, no selection, no DB writes.
  */
-import { Audit, appReady } from '../audit-lib.mjs';
+import { Audit, appReady, seedCandidate } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'conducted-status' });
+// This cell needs a candidate on screen. It used to rely on whoever happened to be
+// mid-process, and when the list emptied out (2026-08-11) it reported a FAILURE rather
+// than an absence — "opened=false" reads as a broken control, not an empty screen.
+const seeded = await seedCandidate();
 await audit.setup();
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
@@ -55,5 +59,6 @@ audit.log('STATUS-option: the editor status dropdown offers "ראיון בוצע
   });
 }
 
+await seeded.remove();
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);

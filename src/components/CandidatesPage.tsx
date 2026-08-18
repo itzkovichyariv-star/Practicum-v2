@@ -696,6 +696,48 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
       { action: 'ביטול ראיון', entity: 'מועמד', target: c.name });
   }
 
+  /**
+   * A candidate who is not continuing and has NO interview booked.
+   *
+   * handleCancelInterview only exists for someone with a slot to release, so a candidate
+   * who never booked one had no way off this list from the row at all — the only removal
+   * was the 🗑 inside the card, and the row's one visible control sent her BACKWARDS to
+   * the pre-intake inbox. Yariv, on רננה (2026-08-11): "החץ המעוקל מעביר אותה בחזרה
+   * לתיבה לפני קליטה אז לא בטוח שזו הדרך הנכונה." He was right — that is a different act.
+   *
+   * Same ending as the interview path, minus the slot: the submission is marked cancelled
+   * so the inbox agrees with the list, the files are kept, and the card goes.
+   */
+  async function handleLeaveNoInterview(c: Candidate) {
+    if (!confirm(
+      `${c.name} לא ממשיך/ה בתהליך?\n\n` +
+      `• כרטיס המועמד/ת יימחק\n` +
+      `• ההגשה תסומן כמבוטלת (הקבצים יישמרו)\n\n` +
+      `(שחזור אפשרי מגיבויי המערכת — מסך ניהול → גרסאות)`)) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    let subRow: any = null;
+    if (c.email) {
+      const { data } = await supabase.from('candidate_submissions')
+        .select('id, notes').ilike('email', c.email).order('submitted_at', { ascending: false }).limit(1);
+      subRow = data?.[0] || null;
+    }
+    if (!subRow && c.name) {
+      const { data } = await supabase.from('candidate_submissions')
+        .select('id, notes').ilike('name', c.name).order('submitted_at', { ascending: false }).limit(1);
+      subRow = data?.[0] || null;
+    }
+    if (subRow) {
+      await supabase.from('candidate_submissions')
+        .update({ notes: markNotesCancelled(subRow.notes, today) })
+        .eq('id', subRow.id);
+    }
+
+    await persistAndRefresh(all.filter(x => x.id !== c.id),
+      `✓ ${c.name} הוסר/ה מרשימת המועמדים`,
+      { action: 'לא ממשיך/ה בתהליך', entity: 'מועמד', target: c.name });
+  }
+
   async function handleRevertToSubmission(c: Candidate) {
     // ── Safety guard (2026-06-11, after עינה נוימן's interview data was lost) ──
     // Reverting DELETES the candidate card; re-intake rebuilds it from the bare
@@ -1051,7 +1093,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   setSelectedIds(next);
                 }}
                 onRevert={() => handleRevertToSubmission(c)}
-                onCancelInterview={c.interviewDate ? () => handleCancelInterview(c) : undefined}
+                onLeaveProcess={() => (c.interviewDate ? handleCancelInterview(c) : handleLeaveNoInterview(c))}
               />
             ))}
           </ul>
@@ -1174,12 +1216,14 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert, onCancelInterview }: {
+function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert, onLeaveProcess }: {
   c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void;
   onRevert?: () => void;
-  /** Only supplied when there is an interview to cancel. */
-  onCancelInterview?: () => void;
+  /** A candidate who is not continuing. Releases the interview slot when there is one,
+   *  and removes the card either way — a candidate with no interview booked previously
+   *  had no way off this list at all. */
+  onLeaveProcess?: () => void;
 }) {
   const r = c.interviewResult || 'pending';
   const conductedPending = !!c.interviewConducted && r === 'pending';
@@ -1282,7 +1326,11 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
         </div>
 
         {/* Line 3: contact info · action icons */}
-        <div className="flex items-center gap-2 pr-5" onClick={e => e.stopPropagation()}>
+        {/* wraps: the row gained a permanently-visible "לא ממשיך/ה" control when the
+            hover-gating came off, and with everything `shrink-0` that pushed a 390px
+            screen 3px wide. Wrapping costs a line on a narrow phone and keeps every
+            control reachable, which is the point of removing the hover in the first place. */}
+        <div className="flex items-center gap-2 pr-5 flex-wrap" onClick={e => e.stopPropagation()}>
           <div className="text-[12.5px] flex flex-wrap gap-x-3 gap-y-0.5 flex-1 min-w-0" style={{ color: 'var(--text-soft)' }}>
             {/* A phone number is one token to a human and useless broken across two
                 lines ("058-" / "7778888"), so it never wraps — it is short and fixed
@@ -1293,25 +1341,33 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
             {c.email && <span className="truncate" style={{ maxWidth: 'clamp(120px, 40vw, 220px)' }}>{c.email}</span>}
             {c.interviewDate && <span className="whitespace-nowrap">· {new Date(c.interviewDate).toLocaleDateString('he-IL')}</span>}
           </div>
+          {/* NOT hover-gated. These were `opacity-0 group-hover:opacity-100`, which means
+              they never appear on a phone — there is no hover — so on the device Yariv
+              actually works on, the row offered no way to remove anyone. He hit it on
+              רננה (2026-08-11): "לא רואה אפשרות למחוק אותה מרשימת המועמדים". The action
+              existed and was invisible, which is worse than missing: it reads as absent. */}
           {onRevert && (
             <button
               type="button"
+              data-revert-submission
               onClick={e => { e.stopPropagation(); onRevert(); }}
-              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border shrink-0"
               style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
-              title="החזר לתיבת ההגשות">
+              title="החזר לתיבת ההגשות — לפני קליטה">
               ↩ הגשות
             </button>
           )}
-          {onCancelInterview && (
+          {onLeaveProcess && (
             <button
               type="button"
               data-cancel-interview
-              onClick={e => { e.stopPropagation(); onCancelInterview(); }}
-              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              style={{ borderColor: 'var(--divider)', color: 'var(--text-soft)' }}
-              title="המועמד/ת ביטל/ה — שחרור משבצת הראיון ומחיקת הכרטיס">
-              ✕ בטל ראיון
+              onClick={e => { e.stopPropagation(); onLeaveProcess(); }}
+              className="mono text-[10px] uppercase tracking-[0.12em] font-semibold px-2 py-1 rounded-full border shrink-0"
+              style={{ borderColor: '#b45309', color: '#b45309' }}
+              title={c.interviewDate
+                ? 'המועמד/ת לא ממשיך/ה — משבצת הראיון תשוחרר והכרטיס יימחק'
+                : 'המועמד/ת לא ממשיך/ה — הכרטיס יימחק'}>
+              ✕ לא ממשיך/ה
             </button>
           )}
           {c.interviewDate && (
@@ -1350,7 +1406,11 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
       <Popover pinned={pinned} onRequestClose={onTogglePin}>
         <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
           <div>
-            <div className="serif text-[22px] leading-[1.15]" style={{ color: 'var(--ink)' }}>{c.name}</div>
+            {/* A name is user data and can be long; without a break rule it pushed the
+                popover — and the page — past the screen. Same fix as the students list
+                (2026-08-11); this is the candidates page's own copy of that popover. */}
+            <div className="serif text-[22px] leading-[1.15]"
+              style={{ color: 'var(--ink)', overflowWrap: 'anywhere' }}>{c.name}</div>
             <div className="mono text-[10.5px] uppercase tracking-[0.14em] mt-1" style={{ color: 'var(--accent)' }}>
               שלב: {stage}
             </div>

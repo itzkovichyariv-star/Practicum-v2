@@ -15,9 +15,13 @@
  *
  * Read-only (opens/closes an editor, no DB writes).
  */
-import { Audit, appReady } from '../audit-lib.mjs';
+import { Audit, appReady, seedCandidate } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'edit-target' });
+// This cell needs a candidate on screen. It used to rely on whoever happened to be
+// mid-process, and when the list emptied out (2026-08-11) it reported a FAILURE rather
+// than an absence — "opened=false" reads as a broken control, not an empty screen.
+const seeded = await seedCandidate();
 await audit.setup();
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
 await audit.page.setViewportSize({ width: 1440, height: 900 });
@@ -83,5 +87,6 @@ audit.log('EDIT-rapid-click: clicking the pencil 2× fast leaves the editor OPEN
   }
 }
 
+await seeded.remove();
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);

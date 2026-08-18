@@ -9,9 +9,13 @@
  * Read-only (opens/closes an editor, no edits → no DB writes). Guards the
  * "tried to switch screens, buttons don't respond — modal covered the nav" report.
  */
-import { Audit, appReady } from '../audit-lib.mjs';
+import { Audit, appReady, seedCandidate } from '../audit-lib.mjs';
 
 const audit = new Audit({ name: 'modal-dismiss' });
+// Needs a candidate row to click. Without one this did not fail — it CRASHED on a
+// 30s locator timeout, which takes the whole gate down with a stack trace instead of a
+// verdict (2026-08-11, once the candidates list emptied).
+const seeded = await seedCandidate();
 await audit.setup();
 await audit.page.evaluate(() => localStorage.setItem('practicum_v2_page', 'candidates'));
 await audit.page.goto(`${audit.baseUrl}/`, { waitUntil: 'networkidle' });
@@ -109,5 +113,6 @@ audit.log('MODAL-recycle: repeated open/close leaves the page unlocked + interac
   });
 }
 
+await seeded.remove();
 await audit.teardown();
 process.exit(audit.cells.some((c) => c.pass === false) ? 1 : 0);
