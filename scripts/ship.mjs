@@ -88,6 +88,39 @@ if (!up) {
 }
 console.log(`✓ dev server up on ${URL_} after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
 
+// A 200 from the shell is not readiness. Astro answers `/` immediately while Vite is
+// still optimising dependencies, and a page requested during that window gets
+// `504 (Outdated Optimize Dep)` for its island — the HTML arrives, nothing hydrates.
+// The gate then ran against a blank app and reported REVIEW/ORG/SLOT/EMAIL as broken:
+// always the EARLIEST suites, because they are the ones that arrive during the window
+// (2026-08-18, four runs lost to it). So warm it with a real browser and wait for the
+// app to actually appear before letting the gate start.
+async function hydrated() {
+  const { chromium } = await import('@playwright/test');
+  const b = await chromium.launch();
+  try {
+    const pg = await (await b.newContext()).newPage();
+    for (let i = 0; i < 20; i++) {
+      await pg.goto(URL_ + '/', { waitUntil: 'networkidle' }).catch(() => {});
+      const ok = await pg.evaluate(() => document.body.innerText.trim().length > 40).catch(() => false);
+      if (ok) return true;
+      await new Promise(r => setTimeout(r, 1500));
+    }
+    return false;
+  } finally { await b.close().catch(() => {}); }
+}
+
+process.stdout.write('  warming the app (waiting for the island to hydrate)… ');
+const warm = await hydrated();
+console.log(warm ? 'ready' : 'STILL BLANK');
+if (!warm) {
+  console.error(`\n✗ the server answers but the app never rendered on ${URL_}.`);
+  console.error('  Usually a stale Vite cache. Fix and retry:');
+  console.error('    rm -rf node_modules/.vite && npm run ship');
+  stopDev();
+  process.exit(2);
+}
+
 if (checkOnly) {
   console.log('\n--check: server proven reachable. Not running the gate. Stopping.');
   stopDev();

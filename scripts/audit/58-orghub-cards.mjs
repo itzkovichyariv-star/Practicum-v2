@@ -76,7 +76,9 @@ async function openEditor(name) {
   const row = audit.page.locator('li').filter({ hasText: name }).first();
   if (!(await row.isVisible().catch(() => false))) return false;
   await row.getByTitle('ערוך').first().click().catch(() => {});
-  await audit.page.waitForTimeout(1600);
+  // Wait for the editor, not for a guess at how long it takes to mount. This suite was
+  // named FLAKY by the gate (2026-08-18) — passing only on the retry.
+  await audit.page.waitForSelector('button[aria-label="סגור"]', { timeout: 20000 }).catch(() => {});
   return audit.page.evaluate(() => !!document.querySelector('button[aria-label="סגור"]'));
 }
 

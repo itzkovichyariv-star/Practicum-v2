@@ -45,7 +45,10 @@ if(seedOk){
   // filter to our student
   const search=audit.page.locator('input[type="search"]').first();
   await search.fill(STU_NAME).catch(()=>{});
-  await audit.page.waitForTimeout(800);
+  // Wait for the filtered row to appear rather than for 800ms — this suite was named
+  // FLAKY by the gate (2026-08-18), passing only on the retry.
+  await audit.page.locator('li').filter({ hasText: STU_NAME }).first()
+    .waitFor({ state: 'visible', timeout: 20000 }).catch(()=>{});
   const callBtn=audit.page.locator(`button[title="התקשר לארגון ${EMP_NAME}"]`).first();
   const waBtn=audit.page.locator(`button[title="WhatsApp לארגון ${EMP_NAME}"]`).first();
   const mailBtn=audit.page.locator(`button[title="מייל לארגון ${EMP_NAME}"]`).first();

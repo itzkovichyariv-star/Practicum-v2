@@ -94,7 +94,10 @@ const openEditor = async () => {
   const editBtn = row.getByTitle('ערוך').first();
   if (await editBtn.isVisible().catch(() => false)) await editBtn.click();
   else { await row.hover(); await audit.page.waitForTimeout(300); await row.getByTitle('ערוך').first().click().catch(() => {}); }
-  await audit.page.waitForTimeout(1500);
+  // Wait for the editor itself. 1500ms was enough on an idle machine and not enough
+  // inside a full gate run, which is why this suite failed twice under load and passed
+  // every time on its own (2026-08-18).
+  await audit.page.waitForSelector('button[aria-label="סגור"]', { timeout: 20000 }).catch(() => {});
   return audit.page.evaluate(() => !!document.querySelector('button[aria-label="סגור"]'));
 };
 
@@ -102,8 +105,10 @@ const openEditor = async () => {
 let approved1 = false, firstChoiceOk = false, privateEmpOk = false, dismissedOk = false;
 if (seedOk) {
   await openEditor();
-  await audit.page.waitForTimeout(2500); // pendingCv fetch
+  // The pendingCv fetch populates this button; wait for IT rather than for a guess at
+  // how long the fetch takes.
   const approveBtn = audit.page.locator('button').filter({ hasText: 'כבחירה ראשונה' }).first();
+  await approveBtn.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
   if (await approveBtn.count() > 0) {
     await approveBtn.scrollIntoViewIfNeeded().catch(() => {});
     await approveBtn.click().catch(() => {});
