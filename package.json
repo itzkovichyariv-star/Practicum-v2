@@ -17,6 +17,7 @@
     "deploy": "astro build && /Users/yarivitzkovich/Code/family-tasks/node_modules/.bin/wrangler pages deploy dist --project-name practicum-v2 --commit-dirty=true --commit-message \"automated deploy\"",
     "ship": "node scripts/ship.mjs",
     "test": "playwright test",
+  "test:unit": "playwright test --config=playwright.unit.config.ts",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:report": "playwright show-report e2e-report"
