@@ -22,8 +22,7 @@
 
 import {
   buildUnifiedOrgList, applyUnifiedList, reconcileEmployerCapacity, renderTemplate,
-  buildWhatsAppUrl, buildMailtoUrl,
-} from './placement';
+  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence } from './placement';
 import type { Employer, VacancySlot, Dispatch } from './supabase';
 
 export type DispatchChannel = 'whatsapp' | 'email';
@@ -136,8 +135,12 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     const rem = input.reminder;
     const dispatchId = input.newId ? input.newId() : `d-${target.id}`;
     const origin = input.origin || (typeof window !== 'undefined' ? window.location.origin : '');
+    // The link is a single point of failure — it can be stripped by a mail client,
+    // wrapped by a plain-text renderer, or point at a dispatch whose confirmation was
+    // never given. contactBack is the human route back when it fails.
     const ctxR = { ...ctx, daysWaiting: String(rem?.daysWaiting ?? ''),
-      responseLink: origin ? `${origin}/r?t=${dispatchId}` : '' };
+      responseLink: origin ? `${origin}/r?t=${dispatchId}` : '',
+      contactBack: contactBackSentence(settings) };
     let url = '', messageSnapshot = '', missingContact = false;
     if (channel === 'whatsapp') {
       messageSnapshot = renderTemplate(
