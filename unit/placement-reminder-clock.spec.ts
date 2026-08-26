@@ -52,6 +52,19 @@ test('THE FIX: a confirmed reminder restarts the clock and drops the תזכר bu
   expect(st?.action?.id).not.toBe('remind');
 });
 
+test('THE POINT: after reminding, the row says the ball is with the employer', () => {
+  // Yariv 2026-08-26: "מדוע בפרקטיקום אם הזכרתי למעסיק אני לא אראה עדכון שאומר
+  // שהכדור אצל המעסיק". This is the assertion that answers it — `turn` is what the
+  // row's coloured dot reads (TURN_LABEL.employer === 'אצל המעסיק'). Before the fix a
+  // reminded row stayed turn:'ours' with a red dot, still demanding action from us.
+  const before = statusOf(student(), [dispatch()]);
+  expect(before?.turn).toBe('ours');
+
+  const after = statusOf(student(), [dispatch({ remindedAt: daysAgo(1), reminders: 1 })]);
+  expect(after?.turn).toBe('employer');
+  expect(after?.headline).toContain('ממתין לתשובת המעסיק');
+});
+
 test('the clock restarts, it does not stop — silence past the threshold AGAIN asks to remind', () => {
   const st = statusOf(student(), [dispatch({ sentAt: daysAgo(40), remindedAt: daysAgo(SILENCE_DAYS + 1), reminders: 1 })]);
   expect(st?.key).toBe('sent_stale');
