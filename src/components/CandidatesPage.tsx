@@ -18,16 +18,16 @@ import ExcelImport from './ExcelImport';
 //   - Resend HTML (Edge Function) — auto-send when course.autoSendAcceptance=true
 import { openMailto } from '../lib/openMailto';
 import { sendAcceptanceEmail } from '../lib/emailApi';
-
-/** Archived = a student record already exists for this candidate. Single source
- *  of truth for the toggle, the pool, the counts and the row's own marker, so
- *  "in the archive" can never mean one thing in the tab bar and another in the
- *  list. Deliberately derived rather than a stored flag: `convertedToStudentId`
- *  is already written and cleared by the conversion and its reversal, so there
- *  is no second field to keep in step. */
-export const isArchivedCandidate = (c: Candidate): boolean => !!c.convertedToStudentId;
+import CandidateStrip from './CandidateStrip';
+import type { CandidateAction } from '../lib/candidateStatus';
 
 const normName = (n: string) => (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+// The enrolment rule lives in lib/candidateStatus so it can be unit-tested without
+// importing this component tree. Re-exported here because this module has been its
+// public home since it was written, and the dashboard imports it by that name.
+export { findStudentForCandidate, isArchivedCandidate } from '../lib/candidateStatus';
+import { isArchivedCandidate } from '../lib/candidateStatus';
 
 /**
  * The candidate a submission already belongs to, or undefined.
@@ -235,6 +235,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   }
 
   const all = data.candidates || [];
+  const students: Student[] = (data.students || []) as Student[];
   const courses = data.courses || [];
 
   const years = useMemo(() => {
@@ -248,13 +249,13 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const scoped = useMemo(() => all.filter(c => sameContext(c, context, courses)), [all, context, courses]);
 
   // A candidate is archived once a student record exists for them.
-  const archivedCount = useMemo(() => scoped.filter(isArchivedCandidate).length, [scoped]);
+  const archivedCount = useMemo(() => scoped.filter(c => isArchivedCandidate(c, students)).length, [scoped, students]);
   // The pool every count and filter below works on. Hiding the archive is not a
   // filter on top of the others — it changes what "all" means, so the ramzor
   // tabs keep agreeing with the list they sit above in both states.
   const pool = useMemo(
-    () => (showArchive ? scoped : scoped.filter(c => !isArchivedCandidate(c))),
-    [scoped, showArchive],
+    () => (showArchive ? scoped : scoped.filter(c => !isArchivedCandidate(c, students))),
+    [scoped, showArchive, students],
   );
 
   const filtered = useMemo(() => {
@@ -447,6 +448,30 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     const alreadySent = previous?.rejectionEmailSent;
     if (nowFailed && wasntFailed && !alreadySent && c.email) {
       openEmailConfirm('rejection', [{ id: c.id, name: c.name, email: c.email }]);
+    }
+  }
+
+  /** The strip proposes; the page disposes. Each action routes to the flow that
+   *  already owns it — no action invents a new path to a state the card can already
+   *  reach, which is what would let the two drift apart.
+   *
+   *  collect_docs / book_interview / mark_conducted / decide all open the card,
+   *  because the card is where those fields live. That is not a stub: the value of
+   *  the strip is knowing WHICH of them is the next thing, on a list of 80 people. */
+  function handleStripAction(c: Candidate, action: CandidateAction) {
+    switch (action.id) {
+      case 'convert':
+        handleConvertToStudent(c);
+        return;
+      case 'send_acceptance':
+      case 'send_rejection': {
+        if (!c.email) { showToast(`אין כתובת מייל ל‑${c.name}`, 'error'); return; }
+        openEmailConfirm(action.id === 'send_acceptance' ? 'acceptance' : 'rejection',
+          [{ id: c.id, name: c.name, email: c.email }]);
+        return;
+      }
+      default:
+        setEditing(c);
     }
   }
 
@@ -1092,6 +1117,8 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
                   next.has(c.id) ? next.delete(c.id) : next.add(c.id);
                   setSelectedIds(next);
                 }}
+                enrolled={isArchivedCandidate(c, students)}
+                onStripAction={a => handleStripAction(c, a)}
                 onRevert={() => handleRevertToSubmission(c)}
                 onLeaveProcess={() => (c.interviewDate ? handleCancelInterview(c) : handleLeaveNoInterview(c))}
               />
@@ -1216,10 +1243,16 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   );
 }
 
-function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert, onLeaveProcess }: {
-  c: Candidate; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
+function CandidateRow({ c, enrolled, onEdit, pinned, onTogglePin, selected, onToggleSelect, onRevert, onLeaveProcess, onStripAction }: {
+  c: Candidate;
+  /** Whether a student record already exists for this person. Computed once by the
+   *  page against the whole students array — the row must not re-derive it, or the
+   *  marker and the pool could disagree about the same candidate. */
+  enrolled: boolean;
+  onEdit: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void;
   onRevert?: () => void;
+  onStripAction?: (action: CandidateAction) => void;
   /** A candidate who is not continuing. Releases the interview slot when there is one,
    *  and removes the card either way — a candidate with no interview booked previously
    *  had no way off this list at all. */
@@ -1230,7 +1263,7 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
   const label = r === 'passed' ? 'עבר' : r === 'failed' ? 'לא התקבל' : conductedPending ? 'ראיון בוצע' : 'ממתין';
   const isPass = r === 'passed';
   const hasDocs = hasSubmitted(c);
-  const stage = c.convertedToStudentId ? 'הועבר לסטודנטים' :
+  const stage = enrolled ? 'הועבר לסטודנטים' :
                 isPass ? 'עבר ראיון' :
                 r === 'failed' ? 'לא התקבל' :
                 conductedPending ? 'ראיון בוצע — בהערכה' :
@@ -1238,13 +1271,13 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
                 hasDocs ? 'מסמכים הוגשו' : 'ממתין/ה למסמכים';
 
   const dotStatus: DotStatus =
-    c.convertedToStudentId ? 'green' :  // converted to student → always green regardless of result
+    enrolled ? 'green' :  // a student record exists → always green regardless of result
     r === 'failed' ? 'red' :
     r === 'passed' ? 'green' :
     hasDocs ? 'amber' :   // applied — CV + questionnaire — so: visible, ready for interview
     'gray';               // no submission at all: typed in by hand with nothing attached
 
-  const archived = isArchivedCandidate(c);
+  const archived = enrolled;
 
   // Same three handlers the student row uses, so the two rows behave identically:
   // tel: on a touch device, copy-and-toast on desktop where tel: is a silent no-op.
@@ -1299,6 +1332,17 @@ function CandidateRow({ c, onEdit, pinned, onTogglePin, selected, onToggleSelect
             style={{ color: isPass ? 'var(--bg)' : 'var(--accent)', background: isPass ? 'var(--accent)' : 'rgba(122,30,43,0.08)' }}>
             {label}
           </span>
+        </div>
+
+        {/* The status strip — the same architecture the student row uses: one sentence,
+            whose turn it is, and the single next action, with the evaluation folded
+            underneath. Yariv 2026-08-22: candidates "don't have a rich view that is
+            similar to the one they have as students", and the data to fill one was
+            already there (five evaluation scales, a score, a nine-question form) with
+            nowhere to show it. It sits above the chips because on a list of eighty
+            people the first question is always "which of these is mine to do now". */}
+        <div className="pr-5" onClick={e => e.stopPropagation()}>
+          <CandidateStrip candidate={c} enrolled={enrolled} onAction={onStripAction} />
         </div>
 
         {/* Line 2: the file chips — the two documents the candidacy turns on, open

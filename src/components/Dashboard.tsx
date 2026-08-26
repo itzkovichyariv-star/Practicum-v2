@@ -68,7 +68,7 @@ export default function Dashboard({
   // the SAME predicate — imported, not re-implemented, so they cannot diverge
   // again.
   const candidatesInScope = candidates.filter(c => sameContext(c, context, allCourses));
-  const scopedCandidates = candidatesInScope.filter(c => !isArchivedCandidate(c));
+  const scopedCandidates = candidatesInScope.filter(c => !isArchivedCandidate(c, students));
   const enrolledCandidates = candidatesInScope.length - scopedCandidates.length;
 
   // Which stat is expanded. Only one at a time — the panel replaces the reading
