@@ -350,9 +350,15 @@ export function migratePlacementData(data: PracticumData): PracticumData {
   // BUILDS fresh defaults carries no address either — that is where a brand-new
   // practicum lands, and it is exactly the case that must not need typing twice.
   // A value typed into placement settings still wins if one is ever set.
+  //
+  // SUPERVISOR FIRST, and that order matters. Yariv 2026-08-26: "אין רכז פרקטיקום פעיל
+  // ואני יכול להיות זמין עם המייל שלי". coordinatorEmail is the role that is currently
+  // vacant; supervisorEmail is him. Preferring the coordinator would have told every
+  // employer to chase a person who is not there — a dead end printed in every message,
+  // which is worse than the broken link this line exists to survive.
   {
     const ps2 = d.placementSettings as any;
-    const knownEmail = String((d as any)?.coordinatorEmail || (d as any)?.supervisorEmail || '').trim();
+    const knownEmail = String((d as any)?.supervisorEmail || (d as any)?.coordinatorEmail || '').trim();
     if (ps2 && knownEmail && !String(ps2.coordinatorEmail || '').trim()) {
       ps2.coordinatorEmail = knownEmail;
       changed = true;
