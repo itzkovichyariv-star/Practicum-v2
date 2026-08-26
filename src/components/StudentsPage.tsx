@@ -456,7 +456,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     // remains until the send is resolved.
     if (action.id === 'drop_org') {
       const orgName = (action as any).targetOrg as string | undefined;
-      if (!orgName) return;
+      if (!orgName) { showToast('לא זוהה הארגון להסרה — נסה/י מתוך הכרטיס', 'error'); return; }
       const res = dropOrg({ student, employers, orgName, userName });
       const nextStudents = all.map(x => x.id === student.id ? res.student : x);
       setSaving(true);
@@ -470,7 +470,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     }
     if (action.id === 'unsend') {
       const orgName = (action as any).targetOrg as string | undefined;
-      if (!orgName) return;
+      if (!orgName) { showToast('לא זוהה הארגון לשחרור — נסה/י מתוך הכרטיס', 'error'); return; }
       const res = unsendOrg({
         student, employers, dispatches: (data as any).dispatches || [],
         orgName, userName, mode: 'never_sent',

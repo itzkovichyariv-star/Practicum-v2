@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
-import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID } from '../lib/placementStatus';
+import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID , resolveActionTargets} from '../lib/placementStatus';
 import { openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
@@ -422,8 +422,10 @@ export default function PlacementStrip({ status, employers, onAction }: {
           onCancel={() => setConfirm(null)}
           onConfirm={(channel) => {
             const a = confirm; setConfirm(null);
-            onAction({ ...a, targetOrg: chosen?.orgName,
-              targetOrgs: chosenList.map(c => c.orgName), channel } as PlacementAction);
+            // An action that already names its target (the ✕ and ↻ stamp the clicked
+            // chip onto it) keeps it; the ticked selection fills in only when it does
+            // not. Overwriting unconditionally is what made those two buttons no-ops.
+            onAction({ ...a, ...resolveActionTargets(a as any, chosenList), channel } as PlacementAction);
           }}
         />
       )}
