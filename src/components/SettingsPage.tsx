@@ -162,9 +162,16 @@ const TEMPLATE_FIELDS: { key: keyof PlacementSettings; label: string; rows?: num
   { key: 'studentNotifyRejectedTemplateWhatsApp', label: 'WhatsApp — הודעה לסטודנט: נדחה',   rows: 5,  desc: 'נשלח לסטודנט אחרי דחיית הצעת מעסיק.' },
   { key: 'studentNotifyRejectedTemplateEmailSubject', label: 'אימייל נושא — הודעה לסטודנט: נדחה', rows: 1 },
   { key: 'studentNotifyRejectedTemplateEmailBody',    label: 'אימייל גוף — הודעה לסטודנט: נדחה',  rows: 6 },
+  // The human route back, for when the one-click link fails. One line each, and they
+  // feed {contactBack} in EVERY employer template — edit once, every message updates.
+  { key: 'coordinatorPhone',    label: 'טלפון הרכז/ת — לחזרה של מעסיק', rows: 1, desc: 'מופיע בכל הודעה למעסיק דרך {contactBack}. ריק = השורה לא נשלחת.' },
+  { key: 'coordinatorWhatsapp', label: 'וואטסאפ הרכז/ת', rows: 1, desc: 'ריק = משתמש בטלפון שלמעלה.' },
+  { key: 'coordinatorEmail',    label: 'מייל הרכז/ת', rows: 1 },
+  { key: 'publicSiteUrl',       label: 'כתובת האתר הציבורית', rows: 1, desc: 'הבסיס לקישור התשובה שנשלח למעסיק (למשל https://practicum-v2.pages.dev). ריק = הכתובת שממנה נשלח — שעלולה להיות localhost או תצוגה מקדימה.' },
 ];
 
 const TOKEN_HELP = [
+  '{contactBack}',
   '{studentName}', '{contactName}', '{employerName}', '{positionTitle}',
   '{courseName}', '{cvLink}', '{adminName}', '{scope}',
 ];

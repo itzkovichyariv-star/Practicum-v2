@@ -19,6 +19,7 @@ const DEFAULT_WHATSAPP = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
 לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}
+{contactBack}
 תודה,
 {adminName}`;
 
@@ -34,6 +35,34 @@ const RESPONSE_LINK_LINES: Record<string, string> = {
   reminderEmailBodyTemplate: 'לתשובה בלחיצה אחת: {responseLink}',
 };
 
+/** The line that offers a human route back, per template.
+ *
+ *  Yariv 2026-08-26, after an employer's one-click link failed: "ואמירה בהודעה שאפשר
+ *  לחזור אלי גם בטלפון או במייל או בווטסאפ". A link is a single point of failure —
+ *  it can be stripped by a mail client, mangled by line-wrap, or point at a dispatch
+ *  that was never confirmed — and when it fails the employer currently has nowhere
+ *  to go. This line means a broken link costs a phone call, not a lost placement. */
+const CONTACT_BACK_LINES: Record<string, string> = {
+  whatsappTemplate: '{contactBack}',
+  emailBodyTemplate: '{contactBack}',
+  reminderWhatsappTemplate: '{contactBack}',
+  reminderEmailBodyTemplate: '{contactBack}',
+};
+
+/** Render the coordinator's contact details as one sentence, or '' when none are
+ *  configured — an empty line is better than "reach me at: ". */
+export function contactBackSentence(settings: any): string {
+  const phone = String(settings?.coordinatorPhone || '').trim();
+  const email = String(settings?.coordinatorEmail || '').trim();
+  const wa = String(settings?.coordinatorWhatsapp || settings?.coordinatorPhone || '').trim();
+  const parts: string[] = [];
+  if (phone) parts.push(`בטלפון ${phone}`);
+  if (wa) parts.push(`בוואטסאפ ${wa}`);
+  if (email) parts.push(`במייל ${email}`);
+  if (!parts.length) return '';
+  return `אם הקישור לא נפתח — אפשר פשוט לחזור אליי ${parts.join(' · ')}.`;
+}
+
 // ── Reminder after silence ────────────────────────────────────────────────────
 // Sent when an employer has not responded. Deliberately short and un-pushy: it
 // re-states who and what, and offers the easy exit ("if it is not relevant, tell us")
@@ -43,6 +72,7 @@ const DEFAULT_REMINDER_WHATSAPP = `שלום {contactName},
 קישור לקו"ח: {cvLink}
 לתשובה בלחיצה אחת: {responseLink}
 גם "לא מתאים" עוזר לנו להתקדם.
+{contactBack}
 תודה,
 {adminName}`;
 
@@ -53,6 +83,7 @@ const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactName},
 קישור לקו"ח: {cvLink}
 לתשובה בלחיצה אחת: {responseLink}
 גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
+{contactBack}
 תודה רבה,
 {adminName}`;
 
@@ -60,6 +91,7 @@ const DEFAULT_EMAIL_BODY = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת קורס {courseName} באוניברסיטת אריאל.
 קישור לקו"ח: {cvLink}
 לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}
+{contactBack}
 תודה,
 {adminName}`;
 
@@ -289,6 +321,20 @@ export function migratePlacementData(data: PracticumData): PracticumData {
     for (const [key, line] of Object.entries(RESPONSE_LINK_LINES)) {
       const tpl = ps[key];
       if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{responseLink}')) continue;
+      const lines = tpl.split('\n');
+      const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
+      lines.splice(at === -1 ? lines.length : at, 0, line);
+      ps[key] = lines.join('\n');
+      changed = true;
+    }
+
+    // Same treatment for the human route back, and for the same reason: a template
+    // saved before this existed would otherwise offer the employer a link and nothing
+    // else. Placeholder rather than literal text, so the details stay editable in
+    // settings and one edit reaches every template.
+    for (const [key, line] of Object.entries(CONTACT_BACK_LINES)) {
+      const tpl = ps[key];
+      if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{contactBack}')) continue;
       const lines = tpl.split('\n');
       const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
       lines.splice(at === -1 ? lines.length : at, 0, line);

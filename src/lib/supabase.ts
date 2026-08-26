@@ -113,6 +113,19 @@ export type PlacementSettings = {
   studentNotifyRejectedTemplateWhatsApp: string;
   studentNotifyRejectedTemplateEmailSubject: string;
   studentNotifyRejectedTemplateEmailBody: string;
+  /** How an employer reaches the coordinator when the one-click link does not work.
+   *  Yariv 2026-08-26: "אמירה בהודעה שאפשר לחזור אלי גם בטלפון או במייל או בווטסאפ".
+   *  Optional so an unconfigured practicum simply omits the line rather than sending
+   *  an empty promise. */
+  coordinatorPhone?: string;
+  coordinatorEmail?: string;
+  /** Defaults to coordinatorPhone when blank — usually the same number. */
+  coordinatorWhatsapp?: string;
+  /** The origin every outgoing link is built on. `window.location.origin` bakes
+   *  whatever the coordinator's browser happened to be on into a link that lives in
+   *  someone else's inbox for weeks — localhost during a local run, a one-off
+   *  *.pages.dev during a preview. Set this once and the link is right regardless. */
+  publicSiteUrl?: string;
 };
 
 export type Student = {
