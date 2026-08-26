@@ -656,6 +656,39 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   };
 }
 
+/**
+ * Which organizations an action is about, once the confirmation is accepted.
+ *
+ * Yariv 2026-08-26: "רציתי לשחרר את הארגון והכפתור לא עובד ... לא עושה כלום", and
+ * separately "אפשר לשנות את הסטטוס ... מתוך הכרטיס אבל לא מחוצה לו". One cause.
+ *
+ * Two kinds of action reach the same dialog and they name their target differently:
+ *
+ *   per-chip  — ✕ drop_org and ↻ unsend. The chip that was clicked IS the target, and
+ *               it is stamped onto the action at click time.
+ *   row-level — send_cv and place_direct. The target is whatever the coordinator
+ *               ticked, which is why the strip keeps a selection at all.
+ *
+ * The dialog used to overwrite `targetOrg` with the ticked selection unconditionally.
+ * But the strip only builds a selection when the ROW's action is send_cv/place_direct
+ * (see `targets`), so on any other row — one asking to remind, say — the selection is
+ * empty, the stamped org was replaced by undefined, and the handler's `if (!orgName)
+ * return` swallowed the click. The button was wired the whole way down and lost its
+ * argument on the last step, which is why it failed silently and only outside the card.
+ *
+ * So: an action that already names its target keeps it. Selection fills in only when
+ * it does not.
+ */
+export function resolveActionTargets(
+  action: { targetOrg?: string },
+  chosen: { orgName: string }[],
+): { targetOrg: string | undefined; targetOrgs: string[] } {
+  const own = (action?.targetOrg || '').trim();
+  if (own) return { targetOrg: own, targetOrgs: [own] };
+  const list = (chosen || []).map(c => c.orgName).filter(Boolean);
+  return { targetOrg: list[0], targetOrgs: list };
+}
+
 export const TURN_LABEL: Record<PlacementTurn, string> = {
   ours: 'אצלנו',
   student: 'אצל הסטודנט/ית',
