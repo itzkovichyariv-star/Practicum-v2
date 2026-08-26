@@ -75,9 +75,21 @@ test('the email is taken from where the system already keeps it', () => {
   expect(contactBackSentence(out.placementSettings)).toContain('rachel@example.ac.il');
 });
 
-test('supervisorEmail is the fallback when there is no coordinator', () => {
-  const out: any = migratePlacementData({ supervisorEmail: 'yariv@example.ac.il' } as any);
+test('THE SUPERVISOR WINS: the coordinator role is vacant, so it must not be offered', () => {
+  // Yariv 2026-08-26: "אין רכז פרקטיקום פעיל ואני יכול להיות זמין עם המייל שלי".
+  // Preferring the coordinator would print a dead end in every employer message — worse
+  // than the broken link this line exists to survive.
+  const out: any = migratePlacementData({
+    coordinatorEmail: 'rachel@example.ac.il',
+    supervisorEmail: 'yariv@example.ac.il',
+  } as any);
   expect(out.placementSettings.coordinatorEmail).toBe('yariv@example.ac.il');
+  expect(contactBackSentence(out.placementSettings)).not.toContain('rachel');
+});
+
+test('the coordinator is still used when there is no supervisor', () => {
+  const out: any = migratePlacementData({ coordinatorEmail: 'rachel@example.ac.il' } as any);
+  expect(out.placementSettings.coordinatorEmail).toBe('rachel@example.ac.il');
 });
 
 test('an address typed into placement settings is not overwritten by the seed', () => {
