@@ -265,7 +265,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   // The just-sent bar. Persistent by design — see runPlacementAction('unsend').
   const [sentBar, setSentBar] = useState<{ studentId: string; studentName: string; orgNames: string[] } | null>(null);
   // A reminder awaiting confirmation that it really went out. Persistent, like the send bar.
-  const [remindBar, setRemindBar] = useState<{ studentId: string; studentName: string; orgName: string; days: number } | null>(null);
+  // `targets` records the dispatches whose compose window actually opened, so the
+  // confirmation can restart the clock for those employers ONLY. Marking every
+  // pending dispatch reminded was harmless while nothing read `remindedAt`; now that
+  // the silence clock does, it would silence organizations we never contacted.
+  const [remindBar, setRemindBar] = useState<{ studentId: string; studentName: string; orgName: string; days: number;
+    targets: { employerId: string; slotId: string | null }[] } | null>(null);
   useEffect(() => {
     let alive = true;
     supabase.from('cv_updates')
@@ -396,13 +401,22 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         allowResend: true, reminder: { daysWaiting: days },
       });
       if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
+      // Same refusal the send path makes: an empty compose window looks like it worked,
+      // and that is exactly how a reminder goes missing. Now that WhatsApp is offered
+      // here, the missing detail is usually a phone rather than an address.
+      const noContact = plan.entries.filter(e => e.missingContact).map(e => e.orgName);
+      if (noContact.length && noContact.length === plan.entries.length) {
+        showToast(`אין ${(action as any).channel === 'whatsapp' ? 'טלפון' : 'כתובת מייל'} ל‑${noContact.join(', ')} — הוסף/י פרטי קשר לארגון`, 'error');
+        return;
+      }
       const opened: any[] = [];
       for (const e of plan.entries) {
         const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
         if (ok) opened.push(e);
       }
       if (!opened.length) { showToast('חלון נחסם — שלח/י בנפרד', 'error'); return; }
-      setRemindBar({ studentId: student.id, studentName: student.name, orgName: target, days });
+      setRemindBar({ studentId: student.id, studentName: student.name, orgName: target, days,
+        targets: opened.map(e => ({ employerId: e.employerId, slotId: e.slotId ?? null })) });
       return;
     }
     if (action.id === 'send_cv') {
@@ -971,9 +985,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             onClick={async () => {
               const b = remindBar; setRemindBar(null);
               const now = new Date().toISOString();
-              const next = ((data as any).dispatches || []).map((d: any) =>
-                (d.studentId === b.studentId && d.result === 'pending')
-                  ? { ...d, remindedAt: now, reminders: (d.reminders || 0) + 1 } : d);
+              const next = ((data as any).dispatches || []).map((d: any) => {
+                if (d.studentId !== b.studentId || d.result !== 'pending') return d;
+                const chased = b.targets.some(t =>
+                  (t.slotId && d.slotId) ? d.slotId === t.slotId : d.employerId === t.employerId);
+                return chased ? { ...d, remindedAt: now, reminders: (d.reminders || 0) + 1 } : d;
+              });
               setSaving(true);
               const saved = await saveSnapshot({ ...data, dispatches: next }, { name: userName },
                 { action: 'נשלחה תזכורת למעסיק', entity: 'סטודנט', target: b.studentName });

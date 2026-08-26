@@ -140,10 +140,17 @@ function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
           </div>
         )}
         <div style={{ display: 'flex', gap: 9, marginTop: 18, flexWrap: 'wrap' }}>
-          {action.id === 'send_cv' ? (
+          {action.id === 'send_cv' || action.id === 'remind' ? (
             <>
               {/* Choosing the channel IS the confirmation — one tap fewer, and the
-                  compose window opens straight from the row. */}
+                  compose window opens straight from the row.
+                  'remind' belongs here too (Yariv 2026-08-26: the reminder "does not
+                  include the option to remind via whatsapp"). Every layer below already
+                  supported it — planDispatch takes a channel, placement.ts carries a
+                  whatsappTemplate, and the remind handler already branches on
+                  e.channel === 'whatsapp' — but this picker was gated to send_cv, so a
+                  reminder fell through to the plain confirm button, sent no channel, and
+                  silently defaulted to email. */}
               <button ref={goRef} type="button" data-confirm-go data-channel="email"
                 onClick={() => onConfirm('email')}
                 style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: tone, color: '#fff', cursor: 'pointer' }}>

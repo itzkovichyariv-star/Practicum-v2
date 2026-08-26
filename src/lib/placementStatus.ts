@@ -305,12 +305,33 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const rejected = list.filter(p => p.status === 'rejected' || p.status === 'withdrawn');
   const passed = list.filter(p => p.interviewResult === 'passed' && p.status !== 'rejected');
 
-  const sentDays = (p: UnifiedOrgPref): number | null => {
-    const d = (dispatches || [])
+  /** The pending dispatch for this preference, newest first. */
+  const dispatchFor = (p: UnifiedOrgPref): any =>
+    (dispatches || [])
       .filter((x: any) => x.studentId === student.id && x.result === 'pending'
         && (p.slotId ? x.slotId === p.slotId : norm(x.employerId) === norm(p.employerId)))
       .sort((a: any, b: any) => String(b.sentAt).localeCompare(String(a.sentAt)))[0];
+
+  /** Days since the CV itself went out. This is what a chip's "נשלח לפני X" reports,
+   *  and it must NOT move when a reminder is sent — the CV left when it left. */
+  const sentDays = (p: UnifiedOrgPref): number | null => {
+    const d = dispatchFor(p);
     return d ? daysSince(d.sentAt, now) : null;
+  };
+
+  /** Days of SILENCE — since we last made contact, a confirmed reminder included.
+   *  This is the clock that decides whether it is our turn to chase again.
+   *
+   *  Yariv 2026-08-26: "it is not updated, stays in תזכר mode after reminder was
+   *  submitted." Confirming a reminder wrote `remindedAt` and bumped `reminders`, but
+   *  nothing read `remindedAt` — staleness was measured from `sentAt` alone, so the row
+   *  went straight back to "תזכר" and stayed there until MAX_REMINDERS. The confirm bar
+   *  promises "השעון יתחיל מחדש" in so many words; this is the clock it meant. */
+  const quietDays = (p: UnifiedOrgPref): number | null => {
+    const d = dispatchFor(p);
+    if (!d) return null;
+    const lastTouch = d.remindedAt && String(d.remindedAt) > String(d.sentAt) ? d.remindedAt : d.sentAt;
+    return daysSince(lastTouch, now);
   };
 
   // Who is holding this employer's places for THIS course, and is one free?
@@ -409,10 +430,17 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
 
   // ── 4. CVs are out with employers ───────────────────────────────────────────
   if (sent.length > 0) {
-    const ages = sent.map(p => ({ p, d: sentDays(p) }));
-    const oldest = ages.reduce<number | null>((m, x) => (x.d === null ? m : (m === null ? x.d : Math.max(m, x.d))), null);
-    const sentChips = ages.map(({ p, d }) =>
-      chipFor(p, d !== null && d > silenceDays ? 'late' : 'sent', d === null ? '' : `נשלח ${agoPhrase(d)}`));
+    const ages = sent.map(p => ({ p, d: sentDays(p), q: quietDays(p) }));
+    const maxOf = (pick: (x: { d: number | null; q: number | null }) => number | null) =>
+      ages.reduce<number | null>((m, x) => { const v = pick(x); return v === null ? m : (m === null ? v : Math.max(m, v)); }, null);
+    /** How long the CV has been out — what the user is told, and what "no answer" means. */
+    const oldest = maxOf(x => x.d);
+    /** How long we have been quiet — what decides whether it is our turn to chase. */
+    const oldestQuiet = maxOf(x => x.q);
+    // Tone follows the SILENCE clock so an org reminded yesterday stops reading as late,
+    // while the label keeps reporting when the CV actually went out.
+    const sentChips = ages.map(({ p, d, q }) =>
+      chipFor(p, q !== null && q > silenceDays ? 'late' : 'sent', d === null ? '' : `נשלח ${agoPhrase(d)}`));
     // A not-yet-sent org must say WHY. "טרם נשלח" on a full organization reads as an
     // oversight when it is actually blocked — Yariv 2026-08-10: "כתוב של‑1 עדיין לא
     // נשלח אבל זה לא נשלח כי אין מקום ולכן נשלח ל‑2".
@@ -438,10 +466,16 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     const ivFuture = ivKnown && ivTs > now;
     const ivPast = ivKnown && ivTs <= now;
     const sinceIv = ivPast ? Math.floor((now - ivTs) / DAY) : null;
-    const remindersSent = Math.max(0, ...(dispatches || [])
-      .filter((d: any) => d.studentId === student.id && d.result === 'pending')
-      .map((d: any) => d.reminders || 0), 0);
+    const pendingForStudent = (dispatches || [])
+      .filter((d: any) => d.studentId === student.id && d.result === 'pending');
+    const remindersSent = Math.max(0, ...pendingForStudent.map((d: any) => d.reminders || 0), 0);
     const exhaustedReminders = remindersSent >= MAX_REMINDERS;
+    /** Days since the last confirmed reminder to ANY of this student's employers, or
+     *  null if none was sent. The post-interview clock needs it for the same reason the
+     *  silence clock does: chasing has to count as contact, or the row never settles. */
+    const lastRemindedAt = pendingForStudent
+      .map((d: any) => d.remindedAt).filter(Boolean).sort().pop();
+    const sinceRemind = lastRemindedAt ? daysSince(lastRemindedAt, now) : null;
 
     // Stage 2 — an interview is booked. Silent until the date arrives.
     if (ivFuture) {
@@ -456,7 +490,9 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
 
     // Stage 3 — the interview happened and no decision has been recorded.
     if (ivPast) {
-      const overdue = (sinceIv ?? 0) > DECISION_DAYS;
+      // Overdue only if BOTH the interview and our last nudge are past the decision
+      // window — a reminder sent yesterday means the ball is back with the employer.
+      const overdue = (sinceIv ?? 0) > DECISION_DAYS && (sinceRemind === null || sinceRemind > DECISION_DAYS);
       if (exhaustedReminders) {
         return {
           key: 'no_response', turn: 'ours',
@@ -475,7 +511,11 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       };
     }
 
-    const stale = oldest !== null && oldest > silenceDays;
+    // Two different questions, two different clocks. "Should we chase?" resets when we
+    // chase — otherwise a confirmed reminder changes nothing and the row nags forever.
+    // "Has this gone on too long?" does NOT reset: an employer sitting on a CV for
+    // NO_RESPONSE_DAYS is out of road whether or not we nudged them yesterday.
+    const stale = oldestQuiet !== null && oldestQuiet > silenceDays;
     const abandoned = oldest !== null && oldest > NO_RESPONSE_DAYS;
 
     // Stage 1 is the LONG one: an invitation to interview can take a month and a half
