@@ -343,6 +343,22 @@ export function migratePlacementData(data: PracticumData): PracticumData {
     }
   }
 
+  // Yariv 2026-08-26: "צריך להילקח משם" — do not ask for what the system already has.
+  // coordinatorEmail (Rachel) and supervisorEmail (Yariv) have lived at the top level of
+  // the data since long before this line existed, and the settings screen already edits
+  // them. Seeded here rather than inside the branch above, because the branch that
+  // BUILDS fresh defaults carries no address either — that is where a brand-new
+  // practicum lands, and it is exactly the case that must not need typing twice.
+  // A value typed into placement settings still wins if one is ever set.
+  {
+    const ps2 = d.placementSettings as any;
+    const knownEmail = String((d as any)?.coordinatorEmail || (d as any)?.supervisorEmail || '').trim();
+    if (ps2 && knownEmail && !String(ps2.coordinatorEmail || '').trim()) {
+      ps2.coordinatorEmail = knownEmail;
+      changed = true;
+    }
+  }
+
   // 4b. Materialize legacy global `positions`/`positionsTotal` into per-course
   //     vacancySlots for employers that carry a number but have NO slots yet AND
   //     are attached to exactly ONE course (unambiguous). This self-heals the

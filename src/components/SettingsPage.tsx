@@ -164,9 +164,11 @@ const TEMPLATE_FIELDS: { key: keyof PlacementSettings; label: string; rows?: num
   { key: 'studentNotifyRejectedTemplateEmailBody',    label: 'אימייל גוף — הודעה לסטודנט: נדחה',  rows: 6 },
   // The human route back, for when the one-click link fails. One line each, and they
   // feed {contactBack} in EVERY employer template — edit once, every message updates.
-  { key: 'coordinatorPhone',    label: 'טלפון הרכז/ת — לחזרה של מעסיק', rows: 1, desc: 'מופיע בכל הודעה למעסיק דרך {contactBack}. ריק = השורה לא נשלחת.' },
+  { key: 'coordinatorPhone',    label: 'טלפון הרכז/ת — לחזרה של מעסיק', rows: 1, desc: 'מופיע בכל הודעה למעסיק דרך {contactBack}. זה הטלפון שלך, לא של הארגון — המערכת לא שומרת אותו בשום מקום אחר. המייל נלקח אוטומטית מהגדרות המערכת למעלה.' },
   { key: 'coordinatorWhatsapp', label: 'וואטסאפ הרכז/ת', rows: 1, desc: 'ריק = משתמש בטלפון שלמעלה.' },
-  { key: 'coordinatorEmail',    label: 'מייל הרכז/ת', rows: 1 },
+  // No coordinatorEmail field here on purpose — this screen already edits
+  // data.coordinatorEmail / data.supervisorEmail above, and {contactBack} is seeded
+  // from those. Two boxes for one address is how they drift apart.
   { key: 'publicSiteUrl',       label: 'כתובת האתר הציבורית', rows: 1, desc: 'הבסיס לקישור התשובה שנשלח למעסיק (למשל https://practicum-v2.pages.dev). ריק = הכתובת שממנה נשלח — שעלולה להיות localhost או תצוגה מקדימה.' },
 ];
 
