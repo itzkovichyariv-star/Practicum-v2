@@ -65,3 +65,34 @@ test('the migration is idempotent — a second pass does not double the line', (
   const count = (s: string) => s.split('{contactBack}').length - 1;
   expect(count(twice.placementSettings.emailBodyTemplate)).toBe(1);
 });
+
+test('the email is taken from where the system already keeps it', () => {
+  // Yariv 2026-08-26: "צריך להילקח משם". coordinatorEmail/supervisorEmail have lived at
+  // the top level of the data since long before {contactBack} existed. Asking for the
+  // same address a second time is how two boxes drift apart.
+  const out: any = migratePlacementData({ coordinatorEmail: 'rachel@example.ac.il' } as any);
+  expect(out.placementSettings.coordinatorEmail).toBe('rachel@example.ac.il');
+  expect(contactBackSentence(out.placementSettings)).toContain('rachel@example.ac.il');
+});
+
+test('supervisorEmail is the fallback when there is no coordinator', () => {
+  const out: any = migratePlacementData({ supervisorEmail: 'yariv@example.ac.il' } as any);
+  expect(out.placementSettings.coordinatorEmail).toBe('yariv@example.ac.il');
+});
+
+test('an address typed into placement settings is not overwritten by the seed', () => {
+  const out: any = migratePlacementData({
+    coordinatorEmail: 'rachel@example.ac.il',
+    placementSettings: { ...getDefaultPlacementSettings(), coordinatorEmail: 'someone.else@example.ac.il' },
+  } as any);
+  expect(out.placementSettings.coordinatorEmail).toBe('someone.else@example.ac.il');
+});
+
+test('the phone is NOT taken from an employer — that is the organization own number', () => {
+  // An employer receiving their own number back cannot use it to reach the coordinator.
+  // Nothing in the data model holds a coordinator phone, which is why it is the one
+  // field that must be typed once.
+  const s = contactBackSentence({ coordinatorEmail: 'rachel@example.ac.il' });
+  expect(s).toContain('rachel@example.ac.il');
+  expect(s).not.toContain('בטלפון');
+});
