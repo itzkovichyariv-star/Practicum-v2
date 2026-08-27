@@ -459,8 +459,16 @@ export function migratePlacementData(data: PracticumData): PracticumData {
 
 // The original eight. Kept ONLY so that a template using one of them while the caller
 // omits it still renders empty, exactly as it did before this function became generic.
+//
+// contactBack joins them for a different reason, and it is not legacy: it is OPTIONAL BY
+// DESIGN. It renders to nothing when no contact is configured, so a caller that does not
+// supply it is a normal state, not a typo — and the alternative is the failure this file
+// already has scar tissue about. The deploy gate caught it the moment the placeholder
+// entered the shipping templates: RENDER-no-placeholder-left went red because a render
+// without the key would have put the literal "{contactBack}" in front of an employer,
+// exactly as v1.39 shipped "לפני {daysWaiting} ימים" to real people.
 const LEGACY_PLACEHOLDERS = ['contactName', 'studentName', 'positionTitle', 'adminName',
-  'courseName', 'cvLink', 'employerName', 'scope'];
+  'courseName', 'cvLink', 'employerName', 'scope', 'contactBack'];
 
 /**
  * Substitute every {placeholder} the caller supplied.
