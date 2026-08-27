@@ -52,6 +52,21 @@ const WORD_DOC = `${ORIGIN}/fixture/cv-word.docx`;
    itself is perfectly fine — the shape of Yariv's "opens when I copy the link". */
 const NO_CORS  = `${ORIGIN2}/cv-nocors.pdf`;
 
+/* A knob for the failure this check ONCE had rather than found.
+ *
+ * Every tab starts at about:blank; the ones that resolve navigate afterwards, and a
+ * HEAD probe has to return before that can even begin. Reading the tab's URL after a
+ * fixed sleep therefore measures the machine, not the app — and on Yariv's Mac the
+ * same code that passed here reported 14/16, red on exactly the two cases that
+ * navigate (2026-08-27).
+ *
+ * CV_CHECK_DELAY_MS slows every fixture response, which reproduces his slower machine
+ * on demand: at 900 the old fixed-sleep reader goes red here too, and the condition
+ * that replaced it stays green. Use it whenever this file's waiting is touched.
+ */
+const DELAY_MS = Number(process.env.CV_CHECK_DELAY_MS || 0);
+const slow = () => (DELAY_MS ? new Promise(r => setTimeout(r, DELAY_MS)) : null);
+
 const FIXTURE = {
   courses: [{ id: 'hr', name: 'פרקטיקום משאבי אנוש', year: 'תשפ״ז', type: 'practicum' }],
   academicYears: ['תשפ״ז'],
@@ -75,6 +90,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 
 const server = createServer(async (req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
+  if (p.startsWith('/fixture/')) await slow();
   // The fixture files, answered from memory. cv-missing is deliberately absent.
   if (p === '/fixture/cv-good.pdf' || p === '/fixture/cv-word.docx') {
     res.writeHead(200, { 'Content-Type': MIME[extname(p)], 'Access-Control-Allow-Origin': '*' });
@@ -97,7 +113,8 @@ await new Promise(r => server.listen(PORT, r));
    refuses to let fetch read it, while navigating to it works perfectly. Real storage
    backends behave exactly this way, and it is the shape of what Yariv found — the link
    opens when pasted, and the check that inspected it first concluded otherwise. */
-const foreign = createServer((req, res) => {
+const foreign = createServer(async (req, res) => {
+  await slow();
   if (req.url.split('?')[0] === '/cv-nocors.pdf') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end('<!doctype html><meta charset="utf-8"><p>fixture cv body</p>');
@@ -159,10 +176,41 @@ async function openCvFor(name) {
     chip.click({ force: true }),
   ]);
   if (!popup) return { error: 'no tab opened' };
-  await popup.waitForLoadState('domcontentloaded').catch(() => {});
-  await popup.waitForTimeout(700);
-  const text = (await popup.evaluate(() => document.body?.innerText || '').catch(() => '')) || '';
-  const url = popup.url();
+  return settle(popup);
+}
+
+/**
+ * Wait for the new tab to STOP being about:blank-and-empty, then read it.
+ *
+ * Every tab openCv opens begins at about:blank, and the two outcomes diverge only
+ * afterwards: a resolvable file gets `w.location.href = url` and the tab NAVIGATES,
+ * while a broken one gets HTML WRITTEN into it and its URL stays about:blank forever
+ * by design. So neither "url changed" nor "text appeared" is on its own the finish
+ * line — the tab is settled when either has happened.
+ *
+ * This replaces a fixed 700ms sleep, which was a bug of exactly the kind the deploy
+ * gate's own flake note warns about. It passed here and failed on Yariv's Mac
+ * (2026-08-27, 14/16) on the two cases that navigate: a HEAD probe and a navigation
+ * both have to finish first, and 700ms is a guess about someone else's machine, not
+ * a condition. The two cases that write into the tab were never affected, which is
+ * exactly the asymmetry the report showed.
+ */
+async function settle(popup, timeoutMs = 15_000) {
+  const startedAt = Date.now();
+  let url = popup.url();
+  let text = '';
+  while (Date.now() - startedAt < timeoutMs) {
+    url = popup.url();
+    text = (await popup.evaluate(() => document.body?.innerText || '').catch(() => '')) || '';
+    if (url !== 'about:blank' || text.trim().length > 0) break;
+    await popup.waitForTimeout(150);
+  }
+  // A navigation reports its URL before the document is necessarily parsed; one more
+  // settle pass so `text` belongs to the page `url` names.
+  if (url !== 'about:blank') {
+    await popup.waitForLoadState('domcontentloaded').catch(() => {});
+    text = (await popup.evaluate(() => document.body?.innerText || '').catch(() => '')) || '';
+  }
   return { popup, text, url };
 }
 
@@ -257,8 +305,7 @@ console.log('\nINSTALLED APP: no tab bar, so window.open has nowhere to put a ta
       chip.click({ force: true }),
     ]);
     if (!popup) return { error: 'nothing opened' };
-    await popup.waitForLoadState('domcontentloaded').catch(() => {});
-    const url = popup.url();
+    const { url } = await settle(popup);
     await popup.close();
     return { url };
   };
