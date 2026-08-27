@@ -98,10 +98,16 @@ const rule = (id, tableRef, expected, got) =>
   // אליו זה נשלח במסך הראשי מבלי להכנס לכרטיס הסטודנט". The earlier expectation
   // ("נשלחו ל2 מקומות") was his too — this supersedes it, and the rule is updated
   // rather than deleted so the headline stays pinned to an exact string.
-  rule('STRIP-sent-2', 'Yariv 2026-08-27: the organizations are NAMED, not counted',
-    'קו״ח נשלחו ל‑A ו‑B · ממתין לתשובת המעסיק', run(mk(2)).headline);
-  rule('STRIP-sent-1-singular', 'brief §states row 6 — now the name, per 2026-08-27',
-    'קו״ח נשלחו ל‑A · ממתין לתשובת המעסיק', run(mk(1)).headline);
+  //
+  // Then he saw the deployed build and said "no change": the name was in the string
+  // and still off his screen, because "קו״ח נשלחו " ahead of it filled the whole
+  // 73px the collapsed line gets on a phone and the ellipsis took the rest. So the
+  // name moved to position 0 — an ellipsis eats the end of a line, never the start.
+  // These two strings are what pin that, and the position is the point of them.
+  rule('STRIP-sent-2', 'Yariv 2026-08-27: the organizations are NAMED, and they lead',
+    'A ו‑B · קו״ח נשלחו · ממתין לתשובת המעסיק', run(mk(2)).headline);
+  rule('STRIP-sent-1-singular', 'brief §states row 6 — the name leads, per 2026-08-27',
+    'A · קו״ח נשלחו · ממתין לתשובת המעסיק', run(mk(1)).headline);
   rule('STRIP-sent-turn', 'brief §states row 6', 'employer', run(mk(2)).turn);
 }
 

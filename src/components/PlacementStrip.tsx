@@ -242,7 +242,7 @@ export default function PlacementStrip({ status, employers, onAction }: {
     >
       <span className="mono" style={{ fontSize: 10.5, fontWeight: 700, color: tone, whiteSpace: 'nowrap', paddingTop: 3, display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: tone, flexShrink: 0 }} />
-        {TURN_LABEL[status.turn]}
+        <span className="turn-label-text">{TURN_LABEL[status.turn]}</span>
       </span>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>

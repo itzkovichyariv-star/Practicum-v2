@@ -477,3 +477,17 @@ html[data-theme="dark"] .border-b { border-color: rgba(255,255,255,0.09) !import
   /* Borders on section elements */
   section, li, .border-b { border-color: rgba(255,255,255,0.09) !important; }
 }
+
+/* ── the turn label, on a phone ──────────────────────────────────────────────
+   Yariv 2026-08-27, on a build that already named the organization: "no change".
+   The name was in the headline and still off his screen. At 375px the strip's
+   middle column measures about 73px once this label, the action button and the
+   expander have taken theirs — and "אצל המעסיק" is a third of what it costs.
+
+   The label is also the one part of the row that says nothing new: the dot
+   carries the colour, and the headline states the same turn in words. So below
+   the phone breakpoint the words go and the dot stays, which roughly doubles
+   what the headline has to work with. */
+@media (max-width: 480px) {
+  .turn-label-text { display: none; }
+}
