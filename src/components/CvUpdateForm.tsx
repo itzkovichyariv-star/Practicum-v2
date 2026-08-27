@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, type FormEvent, type CSSPropertie
 import { publicSupabase as supabase } from '../lib/supabase';
 import { employerStatus } from '../lib/orgAvailability';
 import { useFormDraft } from '../lib/useFormDraft';
-import { viewableCvUrl, openCv } from '../lib/cvUrl';
+import { openCv } from '../lib/cvUrl';
 import { countSlotsByStatus } from '../lib/placement';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';

@@ -132,147 +132,17 @@ const check = (name, pass, detail) => {
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
              '/opt/pw-browsers/chromium/chrome-linux/chrome'].find(existsSync);
 const browser = await chromium.launch(exe ? { executablePath: exe } : {});
-const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 } });
-
-await ctx.route('**/*', route => {
-  const url = route.request().url();
-  if (url.startsWith(ORIGIN) || url.startsWith(ORIGIN2)) return route.continue();
-  if (url.includes('practicum_data') && route.request().method() === 'GET') {
-    return route.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({ data: FIXTURE, updated_at: '2026-01-01T00:00:00.000Z',
-        last_editor_name: 'check', last_editor_email: 'check@local' }) });
-  }
-  if (url.includes('fonts.g')) return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
-  return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-});
-await ctx.addInitScript(() => {
-  localStorage.setItem('practicum_v2_session', JSON.stringify({ profile: { name: 'יריב איצקוביץ', email: 'yarivi@ariel.ac.il' } }));
-  localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: 'hr', year: 'תשפ״ז' }));
-  localStorage.setItem('practicum_v2_page', 'candidates');
-  localStorage.setItem('practicum_theme', 'light');
-});
-
-const pg = await ctx.newPage();
-await pg.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
-await pg.waitForSelector('li[data-info-row]', { timeout: 15000 }).catch(() => {});
-await pg.waitForTimeout(900);
-
-console.log('\ncv-open-check — offline, fixture-backed\n');
-
 /**
- * Click the CV chip on the row carrying `name`, and return the tab it opens.
- *
- * A REAL click, not a dispatched MouseEvent: `window.open` needs user activation, and
- * Chromium blocks a synthetic event's popup exactly as it would block an unsolicited
- * one. The first version of this check dispatched the event and reported "no tab
- * opened" for all three cases — a property of the test, not of the page.
+ * A browser context configured the way the app expects, and a page on the candidates
+ * screen. Factored out because one case needs a FRESH one: Chromium allows a context
+ * its first automatic download and then quietly declines the rest, so a .docx clicked
+ * after any other case produced neither a download nor even a request. That is
+ * Chromium's policy about repeated downloads, not the app's behaviour, and giving the
+ * case its own context removes it from the measurement instead of working around it.
  */
-async function openCvFor(name) {
-  const chip = pg.locator('li[data-info-row]').filter({ hasText: name })
-    .locator('a').filter({ hasText: 'CV' }).first();
-  if (!(await chip.count())) return { error: 'no CV chip on that row' };
-  const [popup] = await Promise.all([
-    ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null),
-    chip.click({ force: true }),
-  ]);
-  if (!popup) return { error: 'no tab opened' };
-  return settle(popup);
-}
-
-/**
- * Wait for the new tab to STOP being about:blank-and-empty, then read it.
- *
- * Every tab openCv opens begins at about:blank, and the two outcomes diverge only
- * afterwards: a resolvable file gets `w.location.href = url` and the tab NAVIGATES,
- * while a broken one gets HTML WRITTEN into it and its URL stays about:blank forever
- * by design. So neither "url changed" nor "text appeared" is on its own the finish
- * line — the tab is settled when either has happened.
- *
- * This replaces a fixed 700ms sleep, which was a bug of exactly the kind the deploy
- * gate's own flake note warns about. It passed here and failed on Yariv's Mac
- * (2026-08-27, 14/16) on the two cases that navigate: a HEAD probe and a navigation
- * both have to finish first, and 700ms is a guess about someone else's machine, not
- * a condition. The two cases that write into the tab were never affected, which is
- * exactly the asymmetry the report showed.
- */
-async function settle(popup, timeoutMs = 15_000) {
-  const startedAt = Date.now();
-  let url = popup.url();
-  let text = '';
-  while (Date.now() - startedAt < timeoutMs) {
-    url = popup.url();
-    text = (await popup.evaluate(() => document.body?.innerText || '').catch(() => '')) || '';
-    if (url !== 'about:blank' || text.trim().length > 0) break;
-    await popup.waitForTimeout(150);
-  }
-  // A navigation reports its URL before the document is necessarily parsed; one more
-  // settle pass so `text` belongs to the page `url` names.
-  if (url !== 'about:blank') {
-    await popup.waitForLoadState('domcontentloaded').catch(() => {});
-    text = (await popup.evaluate(() => document.body?.innerText || '').catch(() => '')) || '';
-  }
-  return { popup, text, url };
-}
-
-// ── THE BUG: a CV that is not there ──────────────────────────────────────────
-console.log('MISSING: a stale path explains itself instead of rendering blank');
-{
-  const r = await openCvFor('עדי גורביץ');
-  check('the chip opens a tab', !r.error, r.error || `url: ${r.url}`);
-  if (!r.error) {
-    check('the tab is NOT blank', r.text.trim().length > 40, `${r.text.trim().length} characters of text`);
-    check('it says the file was not found', r.text.includes('לא נמצא'), r.text.split('\n')[1] || '');
-    check('it shows what is stored on the record', r.text.includes(MISSING), 'the reference is printed');
-    await r.popup.close();
-  }
-}
-
-// ── The Word case: the viewer that answers with an empty frame ───────────────
-console.log('\nWORD: a .docx offers the viewer AND the download');
-{
-  const r = await openCvFor('נועם קדם');
-  check('the chip opens a tab', !r.error, r.error || `url: ${r.url}`);
-  if (!r.error) {
-    check('the tab is NOT blank', r.text.trim().length > 40, `${r.text.trim().length} characters of text`);
-    const links = await r.popup.evaluate(() => [...document.querySelectorAll('a')].map(a => a.getAttribute('href')));
-    check('the Office viewer is offered', links.some(h => (h || '').includes('view.officeapps.live.com')));
-    // The download is the load-bearing half: it works when the viewer does not, and
-    // the viewer failing is the most likely reading of the original blank page.
-    check('a direct download is offered beside it', links.some(h => h === WORD_DOC), `${links.length} links`);
-    await r.popup.close();
-  }
-}
-
-// ── THE FALSE NEGATIVE: a probe that could not read is not a missing file ───
-console.log('\nUNREADABLE PROBE: a CORS-blocked HEAD must not withhold a good file');
-{
-  // Yariv 2026-08-27: "הקישור נפתח בהעתקה שלו אבל לא על ידי לחיצה". Copying the URL
-  // and pasting it opened the CV — so the object was there the whole time and anything
-  // refusing to open it was wrong about the file. fetch cannot read this one; the tab
-  // can render it. The tab must therefore get it.
-  const r = await openCvFor('שירה אלון');
-  check('the chip opens a tab', !r.error, r.error || `url: ${r.url}`);
-  if (!r.error) {
-    check('the tab goes to the FILE, not to an explanation', r.url === NO_CORS, r.url);
-    check('and no explanation page stands between him and it', !r.text.includes('לא ניתן לפתוח'), r.text.slice(0, 40));
-    await r.popup.close();
-  }
-}
-
-// ── THE PHONE: the app installed to the home screen ─────────────────────────
-console.log('\nINSTALLED APP: no tab bar, so window.open has nowhere to put a tab');
-{
-  // Yariv 2026-08-27: "מהמחשב זה נפתח אבל מהטלפון לא אולי הגדרה שקשורה לגודל
-  // והתצוגה?" — and it is a display setting: manifest.json says
-  // "display": "standalone", so on the phone the app runs without tabs and iOS
-  // silently declines the window.open the desktop happily honours.
-  //
-  // navigator.standalone is set here the way iOS sets it. What is asserted is that the
-  // tab which appears carries the FILE, not the about:blank placeholder the browser
-  // path opens and then writes into — because that placeholder is the thing that never
-  // appears on his phone.
-  const app = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  await app.route('**/*', route => {
+async function freshContext() {
+  const c = await browser.newContext({ viewport: { width: 1180, height: 900 }, acceptDownloads: true });
+  await c.route('**/*', route => {
     const url = route.request().url();
     if (url.startsWith(ORIGIN) || url.startsWith(ORIGIN2)) return route.continue();
     if (url.includes('practicum_data') && route.request().method() === 'GET') {
@@ -283,62 +153,144 @@ console.log('\nINSTALLED APP: no tab bar, so window.open has nowhere to put a ta
     if (url.includes('fonts.g')) return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
     return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
-  await app.addInitScript(() => {
-    Object.defineProperty(window.navigator, 'standalone', { value: true, configurable: true });
+  await c.addInitScript(() => {
     localStorage.setItem('practicum_v2_session', JSON.stringify({ profile: { name: 'יריב איצקוביץ', email: 'yarivi@ariel.ac.il' } }));
     localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: 'hr', year: 'תשפ״ז' }));
     localStorage.setItem('practicum_v2_page', 'candidates');
     localStorage.setItem('practicum_theme', 'light');
   });
-  const apg = await app.newPage();
-  apg.on('dialog', d => d.dismiss().catch(() => {}));
-  await apg.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
-  await apg.waitForSelector('li[data-info-row]', { timeout: 15000 }).catch(() => {});
-  await apg.waitForTimeout(900);
-
-  const openInApp = async (name) => {
-    const chip = apg.locator('li[data-info-row]').filter({ hasText: name })
-      .locator('a').filter({ hasText: 'CV' }).first();
-    if (!(await chip.count())) return { error: 'no CV chip' };
-    const [popup] = await Promise.all([
-      app.waitForEvent('page', { timeout: 8000 }).catch(() => null),
-      chip.click({ force: true }),
-    ]);
-    if (!popup) return { error: 'nothing opened' };
-    const { url } = await settle(popup);
-    await popup.close();
-    return { url };
-  };
-
-  const good = await openInApp('רות מזרחי');
-  check('the installed app still opens something', !good.error, good.error || good.url);
-  check('and it is the file itself, not a placeholder tab', good.url === GOOD_PDF, good.url);
-
-  // The Office viewer is the component that answers with an empty frame. iOS previews
-  // .docx natively, so on the phone the raw file is the better destination — and the
-  // interstitial has no tab to live in here anyway.
-  // What is claimed is that the Office VIEWER is not what the phone is sent to. Where
-  // the raw .docx then goes is the platform's business and differs by platform: iOS
-  // previews it, and this headless Chromium treats it as a download and closes the tab
-  // it briefly opened — which is why the URL asserted here is "anything but the
-  // viewer" rather than the file. Asserting the file would be asserting Chromium's
-  // download policy, which is not the behaviour under test.
-  const word = await openInApp('נועם קדם');
-  const sentToViewer = String(word.url || '').includes('view.officeapps.live.com');
-  check('a Word CV is NOT handed to the Office viewer on the phone', !sentToViewer,
-    word.error || word.url || '(the platform took it as a download)');
-
-  await app.close();
+  const page = await c.newPage();
+  await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
+  await page.waitForSelector('li[data-info-row]', { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(900);
+  return { c, page };
 }
 
-// ── The happy path must stay a single hop ────────────────────────────────────
-console.log('\nPDF: a file that resolves opens directly, with no interstitial');
+const { c: ctx, page: pg } = await freshContext();
+
+console.log('\ncv-open-check — offline, fixture-backed\n');
+
+/* Dialogs are how openCv reports a definitive failure now, since the tab has already
+   been handed to the platform and there is nothing to write into. Captured, not just
+   dismissed, because their text is the assertion. */
+const dialogs = [];
+const watchDialogs = page => page.on('dialog', d => { dialogs.push(d.message()); d.dismiss().catch(() => {}); });
+watchDialogs(pg);
+
+/**
+ * Click the CV chip on the row carrying `name`, and return the tab it opens.
+ *
+ * A REAL click, not a dispatched MouseEvent: an anchor click needs user activation, and
+ * Chromium blocks a synthetic event's tab exactly as it would an unsolicited one.
+ *
+ * There is no settling to do any more, and that is the point of the change this tests.
+ * openCv hands the file to an anchor inside the gesture, so the tab is BORN pointing at
+ * its destination — there is no about:blank to wait out, no held window to navigate
+ * later, and therefore no race to lose on a slower machine. The previous two versions
+ * of this helper both failed on Yariv's Mac while passing here, which was the mechanism
+ * telling us what it was.
+ */
+async function openCvFor(name, { c = ctx, page = pg, expectDialog = false } = {}) {
+  dialogs.length = 0;
+  const chip = page.locator('li[data-info-row]').filter({ hasText: name })
+    .locator('a').filter({ hasText: 'CV' }).first();
+  if (!(await chip.count())) return { error: 'no CV chip on that row' };
+
+  // Three ways the platform can take a file, and the app controls none of them: a tab,
+  // a download, or (for a .docx after another tab has already opened) a download
+  // Chromium quietly declines. Which one happens is the platform's business.
+  //
+  // What the app decides — and all this check is entitled to assert — is WHICH URL it
+  // hands over. So requests are collected too, and they are the reliable witness: they
+  // are made whatever the platform then does with the response, and they are what
+  // "never through the Office viewer" is actually a claim about.
+  const tabs = [], downloads = [], requested = [];
+  const onPage = pop => tabs.push(pop);
+  const onDownload = dl => downloads.push(dl);
+  const onRequest = r => requested.push(r.url());
+  c.on('page', onPage);
+  c.on('request', onRequest);
+  page.on('download', onDownload);
+  try {
+    await chip.click({ force: true });
+    for (let i = 0; i < 30 && !tabs.length && !downloads.length; i++) await page.waitForTimeout(150);
+    // The probe runs AFTER the hand-off, so a dialog it raises lands later than the tab.
+    // Polled rather than slept: a fixed wait here is the same bug this file has already
+    // had twice, and it would fail on a slower machine exactly as those did. A case that
+    // expects silence still needs a floor, or it would call every dialog "silent" simply
+    // by looking too early.
+    if (expectDialog) {
+      for (let i = 0; i < 60 && !dialogs.length; i++) await page.waitForTimeout(150);
+    } else {
+      await page.waitForTimeout(1500);
+    }
+  } finally {
+    c.off('page', onPage);
+    c.off('request', onRequest);
+    page.off('download', onDownload);
+  }
+
+  const via = downloads.length ? 'download' : tabs.length ? 'tab' : 'request only';
+  // A download names the file; a transient tab does not.
+  const url = downloads.length ? downloads[0].url() : tabs.length ? tabs[0].url() : '';
+  for (const t of tabs) await t.close().catch(() => {});
+  return { url, via, requested, dialogs: [...dialogs] };
+}
+
+// ── the happy path ───────────────────────────────────────────────────────────
+console.log('PDF: the tab is born pointing at the file');
 {
   const r = await openCvFor('רות מזרחי');
-  check('the chip opens a tab', !r.error, r.error || `url: ${r.url}`);
+  check('the chip opens a tab', !r.error, r.error || r.url);
   if (!r.error) {
-    check('the tab goes straight to the file', r.url === GOOD_PDF, r.url);
-    await r.popup.close();
+    check('it goes straight to the file — no placeholder, no interstitial', r.url === GOOD_PDF, r.url);
+    check('and nothing is raised about it', r.dialogs.length === 0, r.dialogs[0] || 'silent');
+  }
+}
+
+// ── Word: the viewer that renders an empty frame is not used at all ──────────
+console.log('\nWORD: handed over raw, never through the Office viewer');
+{
+  // Yariv 2026-08-27: "לחלק מהאנשים זה כן נפתח" — PDF against Word. view.officeapps
+  // answers with an empty frame when it cannot fetch the file, and that empty frame is
+  // the blank page from the original report. iOS previews .docx; a desktop downloads it.
+  const { c: wordCtx, page: wordPg } = await freshContext();
+  watchDialogs(wordPg);
+  const r = await openCvFor('נועם קדם', { c: wordCtx, page: wordPg });
+  await wordCtx.close();
+  check('the app hands the file over', !r.error, r.error || `${r.via}`);
+  if (!r.error) {
+    const asked = r.requested.concat(r.url ? [r.url] : []);
+    check('the raw .docx is what it asked for', asked.includes(WORD_DOC), `${r.via}: ${asked.join(' , ') || '(none)'}`);
+    check('and view.officeapps.live.com is never requested',
+      !asked.some(u => u.includes('view.officeapps.live.com')), 'the viewer is out of the path');
+  }
+}
+
+// ── a reference that resolves to nothing ─────────────────────────────────────
+console.log('\nMISSING: the file still opens, and the coordinator is TOLD why it will not show');
+{
+  // The tab is handed over before the probe can object — a probe must never be able to
+  // withhold a file (2026-08-27, when it withheld a good one). It reports instead.
+  const r = await openCvFor('עדי גורביץ', { expectDialog: true });
+  check('the chip opens a tab', !r.error, r.error || r.url);
+  if (!r.error) {
+    check('the tab went to the stored reference, not somewhere else', r.url === MISSING, r.url);
+    check('the failure is reported, not silent', r.dialogs.length > 0, r.dialogs[0]?.slice(0, 60) || 'nothing raised');
+    check('and it names WHY', (r.dialogs[0] || '').includes('לא נמצא'), r.dialogs[0]?.slice(0, 80) || '');
+    check('and prints what is stored on the record', (r.dialogs[0] || '').includes(MISSING), 'reference printed');
+  }
+}
+
+// ── a probe that could not read must stay silent ─────────────────────────────
+console.log('\nUNREADABLE PROBE: CORS blocks the check, not the file');
+{
+  const r = await openCvFor('שירה אלון');
+  check('the chip opens a tab', !r.error, r.error || r.url);
+  if (!r.error) {
+    check('the file is handed over as normal', r.url === NO_CORS, r.url);
+    check('and nothing is claimed about a file we could not inspect', r.dialogs.length === 0,
+      r.dialogs[0]?.slice(0, 60) || 'silent');
   }
 }
 

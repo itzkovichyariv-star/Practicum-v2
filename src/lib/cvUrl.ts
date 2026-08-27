@@ -32,40 +32,21 @@ export function resolveCvUrl(value: string | null | undefined): string {
 }
 
 /**
- * A link that opens the CV in a browser. Word files can't render inline, so route
- * them through the Microsoft Office Online viewer; PDFs open directly. Use for the
- * coordinator's "open" button and for a link handed to an employer to VIEW.
- */
-export function viewableCvUrl(value: string | null | undefined): string {
-  const url = resolveCvUrl(value);
-  if (!url) return '';
-  const isWord = /\.(docx?|doc)$/i.test(url.split('?')[0]);
-  return isWord ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}` : url;
-}
-
-/**
- * Open a stored CV, and never leave the reader looking at a blank page.
+ * Does the stored reference actually resolve to an object?
  *
- * Yariv 2026-08-26 and again 2026-08-27: "קורות חיים של עדי גורביץ לא נפתחות — נותן
- * דף לבן." Wiring the candidates list through viewableCvUrl did not settle it, which
- * says the defect was never only the link builder.
- *
- * A blank tab is the worst possible failure here because it is AMBIGUOUS. Four
- * different faults render identically, and the reader cannot tell them apart:
+ * A blank tab is the worst failure this code can produce, because it is AMBIGUOUS.
+ * Four different faults render identically and only ONE of them means "there is no CV":
  *
  *   · nothing is stored on the record at all
- *   · the object is not in the bucket (a path saved before a rename, a failed upload)
+ *   · the object is not in the bucket — a path saved before a rename, a failed upload
  *   · the bucket is not public, so the URL 400s
- *   · the file is Word, and view.officeapps.live.com declined it — it will not fetch
- *     a file it cannot reach, and it answers with an empty frame rather than an error
+ *   · the file is Word and a viewer declined it
  *
- * Only the first means "there is no CV". The other three mean "the CV is fine and the
- * link is wrong", and a coordinator reading a blank tab concludes the opposite.
- *
- * So: open the tab synchronously (a popup blocker kills any window opened after an
- * await), then check the object actually resolves, and either send the tab to the file
- * or write into it what went wrong and where. The Word path also offers the raw file,
- * because a direct download works even when the Office viewer will not.
+ * A coordinator reading a blank tab concludes the first every time, and the other three
+ * are the fixable ones. So the probe exists to tell them apart — and ONLY to tell them
+ * apart. It runs after the file has already been handed over (see openCv), because a
+ * check that can withhold a file will eventually withhold a good one, and did:
+ * `unreachable` is what a CORS-blocked HEAD returns, and it is not evidence of anything.
  */
 export type CvProbe = { ok: boolean; url: string; status: number; reason: string };
 
@@ -84,72 +65,69 @@ export async function probeCvUrl(value: string | null | undefined): Promise<CvPr
   }
 }
 
-const esc = (s: string) => String(s ?? '').replace(/[&<>"]/g, c =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
-
-function explain(probe: CvProbe, rawRef: string): string {
-  const why =
-    probe.reason === 'no-reference' ? 'לא נשמר קובץ קו״ח על הרשומה הזו.'
-    : probe.reason === 'not-found'  ? 'הקובץ לא נמצא באחסון. הנתיב השמור מצביע על קובץ שאינו קיים — בדרך כלל העלאה שנכשלה, או קובץ שנמחק.'
-    : probe.reason === 'http-error' ? `האחסון החזיר שגיאה ${probe.status}. אם זה 400, ה־bucket כנראה אינו ציבורי.`
-    : 'לא הצלחנו להגיע לקובץ (שגיאת רשת או CORS). ייתכן שהקובץ תקין והבעיה בחיבור.';
-  return `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8">
-<title>קו״ח — לא ניתן לפתוח</title>
-<body style="font-family:-apple-system,system-ui,sans-serif;max-width:640px;margin:48px auto;padding:0 20px;line-height:1.7;color:#2a2320">
-<h1 style="font-size:22px;margin:0 0 6px">לא ניתן לפתוח את קובץ קו״ח</h1>
-<p style="margin:0 0 18px;color:#6b6058">${esc(why)}</p>
-<div style="border:1px solid #e6ded6;border-radius:10px;padding:14px 16px;background:#faf7f4">
-  <div style="font-size:12px;letter-spacing:.1em;color:#8a7e74;margin-bottom:6px">מה שמור ברשומה</div>
-  <code style="font-size:12.5px;word-break:break-all;color:#2a2320">${esc(rawRef) || '(ריק)'}</code>
-  ${probe.url ? `<div style="font-size:12px;letter-spacing:.1em;color:#8a7e74;margin:12px 0 6px">הכתובת שנוצרה ממנו</div>
-  <a href="${esc(probe.url)}" style="font-size:12.5px;word-break:break-all;color:#7a1e2b">${esc(probe.url)}</a>` : ''}
-</div>
-<p style="margin-top:18px;color:#6b6058;font-size:13.5px">אפשר להעלות קו״ח מחדש דרך כרטיס הסטודנט/ית. אם השורות למעלה נראות תקינות — שלח/י אותן אליי ואבדוק.</p>
-</body></html>`;
-}
-
-function wordChoice(fileUrl: string): string {
-  const office = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
-  return `<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8">
-<title>קו״ח — קובץ Word</title>
-<body style="font-family:-apple-system,system-ui,sans-serif;max-width:640px;margin:48px auto;padding:0 20px;line-height:1.7;color:#2a2320">
-<h1 style="font-size:22px;margin:0 0 6px">קובץ Word</h1>
-<p style="margin:0 0 18px;color:#6b6058">דפדפן לא מציג Word ישירות. התצוגה המקוונת של Microsoft בדרך כלל עובדת, אבל היא מחזירה דף ריק כשהיא לא מצליחה למשוך את הקובץ — לכן ההורדה כאן לצידה.</p>
-<p style="margin:0 0 10px"><a href="${esc(office)}" style="display:inline-block;padding:10px 18px;border-radius:9px;background:#7a1e2b;color:#fff;text-decoration:none;font-weight:700">פתח בתצוגת Office</a></p>
-<p><a href="${esc(fileUrl)}" download style="display:inline-block;padding:10px 18px;border-radius:9px;border:1px solid #d9cec4;color:#2a2320;text-decoration:none;font-weight:700">הורד את הקובץ</a></p>
-</body></html>`;
-}
-
 /**
- * The single entry point for "show me this CV". Every opener should call this rather
- * than window.open(viewableCvUrl(...)) — that form is what renders the blank page.
- */
-/**
- * Is this the app INSTALLED to the home screen, rather than a page in a browser?
+ * Open a stored CV. One mechanism, every platform, no blank tab at any point.
  *
- * Yariv 2026-08-27, after the CV opened on his Mac and not on his phone: "אולי הגדרה
- * שקשורה לגודל והתצוגה?" — and that is exactly what it is, though not the size.
- * manifest.json declares `"display": "standalone"`, so on the phone the app runs with
- * no tab bar, and iOS has nowhere to put a tab that `window.open` asks for. It opens
- * nothing, silently. A desktop browser has tabs, opens one, and the same code works —
- * which is why this looked like a broken file for two rounds.
+ * This is the fifth attempt at one bug — "קורות חיים של עדי גורביץ לא נפתחות, נותן דף
+ * לבן" — and the previous four all tuned a mechanism that was wrong to begin with:
+ * open a blank tab, hold it, await a network round-trip, then navigate it. Every layer
+ * of that is somewhere a tab can get stuck showing nothing:
  *
- * `navigator.standalone` is the iOS-specific flag and the one that matters here; the
- * display-mode query covers installed Android and desktop PWAs.
+ *   · a popup blocker refuses the window and there is no tab at all;
+ *   · an installed PWA has no tab bar, so iOS declines it silently — Yariv's phone;
+ *   · `w.location.href = …` on a held blank tab does not reliably navigate, and when it
+ *     does not, the reader is looking at exactly the blank page this set out to remove;
+ *   · Microsoft's Office Online viewer answers with an empty frame whenever it cannot fetch the
+ *     file, which is a blank page we chose on purpose.
+ *
+ * The last two are the ones his own evidence named: it opened when he PASTED the link
+ * (the raw file, no held tab) and it opened for some people and not others (PDF against
+ * Word). The mechanism, not the file, was the fault every time.
+ *
+ * So: a real anchor click to the real file, inside the gesture that asked for it. It is
+ * the one navigation every browser, every popup blocker and every standalone app agrees
+ * about, and it has no intermediate state to get stuck in. The probe still runs — after
+ * the hand-off, where it can inform without being able to withhold — and a definitive
+ * 404 or 400 is told to the coordinator rather than left as a mystery.
+ *
+ * Word is handed over RAW, never through the Office viewer. iOS previews .docx; a
+ * desktop downloads it and opens Word. Both beat a viewer that renders nothing.
  */
-export function isInstalledApp(): boolean {
-  if (typeof window === 'undefined') return false;
-  if ((window.navigator as any)?.standalone === true) return true;
-  try { return !!window.matchMedia?.('(display-mode: standalone)')?.matches; } catch { return false; }
+export async function openCv(value: string | null | undefined): Promise<CvProbe> {
+  const raw = (value || '').trim();
+  const url = resolveCvUrl(raw);
+
+  if (!url) {
+    try { window.alert('לא נשמר קובץ קו״ח על הרשומה הזו.'); } catch { /* no alert here */ }
+    return { ok: false, url: '', status: 0, reason: 'no-reference' };
+  }
+
+  // Synchronous, and FIRST: everything after this line is allowed to fail without it
+  // costing the coordinator the file.
+  handOff(url);
+
+  const probe = await probeCvUrl(raw);
+  // `unreachable` means the probe could not READ an answer — CORS on a HEAD, a captive
+  // network — and says nothing about the file. Only a real HTTP answer is worth raising.
+  if (!probe.ok && probe.reason !== 'unreachable') {
+    const why = probe.reason === 'not-found'
+      ? 'הקובץ לא נמצא באחסון — הנתיב השמור מצביע על קובץ שאינו קיים, בדרך כלל העלאה שנכשלה או קובץ שנמחק.'
+      : `האחסון החזיר שגיאה ${probe.status}. אם זה 400, ה־bucket כנראה אינו ציבורי.`;
+    try {
+      window.alert(`הלשונית שנפתחה כנראה לא תציג את קובץ קו״ח.\n\n${why}\n\nמה שמור ברשומה:\n${raw}`);
+    } catch { /* no alert here */ }
+  }
+  return probe;
 }
 
 /**
  * Hand a URL to the platform from inside the click that asked for it.
  *
- * A real anchor, clicked, rather than window.open: in a standalone iOS app an anchor
- * with target=_blank goes to Safari's own link handler, which presents the file in an
- * in-app view WITH a Done button back to the app. window.open has no such path and is
- * the call that was doing nothing.
+ * A real anchor, clicked. In a standalone iOS app this reaches Safari's own link
+ * handler, which presents the file with a Done button back to the app; in a browser it
+ * is an ordinary new tab. A scripted window-open call has neither property reliably,
+ * and replacing it
+ * is the whole of this fix.
  */
 function handOff(url: string) {
   if (typeof document === 'undefined') return;
@@ -161,59 +139,4 @@ function handOff(url: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-}
-
-export async function openCv(value: string | null | undefined): Promise<CvProbe> {
-  const raw = (value || '').trim();
-  const installed = isInstalledApp();
-
-  // ── the installed app ──────────────────────────────────────────────────────
-  // No blank tab to open and hold, so the URL is handed over immediately and the
-  // probe reports afterwards. Word goes to the RAW file rather than the Office
-  // viewer: iOS previews .docx natively and renders it, where the viewer is the very
-  // thing that answers with an empty frame.
-  if (installed) {
-    const url = resolveCvUrl(raw);
-    if (url) handOff(url);
-    const probe = await probeCvUrl(raw);
-    if (!probe.ok && probe.reason !== 'unreachable') {
-      const why = probe.reason === 'no-reference'
-        ? 'לא נשמר קובץ קו״ח על הרשומה הזו.'
-        : probe.reason === 'not-found'
-          ? 'הקובץ לא נמצא באחסון — הנתיב השמור מצביע על קובץ שאינו קיים.'
-          : `האחסון החזיר שגיאה ${probe.status}.`;
-      try { window.alert(`לא ניתן לפתוח את קובץ קו״ח.\n\n${why}\n\n${probe.url || raw}`); } catch { /* no alert */ }
-    }
-    return probe;
-  }
-
-  // ── a browser, with tabs ───────────────────────────────────────────────────
-  // Opened FIRST and synchronously: a window created after an await is a popup, and
-  // Safari blocks it silently.
-  const w = typeof window !== 'undefined' ? window.open('', '_blank') : null;
-  const write = (html: string) => {
-    if (!w) return;
-    try { w.document.open(); w.document.write(html); w.document.close(); } catch { /* closed */ }
-  };
-
-  const probe = await probeCvUrl(raw);
-  // A probe that could not READ an answer is not evidence of anything.
-  //
-  // Yariv 2026-08-27: "הקישור נפתח בהעתקה שלו אבל לא על ידי לחיצה על קורות החיים
-  // שלה." Copying the link and pasting it worked — so the object exists and the URL
-  // built from it is right, and anything that refuses to open it is wrong about the
-  // file. A HEAD blocked by CORS, a captive network or one offline moment all land in
-  // `unreachable`, and browser NAVIGATION is not subject to CORS: the tab renders a
-  // file the probe was never allowed to inspect.
-  //
-  // So only a definitive HTTP answer — a 404, a 400 from a private bucket — earns the
-  // explanation page. An inconclusive probe hands the tab to the file and lets the
-  // browser be the judge; if the object really is gone, the storage layer's own error
-  // body is at least visible text rather than the blank page this all started from.
-  if (!probe.ok && probe.reason !== 'unreachable') { write(explain(probe, raw)); return probe; }
-
-  const isWord = /\.(docx?|doc)$/i.test(probe.url.split('?')[0]);
-  if (isWord) { write(wordChoice(probe.url)); return probe; }
-  if (w) { try { w.location.href = probe.url; } catch { /* closed */ } }
-  return probe;
 }

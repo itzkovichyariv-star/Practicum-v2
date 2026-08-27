@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { openCv } from '../lib/cvUrl';
 import { btnPrimary, btnSecondary } from '../lib/design';
 import { supabase } from '../lib/supabase';
 import { isCancelledSubmission } from '../lib/submissions';
@@ -455,9 +456,11 @@ function FilePill({ label, path }: { label: string; path: string }) {
     const publicUrl = data.publicUrl;
 
     if (isWord) {
-      // Word: Office Online viewer — synchronous, no popup blocker issue
-      const target = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(publicUrl)}`;
-      window.open(target, '_blank', 'noopener,noreferrer');
+  // Every CV opener goes through openCv, and none of them reroutes Word through
+  // Microsoft's Office Online viewer any more: that viewer answers with an empty frame whenever
+  // it cannot fetch the file, and that empty frame was the blank page reported five
+  // times. window.open is gone with it — an installed PWA has no tab bar to put one in.
+      void openCv(publicUrl);
       return;
     }
 
