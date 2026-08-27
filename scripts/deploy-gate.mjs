@@ -75,6 +75,7 @@ const OFFLINE_CHECKS = [
   'intake-safety-check.mjs',
   'interview-cancel-check.mjs',
   'placement-headline-check.mjs',
+  'cv-open-check.mjs',
 ];
 if (!onlyPrefix) {
   console.log('\n━━━ building dist/ for the offline checks ━━━');

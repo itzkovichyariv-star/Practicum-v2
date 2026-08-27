@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
-import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID , resolveActionTargets} from '../lib/placementStatus';
+import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets, type PlacementChip } from '../lib/placementStatus';
 import { openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
@@ -106,8 +106,33 @@ function EmployerDetails({ emp, orgName, onClose }: { emp: any | null; orgName: 
   );
 }
 
-function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
-  action: PlacementAction; tone: string; onCancel: () => void;
+/**
+ * The confirmation, redesigned around the question it never answered.
+ *
+ * Yariv 2026-08-27: "כפתור השלח מבלבל כי הוא פותח ישר ווטסאפ ומייל אבל קודם צריך
+ * לדעת מי המעסיק שאליו השלח מכוון."
+ *
+ * He was describing a real hazard, not a preference. The dialog led with `warnTitle`
+ * and `warnBody` — both generic, neither naming an organization — and its two primary
+ * buttons opened WhatsApp and mail. The target came from `resolveActionTargets`, which
+ * falls back to the classifier's recommendation when no chip is ticked, so from a
+ * collapsed row the coordinator could send a student's CV to an employer the screen
+ * had never named. Confirming a send you cannot see the destination of is not a
+ * confirmation.
+ *
+ * So the destination leads now, and it is editable here: WHO, their contact person and
+ * the address the message will actually go to, then a picker when more than one choice
+ * could receive it, and only then the channel — each button carrying the address it
+ * will open. A channel with no address is disabled rather than opening an empty
+ * compose window.
+ */
+function ConfirmDialog({ action, tone, targets, chosenList, onToggle, findEmp, onCancel, onConfirm }: {
+  action: PlacementAction; tone: string;
+  targets: PlacementChip[];
+  chosenList: PlacementChip[];
+  onToggle: (orgName: string) => void;
+  findEmp: (name: string) => any;
+  onCancel: () => void;
   onConfirm: (channel?: 'whatsapp' | 'email') => void;
 }) {
   const goRef = useRef<HTMLButtonElement>(null);
@@ -119,15 +144,95 @@ function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
   }, [onCancel]);
 
   const [body, warn] = action.warnBody.split('\n⚠ ');
+  const messaging = action.id === 'send_cv' || action.id === 'remind';
+
+  // What this will act on, in the dialog's own words rather than the row's state.
+  const names = chosenList.length ? chosenList.map(c => c.orgName)
+    : (action.targetOrg ? [action.targetOrg] : []);
+  const emps = names.map(n => ({ name: n, chip: targets.find(t => t.orgName === n) || null, emp: findEmp(n) }));
+  const single = emps.length === 1 ? emps[0] : null;
+
+  // The address the button will actually open. One recipient only — with several, the
+  // planner opens them one at a time and the addresses differ per organization.
+  const soleEmail = single?.emp?.contactEmail || '';
+  const solePhone = single?.emp?.contactPhone || '';
+  const canEmail = !messaging || emps.length > 1 || !!soleEmail;
+  const canWhats = !messaging || emps.length > 1 || !!solePhone;
+  const trunc = (v: string, n: number) => (v.length > n ? v.slice(0, n - 1) + '…' : v);
+
   return (
     <div onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) onCancel(); }}
       style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(26,22,18,0.55)' }}>
       <div role="dialog" aria-modal="true" data-placement-confirm={action.id}
-        style={{ background: 'var(--bg)', border: '1px solid var(--divider)', borderRadius: 16, maxWidth: 470, width: '100%', padding: '22px 24px', textAlign: 'right', boxShadow: '0 24px 64px rgba(0,0,0,0.3)' }}>
+        style={{ background: 'var(--bg)', border: '1px solid var(--divider)', borderRadius: 16, maxWidth: 470, width: '100%', padding: '22px 24px', textAlign: 'right', boxShadow: '0 24px 64px rgba(0,0,0,0.3)', maxHeight: '86vh', overflowY: 'auto' }}>
         <div className="mono" style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.13em', color: tone, marginBottom: 6 }}>
           אישור פעולה
         </div>
-        <div className="serif" style={{ fontSize: 23, color: 'var(--ink)', marginBottom: 10 }}>{action.warnTitle}</div>
+        <div className="serif" style={{ fontSize: 23, color: 'var(--ink)', marginBottom: 12 }}>{action.warnTitle}</div>
+
+        {/* ── the destination, before anything else ───────────────────────────── */}
+        {emps.length > 0 && (
+          <div data-confirm-target={names.join('|')}
+            style={{ border: `1px solid ${tone}`, borderRadius: 11, padding: '11px 13px', marginBottom: 13,
+                     background: 'rgba(59,90,143,0.05)' }}>
+            <div className="mono" style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--text-soft)', marginBottom: 5 }}>
+              {messaging ? 'ההודעה תיפתח אל' : 'הפעולה תחול על'}
+            </div>
+            {emps.map(({ name, chip, emp }) => (
+              <div key={name} style={{ marginTop: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, flexWrap: 'wrap' }}>
+                  <b data-confirm-target-name style={{ fontSize: 16.5, color: 'var(--ink)', overflowWrap: 'anywhere' }}>{name}</b>
+                  {chip && <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-soft)' }}>בחירה {chip.rank}</span>}
+                </div>
+                {emp ? (
+                  <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--text-soft)', marginTop: 2 }}>
+                    {emp.contactPerson && <div>איש קשר: <b style={{ color: 'var(--ink)' }}>{emp.contactPerson}</b></div>}
+                    {(emp.contactPhone || emp.contactEmail) && (
+                      <div dir="ltr" style={{ textAlign: 'right', wordBreak: 'break-all' }}>
+                        {[emp.contactPhone, emp.contactEmail].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {!emp.contactPerson && !emp.contactPhone && !emp.contactEmail && (
+                      <div style={{ color: '#b45309', fontWeight: 600 }}>לא הוזנו פרטי קשר לארגון הזה.</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12.5, color: '#b45309', fontWeight: 600, marginTop: 2 }}>
+                    הארגון לא נמצא ברשימת המעסיקים — ייתכן שהשם בדירוג אינו תואם.
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── and it is changeable HERE, where the decision is actually made ──── */}
+        {targets.length > 1 && (
+          <div data-confirm-picker style={{ marginBottom: 13 }}>
+            <div className="mono" style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--text-soft)', marginBottom: 6 }}>
+              שינוי יעד
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {targets.map(t => {
+                const on = names.includes(t.orgName);
+                return (
+                  <button key={t.orgName} type="button" data-confirm-pick={t.orgName} aria-pressed={on}
+                    onClick={() => onToggle(t.orgName)}
+                    style={{ font: 'inherit', fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 8,
+                             cursor: 'pointer', maxWidth: '100%', overflowWrap: 'anywhere', textAlign: 'start',
+                             border: `1px ${on ? 'solid' : 'dashed'} ${on ? tone : 'var(--divider-strong)'}`,
+                             background: on ? 'rgba(59,90,143,0.10)' : 'transparent',
+                             color: on ? 'var(--ink)' : 'var(--text-soft)' }}>
+                    <span className="mono" style={{ opacity: 0.65, marginInlineEnd: 5 }}>{t.rank}</span>
+                    {t.orgName}
+                    {on && <span style={{ marginInlineStart: 5 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <p style={{ fontSize: 13.5, lineHeight: 1.7, color: 'var(--text-soft)', margin: 0 }}>{body}</p>
         {warn && (
           <div style={{ marginTop: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(185,28,28,0.08)', color: '#b91c1c', fontWeight: 600, fontSize: 12.5 }}>
@@ -140,7 +245,7 @@ function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
           </div>
         )}
         <div style={{ display: 'flex', gap: 9, marginTop: 18, flexWrap: 'wrap' }}>
-          {action.id === 'send_cv' || action.id === 'remind' ? (
+          {messaging ? (
             <>
               {/* Choosing the channel IS the confirmation — one tap fewer, and the
                   compose window opens straight from the row.
@@ -148,17 +253,24 @@ function ConfirmDialog({ action, tone, onCancel, onConfirm }: {
                   include the option to remind via whatsapp"). Every layer below already
                   supported it — planDispatch takes a channel, placement.ts carries a
                   whatsappTemplate, and the remind handler already branches on
-                  e.channel === 'whatsapp' — but this picker was gated to send_cv, so a
-                  reminder fell through to the plain confirm button, sent no channel, and
-                  silently defaulted to email. */}
+                  e.channel === 'whatsapp'.
+                  Each button now carries the address it will open, so the destination is
+                  legible at the instant of the tap and not only in the block above. */}
               <button ref={goRef} type="button" data-confirm-go data-channel="email"
+                disabled={!canEmail} title={soleEmail || undefined}
                 onClick={() => onConfirm('email')}
-                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: tone, color: '#fff', cursor: 'pointer' }}>
-                ✉ פתח מייל
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none',
+                         background: canEmail ? tone : 'var(--divider)', color: '#fff',
+                         cursor: canEmail ? 'pointer' : 'not-allowed', opacity: canEmail ? 1 : 0.6, maxWidth: '100%' }}>
+                ✉ {canEmail ? (soleEmail ? `מייל · ${trunc(soleEmail, 26)}` : 'פתח מייל') : 'אין מייל לארגון'}
               </button>
-              <button type="button" data-channel="whatsapp" onClick={() => onConfirm('whatsapp')}
-                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none', background: '#25D366', color: '#fff', cursor: 'pointer' }}>
-                WhatsApp
+              <button type="button" data-channel="whatsapp"
+                disabled={!canWhats} title={solePhone || undefined}
+                onClick={() => onConfirm('whatsapp')}
+                style={{ fontSize: 13, fontWeight: 700, padding: '8px 18px', borderRadius: 9, border: 'none',
+                         background: canWhats ? '#25D366' : 'var(--divider)', color: '#fff',
+                         cursor: canWhats ? 'pointer' : 'not-allowed', opacity: canWhats ? 1 : 0.6, maxWidth: '100%' }}>
+                {canWhats ? (solePhone ? `WhatsApp · ${solePhone}` : 'WhatsApp') : 'אין טלפון לארגון'}
               </button>
             </>
           ) : (
@@ -246,10 +358,16 @@ export default function PlacementStrip({ status, employers, onAction }: {
       </span>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {/* The sentence IS the status — one line when collapsed, full when opened. */}
+        {/* The sentence IS the status. TWO lines when collapsed, full when opened.
+            Yariv 2026-08-27: "והמלל של הארגון קטוע אפשר ב2 שורות". One nowrap line
+            could not hold an organization's name and its state at 375px — the name
+            moving to the front bought the name and spent the state. A clamp at two
+            lines is the honest amount of room the sentence needs, and it costs about
+            22px per row rather than the 90px an expanded row costs. */}
         <div data-strip-headline
           style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.5,
-            ...(open ? { overflowWrap: 'break-word' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>
+            overflowWrap: 'break-word',
+            ...(open ? {} : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}>
           {status.headline}
         </div>
         {status.sub && (
@@ -419,6 +537,13 @@ export default function PlacementStrip({ status, employers, onAction }: {
       {confirm && (
         <ConfirmDialog
           action={confirm} tone={tone}
+          // The dialog names — and can change — what the action will act on, so it needs
+          // the same selection state the row holds. A chip-stamped action (the ✕ and ↻)
+          // carries its own targetOrg and the picker is not offered for it.
+          targets={confirm.targetOrg ? [] : targets}
+          chosenList={confirm.targetOrg ? [] : chosenList}
+          onToggle={toggle}
+          findEmp={findEmp}
           onCancel={() => setConfirm(null)}
           onConfirm={(channel) => {
             const a = confirm; setConfirm(null);
