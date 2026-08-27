@@ -172,7 +172,7 @@ export function placesPhrase(n: number): string {
 }
 
 /**
- * WHERE the CV went, by name.
+ * WHERE the CV went, by name — as a phrase that reads inside a sentence ("ל‑A ו‑B").
  *
  * Yariv 2026-08-27: "אני רוצה לראות את שם הארגון אליו זה נשלח במסך הראשי מבלי להכנס
  * לכרטיס הסטודנט."
@@ -182,10 +182,8 @@ export function placesPhrase(n: number): string {
  * one fact behind an expander. A count answers a question nobody asks; on a list, the
  * name IS the status.
  *
- * The name goes FIRST, right after "קו״ח נשלחו", because a collapsed headline is
- * truncated with an ellipsis — whatever leads survives, and everything after it may not.
- * Past two organizations it degrades to "and N more" rather than growing without bound
- * and pushing the days-waiting off the end of the line.
+ * This form keeps the preposition and is for prose — a `sub` line, a tooltip. A HEADLINE
+ * must use orgsLead() instead; see the note there for why.
  */
 export function sentToPhrase(orgNames: (string | null | undefined)[]): string {
   const names = (orgNames || []).map(n => String(n ?? '').trim()).filter(Boolean);
@@ -193,6 +191,32 @@ export function sentToPhrase(orgNames: (string | null | undefined)[]): string {
   if (names.length === 1) return `ל‑${names[0]}`;
   if (names.length === 2) return `ל‑${names[0]} ו‑${names[1]}`;
   return `ל‑${names[0]} ועוד ${names.length - 1}`;
+}
+
+/**
+ * The same names, with nothing in front of them — for the FIRST position in a headline.
+ *
+ * Yariv 2026-08-27, on a deployed build that already named the organization: "no change".
+ * The name was in the string and still not on his screen. A collapsed headline is
+ * `text-overflow: ellipsis`, and on a 375px phone the strip's middle column measures
+ * about 73px once the turn label, the action button and the expander have taken their
+ * width — roughly seven Hebrew characters. "קו״ח נשלחו " is ten. The name was being
+ * cut off by the very words introducing it.
+ *
+ * So the rule is not "the name goes early", it is "the name goes FIRST". An ellipsis
+ * eats the END of a line and never the beginning, which makes leading with the name a
+ * proof rather than a hope: whatever else is lost, the organization is on screen.
+ * `sentToPhrase` stays for `sub` lines, where the sentence still needs its preposition.
+ */
+export function orgsLead(orgNames: (string | null | undefined)[]): string {
+  const names = (orgNames || []).map(n => String(n ?? '').trim()).filter(Boolean);
+  if (!names.length) {
+    const n = orgNames?.length || 0;
+    return n === 1 ? 'מקום אחד' : `${n} מקומות`;
+  }
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} ו‑${names[1]}`;
+  return `${names[0]} ועוד ${names.length - 1}`;
 }
 
 const norm = (s: any) => String(s ?? '').trim().toLowerCase();
@@ -559,7 +583,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     if (stale && exhaustedReminders) {
       return {
         key: 'sent', turn: 'employer',
-        headline: `קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))} · ${oldest} ימים ללא תשובה`,
+        headline: `${orgsLead(sent.map(p => p.orgName))} · ${oldest} ימים ללא תשובה`,
         sub: withCvNote(`נשלחו ${MAX_REMINDERS} תזכורות — זימון לראיון יכול לקחת עד ${NO_RESPONSE_DAYS} ימים. אין מה לעשות בינתיים.`),
         chips: allChips, age: '', action: sendAction,
       };
@@ -568,7 +592,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     if (stale) {
       return {
         key: 'sent_stale', turn: 'ours',
-        headline: `קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))} · ${oldest} ימים ללא תשובה`,
+        headline: `${orgsLead(sent.map(p => p.orgName))} · ${oldest} ימים ללא תשובה`,
         sub: withCvNote(`מעל סף ההמתנה (${silenceDays} ימים) — כדאי לתזכר את המעסיקים`),
         chips: allChips, age: '', action: act('remind'),
       };
@@ -577,7 +601,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       const p0 = passed[0];
       return {
         key: 'interview_passed', turn: 'employer',
-        headline: `עבר/ה ראיון ב‑${p0.orgName} — ממתין להחלטת המעסיק`,
+        headline: `${p0.orgName} · עבר/ה ראיון — ממתין להחלטת המעסיק`,
         sub: withCvNote(`קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))}`),
         chips: allChips.map(c => (norm(c.orgName) === norm(p0.orgName) ? { ...c, tone: 'pass' as const } : c)),
         age: '', action: sendAction,
@@ -586,7 +610,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     const blockedWaiting = waitingChips.filter(c => !c.available);
     return {
       key: 'sent', turn: 'employer',
-      headline: `קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))} · ממתין לתשובת המעסיק`,
+      headline: `${orgsLead(sent.map(p => p.orgName))} · קו״ח נשלחו · ממתין לתשובת המעסיק`,
       sub: withCvNote(
         stillSendable.length ? `אפשר לשלוח גם לבחירה ${stillSendable[0].rank}: ${stillSendable[0].orgName}`
         : blockedWaiting.length ? blockedWaiting.map(c => `בחירה ${c.rank} (${c.orgName}) ${c.blockedReason}`).join(' · ')

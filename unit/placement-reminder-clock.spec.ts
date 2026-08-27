@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { placementStatus, sentToPhrase, placesPhrase, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../src/lib/placementStatus';
+import { placementStatus, sentToPhrase, orgsLead, placesPhrase, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../src/lib/placementStatus';
 
 /**
  * The reminder clock.
@@ -140,11 +140,49 @@ test('THE ASK: one organization is named in the headline, not counted', () => {
   expect(st?.headline).not.toContain('למקום אחד');
 });
 
-test('the name leads, so it survives the collapsed ellipsis', () => {
-  // A collapsed headline is truncated. Whatever comes first is what the reader gets.
-  const st = statusOf(student(), [dispatch()]);
-  const h = st?.headline || '';
-  expect(h.indexOf('UCL Group')).toBeLessThan(h.indexOf('ימים'));
+test('THE SECOND BUG: the name must be FIRST, not merely early', () => {
+  // Yariv 2026-08-27, on a deployed build that already named the organization: "no
+  // change". The name was in the headline and still not on his screen.
+  //
+  // The test that shipped that build is the one this replaces. It asserted the name
+  // came before the day count — an ORDERING — which was true while the rendered line
+  // still cut the name off. A collapsed headline is `text-overflow: ellipsis`, and at
+  // 375px the strip's middle column is about 73px once the turn label, the action
+  // button and the expander have taken theirs: roughly seven Hebrew characters.
+  // "קו״ח נשלחו " is ten, so the introduction consumed the whole line and the name
+  // it introduced never rendered.
+  //
+  // startsWith is the assertion that cannot pass while the bug is present: an ellipsis
+  // eats the end of a line and never the beginning, so a name in position 0 is on
+  // screen at every width there is.
+  const h = statusOf(student(), [dispatch()])?.headline || '';
+  expect(h.startsWith('UCL Group')).toBe(true);
+});
+
+test('every headline that carries an organization leads with it', () => {
+  // One assertion per state that names a place, so a future rewording cannot quietly
+  // push the name back behind an introduction again.
+  const passedPref = student({
+    preferences: [{ rank: 1, orgName: 'UCL Group', employerId: 'e1', status: 'under_review',
+                    slotId: 'e1-s1', interviewResult: 'passed' }],
+  });
+  const heads: [string, string | undefined][] = [
+    ['sent',              statusOf(student(), [dispatch({ sentAt: daysAgo(3) })])?.headline],
+    ['sent_stale',        statusOf(student(), [dispatch({ sentAt: daysAgo(30) })])?.headline],
+    ['sent (exhausted)',  statusOf(student(), [dispatch({ sentAt: daysAgo(30), remindedAt: daysAgo(SILENCE_DAYS + 1), reminders: MAX_REMINDERS })])?.headline],
+    ['interview_passed',  statusOf(passedPref, [dispatch()])?.headline],
+  ];
+  for (const [state, h] of heads) expect(h?.startsWith('UCL Group'), `${state}: ${h}`).toBe(true);
+});
+
+test('orgsLead carries no preposition — that is the whole difference from sentToPhrase', () => {
+  expect(orgsLead(['A'])).toBe('A');
+  expect(orgsLead(['A', 'B'])).toBe('A ו‑B');
+  expect(orgsLead(['A', 'B', 'C'])).toBe('A ועוד 2');
+  // ...and a blank name still must not render a dangling "ל‑" at position 0.
+  expect(orgsLead([])).toBe('0 מקומות');
+  expect(orgsLead(['', '  '])).toBe('2 מקומות');
+  expect(orgsLead([null])).toBe('מקום אחד');
 });
 
 test('two organizations are both named', () => {
