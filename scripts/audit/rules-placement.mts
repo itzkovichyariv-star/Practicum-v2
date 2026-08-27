@@ -94,10 +94,14 @@ const rule = (id, tableRef, expected, got) =>
     student: { cvUpdatedUrl: 'x', preferences: Array.from({ length: n }, (_, i) => ({ rank: i + 1, orgName: emps[i].name, employerId: emps[i].id, status: 'under_review', slotId: `s${i}` })) },
     dispatches: Array.from({ length: n }, (_, i) => ({ studentId: 'stu1', slotId: `s${i}`, employerId: emps[i].id, result: 'pending', sentAt: daysAgo(2) })),
   });
-  rule('STRIP-sent-2', 'Yariv: "נשלחו ל2 מקומות"',
-    'קו״ח נשלחו ל‑2 מקומות · ממתין לתשובת המעסיק', run(mk(2)).headline);
-  rule('STRIP-sent-1-singular', 'brief §states row 6',
-    'קו״ח נשלחו למקום אחד · ממתין לתשובת המעסיק', run(mk(1)).headline);
+  // Yariv 2026-08-27 replaced the count with the NAME: "אני רוצה לראות את שם הארגון
+  // אליו זה נשלח במסך הראשי מבלי להכנס לכרטיס הסטודנט". The earlier expectation
+  // ("נשלחו ל2 מקומות") was his too — this supersedes it, and the rule is updated
+  // rather than deleted so the headline stays pinned to an exact string.
+  rule('STRIP-sent-2', 'Yariv 2026-08-27: the organizations are NAMED, not counted',
+    'קו״ח נשלחו ל‑A ו‑B · ממתין לתשובת המעסיק', run(mk(2)).headline);
+  rule('STRIP-sent-1-singular', 'brief §states row 6 — now the name, per 2026-08-27',
+    'קו״ח נשלחו ל‑A · ממתין לתשובת המעסיק', run(mk(1)).headline);
   rule('STRIP-sent-turn', 'brief §states row 6', 'employer', run(mk(2)).turn);
 }
 
@@ -344,6 +348,9 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     contactName: 'איש קשר', studentName: 'סטודנטית', positionTitle: 'ארגון', adminName: 'יריב',
     courseName: 'פרקטיקום', cvLink: 'https://x/cv.pdf', employerName: 'ארגון',
     daysWaiting: '8', responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
+    // The real send path supplies this (dispatch.ts builds it from the settings), so
+    // the assertion has to render the same shape the employer actually receives.
+    contactBack: 'אם הקישור לא נפתח — אפשר פשוט לחזור אליי במייל x@y.',
   });
   rule('RENDER-no-placeholder-left', 'nothing reaches the employer as {…}',
     true, !/\{\w+\}/.test(composed));
