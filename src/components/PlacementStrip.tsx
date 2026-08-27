@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
-import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets, type PlacementChip } from '../lib/placementStatus';
+import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets } from '../lib/placementStatus';
 import { openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
