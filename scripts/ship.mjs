@@ -66,9 +66,16 @@ console.log('   keyboard gets suspended by the shell and silently stops answerin
 
 // stdio 'ignore' is the load-bearing part: no tty to read, so no SIGTTIN, so no
 // "suspended (tty input)". Astro's interactive shortcuts are lost; nothing else is.
+// stdout/stderr are PIPED (stdin stays ignored, which is the part that mattered): with
+// them discarded, a dev server that refuses to transform a module fails silently and the
+// blank-app message below could only guess at a cache. It guessed wrong on 2026-08-27 and
+// sent Yariv after `rm -rf node_modules/.vite` for a duplicated type import of mine.
+let devLog = '';
 dev = spawn('npm', ['run', 'dev', '--', '--port', String(PORT)], {
-  cwd: ROOT, stdio: 'ignore', shell: false, detached: false,
+  cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], shell: false, detached: false,
 });
+dev.stdout?.on('data', d => { devLog += d; });
+dev.stderr?.on('data', d => { devLog += d; });
 dev.on('exit', code => {
   if (code !== null && code !== 0 && dev) console.error(`✗ the dev server exited early (code ${code})`);
 });
@@ -115,8 +122,30 @@ const warm = await hydrated();
 console.log(warm ? 'ready' : 'STILL BLANK');
 if (!warm) {
   console.error(`\n✗ the server answers but the app never rendered on ${URL_}.`);
-  console.error('  Usually a stale Vite cache. Fix and retry:');
-  console.error('    rm -rf node_modules/.vite && npm run ship');
+
+  // Read the cause off the dev server before offering any remedy. A module Vite refused
+  // to transform takes the whole island with it, the page still answers 200, and it
+  // looks exactly like a cache problem while being a compile error in the code — one
+  // that `astro build` can pass, because esbuild elides type imports before it could
+  // object to a duplicate and Babel does not.
+  const transform = devLog.split('\n').filter(l =>
+    /Internal server error|has already been declared|Transform failed|Failed to parse|Pre-transform error/i.test(l));
+  const moved = /Port \d+ is in use, trying another one/i.test(devLog);
+
+  if (transform.length) {
+    console.error('  Vite refused to transform a module. This is a compile error in the code,');
+    console.error('  not a cache — clearing the cache will not touch it:\n');
+    for (const l of [...new Set(transform.map(l => l.trim()))].slice(0, 5)) console.error('    ' + l);
+  } else if (moved) {
+    console.error(`  something else was already listening on ${PORT}, so Astro moved to another`);
+    console.error('  port and the warming step measured the OTHER server. Free it and retry:');
+    console.error(`    lsof -ti tcp:${PORT} | xargs kill -9 && npm run ship`);
+  } else {
+    console.error('  No transform error was reported, which does point at a stale Vite cache:');
+    console.error('    rm -rf node_modules/.vite && npm run ship');
+    const tail = devLog.trim().split('\n').slice(-8).join('\n');
+    if (tail) console.error('\n  last lines from the dev server:\n' + tail.replace(/^/gm, '    '));
+  }
   stopDev();
   process.exit(2);
 }
