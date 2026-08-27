@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { openCv } from '../lib/cvUrl';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Candidate, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
@@ -379,12 +380,11 @@ function FileField({ label, value, onChange, placeholder }: { label: string; val
   const canOpen = isHttpUrl || !!storageMatch || isPlainPath;
 
   function openFileUrl(rawUrl: string) {
-    const isWord = /\.(docx?|doc)$/i.test(rawUrl.split('?')[0]);
-    if (isWord) {
-      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(rawUrl)}`, '_blank');
-    } else {
-      window.open(rawUrl, '_blank');
-    }
+  // Every CV opener goes through openCv, and none of them reroutes Word through
+  // Microsoft's Office Online viewer any more: that viewer answers with an empty frame whenever
+  // it cannot fetch the file, and that empty frame was the blank page reported five
+  // times. window.open is gone with it — an installed PWA has no tab bar to put one in.
+    void openCv(rawUrl);
   }
 
   function getPublicUrl() {

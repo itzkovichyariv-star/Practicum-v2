@@ -44,7 +44,7 @@ export type CandidateChip = {
   tone: CandidateChipTone;
   /** The STORED file reference, verbatim — usually `storage://bucket/path`.
    *  Deliberately not a URL: resolving one needs the Supabase client, and this module
-   *  stays pure so it can be tested without it. The renderer calls viewableCvUrl.
+   *  stays pure so it can be tested without it. The renderer calls resolveCvUrl.
    *  Handing this to an <a href> directly is what produced a blank tab. */
   fileRef?: string;
 };

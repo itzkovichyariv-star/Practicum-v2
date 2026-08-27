@@ -6,7 +6,7 @@ import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi'
 import { orgAvailability } from '../lib/orgAvailability';
 import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
-import { viewableCvUrl, resolveCvUrl, openCv } from '../lib/cvUrl';
+import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
@@ -800,10 +800,11 @@ export default function StudentEditor({
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button type="button" onClick={() => {
-                    const { data } = supabase.storage.from('candidate-uploads').getPublicUrl(pendingCv.cv_file_path);
-                    const url = data.publicUrl;
-                    const isWord = /\.(docx?|doc)$/i.test(url.split('?')[0]);
-                    window.open(isWord ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}` : url, '_blank');
+  // Every CV opener goes through openCv, and none of them reroutes Word through
+  // Microsoft's Office Online viewer any more: that viewer answers with an empty frame whenever
+  // it cannot fetch the file, and that empty frame was the blank page reported five
+  // times. window.open is gone with it — an installed PWA has no tab bar to put one in.
+                    void openCv(`storage://candidate-uploads/${pendingCv.cv_file_path}`);
                   }} style={{
                     display: 'inline-block', padding: '7px 14px', fontSize: '12px', fontWeight: 600,
                     background: 'transparent', color: '#b45309', border: '1px solid #b45309',
@@ -1321,13 +1322,11 @@ function FileField({ label, value, onChange, placeholder }: { label: string; val
   const canOpen = isHttpUrl || !!storageMatch || isPlainPath;
 
   function openFileUrl(rawUrl: string) {
-    const isWord = /\.(docx?|doc)$/i.test(rawUrl.split('?')[0]);
-    if (isWord) {
-      // Microsoft Office Online viewer — displays Word files in-browser without download
-      window.open(`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(rawUrl)}`, '_blank');
-    } else {
-      window.open(rawUrl, '_blank');
-    }
+  // Every CV opener goes through openCv, and none of them reroutes Word through
+  // Microsoft's Office Online viewer any more: that viewer answers with an empty frame whenever
+  // it cannot fetch the file, and that empty frame was the blank page reported five
+  // times. window.open is gone with it — an installed PWA has no tab bar to put one in.
+    void openCv(rawUrl);
   }
 
   function openFile() {
