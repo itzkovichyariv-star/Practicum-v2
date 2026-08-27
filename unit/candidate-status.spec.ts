@@ -150,7 +150,7 @@ test('the evaluation becomes chips — this is the data that had nowhere to show
   }));
   const by = (l: string) => chips.find(c => c.label === l);
   expect(by('קו״ח')?.tone).toBe('done');
-  expect(by('קו״ח')?.href).toBe('https://x/cv.pdf');
+  expect(by('קו״ח')?.fileRef).toBe('https://x/cv.pdf');
   expect(by('שאלון')?.value).toBe('3/9');
   expect(by('מחויבות')?.tone).toBe('good');   // top of its scale
   expect(by('מוטיבציה')?.tone).toBe('weak');  // bottom of its scale
