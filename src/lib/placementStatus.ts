@@ -171,6 +171,30 @@ export function placesPhrase(n: number): string {
   return n === 1 ? 'למקום אחד' : `ל‑${n} מקומות`;
 }
 
+/**
+ * WHERE the CV went, by name.
+ *
+ * Yariv 2026-08-27: "אני רוצה לראות את שם הארגון אליו זה נשלח במסך הראשי מבלי להכנס
+ * לכרטיס הסטודנט."
+ *
+ * The headline counted places — "למקום אחד" — while the names sat in the chips, which
+ * are collapsed by default. So the one fact he needs while scanning eighty rows was the
+ * one fact behind an expander. A count answers a question nobody asks; on a list, the
+ * name IS the status.
+ *
+ * The name goes FIRST, right after "קו״ח נשלחו", because a collapsed headline is
+ * truncated with an ellipsis — whatever leads survives, and everything after it may not.
+ * Past two organizations it degrades to "and N more" rather than growing without bound
+ * and pushing the days-waiting off the end of the line.
+ */
+export function sentToPhrase(orgNames: (string | null | undefined)[]): string {
+  const names = (orgNames || []).map(n => String(n ?? '').trim()).filter(Boolean);
+  if (!names.length) return placesPhrase(orgNames?.length || 0);
+  if (names.length === 1) return `ל‑${names[0]}`;
+  if (names.length === 2) return `ל‑${names[0]} ו‑${names[1]}`;
+  return `ל‑${names[0]} ועוד ${names.length - 1}`;
+}
+
 const norm = (s: any) => String(s ?? '').trim().toLowerCase();
 
 /** An org the student brought themselves: private to them, and the coordinator's move is
@@ -535,7 +559,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     if (stale && exhaustedReminders) {
       return {
         key: 'sent', turn: 'employer',
-        headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ${oldest} ימים ללא תשובה`,
+        headline: `קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))} · ${oldest} ימים ללא תשובה`,
         sub: withCvNote(`נשלחו ${MAX_REMINDERS} תזכורות — זימון לראיון יכול לקחת עד ${NO_RESPONSE_DAYS} ימים. אין מה לעשות בינתיים.`),
         chips: allChips, age: '', action: sendAction,
       };
@@ -544,7 +568,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     if (stale) {
       return {
         key: 'sent_stale', turn: 'ours',
-        headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ${oldest} ימים ללא תשובה`,
+        headline: `קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))} · ${oldest} ימים ללא תשובה`,
         sub: withCvNote(`מעל סף ההמתנה (${silenceDays} ימים) — כדאי לתזכר את המעסיקים`),
         chips: allChips, age: '', action: act('remind'),
       };
@@ -554,7 +578,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       return {
         key: 'interview_passed', turn: 'employer',
         headline: `עבר/ה ראיון ב‑${p0.orgName} — ממתין להחלטת המעסיק`,
-        sub: withCvNote(`קו״ח נשלחו ${placesPhrase(sent.length)}`),
+        sub: withCvNote(`קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))}`),
         chips: allChips.map(c => (norm(c.orgName) === norm(p0.orgName) ? { ...c, tone: 'pass' as const } : c)),
         age: '', action: sendAction,
       };
@@ -562,7 +586,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
     const blockedWaiting = waitingChips.filter(c => !c.available);
     return {
       key: 'sent', turn: 'employer',
-      headline: `קו״ח נשלחו ${placesPhrase(sent.length)} · ממתין לתשובת המעסיק`,
+      headline: `קו״ח נשלחו ${sentToPhrase(sent.map(p => p.orgName))} · ממתין לתשובת המעסיק`,
       sub: withCvNote(
         stillSendable.length ? `אפשר לשלוח גם לבחירה ${stillSendable[0].rank}: ${stillSendable[0].orgName}`
         : blockedWaiting.length ? blockedWaiting.map(c => `בחירה ${c.rank} (${c.orgName}) ${c.blockedReason}`).join(' · ')
