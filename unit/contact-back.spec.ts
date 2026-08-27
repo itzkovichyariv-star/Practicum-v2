@@ -108,3 +108,34 @@ test('the phone is NOT taken from an employer — that is the organization own n
   expect(s).toContain('rachel@example.ac.il');
   expect(s).not.toContain('בטלפון');
 });
+
+// ── one number, said once ───────────────────────────────────────────────────
+// Yariv 2026-08-27 supplied a phone and no separate WhatsApp — the ordinary case, and
+// the one the fallback was built for. It also made every employer message read
+// "בטלפון 052… · בוואטסאפ 052…": the same digits twice, which looks like a bug because
+// it is one. Only a genuinely different number earns its own mention.
+
+test('a phone with no separate WhatsApp is mentioned once, for both', () => {
+  const s = contactBackSentence({ coordinatorPhone: '0523975027' });
+  expect(s).toContain('בטלפון או בוואטסאפ 0523975027');
+  expect(s.match(/0523975027/g)?.length).toBe(1);
+});
+
+test('formatting differences do not count as a different number', () => {
+  // A hand-typed 052-397-5027 beside a pasted 0523975027 is one number, not two.
+  const s = contactBackSentence({ coordinatorPhone: '052-397-5027', coordinatorWhatsapp: '0523975027' });
+  expect(s).toContain('בטלפון או בוואטסאפ');
+  expect(s).not.toContain('בוואטסאפ 0523975027 ');
+});
+
+test('a genuinely different WhatsApp number still gets its own mention', () => {
+  const s = contactBackSentence({ coordinatorPhone: '03-9000000', coordinatorWhatsapp: '0541234567' });
+  expect(s).toContain('בטלפון 03-9000000');
+  expect(s).toContain('בוואטסאפ 0541234567');
+});
+
+test('the email still joins whichever shape the number took', () => {
+  const s = contactBackSentence({ coordinatorPhone: '0523975027', coordinatorEmail: 'y@ariel.ac.il' });
+  expect(s).toContain('בטלפון או בוואטסאפ 0523975027');
+  expect(s).toContain('במייל y@ariel.ac.il');
+});

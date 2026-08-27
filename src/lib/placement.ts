@@ -55,9 +55,21 @@ export function contactBackSentence(settings: any): string {
   const phone = String(settings?.coordinatorPhone || '').trim();
   const email = String(settings?.coordinatorEmail || '').trim();
   const wa = String(settings?.coordinatorWhatsapp || settings?.coordinatorPhone || '').trim();
+
+  // One number, said once. The WhatsApp field defaults to the phone — which is the
+  // common case, since almost nobody has a separate one — and printing both produced
+  // "בטלפון 052… · בוואטסאפ 052…" to every employer: the same digits twice in a row,
+  // which reads like a mistake because it is one. Only a genuinely DIFFERENT number
+  // earns a second mention.
+  const digits = (v: string) => v.replace(/\D/g, '');
+  const sameNumber = !!phone && !!wa && digits(phone) === digits(wa);
+
   const parts: string[] = [];
-  if (phone) parts.push(`בטלפון ${phone}`);
-  if (wa) parts.push(`בוואטסאפ ${wa}`);
+  if (sameNumber) parts.push(`בטלפון או בוואטסאפ ${phone}`);
+  else {
+    if (phone) parts.push(`בטלפון ${phone}`);
+    if (wa) parts.push(`בוואטסאפ ${wa}`);
+  }
   if (email) parts.push(`במייל ${email}`);
   if (!parts.length) return '';
   return `אם הקישור לא נפתח — אפשר פשוט לחזור אליי ${parts.join(' · ')}.`;
