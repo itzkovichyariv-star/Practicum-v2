@@ -162,11 +162,12 @@ const TEMPLATE_FIELDS: { key: keyof PlacementSettings; label: string; rows?: num
   { key: 'studentNotifyRejectedTemplateWhatsApp', label: 'WhatsApp — הודעה לסטודנט: נדחה',   rows: 5,  desc: 'נשלח לסטודנט אחרי דחיית הצעת מעסיק.' },
   { key: 'studentNotifyRejectedTemplateEmailSubject', label: 'אימייל נושא — הודעה לסטודנט: נדחה', rows: 1 },
   { key: 'studentNotifyRejectedTemplateEmailBody',    label: 'אימייל גוף — הודעה לסטודנט: נדחה',  rows: 6 },
-  // The human route back, for when the one-click link fails. One line each, and they
-  // feed {contactBack} in EVERY employer template — edit once, every message updates.
-  { key: 'coordinatorPhone',    label: 'טלפון הרכז/ת — לחזרה של מעסיק', rows: 1, desc: 'מופיע בכל הודעה למעסיק דרך {contactBack}. זה הטלפון שלך, לא של הארגון — המערכת לא שומרת אותו בשום מקום אחר. המייל נלקח אוטומטית מהגדרות המערכת למעלה.' },
-  { key: 'coordinatorWhatsapp', label: 'וואטסאפ הרכז/ת', rows: 1, desc: 'ריק = משתמש בטלפון שלמעלה.' },
-  // No coordinatorEmail field here on purpose — this screen already edits
+  // coordinatorPhone and coordinatorWhatsapp used to live here, at the bottom of
+  // seventeen multi-line templates behind a collapsed "הצג ועדוך תבניות הודעות". They
+  // are one-line facts that every employer message depends on, and burying them made a
+  // five-second edit into a hunt. They now have their own block above, always visible.
+  //
+  // No coordinatorEmail field anywhere — this screen already edits
   // data.coordinatorEmail / data.supervisorEmail above, and {contactBack} is seeded
   // from those. Two boxes for one address is how they drift apart.
   { key: 'publicSiteUrl',       label: 'כתובת האתר הציבורית', rows: 1, desc: 'הבסיס לקישור התשובה שנשלח למעסיק (למשל https://practicum-v2.pages.dev). ריק = הכתובת שממנה נשלח — שעלולה להיות localhost או תצוגה מקדימה.' },
@@ -243,6 +244,39 @@ function PlacementSettingsCard({ data, userName, onRefresh }: { data: any; userN
             className="input" style={{ width: '120px', padding: '10px 14px', fontSize: '14px' }} />
           <span className="text-[12px] mr-3" style={{ color: 'var(--text-soft)' }}>בין 1 ל-90 ימים</span>
         </label>
+      </div>
+
+      {/* The human route back, for when the one-click link fails. Two one-line fields that
+          feed {contactBack} in EVERY employer template — edit once, every message
+          updates — so they sit in the open rather than under the templates fold. */}
+      <div className="mb-6 p-4 rounded-xl" style={{ background: 'rgba(59,90,143,0.05)', border: '1px solid var(--divider)' }}>
+        <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-1" style={{ color: 'var(--text-soft)' }}>
+          איך מעסיק חוזר אליך
+        </div>
+        <p className="text-[12.5px] mb-3" style={{ color: 'var(--text-soft)', lineHeight: 1.6 }}>
+          מופיע בכל הודעה למעסיק דרך <code style={{ color: 'var(--accent)' }}>{'{contactBack}'}</code>, כדי שקישור שנשבר יעלה שיחת טלפון ולא השמה.
+          המייל נלקח אוטומטית מהגדרות המערכת ואינו נערך כאן.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+          <label className="block">
+            <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+              הטלפון שלך
+            </span>
+            <input
+              type="tel" dir="ltr" value={templates.coordinatorPhone || ''} placeholder="052-0000000"
+              onChange={e => setTpl('coordinatorPhone', e.target.value)}
+              className="input" style={{ width: '190px', padding: '10px 14px', fontSize: '14px', textAlign: 'start' }} />
+          </label>
+          <label className="block">
+            <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold block mb-1.5" style={{ color: 'var(--text-soft)' }}>
+              וואטסאפ, אם שונה
+            </span>
+            <input
+              type="tel" dir="ltr" value={templates.coordinatorWhatsapp || ''} placeholder="ריק = אותו מספר"
+              onChange={e => setTpl('coordinatorWhatsapp', e.target.value)}
+              className="input" style={{ width: '190px', padding: '10px 14px', fontSize: '14px', textAlign: 'start' }} />
+          </label>
+        </div>
       </div>
 
       {/* Token reference */}
