@@ -18,7 +18,7 @@ import ExcelImport from './ExcelImport';
 //   - Resend HTML (Edge Function) — auto-send when course.autoSendAcceptance=true
 import { openMailto } from '../lib/openMailto';
 import { sendAcceptanceEmail } from '../lib/emailApi';
-import { viewableCvUrl } from '../lib/cvUrl';
+import { viewableCvUrl, openCv } from '../lib/cvUrl';
 import CandidateStrip from './CandidateStrip';
 import type { CandidateAction } from '../lib/candidateStatus';
 
@@ -1357,13 +1357,13 @@ function CandidateRow({ c, enrolled, onEdit, pinned, onTogglePin, selected, onTo
               which is not a URL a browser can follow at all, and even once resolved a
               .doc/.docx cannot render inline. Both land on a blank tab, which reads as
               "the file is missing" when the file is fine and only the link was wrong. */}
-          <FileChip label="CV" url={viewableCvUrl(c.cvUrl)} />
+          <FileChip label="CV" url={viewableCvUrl(c.cvUrl)} fileRef={c.cvUrl} />
           {/* The הגשה form is a FILE only when someone attached one by hand. For
               everyone who came through the public form it is the questionnaire,
               which has no URL to open — so the chip opens the card, where
               QuestionnaireView already renders it. Same evidence the dot uses;
               they can never disagree. */}
-          <FileChip label="טופס" url={viewableCvUrl(c.applicationUrl)}
+          <FileChip label="טופס" url={viewableCvUrl(c.applicationUrl)} fileRef={c.applicationUrl}
             onOpen={!c.applicationUrl && c.questionnaire ? onEdit : undefined}
             openTitle="פתח/י את שאלון המועמדות בכרטיס" />
           {archived && (
@@ -1529,8 +1529,8 @@ function LinkRowC({ label, url, onCopy }: { label: string; url: string; onCopy: 
  *  click off the row, which would otherwise toggle the detail popover. Without
  *  one it is dashed and dimmed and is NOT a link, so "not submitted" is legible
  *  at a glance instead of being a dead control that looks clickable. */
-function FileChip({ label, url, onOpen, openTitle }: {
-  label: string; url?: string | null; onOpen?: () => void; openTitle?: string;
+function FileChip({ label, url, fileRef, onOpen, openTitle }: {
+  label: string; url?: string | null; fileRef?: string | null; onOpen?: () => void; openTitle?: string;
 }) {
   const base = 'mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-0.5 rounded-full shrink-0';
   const filled = { color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' } as const;
@@ -1554,9 +1554,13 @@ function FileChip({ label, url, onOpen, openTitle }: {
       </span>
     );
   }
+  // The href stays real — copy-link, middle-click and "open in new tab" all still work,
+  // and it is what the chip degrades to if the script never runs. The CLICK goes through
+  // openCv, which checks the object resolves and, when it does not, replaces what used
+  // to be a blank tab with what actually went wrong.
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
-      onClick={e => e.stopPropagation()}
+      onClick={e => { e.stopPropagation(); if (fileRef) { e.preventDefault(); void openCv(fileRef); } }}
       className={`${base} hover:opacity-75`} title={`פתח ${label}`}
       style={{ color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' }}>
       {label} ✓

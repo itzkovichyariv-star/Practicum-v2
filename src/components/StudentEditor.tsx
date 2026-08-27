@@ -6,7 +6,7 @@ import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi'
 import { orgAvailability } from '../lib/orgAvailability';
 import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
-import { viewableCvUrl, resolveCvUrl } from '../lib/cvUrl';
+import { viewableCvUrl, resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
@@ -730,7 +730,7 @@ export default function StudentEditor({
                           ✓ קו"ח מעודכן — יישלח למעסיק
                         </div>
                         <div className="flex gap-2 shrink-0">
-                          <button type="button" data-cv-open onClick={() => window.open(viewableCvUrl(cur), '_blank')} style={{ ...btnSmall(), padding: '5px 12px' }}>פתח ↗</button>
+                          <button type="button" data-cv-open onClick={() => openCv(cur)} style={{ ...btnSmall(), padding: '5px 12px' }}>פתח ↗</button>
                           <button type="button" data-cv-copy onClick={copyCv} style={{ ...btnSmall(), padding: '5px 12px' }}>📋 העתק</button>
                         </div>
                       </div>
@@ -757,14 +757,14 @@ export default function StudentEditor({
                           {usingUpdated && (form as any).cvUrl && (
                             <div className="text-[12px] flex items-center gap-2" style={{ color: 'var(--text-soft)' }}>
                               <span style={{ textDecoration: 'line-through' }}>קו״ח מקורי (הוחלף)</span>
-                              <button type="button" onClick={() => window.open(viewableCvUrl((form as any).cvUrl), '_blank')} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>פתח ↗</button>
+                              <button type="button" onClick={() => openCv((form as any).cvUrl)} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>פתח ↗</button>
                             </div>
                           )}
                           {cvHistory.filter(r => r.cv_file_path).map(r => (
                             <div key={r.id} className="text-[12px] flex items-center gap-2" style={{ color: 'var(--text-soft)' }}>
                               <span>{(() => { try { return new Date(r.uploaded_at).toLocaleDateString('he-IL'); } catch { return ''; } })()}</span>
                               <span className="mono text-[10.5px]">{(r.cv_file_path || '').split('/').pop()}</span>
-                              <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${r.cv_file_path}`), '_blank')} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>קו״ח ↗</button>
+                              <button type="button" onClick={() => openCv(`storage://candidate-uploads/${r.cv_file_path}`)} className="text-[11px] underline" style={{ color: 'var(--accent)' }}>קו״ח ↗</button>
                             </div>
                           ))}
                         </div>
@@ -1004,7 +1004,7 @@ export default function StudentEditor({
                           <span>{ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}</span>
                           {row.suggested_org?.name ? <span>{`· הצעה: ${row.suggested_org.name}`}</span> : null}
                           {row.cv_file_path && (
-                            <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${row.cv_file_path}`), '_blank')}
+                            <button type="button" onClick={() => openCv(`storage://candidate-uploads/${row.cv_file_path}`)}
                               className="text-[11px] underline" style={{ color: 'var(--accent)' }}>קו״ח ↗</button>
                           )}
                         </div>

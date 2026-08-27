@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, type FormEvent, type CSSPropertie
 import { publicSupabase as supabase } from '../lib/supabase';
 import { employerStatus } from '../lib/orgAvailability';
 import { useFormDraft } from '../lib/useFormDraft';
-import { viewableCvUrl } from '../lib/cvUrl';
+import { viewableCvUrl, openCv } from '../lib/cvUrl';
 import { countSlotsByStatus } from '../lib/placement';
 
 type Status = 'idle' | 'uploading' | 'done' | 'error';
@@ -318,7 +318,7 @@ export default function CvUpdateForm() {
                     <span className="font-semibold" style={{ color: idx === 0 ? 'var(--accent)' : 'var(--text-soft)' }}>{when}{idx === 0 ? ' · אחרונה' : ''}</span>
                     <span>· {ps.length ? ps.map((p, i) => `${i + 1}. ${p}`).join('   ') : 'ללא העדפות'}</span>
                     {row.cv_file_path && (
-                      <button type="button" onClick={() => window.open(viewableCvUrl(`storage://candidate-uploads/${row.cv_file_path}`), '_blank')}
+                      <button type="button" onClick={() => openCv(`storage://candidate-uploads/${row.cv_file_path}`)}
                         className="underline" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                         קו״ח ↗
                       </button>
