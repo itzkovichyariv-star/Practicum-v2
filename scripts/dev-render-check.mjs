@@ -38,8 +38,25 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PORT = 4329;                    // clear of ship (4325) and of every other check
-const URL_ = `http://127.0.0.1:${PORT}`;
 const BOOT_TIMEOUT_MS = 90_000;
+
+/**
+ * WHICH host, and why this is not a detail.
+ *
+ * Astro binds the dev server to `localhost` — and on macOS `localhost` resolves to ::1,
+ * the IPv6 loopback, before it resolves to 127.0.0.1. So a check that polls
+ * http://127.0.0.1 knocks on IPv4 while the server is answering on IPv6, and reports
+ * that the app never came up while its own captured log says, three lines below,
+ * "astro ready in 236 ms — Local http://localhost:4329/". That is exactly what Yariv's
+ * gate printed (2026-08-27), and it passed here because this container's `localhost`
+ * covers both.
+ *
+ * Every OTHER check in this directory runs its own createServer().listen(PORT), which
+ * binds all interfaces, so 127.0.0.1 reaches it on any platform. This one does not get
+ * to choose — it asks whichever host answers.
+ */
+const HOSTS = [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`, `http://[::1]:${PORT}`];
+let URL_ = HOSTS[0];
 
 let log = '';
 // detached so the whole process GROUP can be killed: `npx` forwards nothing useful,
@@ -59,9 +76,15 @@ const stop = () => {
 process.on('exit', stop);
 process.on('SIGINT', () => { stop(); process.exit(130); });
 
+/** Answers on ANY of the loopback spellings, and remembers which one, for the browser. */
 const reachable = async () => {
-  try { const r = await fetch(URL_ + '/', { signal: AbortSignal.timeout(2500) }); return r.ok; }
-  catch { return false; }
+  for (const host of HOSTS) {
+    try {
+      const r = await fetch(host + '/', { signal: AbortSignal.timeout(2500) });
+      if (r.ok) { URL_ = host; return true; }
+    } catch { /* try the next spelling */ }
+  }
+  return false;
 };
 
 console.log('\ndev-render-check — does the app survive the dev transform?\n');
@@ -84,12 +107,12 @@ if (movedTo) {
 }
 
 if (!up) {
-  console.error(`✗ the dev server never answered on ${URL_}.`);
+  console.error(`✗ the dev server never answered on any of ${HOSTS.join(' , ')}.`);
   console.error(log.split('\n').filter(l => /error/i.test(l)).slice(0, 5).join('\n') || log.slice(-600));
   stop();
   process.exit(1);
 }
-console.log(`  ✓ dev server answered after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+console.log(`  ✓ dev server answered on ${URL_} after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
 
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
              '/opt/pw-browsers/chromium/chrome-linux/chrome'].find(existsSync);
