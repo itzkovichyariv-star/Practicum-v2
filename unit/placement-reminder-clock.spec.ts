@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { placementStatus, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../src/lib/placementStatus';
+import { placementStatus, sentToPhrase, placesPhrase, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS } from '../src/lib/placementStatus';
 
 /**
  * The reminder clock.
@@ -126,4 +126,53 @@ test('post-interview: a reminder older than the decision window is our turn agai
 test('exhausting the reminders still stops the nagging', () => {
   const st = statusOf(student(), [dispatch({ sentAt: daysAgo(30), remindedAt: daysAgo(SILENCE_DAYS + 1), reminders: MAX_REMINDERS })]);
   expect(st?.action?.id).not.toBe('remind');
+});
+
+// ── the organization, named on the list ─────────────────────────────────────
+// Yariv 2026-08-27: "אני רוצה לראות את שם הארגון אליו זה נשלח במסך הראשי מבלי להכנס
+// לכרטיס הסטודנט." The headline counted places while the names sat in the chips, which
+// are collapsed by default — so the one fact he needs while scanning was behind an
+// expander.
+
+test('THE ASK: one organization is named in the headline, not counted', () => {
+  const st = statusOf(student(), [dispatch()]);
+  expect(st?.headline).toContain('UCL Group');
+  expect(st?.headline).not.toContain('למקום אחד');
+});
+
+test('the name leads, so it survives the collapsed ellipsis', () => {
+  // A collapsed headline is truncated. Whatever comes first is what the reader gets.
+  const st = statusOf(student(), [dispatch()]);
+  const h = st?.headline || '';
+  expect(h.indexOf('UCL Group')).toBeLessThan(h.indexOf('ימים'));
+});
+
+test('two organizations are both named', () => {
+  const s = student({
+    preferences: [
+      { rank: 1, orgName: 'UCL Group', employerId: 'e1', status: 'under_review', slotId: 'e1-s1' },
+      { rank: 2, orgName: 'Acme', employerId: 'e2', status: 'under_review', slotId: 'e2-s1' },
+    ],
+  });
+  const st = statusOf(s, [
+    dispatch({ dispatchId: 'd1', employerId: 'e1', slotId: 'e1-s1' }),
+    dispatch({ dispatchId: 'd2', employerId: 'e2', slotId: 'e2-s1' }),
+  ]);
+  expect(st?.headline).toContain('UCL Group');
+  expect(st?.headline).toContain('Acme');
+});
+
+test('past two it degrades to "and N more" rather than growing without bound', () => {
+  expect(sentToPhrase(['A'])).toBe('ל‑A');
+  expect(sentToPhrase(['A', 'B'])).toBe('ל‑A ו‑B');
+  expect(sentToPhrase(['A', 'B', 'C'])).toBe('ל‑A ועוד 2');
+  expect(sentToPhrase(['A', 'B', 'C', 'D'])).toBe('ל‑A ועוד 3');
+});
+
+test('a nameless preference falls back to the count instead of "ל‑"', () => {
+  // A preference holding a slot for a deleted employer keeps a placeholder name, but a
+  // blank must never render as a dangling preposition.
+  expect(sentToPhrase([])).toBe(placesPhrase(0));
+  expect(sentToPhrase(['', '  '])).toBe('ל‑2 מקומות');
+  expect(sentToPhrase([null, undefined])).toBe('ל‑2 מקומות');
 });
