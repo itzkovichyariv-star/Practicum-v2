@@ -42,8 +42,11 @@ export type CandidateChip = {
   label: string;
   value: string;
   tone: CandidateChipTone;
-  /** Set when the chip is worth opening the card for — a questionnaire, a file. */
-  href?: string;
+  /** The STORED file reference, verbatim — usually `storage://bucket/path`.
+   *  Deliberately not a URL: resolving one needs the Supabase client, and this module
+   *  stays pure so it can be tested without it. The renderer calls viewableCvUrl.
+   *  Handing this to an <a href> directly is what produced a blank tab. */
+  fileRef?: string;
 };
 
 export type CandidateActionId =
@@ -139,7 +142,7 @@ export function candidateChips(c: Candidate): CandidateChip[] {
   const chips: CandidateChip[] = [];
 
   chips.push({ label: 'קו״ח', value: c.cvUrl ? 'הוגש' : 'חסר',
-    tone: c.cvUrl ? 'done' : 'missing', href: c.cvUrl });
+    tone: c.cvUrl ? 'done' : 'missing', fileRef: c.cvUrl });
 
   const q = questionnaireFilled(c);
   chips.push({ label: 'שאלון', value: q.filled ? `${q.filled}/${q.total}` : 'חסר',

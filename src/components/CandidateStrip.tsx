@@ -4,6 +4,7 @@ import {
   type CandidateAction, type CandidateChipTone, type CandidateStatus,
 } from '../lib/candidateStatus';
 import type { Candidate } from '../lib/supabase';
+import { viewableCvUrl } from '../lib/cvUrl';
 
 /**
  * The applicants-page counterpart to PlacementStrip: the status sentence, whose
@@ -98,8 +99,12 @@ export default function CandidateStrip({
                 background: t.bg, color: t.color, lineHeight: 1.45,
                 opacity: c.tone === 'missing' ? 0.75 : 1,
               } as const;
-              return c.href
-                ? <a key={`${c.label}#${i}`} data-cand-chip={c.label} href={c.href}
+              // Resolved HERE, never in the pure status module: a stored CV is
+              // `storage://bucket/path`, which a browser cannot follow, and a .docx will
+              // not render inline even once resolved. Both give a blank tab.
+              const href = c.fileRef ? viewableCvUrl(c.fileRef) : '';
+              return href
+                ? <a key={`${c.label}#${i}`} data-cand-chip={c.label} href={href}
                      target="_blank" rel="noopener noreferrer" style={{ ...style, textDecoration: 'none' }}>{body}</a>
                 : <span key={`${c.label}#${i}`} data-cand-chip={c.label} style={style}>{body}</span>;
             })}

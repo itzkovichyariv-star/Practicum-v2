@@ -18,6 +18,7 @@ import ExcelImport from './ExcelImport';
 //   - Resend HTML (Edge Function) — auto-send when course.autoSendAcceptance=true
 import { openMailto } from '../lib/openMailto';
 import { sendAcceptanceEmail } from '../lib/emailApi';
+import { viewableCvUrl } from '../lib/cvUrl';
 import CandidateStrip from './CandidateStrip';
 import type { CandidateAction } from '../lib/candidateStatus';
 
@@ -1351,13 +1352,18 @@ function CandidateRow({ c, enrolled, onEdit, pinned, onTogglePin, selected, onTo
             archive marker rides the same line, because a row that is only "green"
             reads as a candidate who passed rather than one already enrolled. */}
         <div className="flex items-center gap-1.5 flex-wrap pr-5 mb-1.5" onClick={e => e.stopPropagation()}>
-          <FileChip label="CV" url={c.cvUrl} />
+          {/* viewableCvUrl, never the raw value. Yariv 2026-08-26: "קורות חיים של
+              עדי גורביץ לא נפתחות — נותן דף לבן". A stored CV is `storage://bucket/path`,
+              which is not a URL a browser can follow at all, and even once resolved a
+              .doc/.docx cannot render inline. Both land on a blank tab, which reads as
+              "the file is missing" when the file is fine and only the link was wrong. */}
+          <FileChip label="CV" url={viewableCvUrl(c.cvUrl)} />
           {/* The הגשה form is a FILE only when someone attached one by hand. For
               everyone who came through the public form it is the questionnaire,
               which has no URL to open — so the chip opens the card, where
               QuestionnaireView already renders it. Same evidence the dot uses;
               they can never disagree. */}
-          <FileChip label="טופס" url={c.applicationUrl}
+          <FileChip label="טופס" url={viewableCvUrl(c.applicationUrl)}
             onOpen={!c.applicationUrl && c.questionnaire ? onEdit : undefined}
             openTitle="פתח/י את שאלון המועמדות בכרטיס" />
           {archived && (
