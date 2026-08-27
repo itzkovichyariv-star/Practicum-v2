@@ -124,10 +124,72 @@ function wordChoice(fileUrl: string): string {
  * The single entry point for "show me this CV". Every opener should call this rather
  * than window.open(viewableCvUrl(...)) — that form is what renders the blank page.
  */
+/**
+ * Is this the app INSTALLED to the home screen, rather than a page in a browser?
+ *
+ * Yariv 2026-08-27, after the CV opened on his Mac and not on his phone: "אולי הגדרה
+ * שקשורה לגודל והתצוגה?" — and that is exactly what it is, though not the size.
+ * manifest.json declares `"display": "standalone"`, so on the phone the app runs with
+ * no tab bar, and iOS has nowhere to put a tab that `window.open` asks for. It opens
+ * nothing, silently. A desktop browser has tabs, opens one, and the same code works —
+ * which is why this looked like a broken file for two rounds.
+ *
+ * `navigator.standalone` is the iOS-specific flag and the one that matters here; the
+ * display-mode query covers installed Android and desktop PWAs.
+ */
+export function isInstalledApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  if ((window.navigator as any)?.standalone === true) return true;
+  try { return !!window.matchMedia?.('(display-mode: standalone)')?.matches; } catch { return false; }
+}
+
+/**
+ * Hand a URL to the platform from inside the click that asked for it.
+ *
+ * A real anchor, clicked, rather than window.open: in a standalone iOS app an anchor
+ * with target=_blank goes to Safari's own link handler, which presents the file in an
+ * in-app view WITH a Done button back to the app. window.open has no such path and is
+ * the call that was doing nothing.
+ */
+function handOff(url: string) {
+  if (typeof document === 'undefined') return;
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export async function openCv(value: string | null | undefined): Promise<CvProbe> {
   const raw = (value || '').trim();
+  const installed = isInstalledApp();
+
+  // ── the installed app ──────────────────────────────────────────────────────
+  // No blank tab to open and hold, so the URL is handed over immediately and the
+  // probe reports afterwards. Word goes to the RAW file rather than the Office
+  // viewer: iOS previews .docx natively and renders it, where the viewer is the very
+  // thing that answers with an empty frame.
+  if (installed) {
+    const url = resolveCvUrl(raw);
+    if (url) handOff(url);
+    const probe = await probeCvUrl(raw);
+    if (!probe.ok && probe.reason !== 'unreachable') {
+      const why = probe.reason === 'no-reference'
+        ? 'לא נשמר קובץ קו״ח על הרשומה הזו.'
+        : probe.reason === 'not-found'
+          ? 'הקובץ לא נמצא באחסון — הנתיב השמור מצביע על קובץ שאינו קיים.'
+          : `האחסון החזיר שגיאה ${probe.status}.`;
+      try { window.alert(`לא ניתן לפתוח את קובץ קו״ח.\n\n${why}\n\n${probe.url || raw}`); } catch { /* no alert */ }
+    }
+    return probe;
+  }
+
+  // ── a browser, with tabs ───────────────────────────────────────────────────
   // Opened FIRST and synchronously: a window created after an await is a popup, and
-  // Safari on his phone blocks it silently.
+  // Safari blocks it silently.
   const w = typeof window !== 'undefined' ? window.open('', '_blank') : null;
   const write = (html: string) => {
     if (!w) return;

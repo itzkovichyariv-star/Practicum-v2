@@ -211,6 +211,79 @@ console.log('\nUNREADABLE PROBE: a CORS-blocked HEAD must not withhold a good fi
   }
 }
 
+// ── THE PHONE: the app installed to the home screen ─────────────────────────
+console.log('\nINSTALLED APP: no tab bar, so window.open has nowhere to put a tab');
+{
+  // Yariv 2026-08-27: "מהמחשב זה נפתח אבל מהטלפון לא אולי הגדרה שקשורה לגודל
+  // והתצוגה?" — and it is a display setting: manifest.json says
+  // "display": "standalone", so on the phone the app runs without tabs and iOS
+  // silently declines the window.open the desktop happily honours.
+  //
+  // navigator.standalone is set here the way iOS sets it. What is asserted is that the
+  // tab which appears carries the FILE, not the about:blank placeholder the browser
+  // path opens and then writes into — because that placeholder is the thing that never
+  // appears on his phone.
+  const app = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await app.route('**/*', route => {
+    const url = route.request().url();
+    if (url.startsWith(ORIGIN) || url.startsWith(ORIGIN2)) return route.continue();
+    if (url.includes('practicum_data') && route.request().method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ data: FIXTURE, updated_at: '2026-01-01T00:00:00.000Z',
+          last_editor_name: 'check', last_editor_email: 'check@local' }) });
+    }
+    if (url.includes('fonts.g')) return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  await app.addInitScript(() => {
+    Object.defineProperty(window.navigator, 'standalone', { value: true, configurable: true });
+    localStorage.setItem('practicum_v2_session', JSON.stringify({ profile: { name: 'יריב איצקוביץ', email: 'yarivi@ariel.ac.il' } }));
+    localStorage.setItem('practicum_v2_context', JSON.stringify({ courseId: 'hr', year: 'תשפ״ז' }));
+    localStorage.setItem('practicum_v2_page', 'candidates');
+    localStorage.setItem('practicum_theme', 'light');
+  });
+  const apg = await app.newPage();
+  apg.on('dialog', d => d.dismiss().catch(() => {}));
+  await apg.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
+  await apg.waitForSelector('li[data-info-row]', { timeout: 15000 }).catch(() => {});
+  await apg.waitForTimeout(900);
+
+  const openInApp = async (name) => {
+    const chip = apg.locator('li[data-info-row]').filter({ hasText: name })
+      .locator('a').filter({ hasText: 'CV' }).first();
+    if (!(await chip.count())) return { error: 'no CV chip' };
+    const [popup] = await Promise.all([
+      app.waitForEvent('page', { timeout: 8000 }).catch(() => null),
+      chip.click({ force: true }),
+    ]);
+    if (!popup) return { error: 'nothing opened' };
+    await popup.waitForLoadState('domcontentloaded').catch(() => {});
+    const url = popup.url();
+    await popup.close();
+    return { url };
+  };
+
+  const good = await openInApp('רות מזרחי');
+  check('the installed app still opens something', !good.error, good.error || good.url);
+  check('and it is the file itself, not a placeholder tab', good.url === GOOD_PDF, good.url);
+
+  // The Office viewer is the component that answers with an empty frame. iOS previews
+  // .docx natively, so on the phone the raw file is the better destination — and the
+  // interstitial has no tab to live in here anyway.
+  // What is claimed is that the Office VIEWER is not what the phone is sent to. Where
+  // the raw .docx then goes is the platform's business and differs by platform: iOS
+  // previews it, and this headless Chromium treats it as a download and closes the tab
+  // it briefly opened — which is why the URL asserted here is "anything but the
+  // viewer" rather than the file. Asserting the file would be asserting Chromium's
+  // download policy, which is not the behaviour under test.
+  const word = await openInApp('נועם קדם');
+  const sentToViewer = String(word.url || '').includes('view.officeapps.live.com');
+  check('a Word CV is NOT handed to the Office viewer on the phone', !sentToViewer,
+    word.error || word.url || '(the platform took it as a download)');
+
+  await app.close();
+}
+
 // ── The happy path must stay a single hop ────────────────────────────────────
 console.log('\nPDF: a file that resolves opens directly, with no interstitial');
 {
