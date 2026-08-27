@@ -36,12 +36,21 @@ const ROOT = resolve(import.meta.dirname, '..');
 const DIST = join(ROOT, 'dist');
 const PORT = 4326;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
+/* A SECOND origin, and the reason it has to be one: same-origin fetch never consults
+   CORS, so a no-CORS file served from ORIGIN would be read happily and the case below
+   would prove nothing. `localhost` and `127.0.0.1` are different origins to a browser
+   even on the same port — a different port here makes it unambiguous. */
+const PORT2 = PORT + 1;
+const ORIGIN2 = `http://localhost:${PORT2}`;
 
 /* Served by the server below. The missing one is never written, so it is a genuine 404
    from a real HTTP server rather than a stubbed rejection. */
 const GOOD_PDF = `${ORIGIN}/fixture/cv-good.pdf`;
 const MISSING  = `${ORIGIN}/fixture/cv-missing.pdf`;
 const WORD_DOC = `${ORIGIN}/fixture/cv-word.docx`;
+/* Served WITHOUT Access-Control-Allow-Origin, so the HEAD probe throws while the file
+   itself is perfectly fine — the shape of Yariv's "opens when I copy the link". */
+const NO_CORS  = `${ORIGIN2}/cv-nocors.pdf`;
 
 const FIXTURE = {
   courses: [{ id: 'hr', name: 'פרקטיקום משאבי אנוש', year: 'תשפ״ז', type: 'practicum' }],
@@ -53,6 +62,8 @@ const FIXTURE = {
       courseId: 'hr', year: 'תשפ״ז', cvUrl: MISSING },
     { id: 'k3', name: 'נועם קדם', email: 'noam@example.com', phone: '053-3333333',
       courseId: 'hr', year: 'תשפ״ז', cvUrl: WORD_DOC },
+    { id: 'k4', name: 'שירה אלון', email: 'shira@example.com', phone: '055-4444444',
+      courseId: 'hr', year: 'תשפ״ז', cvUrl: NO_CORS },
   ],
   students: [], employers: [], dispatches: [], trainers: [], lectures: [], institutions: [],
 };
@@ -82,6 +93,19 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(r => server.listen(PORT, r));
 
+/* Cross-origin, and deliberately WITHOUT Access-Control-Allow-Origin: the browser
+   refuses to let fetch read it, while navigating to it works perfectly. Real storage
+   backends behave exactly this way, and it is the shape of what Yariv found — the link
+   opens when pasted, and the check that inspected it first concluded otherwise. */
+const foreign = createServer((req, res) => {
+  if (req.url.split('?')[0] === '/cv-nocors.pdf') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end('<!doctype html><meta charset="utf-8"><p>fixture cv body</p>');
+  }
+  res.writeHead(404); res.end('nf');
+});
+await new Promise(r => foreign.listen(PORT2, r));
+
 const results = [];
 const check = (name, pass, detail) => {
   results.push({ name, pass, detail });
@@ -95,7 +119,7 @@ const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 } })
 
 await ctx.route('**/*', route => {
   const url = route.request().url();
-  if (url.startsWith(ORIGIN)) return route.continue();
+  if (url.startsWith(ORIGIN) || url.startsWith(ORIGIN2)) return route.continue();
   if (url.includes('practicum_data') && route.request().method() === 'GET') {
     return route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ data: FIXTURE, updated_at: '2026-01-01T00:00:00.000Z',
@@ -171,6 +195,22 @@ console.log('\nWORD: a .docx offers the viewer AND the download');
   }
 }
 
+// ── THE FALSE NEGATIVE: a probe that could not read is not a missing file ───
+console.log('\nUNREADABLE PROBE: a CORS-blocked HEAD must not withhold a good file');
+{
+  // Yariv 2026-08-27: "הקישור נפתח בהעתקה שלו אבל לא על ידי לחיצה". Copying the URL
+  // and pasting it opened the CV — so the object was there the whole time and anything
+  // refusing to open it was wrong about the file. fetch cannot read this one; the tab
+  // can render it. The tab must therefore get it.
+  const r = await openCvFor('שירה אלון');
+  check('the chip opens a tab', !r.error, r.error || `url: ${r.url}`);
+  if (!r.error) {
+    check('the tab goes to the FILE, not to an explanation', r.url === NO_CORS, r.url);
+    check('and no explanation page stands between him and it', !r.text.includes('לא ניתן לפתוח'), r.text.slice(0, 40));
+    await r.popup.close();
+  }
+}
+
 // ── The happy path must stay a single hop ────────────────────────────────────
 console.log('\nPDF: a file that resolves opens directly, with no interstitial');
 {
@@ -185,6 +225,7 @@ console.log('\nPDF: a file that resolves opens directly, with no interstitial');
 await ctx.close();
 await browser.close();
 server.close();
+foreign.close();
 
 const failed = results.filter(r => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

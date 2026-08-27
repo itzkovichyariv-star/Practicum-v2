@@ -135,7 +135,20 @@ export async function openCv(value: string | null | undefined): Promise<CvProbe>
   };
 
   const probe = await probeCvUrl(raw);
-  if (!probe.ok) { write(explain(probe, raw)); return probe; }
+  // A probe that could not READ an answer is not evidence of anything.
+  //
+  // Yariv 2026-08-27: "הקישור נפתח בהעתקה שלו אבל לא על ידי לחיצה על קורות החיים
+  // שלה." Copying the link and pasting it worked — so the object exists and the URL
+  // built from it is right, and anything that refuses to open it is wrong about the
+  // file. A HEAD blocked by CORS, a captive network or one offline moment all land in
+  // `unreachable`, and browser NAVIGATION is not subject to CORS: the tab renders a
+  // file the probe was never allowed to inspect.
+  //
+  // So only a definitive HTTP answer — a 404, a 400 from a private bucket — earns the
+  // explanation page. An inconclusive probe hands the tab to the file and lets the
+  // browser be the judge; if the object really is gone, the storage layer's own error
+  // body is at least visible text rather than the blank page this all started from.
+  if (!probe.ok && probe.reason !== 'unreachable') { write(explain(probe, raw)); return probe; }
 
   const isWord = /\.(docx?|doc)$/i.test(probe.url.split('?')[0]);
   if (isWord) { write(wordChoice(probe.url)); return probe; }
