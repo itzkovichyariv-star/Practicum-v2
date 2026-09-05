@@ -8,6 +8,8 @@
  *   node scripts/deploy-gate.mjs               # run everything
  *   node scripts/deploy-gate.mjs --only 01     # one suite by prefix
  *   node scripts/deploy-gate.mjs --skip-build  # skip dev-server probe
+ *   node scripts/deploy-gate.mjs --offline     # lints + build + offline checks only;
+ *                                              # no dev server, no live suites
  *
  * Pairs with the family-tasks pattern:
  *   ~/.claude/projects/-Users-yarivitzkovich-Code-practicum-v2/memory/skill_visual_deploy_audit.md
@@ -29,11 +31,15 @@ const DEV_URL = process.env.AUDIT_BASE_URL || `http://localhost:${process.env.GA
 const args = process.argv.slice(2);
 const onlyPrefix = args.includes('--only') ? args[args.indexOf('--only') + 1] : null;
 const skipBuildProbe = args.includes('--skip-build');
+// --offline: everything that needs no live data — the lints, the build and the
+// offline checks — then stop. No dev server is needed, so none is probed. This is
+// what a deploy from a GitHub runner uses when the full gate is not wanted.
+const offlineOnly = args.includes('--offline');
 
 // 1. Confirm the dev server is reachable. Most cells boot a real
 //    browser against it, so a missing dev server fails everything in
 //    confusing ways.
-if (!skipBuildProbe) {
+if (!skipBuildProbe && !offlineOnly) {
   try {
     execSync(`curl -sf -o /dev/null -m 3 ${DEV_URL}`, { stdio: 'ignore' });
     console.log(`✓ dev server reachable at ${DEV_URL}`);
@@ -97,6 +103,12 @@ if (!onlyPrefix) {
       process.exit(1);
     }
   }
+}
+
+if (offlineOnly) {
+  console.log('\n✅ OFFLINE GATE PASSED — lints, build and offline checks are green.');
+  console.log('   The live suites were NOT run (--offline). This is not the full gate.');
+  process.exit(0);
 }
 
 // 2. Run each audit file in sequence. We can't run in parallel because

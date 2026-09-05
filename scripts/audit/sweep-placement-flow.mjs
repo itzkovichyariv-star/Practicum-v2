@@ -1,6 +1,6 @@
 /** Functional sweep: every interactive control in the placement flow, on the live site.
  *  Read-only — opens things and closes them; confirms nothing. */
-import { Audit, appReady } from '/Users/yarivitzkovich/Code/practicum-v2/scripts/audit-lib.mjs';
+import { Audit, appReady } from '../audit-lib.mjs';
 const audit = new Audit({ name: 'sweep' });
 const errs = [];
 await audit.setup();
