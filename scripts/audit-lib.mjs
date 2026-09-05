@@ -22,8 +22,11 @@
 
 import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-export const ROOT = '/Users/yarivitzkovich/Code/practicum-v2';
+// Derived from this file's location, not pinned to one person's home directory —
+// the cells have to run from whatever checkout they sit in (a GitHub runner included).
+export const ROOT = resolve(import.meta.dirname, '..');
 
 // ── Every request gets a deadline ─────────────────────────────────────────────
 // 58-orghub-cards once took 5,477 SECONDS. Its assertions finished at +6s; the cleanup

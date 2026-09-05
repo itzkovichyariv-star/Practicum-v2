@@ -1,0 +1,150 @@
+# Deploy Practicum — the Cloudflare Pages project `practicum-v2` — from a
+# GitHub runner, on demand.
+#
+# WHY THIS EXISTS
+# ---------------
+#   Practicum has only ever shipped from a Mac: `npm run ship` starts the dev
+#   server, runs the visual gate, and only then uploads dist/ with Yariv's own
+#   wrangler login (the `deploy` script even names the wrangler binary by its
+#   path on his Mac). On 2026-09-05 a deploy was needed from a phone. This is
+#   the same sequence run by a runner with a repository secret, so a deploy
+#   can start from the Actions tab or the API.
+#
+# WHAT IT NEEDS (repository secrets — Settings → Secrets and variables → Actions)
+# ------------------------------------------------------------------------------
+#   CLOUDFLARE_API_TOKEN    an API token with "Cloudflare Pages: Edit" on the
+#                           account (Pages, not Workers — this project is a
+#                           Pages direct upload, see wrangler.toml)
+#   CLOUDFLARE_ACCOUNT_ID   8243916dabbfb97befa6e7ec2c4a5128
+#   The first step checks both are present and fails with a plain message if
+#   not, so a missing secret is a one-line diagnosis, not a stack trace.
+#
+# THE GATE — chosen when the button is pressed
+# --------------------------------------------
+#   full     (default) `node scripts/ship.mjs --dry`: dev server, lints, build,
+#            offline checks, and every numbered suite — exactly what
+#            `npm run ship` runs on the Mac. The suites drive a real browser
+#            (installed here) and READ AND WRITE the live Supabase project, as
+#            they do from the Mac. Expect 20–40 minutes. Do not run it while
+#            the gate is also running on a Mac: the suites are serial on
+#            purpose because concurrent runs collide in the database.
+#   offline  `node scripts/deploy-gate.mjs --offline`: lints, build, and the
+#            offline checks (fixtures only, no live data). A few minutes.
+#            Enough for copy and layout changes; not for the placement flow.
+#   skip     build and upload, nothing checked. For the day the gate itself
+#            is what is broken. The run is annotated with a warning.
+#
+# THE VERSION STAMP
+# -----------------
+#   The Mac's `predeploy` hook bumps the build counter in src/lib/version.ts
+#   and stamps the service-worker cache name in public/sw.js, so every deploy
+#   is a new worker and open tabs reload themselves. The runner does the same
+#   bump before building. It does NOT commit the bump back: a bot commit on
+#   main after every deploy would collide with the dirty version.ts on the
+#   Mac at the next pull. So two runner deploys in a row show the same build
+#   counter; the git SHA in the version string tells them apart, and the
+#   cache name contains it, so the auto-reload still fires.
+#
+# PRODUCTION OR PREVIEW
+# ---------------------
+#   The upload is tagged with the branch it was dispatched from. The
+#   project's production branch is `main`, so a run from main IS production;
+#   a run from any other branch is a preview deployment on its own URL,
+#   printed by wrangler. That is the way to look at a change before it is live.
+#
+# THE WAY BACK
+# ------------
+#   Pages keeps every deployment. Cloudflare dashboard → Workers & Pages →
+#   practicum-v2 → Deployments → the previous one → "Rollback to this
+#   deployment". The last step prints the recent list.
+#
+# MANUAL ONLY. Someone chooses the branch and the gate and presses the button.
+
+name: Deploy Practicum
+
+on:
+  workflow_dispatch:
+    inputs:
+      gate:
+        description: 'Gate before deploying'
+        type: choice
+        default: full
+        options: [full, offline, skip]
+
+concurrency:
+  group: deploy-practicum
+  cancel-in-progress: false   # never kill a deploy mid-flight; queue instead
+
+jobs:
+  deploy:
+    name: Gate, stamp, build, upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Secrets present?
+        env:
+          T: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          A: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -z "$T" ] && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$A" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — add them under Settings → Secrets and variables → Actions, then run again."
+            exit 1
+          fi
+          echo "Deploying ${GITHUB_REF_NAME} @ ${GITHUB_SHA} with gate=${{ inputs.gate }}"
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Browser for the gate
+        if: inputs.gate != 'skip'
+        run: npx playwright install --with-deps chromium
+
+      - name: Gate — full (dev server, lints, build, offline checks, every live suite)
+        if: inputs.gate == 'full'
+        run: node scripts/ship.mjs --dry
+
+      - name: Gate — offline (lints, build, offline checks)
+        if: inputs.gate == 'offline'
+        run: node scripts/deploy-gate.mjs --offline
+
+      - name: Gate — skipped
+        if: inputs.gate == 'skip'
+        run: echo "::warning::Deploying with NO gate — nothing was checked before this upload."
+
+      - name: Stamp the version (build counter + git SHA)
+        id: stamp
+        run: |
+          node scripts/bump-version.mjs
+          echo "version=$(node scripts/bump-version.mjs --print)" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: npx astro build
+
+      - name: Upload to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 pages deploy dist \
+            --project-name practicum-v2 \
+            --branch "${GITHUB_REF_NAME}" \
+            --commit-hash "${GITHUB_SHA}" \
+            --commit-dirty=true \
+            --commit-message "deploy run #${GITHUB_RUN_NUMBER}: ${{ steps.stamp.outputs.version }} (gate: ${{ inputs.gate }})"
+
+      - name: The way back
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          echo "Deployed ${{ steps.stamp.outputs.version }} — the app prints it in the bottom-left corner."
+          echo "If anything looks wrong: Cloudflare dashboard → Workers & Pages → practicum-v2 → Deployments → previous → Rollback."
+          echo "Recent deployments:"
+          npx --yes wrangler@4 pages deployment list --project-name practicum-v2 2>&1 | head -12 || true

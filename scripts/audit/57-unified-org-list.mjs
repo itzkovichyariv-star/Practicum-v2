@@ -25,11 +25,11 @@
 import { build } from 'esbuild';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Audit } from '../audit-lib.mjs';
 
-const ROOT = '/Users/yarivitzkovich/Code/practicum-v2';
+const ROOT = resolve(import.meta.dirname, '../..');
 const dir = mkdtempSync(join(tmpdir(), 'unified-'));
 const out = join(dir, 'placement.mjs');
 await build({
