@@ -9,7 +9,7 @@ import { showToast } from '../lib/toast';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
-import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, setCourseCapacity } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS, applyEmployerStatus, type ManualStatusKey } from '../lib/orgAvailability';
 
@@ -346,19 +346,31 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     await persistAndRefresh(all.map(e => e.id === empId ? applyEmployerStatus(e, which) as Employer : e), '✓ סטטוס עודכן');
   }
 
+  // Archive = the same 🔴 flag the status chip writes, plus a dated statusHistory entry that
+  // SAYS it came from the delete dialog. Until now this path wrote approvalStatus alone, so an
+  // org that hosted students and turned red (אקיורט דאטה in משאבי אנוש · תשפ״ו, 2026-09-06)
+  // carried no trace of why — the flag is global, and it paints every year's row.
   async function handleArchive(id: string) {
     setEditing(null);
-    await persistAndRefresh(all.map(e => e.id === id ? { ...e, approvalStatus: 'rejected' } as Employer : e), '✓ סומן כנדחה (בארכיון)');
+    const at = new Date().toISOString();
+    await persistAndRefresh(all.map(e => e.id === id ? {
+      ...e, approvalStatus: 'rejected',
+      statusHistory: [...((e as any).statusHistory || []), { at, status: 'rejected', note: 'ארכוב מתוך «מחק / ארכב» — לא נמחק כי יש בו סטודנטים' }],
+    } as Employer : e), '✓ סומן כנדחה (בארכיון)');
   }
 
   async function handleDelete(id: string) {
     const emp = all.find(e => e.id === id);
     if (!emp) return;
-    const c = countSlotsByStatus(emp);
-    const occ = c.tentative + c.under_review + c.placed;
-    if (occ > 0) {
-      // Guard: never orphan students. Offer archive (🔴 נדחה) instead of hard-delete.
-      if (confirm(`ל"${emp.name}" יש ${occ} מקומות תפוסים (מועמדים/משובצים) — מחיקה תמחוק את ההיסטוריה שלהם.\n\nלחצו "אישור" כדי לסמן אותו כ«נדחה» (מוסתר משיבוץ, ההיסטוריה נשמרת), או "ביטול" כדי להשאיר ללא שינוי.`)) {
+    // Guard: never orphan students. Only a place held by a student who still EXISTS protects
+    // the org. A slot whose student was deleted (or a fixture the audit swept away) stays
+    // marked occupied in the ledger, and until now it blocked the delete forever — the audit
+    // orgs ("ארגון מוצע ישיר 1786…") could not be removed from this screen for exactly that
+    // reason, and the dialog's only button painted them 🔴 instead of deleting them.
+    const held = (emp.vacancySlots || []).filter(s => s.status !== 'available' && s.studentId && students.some(st => st.id === s.studentId));
+    if (held.length > 0) {
+      const names = held.map(s => students.find(st => st.id === s.studentId)?.name).filter(Boolean).join(', ');
+      if (confirm(`ל"${emp.name}" יש ${held.length} מקומות תפוסים (${names}) — מחיקה תמחוק את ההיסטוריה שלהם.\n\nלחצו "אישור" כדי לסמן אותו כ«נדחה» (מוסתר משיבוץ, ההיסטוריה נשמרת), או "ביטול" כדי להשאיר ללא שינוי.`)) {
         await handleArchive(id);
       }
       return;
