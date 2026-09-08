@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { PageProps } from './pageShared';
-import { sameContext, outlookCalendarUrl } from './pageShared';
+import { sameContext, outlookCalendarUrl, openCalendarLink } from './pageShared';
 import { supabase } from '../lib/supabase';
 
 type CalEvent = {
@@ -387,7 +387,7 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
                           <button
                             type="button"
                             title="הוסף ליומן Outlook"
-                            onClick={(ev) => { ev.stopPropagation(); window.open(e.calendarUrl, '_blank'); }}
+                            onClick={(ev) => { ev.stopPropagation(); openCalendarLink(e.calendarUrl!); }}
                             className="w-7 h-7 rounded-full border grid place-items-center shrink-0 hover:bg-[rgba(122,30,43,0.1)]"
                             style={{ borderColor: 'var(--divider)', color: 'var(--ink)', fontSize: 12 }}
                           >📅</button>

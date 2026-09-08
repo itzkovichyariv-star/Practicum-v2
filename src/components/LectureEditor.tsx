@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { Lecture, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
-import { outlookCalendarUrl } from './pageShared';
+import { openCalendarEvent } from './pageShared';
+import { getSession } from '../lib/session';
 import Modal from './Modal';
 
 const DEFAULT_TYPES = ['הרצאה', 'סדנה', 'סימולציה', 'מפגש', 'ייעוץ'];
@@ -110,9 +111,10 @@ export default function LectureEditor({
   }
 
   function addToOutlookCalendar() {
-    if (!form.date) { alert('חסר תאריך'); return; }
     const course = courses.find(c => c.id === form.courseId);
-    const url = outlookCalendarUrl({
+    // The button used to be `disabled` without a date, so clicking it did
+    // nothing at all and never reached this alert — the "nothing happens" bug.
+    const res = openCalendarEvent({
       subject: `${form.type || 'הרצאה'}: ${form.topic || course?.name || ''}`,
       startDate: form.date,
       startTime: form.startTime,
@@ -126,8 +128,12 @@ export default function LectureEditor({
         form.notes ? 'הערות: ' + form.notes : '',
       ].filter(Boolean).join('\n'),
       attendeeEmail: form.lecturerEmail,
+      account: getSession()?.profile.email || undefined,
     });
-    window.open(url, '_blank');
+    if (res.reason === 'no-date') { alert('כדי לשריין ביומן צריך קודם לקבוע תאריך להרצאה.'); return; }
+    if (res.reason === 'fallback-ics') {
+      alert('הדפדפן חסם את חלון היומן, לכן הורד קובץ הזמנה (.ics) — פתחו אותו והאירוע ייכנס ליומן.');
+    }
   }
 
   return (
@@ -197,11 +203,12 @@ export default function LectureEditor({
               background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '999px',
               cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
             }}>{isNew ? 'צור הרצאה' : 'שמור שינויים'} →</button>
-            <button type="button" onClick={addToOutlookCalendar} disabled={!form.date} style={{
+            <button type="button" onClick={addToOutlookCalendar}
+              title={form.date ? 'פתח את היומן עם פרטי ההרצאה' : 'קבעו תאריך להרצאה כדי לשריין ביומן'} style={{
               display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
               background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)',
-              borderRadius: '999px', cursor: form.date ? 'pointer' : 'not-allowed',
-              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.date ? 1 : 0.4,
+              borderRadius: '999px', cursor: 'pointer',
+              whiteSpace: 'nowrap', flexShrink: 0, opacity: form.date ? 1 : 0.55,
             }}>📅 פתח יומן אריאל</button>
             <button type="button" onClick={openCall} disabled={!form.lecturerPhone} style={{
               display: 'inline-block', padding: '12px 20px', fontSize: '12px', fontWeight: 600,
