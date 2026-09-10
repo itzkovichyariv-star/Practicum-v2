@@ -62,6 +62,28 @@ Verdicts: `ok`, `no_api_key`, `gateway_down_direct_ok`, `anthropic_refused`,
 - Local dev has no `ANTHROPIC_API_KEY`, so the AI parse cannot be exercised
   outside production. Test the code around it; report that gap plainly.
 
+## A merge does not deploy, and the Mac clone does not pull itself
+
+Verified 2026-09-10: PR #139 merged at 13:27 UTC; Yariv ran the deploy
+command at 13:27 local from his Mac and the new page returned 404. His
+deploy output listed no `ai_*.mjs` chunk and an `anthropic-endpoint` chunk
+of 0.63 KiB (the merged code builds it at ~3 KiB, plus a 2.4 KiB `ai` chunk).
+The clone on the Mac was still at the pre-merge commit, so the deploy
+reshipped the old code. **Always give the pull before the deploy, as two
+copy-and-run lines:**
+
+```
+git -C /Users/yarivitzkovich/Code/family-tasks pull origin b8-rebuild
+```
+
+```
+npm --prefix /Users/yarivitzkovich/Code/family-tasks run app:deploy
+```
+
+To tell from a pasted deploy log whether the right code shipped, compare the
+chunk list against a local `npm run build` of the merged commit: a missing
+chunk or a much smaller one means a stale checkout.
+
 ## How Yariv works with these PRs
 
 He merges a fix himself within the hour and deploys from his Mac. Give the
