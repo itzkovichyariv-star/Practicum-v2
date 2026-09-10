@@ -84,6 +84,16 @@ To tell from a pasted deploy log whether the right code shipped, compare the
 chunk list against a local `npm run build` of the merged commit: a missing
 chunk or a much smaller one means a stale checkout.
 
+The fastest live check is the build stamp, which needs no login:
+
+```
+https://tasks.yarivitzkovich.org/build-id.txt
+```
+
+It must match the `bump-sw-version` line of the deploy that carried the
+change. A "still 404" report that arrives while a deploy is running (Yariv
+reports as he goes) is answered by this URL, not by re-reading the code.
+
 ## How Yariv works with these PRs
 
 He merges a fix himself within the hour and deploys from his Mac. Give the
