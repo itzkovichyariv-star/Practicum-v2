@@ -59,8 +59,31 @@ Verdicts: `ok`, `no_api_key`, `gateway_down_direct_ok`, `anthropic_refused`,
 
 - `gateway.ai.cloudflare.com` and `docs.anthropic.com` are blocked by the
   cloud sandbox's egress proxy. `api.anthropic.com` is reachable.
+- `tasks.yarivitzkovich.org` is blocked too (CONNECT 403, verified later the
+  same day). The build stamp, the diagnostics page and the live app can only
+  be checked by Yariv from his phone or Mac; give him the URL, never claim to
+  have looked.
 - Local dev has no `ANTHROPIC_API_KEY`, so the AI parse cannot be exercised
   outside production. Test the code around it; report that gap plainly.
+
+## "בעיה חוזרת" — the same AI failure again
+
+When the screen already shows the post-#139 line ("שירות ה-AI לא הגיב …")
+and Yariv says it keeps happening, do two things in the same turn:
+
+1. Ask for the two lines only he can fetch, as copy-and-open URLs:
+   `https://tasks.yarivitzkovich.org/api/diagnostics/ai` (the `verdict` and
+   `detail` fields) and `https://tasks.yarivitzkovich.org/build-id.txt`.
+2. Do not wait for them. Read the AI hop in code for a failure that repeats
+   by construction. Found this way on 2026-09-10: a gateway that hangs
+   spent the whole 15 s budget, so the direct retry #139 added never ran
+   (fixed by reserving 6 s for the direct road, family-tasks PR "AI hop:
+   keep the direct road's budget, and show the diagnosis on screen").
+
+Since that fix the red line ends with `פרטים: …` naming the hop and the
+upstream message (for example `Anthropic 400 (gateway): invalid_request_error:
+Your credit balance is too low`, or `gateway: timed out after 9000 ms`).
+A screenshot of that tail is the diagnosis; ask for it before anything else.
 
 ## A merge does not deploy, and the Mac clone does not pull itself
 
