@@ -97,6 +97,26 @@ Never answer an Anthropic API question from memory. Load the `claude-api`
 skill; its model table is the authority on current ids, and it is what
 identified the dated id here.
 
+## Give every new error message a visible marker, and read it as a build stamp
+
+**Verified 2026-09-11.** A screenshot arrived showing `[AI 400 gateway]` with
+nothing after it. The build that was supposed to be running appends the
+upstream's own sentence after the code. An Anthropic-shaped 400 always carries
+a message, and `via: gateway` proves the body WAS Anthropic-shaped (a
+non-Anthropic gateway failure is retried direct and would read `direct`). So
+the sentence would have rendered — its absence meant the deploy had not
+happened, and the timestamps agreed.
+
+**The lesson: each time a user-visible failure message changes shape, that
+shape identifies the build.** A screenshot then answers "did my fix ship?"
+with no build-stamp URL and no question to the user. Prefer adding a visible
+element over changing wording invisibly.
+
+Yariv reports from his phone between other things, so **a merge is not a
+deploy and he often does one without the other.** When a report looks
+identical to the pre-fix behaviour, check whether the running build is the
+fixed one BEFORE re-opening the diagnosis.
+
 ## Sandbox limits (verified 2026-09-10)
 
 - `gateway.ai.cloudflare.com` and `docs.anthropic.com` are blocked by the
