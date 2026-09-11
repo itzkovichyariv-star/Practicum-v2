@@ -3,7 +3,7 @@ import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
 import type { Student, Candidate, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
+import { sameContext, normalizeYear, groupByYearCourse, openCalendarLink } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { occupyAcceptedOrgSlot, releaseStudentSlots, setCourseCapacity } from '../lib/placement';
 import { showToast } from '../lib/toast';
@@ -1685,7 +1685,7 @@ export function RowActions({
   }
   function cal() {
     if (onCalendar) { onCalendar(); return; }
-    if (calendarUrl) window.open(calendarUrl, '_blank');
+    if (calendarUrl) openCalendarLink(calendarUrl);
   }
   // Contact buttons: bumped from 28px → 32px for an easier mouse target.
   const btn = "w-8 h-8 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)] shrink-0";
