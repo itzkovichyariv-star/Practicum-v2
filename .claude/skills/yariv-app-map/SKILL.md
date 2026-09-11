@@ -84,19 +84,23 @@ can actually return before choosing the wording.
 When the screen already shows the post-#139 line ("שירות ה-AI לא הגיב …")
 and Yariv says it keeps happening, do two things in the same turn:
 
-1. Ask for the two lines only he can fetch, as copy-and-open URLs:
-   `https://tasks.yarivitzkovich.org/api/diagnostics/ai` (the `verdict` and
-   `detail` fields) and `https://tasks.yarivitzkovich.org/build-id.txt`.
-2. Do not wait for them. Read the AI hop in code for a failure that repeats
+1. Ask for a screenshot of the red line. Since family-tasks #142 it ends with
+   a bracketed code (`[AI 404 direct]`, `[HTTP 502]`), and since #140 the
+   upstream message follows the code (`[AI 400 gateway: invalid_request_error:
+   Your credit balance is too low]`, `[HTTP 502: timed out after 9000 ms
+   (gateway)]`). That line is the diagnosis. The diagnostics URL is the
+   fallback only when the screen predates those fixes or shows no bracket:
+   `https://tasks.yarivitzkovich.org/api/diagnostics/ai`.
+2. Do not wait for it. Read the AI hop in code for a failure that repeats
    by construction. Found this way on 2026-09-10: a gateway that hangs
    spent the whole 15 s budget, so the direct retry #139 added never ran
-   (fixed by reserving 6 s for the direct road, family-tasks PR "AI hop:
-   keep the direct road's budget, and show the diagnosis on screen").
+   (family-tasks #140 reserves 6 s for the direct road).
 
-Since that fix the red line ends with `פרטים: …` naming the hop and the
-upstream message (for example `Anthropic 400 (gateway): invalid_request_error:
-Your credit balance is too low`, or `gateway: timed out after 9000 ms`).
-A screenshot of that tail is the diagnosis; ask for it before anything else.
+Before opening a PR in family-tasks, list its open PRs and read any that
+touch the same files. On 2026-09-11 two sessions fixed the same screen in
+parallel (#140 and #142, same three client files, same new test file); the
+second one to look had to restack on the first. One `list_pull_requests`
+call up front would have made that a single PR.
 
 ## A merge does not deploy, and the Mac clone does not pull itself
 
