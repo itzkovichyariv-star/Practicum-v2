@@ -121,8 +121,37 @@ fixed one BEFORE re-opening the diagnosis.
 
 - `gateway.ai.cloudflare.com` and `docs.anthropic.com` are blocked by the
   cloud sandbox's egress proxy. `api.anthropic.com` is reachable.
+- `tasks.yarivitzkovich.org` is blocked too (CONNECT 403, verified later the
+  same day). The build stamp, the diagnostics page and the live app can only
+  be checked by Yariv from his phone or Mac; give him the URL, never claim to
+  have looked.
 - Local dev has no `ANTHROPIC_API_KEY`, so the AI parse cannot be exercised
   outside production. Test the code around it; report that gap plainly.
+
+## "בעיה חוזרת" — the same AI failure again
+
+When the screen already shows the post-#139 line ("שירות ה-AI לא הגיב …")
+and Yariv says it keeps happening:
+
+1. Ask for a screenshot of the red line, which is the diagnosis (see the two
+   sections above). Since family-tasks #143 the upstream's own sentence
+   follows the bracket; since #140 that sentence is Anthropic's words
+   (`invalid_request_error: model: claude-haiku-4-5-20251001`) instead of a
+   JSON blob, and a hang reads `gateway: timed out after 9000 ms (gateway) →
+   timed out after 6000 ms (direct)`. The diagnostics URL is the fallback
+   for a screen that predates those fixes.
+2. Check the model id before anything else (section above). On 2026-09-11
+   the code reading found a real hole (a gateway hang spent the whole retry
+   budget, family-tasks #140) — but it was not the live cause. The live
+   cause was the retired snapshot id, which no amount of retry routes
+   around. A by-construction bug found in the code is worth fixing; it is
+   not proof of what is failing on the phone.
+
+Before opening a PR in family-tasks, list its open PRs and read any that
+touch the same files. On 2026-09-11 two sessions fixed the same screen in
+parallel (#140, then #142 and #143 from the other session, same client
+files, same new test file); the second to look had to restack twice. One
+`list_pull_requests` call up front would have made that a single PR.
 
 ## A merge does not deploy, and the Mac clone does not pull itself
 
