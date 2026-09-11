@@ -68,6 +68,55 @@ login read as a broken AI — the same wrong-layer mistake the fix existed to
 correct. When writing a failure message, enumerate every status the endpoint
 can actually return before choosing the wording.
 
+## When every AI surface dies at once, check the model id first
+
+**Verified 2026-09-11.** The whole AI side of the tasks app stopped. Cause:
+the call sites named the DATED SNAPSHOT `claude-haiku-4-5-20251001`, which
+Anthropic had stopped serving; it answers a model it does not serve with
+`400 invalid_request_error`. The current id is the bare alias
+`claude-haiku-4-5`.
+
+**Rule: always use the bare alias, never a date-suffixed id.** An alias
+survives a retirement; a pin does not. `src/lib/model-ids.test.ts` in
+family-tasks now fails the build on any dated id outside a test file.
+
+The diagnostic that found it, worth reusing: **list every model id in the
+repo and split it by which surfaces still work.**
+
+```
+grep -rn "claude-[a-z0-9-]*" --include=*.ts -o src workers | sed 's/.*:claude/claude/' | sort | uniq -c | sort -rn
+```
+
+Dead surfaces all carried the dated id; working ones (capture, Emma's main
+tiers) carried bare aliases. That split also **ruled out the account-level
+theories I had been pushing** — an exhausted balance or a revoked key would
+have killed Emma too. A partial outage is evidence: ask what the working
+paths do differently before asking the user to check billing.
+
+Never answer an Anthropic API question from memory. Load the `claude-api`
+skill; its model table is the authority on current ids, and it is what
+identified the dated id here.
+
+## Give every new error message a visible marker, and read it as a build stamp
+
+**Verified 2026-09-11.** A screenshot arrived showing `[AI 400 gateway]` with
+nothing after it. The build that was supposed to be running appends the
+upstream's own sentence after the code. An Anthropic-shaped 400 always carries
+a message, and `via: gateway` proves the body WAS Anthropic-shaped (a
+non-Anthropic gateway failure is retried direct and would read `direct`). So
+the sentence would have rendered — its absence meant the deploy had not
+happened, and the timestamps agreed.
+
+**The lesson: each time a user-visible failure message changes shape, that
+shape identifies the build.** A screenshot then answers "did my fix ship?"
+with no build-stamp URL and no question to the user. Prefer adding a visible
+element over changing wording invisibly.
+
+Yariv reports from his phone between other things, so **a merge is not a
+deploy and he often does one without the other.** When a report looks
+identical to the pre-fix behaviour, check whether the running build is the
+fixed one BEFORE re-opening the diagnosis.
+
 ## Sandbox limits (verified 2026-09-10)
 
 - `gateway.ai.cloudflare.com` and `docs.anthropic.com` are blocked by the
