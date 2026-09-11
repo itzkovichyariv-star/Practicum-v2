@@ -55,6 +55,19 @@ https://tasks.yarivitzkovich.org/api/diagnostics/ai
 Verdicts: `ok`, `no_api_key`, `gateway_down_direct_ok`, `anthropic_refused`,
 `all_down`. Ask Yariv for the verdict line before guessing at the cause.
 
+Better still, read the bracketed code the screen itself now shows (PR #142):
+`[AI 404 direct]` is the upstream Anthropic status and road, `[HTTP 502]`
+this app's own. **Put the diagnosis on the screen he is already looking at
+rather than sending him to a second page.** He reports from his phone as he
+goes; a second URL plus a login is a round trip he often will not make, and
+the answer then stalls for hours. Confirmed twice, 2026-09-10 and 09-11.
+
+A failure message must also name the right layer. The first version of this
+fix collapsed every non-2xx into "the AI service failed", so an expired
+login read as a broken AI — the same wrong-layer mistake the fix existed to
+correct. When writing a failure message, enumerate every status the endpoint
+can actually return before choosing the wording.
+
 ## Sandbox limits (verified 2026-09-10)
 
 - `gateway.ai.cloudflare.com` and `docs.anthropic.com` are blocked by the
