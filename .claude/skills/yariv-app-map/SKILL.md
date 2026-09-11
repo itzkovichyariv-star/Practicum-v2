@@ -131,25 +131,27 @@ fixed one BEFORE re-opening the diagnosis.
 ## "בעיה חוזרת" — the same AI failure again
 
 When the screen already shows the post-#139 line ("שירות ה-AI לא הגיב …")
-and Yariv says it keeps happening, do two things in the same turn:
+and Yariv says it keeps happening:
 
-1. Ask for a screenshot of the red line. Since family-tasks #142 it ends with
-   a bracketed code (`[AI 404 direct]`, `[HTTP 502]`), and since #140 the
-   upstream message follows the code (`[AI 400 gateway: invalid_request_error:
-   Your credit balance is too low]`, `[HTTP 502: timed out after 9000 ms
-   (gateway)]`). That line is the diagnosis. The diagnostics URL is the
-   fallback only when the screen predates those fixes or shows no bracket:
-   `https://tasks.yarivitzkovich.org/api/diagnostics/ai`.
-2. Do not wait for it. Read the AI hop in code for a failure that repeats
-   by construction. Found this way on 2026-09-10: a gateway that hangs
-   spent the whole 15 s budget, so the direct retry #139 added never ran
-   (family-tasks #140 reserves 6 s for the direct road).
+1. Ask for a screenshot of the red line, which is the diagnosis (see the two
+   sections above). Since family-tasks #143 the upstream's own sentence
+   follows the bracket; since #140 that sentence is Anthropic's words
+   (`invalid_request_error: model: claude-haiku-4-5-20251001`) instead of a
+   JSON blob, and a hang reads `gateway: timed out after 9000 ms (gateway) →
+   timed out after 6000 ms (direct)`. The diagnostics URL is the fallback
+   for a screen that predates those fixes.
+2. Check the model id before anything else (section above). On 2026-09-11
+   the code reading found a real hole (a gateway hang spent the whole retry
+   budget, family-tasks #140) — but it was not the live cause. The live
+   cause was the retired snapshot id, which no amount of retry routes
+   around. A by-construction bug found in the code is worth fixing; it is
+   not proof of what is failing on the phone.
 
 Before opening a PR in family-tasks, list its open PRs and read any that
 touch the same files. On 2026-09-11 two sessions fixed the same screen in
-parallel (#140 and #142, same three client files, same new test file); the
-second one to look had to restack on the first. One `list_pull_requests`
-call up front would have made that a single PR.
+parallel (#140, then #142 and #143 from the other session, same client
+files, same new test file); the second to look had to restack twice. One
+`list_pull_requests` call up front would have made that a single PR.
 
 ## A merge does not deploy, and the Mac clone does not pull itself
 
