@@ -31,7 +31,8 @@ import type {
 import { randomId } from '../lib/dataApi';
 import {
   renderTemplate, buildWhatsAppUrl, buildMailtoUrl, reconcileEmployerCapacity, countSlotsByStatus,
-  buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName, type UnifiedOrgPref, type InterviewResult,
+  buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName, orgKey, resolveEmployerFor,
+  type UnifiedOrgPref, type InterviewResult,
 } from '../lib/placement';
 import { orgAvailability } from '../lib/orgAvailability';
 import { resolveCvUrl } from '../lib/cvUrl';
@@ -110,14 +111,14 @@ export default function OrgHub({
   // The unified card list — prefs ∪ legacy choices, rank order.
   const cards = buildUnifiedOrgList(form, employers);
 
-  // ── Fuzzy employer resolution (mirrors StudentEditor.resolveEmployerForOrg) ──
-  function resolveEmployer(orgName: string): Employer | undefined {
-    if (!orgName) return undefined;
-    const norm = (s?: string) => (s || '').trim().toLowerCase();
-    const n = norm(orgName);
-    return employers.find(e => e.name === orgName)
-      || employers.find(e => norm(e.name) === n)
-      || employers.find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+  // ── Employer resolution — the shared one (lib/placement.resolveEmployerFor) ──
+  // A ranked card carries the employer id it was built with, and that link wins; a name
+  // typed into the combobox has none yet and resolves by name. Callers that only hold a
+  // name (the result handlers) find the card's link through the name.
+  function resolveEmployer(orgName: string, employerId?: string | null): Employer | undefined {
+    if (!orgName && !employerId) return undefined;
+    const linked = employerId ?? cards.find(c => orgKey(c.orgName) === orgKey(orgName))?.employerId ?? null;
+    return resolveEmployerFor({ employerId: linked, orgName }, employers);
   }
   function getSlot(emp: Employer, slotId: string | null): VacancySlot | undefined {
     if (!slotId) return undefined;
@@ -390,7 +391,7 @@ export default function OrgHub({
       )}
 
       {cards.map((card, idx) => {
-        const emp = resolveEmployer(card.orgName);
+        const emp = resolveEmployer(card.orgName, card.employerId);
         const cap = emp ? countSlotsByStatus(emp, form.courseId) : null;
         const inProcess = cap ? cap.tentative + cap.under_review : 0;
         const sent = card.status === 'under_review';

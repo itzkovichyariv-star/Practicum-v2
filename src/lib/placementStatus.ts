@@ -22,7 +22,7 @@
  * come from buildUnifiedOrgList().
  */
 
-import { buildUnifiedOrgList, countSlotsByStatus, type UnifiedOrgPref } from './placement';
+import { buildUnifiedOrgList, countSlotsByStatus, orgKey, resolveEmployerFor, type UnifiedOrgPref } from './placement';
 
 /** The DEFAULT days of employer silence before the ball comes back to us, for a course
  *  that does not set its own `reviewAgingThresholdDays`.
@@ -76,6 +76,9 @@ export type PlacementKey =
 export type PlacementChip = {
   rank: number;
   orgName: string;
+  /** The employer the preference is linked to, so the strip reaches the same record the
+   *  capacity verdict was made from — the name alone can drift from it. */
+  employerId?: string | null;
   suggested: boolean;
   tone: 'plain' | 'sent' | 'late' | 'dead' | 'pass';
   suffix: string;
@@ -219,7 +222,7 @@ export function orgsLead(orgNames: (string | null | undefined)[]): string {
   return `${names[0]} ועוד ${names.length - 1}`;
 }
 
-const norm = (s: any) => String(s ?? '').trim().toLowerCase();
+const norm = (s: any) => orgKey(s);
 
 /** An org the student brought themselves: private to them, and the coordinator's move is
  *  a conversation + approval (= placement), NOT a CV send. OrgHub models this as
@@ -384,11 +387,13 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
 
   // Who is holding this employer's places for THIS course, and is one free?
   const capacityOf = (p: UnifiedOrgPref): { free: boolean; reason: string } => {
-    const emp = (employers || []).find((e: any) => e?.id === p.employerId)
-      || (employers || []).find((e: any) => norm(e?.name) === norm(p.orgName));
+    const emp = resolveEmployerFor(p, employers);
     if (!emp) return { free: false, reason: 'לא זוהה מעסיק' };
-    // A place already reserved for THIS student is free to use for this student.
-    if (p.slotId) return { free: true, reason: '' };
+    // A place already reserved for THIS student is free to use for this student — when
+    // the employer still has it. A slot id left behind by a repair or a capacity change
+    // used to read as "has a place" without anyone looking; the planner looked, found
+    // nothing, and refused the send this chip had just offered.
+    if (p.slotId && ((emp as any).vacancySlots || []).some((sl: any) => sl?.id === p.slotId)) return { free: true, reason: '' };
     const cap = countSlotsByStatus(emp, student.courseId);
     if (cap.total === 0) return { free: false, reason: 'לא הוגדרו מקומות בקורס' };
     if (cap.available > 0) return { free: true, reason: '' };
@@ -408,7 +413,8 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const chipFor = (p: UnifiedOrgPref, tone: PlacementChip['tone'], suffix = ''): PlacementChip => {
     const cap = capacityOf(p);
     return {
-      rank: p.rank, orgName: p.orgName, suggested: isSug(p), tone,
+      rank: p.rank, orgName: p.orgName, employerId: resolveEmployerFor(p, employers)?.id ?? null,
+      suggested: isSug(p), tone,
       // A not-yet-sent chip always says where it stands, in every state — "טרם נשלח" when
       // there is a place, and WHY when there is not. This used to be set only in the
       // already-sent branch, so before any CV went out a full organization looked exactly

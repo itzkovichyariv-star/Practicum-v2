@@ -4,7 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
@@ -503,12 +503,7 @@ export default function StudentEditor({
   // "Icon Group/I digital"), which silently broke feedback sending. Match
   // exact → case-insensitive → prefix (either direction) so near-misses resolve.
   function resolveEmployerForOrg(orgName?: string) {
-    if (!orgName) return undefined;
-    const norm = (s?: string) => (s || '').trim().toLowerCase();
-    const n = norm(orgName);
-    return employers.find(e => e.name === orgName)
-      || employers.find(e => norm(e.name) === n)
-      || employers.find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+    return resolveEmployerByName(orgName, employers);
   }
   // Pull the first valid email out of a possibly-messy contact field (some
   // employers store "a@x.com/ b@y.com" or stray "mailto:" text).

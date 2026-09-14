@@ -688,22 +688,64 @@ export type UnifiedOrgPref = {
   slotId: string | null;
 };
 
-const eqName = (a?: string | null, b?: string | null) =>
-  String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase() && !!String(a || '').trim();
+/**
+ * The key two organization names are compared by. Case and surrounding whitespace never
+ * meant a different employer; neither do the invisible direction marks (U+200E/U+200F,
+ * U+202A–U+202E, U+2066–U+2069) that arrive with a name pasted from Excel or WhatsApp —
+ * a name carrying one looks identical on screen and failed every comparison. Straight
+ * and curly quotes fold together, the way normalizeOrgName folds them for display.
+ */
+export function orgKey(s: any): string {
+  return String(s ?? '')
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
+    .replace(/["״“”]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 
-// Resolve an org name to an employer id the SAME fuzzy way the rest of the app does
-// (exact → case-insensitive → prefix, either direction), so a free-text choice like
-// "Icon Group" resolves to the employer "Icon Group/I digital". Matches
-// StudentEditor.resolveEmployerForOrg / OrgHub.resolveEmployer.
-function resolveEmployerIdByName(orgName: string, employers: any[]): string | null {
-  const norm = (s?: string) => String(s || '').trim().toLowerCase();
-  const n = norm(orgName);
-  if (!n) return null;
+const eqName = (a?: string | null, b?: string | null) => !!orgKey(a) && orgKey(a) === orgKey(b);
+
+/**
+ * Resolve an org name to an employer the SAME fuzzy way everywhere (exact → normalised →
+ * prefix, either direction), so a free-text choice like "Icon Group" resolves to the
+ * employer "Icon Group/I digital". ONE implementation: the card, the row, the planner
+ * and the editor each carried their own copy of these three lines until 2026-09-14.
+ */
+export function resolveEmployerByName<T extends { id: string; name?: string }>(
+  orgName: string | null | undefined,
+  employers: T[],
+): T | undefined {
+  const n = orgKey(orgName);
+  if (!n) return undefined;
   const list = employers || [];
-  const e = list.find((x: any) => x?.name === orgName)
-    || list.find((x: any) => norm(x?.name) === n)
-    || list.find((x: any) => { const en = norm(x?.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
-  return e ? e.id : null;
+  return list.find(x => !!x && x.name === orgName)
+    || list.find(x => orgKey(x?.name) === n)
+    || list.find(x => { const en = orgKey(x?.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+}
+
+/**
+ * The employer a ranked preference points at. The id is the link the preference was
+ * built with, so it wins; the name is the fallback for a preference that never resolved
+ * (a free-text choice) or whose employer was deleted and re-created under the same name.
+ *
+ * Yariv 2026-09-14: the students-list row said UCL Group was open and showed יובל ליבנה's
+ * number, and sending נטע's CV there over WhatsApp came back "לא זוהה מעסיק". The row had
+ * found the employer by id; the planner looked it up again by name alone, and the name on
+ * the preference no longer matched the employer's. Every reader of a preference resolves
+ * through here now, so what the screen offers is what the send acts on.
+ */
+export function resolveEmployerFor<T extends { id: string; name?: string }>(
+  pref: { employerId?: string | null; orgName?: string | null } | null | undefined,
+  employers: T[],
+): T | undefined {
+  if (!pref) return undefined;
+  const byId = pref.employerId ? (employers || []).find(x => x?.id === pref.employerId) : undefined;
+  return byId || resolveEmployerByName(pref.orgName, employers);
+}
+
+function resolveEmployerIdByName(orgName: string, employers: any[]): string | null {
+  return resolveEmployerByName(orgName, employers)?.id ?? null;
 }
 
 /** The legacy choice fields as an ordered [{orgName, interviewResult}] list. */
