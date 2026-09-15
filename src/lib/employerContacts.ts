@@ -50,6 +50,22 @@ type WithContacts = {
 export const PRIMARY_CONTACT_ID = 'primary';
 
 const str = (v: unknown) => String(v ?? '').trim();
+/**
+ * A field as the coordinator typed it, kept EXACTLY.
+ *
+ * Every write goes through `applyContacts`, and the card's inputs call it on each
+ * keystroke — so trimming a field here trimmed it between one keystroke and the next.
+ * Pressing space at the end of a word deleted the space before it could be seen, and
+ * "רונית לוי" could not be typed at all; a space put back BETWEEN two words survived,
+ * because there it is no longer trailing. Yariv 2026-09-15: "הקלדה בשדות אינה מאפשרת
+ * רווח … ניתן לייצר רווח בין מילים לאחר כתיבה אבל לא בעת הקלדה."
+ *
+ * Whitespace is therefore decided at the two edges where it matters, never mid-typing:
+ * `contactIsEmpty` still asks with `str`, so a card of spaces is still empty; the three
+ * mirrored fields are still written trimmed, so nothing downstream ever sends a stray
+ * space; and `normalizeContacts` tidies the stored list once, on save.
+ */
+const keep = (v: unknown) => String(v ?? '');
 
 /** Does this card hold anything at all? An empty card is not a person. */
 export function contactIsEmpty(c: Partial<EmployerContact> | null | undefined): boolean {
@@ -66,7 +82,7 @@ export function employerContacts(emp: WithContacts | null | undefined): Employer
   const stored = Array.isArray(emp?.contacts) ? emp!.contacts! : [];
   const cleaned = stored
     .filter(c => !!c && !!str(c.id))
-    .map(c => ({ id: str(c.id), name: str(c.name), role: str(c.role), phone: str(c.phone), email: str(c.email), note: str(c.note) }));
+    .map(c => ({ id: str(c.id), name: keep(c.name), role: keep(c.role), phone: keep(c.phone), email: keep(c.email), note: keep(c.note) }));
   if (cleaned.length) return cleaned;
 
   const derived: EmployerContact = {
@@ -108,7 +124,7 @@ export function nextContactId(list: EmployerContact[]): string {
  */
 export function applyContacts<T extends WithContacts>(emp: T, list: EmployerContact[], wantedActiveId?: string | null): T {
   const cleaned = (list || [])
-    .map(c => ({ id: str(c.id), name: str(c.name), role: str(c.role), phone: str(c.phone), email: str(c.email), note: str(c.note) }))
+    .map(c => ({ id: str(c.id), name: keep(c.name), role: keep(c.role), phone: keep(c.phone), email: keep(c.email), note: keep(c.note) }))
     .filter(c => !!c.id && !contactIsEmpty(c));
   const activeId = cleaned.some(c => c.id === str(wantedActiveId)) ? str(wantedActiveId) : (cleaned[0]?.id || '');
   const active = cleaned.find(c => c.id === activeId) || null;
@@ -117,9 +133,12 @@ export function applyContacts<T extends WithContacts>(emp: T, list: EmployerCont
     contacts: cleaned,
     activeContactId: activeId || null,
     // THE MIRROR. Every existing reader of these three fields now follows the switch.
-    contactPerson: active?.name || '',
-    contactPhone: active?.phone || '',
-    contactEmail: active?.email || '',
+    // Trimmed here, and only here: these are the values that get dialled, mailed and
+    // sent, so a stray space must never reach them — while the card above keeps what
+    // is being typed into it, spaces and all.
+    contactPerson: str(active?.name),
+    contactPhone: str(active?.phone),
+    contactEmail: str(active?.email),
   };
 }
 
@@ -159,4 +178,17 @@ export function removeContact<T extends WithContacts>(emp: T, id: string): T {
 export function contactLine(c: EmployerContact | null | undefined): string {
   if (!c) return '';
   return [str(c.name), str(c.role)].filter(Boolean).join(' · ');
+}
+
+/**
+ * Tidy a list once, at save: every field trimmed, cards that hold nothing dropped.
+ *
+ * This is the other edge. While a card is being typed into, its fields are kept exactly
+ * as typed (see `keep` above) — so the tidying that used to happen on every keystroke,
+ * and ate the space bar, happens here instead, when the coordinator is done.
+ */
+export function normalizeContacts(list: EmployerContact[]): EmployerContact[] {
+  return (list || [])
+    .map(c => ({ id: str(c.id), name: str(c.name), role: str(c.role), phone: str(c.phone), email: str(c.email), note: str(c.note) }))
+    .filter(c => !!c.id && !contactIsEmpty(c));
 }

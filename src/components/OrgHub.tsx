@@ -32,6 +32,7 @@ import { randomId } from '../lib/dataApi';
 import {
   renderTemplate, buildWhatsAppUrl, buildMailtoUrl, reconcileEmployerCapacity, countSlotsByStatus,
   buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName, orgKey, resolveEmployerFor, firstEmailOf,
+  firstNameOf,
   type UnifiedOrgPref, type InterviewResult,
 } from '../lib/placement';
 import { orgAvailability } from '../lib/orgAvailability';
@@ -202,7 +203,9 @@ export default function OrgHub({
   }
   function buildCtx(emp: Employer) {
     return {
-      contactName: emp.contactPerson || emp.name, studentName: form.name,
+      contactName: emp.contactPerson || emp.name,
+      contactFirstName: firstNameOf(emp.contactPerson) || emp.name,
+      studentName: form.name,
       positionTitle: emp.name, adminName: userName, courseName: course?.name || '',
       cvLink, employerName: emp.name,
     };

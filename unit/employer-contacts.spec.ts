@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   employerContacts, activeContact, activeContactId, setActiveContact,
-  upsertContact, removeContact, applyContacts, nextContactId, contactLine, PRIMARY_CONTACT_ID,
+  upsertContact, removeContact, applyContacts, nextContactId, contactLine, normalizeContacts, PRIMARY_CONTACT_ID,
 } from '../src/lib/employerContacts';
 import { planDispatch } from '../src/lib/dispatch';
 import { resolveEmployerFor } from '../src/lib/placement';
@@ -125,4 +125,59 @@ test('THE POINT: a real CV send lands on the stand-in, with no caller changed', 
   expect(decodeURIComponent(plan.entries[0].messageSnapshot)).toContain('שלום נועה ברק');
   // and the employer the row's own lookup finds is the same record
   expect((resolveEmployerFor({ employerId: 'e-code', orgName: 'Codeoasis' }, employers as any) as any)?.contactPerson).toBe('נועה ברק');
+});
+
+/**
+ * Typing into a contact card went through applyContacts on EVERY keystroke, and every
+ * field was trimmed there — so the space bar did nothing at the end of a word and
+ * "רונית לוי" could not be typed. A space put back BETWEEN two words survived, which is
+ * exactly how Yariv found it (2026-09-15).
+ */
+test('THE BUG: the space bar works while typing a name', () => {
+  // One keystroke at a time, the way the card writes it.
+  let emp: any = { id: 'e1', name: 'Codeoasis' };
+  let typed = '';
+  for (const ch of 'רונית לוי') {
+    typed += ch;
+    const list = employerContacts(emp).length
+      ? employerContacts(emp).map((c, i) => (i === 0 ? { ...c, name: typed } : c))
+      : [{ id: 'c2', name: typed }];
+    emp = applyContacts(emp, list, activeContactId(emp) || 'c2');
+    // After the space, the value under the cursor must still carry it.
+    expect(employerContacts(emp)[0].name).toBe(typed);
+  }
+  expect(employerContacts(emp)[0].name).toBe('רונית לוי');
+});
+
+test('a space is kept mid-typing in every field, not just the name', () => {
+  let emp: any = { id: 'e1', name: 'Codeoasis' };
+  emp = applyContacts(emp, [{ id: 'c2', name: 'רונית', role: 'מנהלת משאבי ', phone: '050 ', email: 'r@x.com', note: 'בחופשה עד ' }], 'c2');
+  const c = employerContacts(emp)[0];
+  expect(c.role).toBe('מנהלת משאבי ');
+  expect(c.phone).toBe('050 ');
+  expect(c.note).toBe('בחופשה עד ');
+});
+
+test('what is SENT is still trimmed — the mirror never carries a stray space', () => {
+  let emp: any = { id: 'e1', name: 'Codeoasis' };
+  emp = applyContacts(emp, [{ id: 'c2', name: 'רונית לוי ', phone: ' 050-1234567 ', email: ' ronit@x.com ' }], 'c2');
+  expect(emp.contactPerson).toBe('רונית לוי');
+  expect(emp.contactPhone).toBe('050-1234567');
+  expect(emp.contactEmail).toBe('ronit@x.com');
+});
+
+test('saving tidies the list once, and drops a card that holds nothing', () => {
+  const list = [
+    { id: 'c2', name: 'רונית לוי ', role: ' מנהלת ', phone: ' 050-1234567', email: 'ronit@x.com ', note: '' },
+    { id: 'c3', name: '   ', role: '', phone: '  ', email: '', note: '' },
+  ];
+  const clean = normalizeContacts(list);
+  expect(clean).toHaveLength(1);
+  expect(clean[0]).toMatchObject({ name: 'רונית לוי', role: 'מנהלת', phone: '050-1234567', email: 'ronit@x.com' });
+});
+
+test('a card holding only spaces is still empty', () => {
+  let emp: any = { id: 'e1', name: 'Codeoasis' };
+  emp = applyContacts(emp, [{ id: 'c2', name: '  ', phone: ' ', email: '' }], 'c2');
+  expect(employerContacts(emp)).toHaveLength(0);
 });
