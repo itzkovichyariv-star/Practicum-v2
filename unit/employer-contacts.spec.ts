@@ -124,5 +124,5 @@ test('THE POINT: a real CV send lands on the stand-in, with no caller changed', 
   expect(plan.entries[0].recipient).toBe('noa@codeoasis.example');
   expect(decodeURIComponent(plan.entries[0].messageSnapshot)).toContain('שלום נועה ברק');
   // and the employer the row's own lookup finds is the same record
-  expect(resolveEmployerFor({ employerId: 'e-code', orgName: 'Codeoasis' }, employers as any)?.contactPerson).toBe('נועה ברק');
+  expect((resolveEmployerFor({ employerId: 'e-code', orgName: 'Codeoasis' }, employers as any) as any)?.contactPerson).toBe('נועה ברק');
 });

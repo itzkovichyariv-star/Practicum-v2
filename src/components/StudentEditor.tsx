@@ -4,7 +4,13 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName, openWhatsApp } from '../lib/placement';
+// `openWhatsApp` is ALSO the name of a local zero-argument helper in this file that
+// messages the STUDENT. Importing the shared one under its own name shadowed nothing at
+// the call site and silently resolved to the local one — it would have opened WhatsApp
+// with the student instead of the interview organization. Aliased, and caught by the
+// typechecker the moment there was one.
+import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName,
+  openWhatsApp as openWhatsAppTo, adoptSubmittedOrgs } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
@@ -52,8 +58,8 @@ export default function StudentEditor({
     phone: student?.phone || '',
     email: student?.email || '',
     city: student?.city || '',
-    courseId: student?.courseId || (defaultCourseId !== '__all__' ? defaultCourseId : ''),
-    year: student?.year || (defaultYear !== '__all__' ? defaultYear : ''),
+    courseId: student?.courseId || (defaultCourseId && defaultCourseId !== '__all__' ? defaultCourseId : ''),
+    year: student?.year || (defaultYear && defaultYear !== '__all__' ? defaultYear : ''),
     acceptedOrg: student?.acceptedOrg || '',
     hired: student?.hired || false,
     preparation: student?.preparation || { passed: false, date: '' },
@@ -93,6 +99,10 @@ export default function StudentEditor({
   });
   // ── Pending CV update detection ──────────────────────────────────────
   type SuggestedOrg = { name?: string; contactName?: string; contactRole?: string; email?: string; phone?: string; location?: string; notes?: string };
+  // A submission adopted into the FORM but not yet saved. `seen_at` is written only
+  // after onSave, so closing the card without saving leaves the submission pending
+  // rather than silently consumed.
+  const [pendingCvSeenOnSave, setPendingCvSeenOnSave] = useState<string | null>(null);
   const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
   const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
@@ -282,14 +292,21 @@ export default function StudentEditor({
     // the "היסטוריית הגשות קודמות" button + the /organizations request history. Only
     // overwrite an org rank the submission actually specifies (a CV-only re-upload
     // keeps the current preferences).
-    setForm(f => ({
-      ...f,
-      cvUpdatedUrl: storageUrl,
-      ...(pendingCv.org_pref_1 ? { firstChoiceOrg: pendingCv.org_pref_1 } : {}),
-      ...(pendingCv.org_pref_2 ? { secondChoiceOrg: pendingCv.org_pref_2 } : {}),
-      ...(pendingCv.org_pref_3 ? { thirdChoiceOrg: pendingCv.org_pref_3 } : {}),
-    }));
-    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+    // Through adoptSubmittedOrgs: the submitted list LEADS the ranking, as the banner
+    // promises, instead of being appended below what is already there — and an
+    // organization the student did not resubmit is kept, because it may hold a place.
+    const submitted = [pendingCv.org_pref_1, pendingCv.org_pref_2, pendingCv.org_pref_3].filter(Boolean) as string[];
+    setForm(f => {
+      const withCv = { ...f, cvUpdatedUrl: storageUrl };
+      return submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv;
+    });
+    // `seen_at` is NOT written here. It used to be, and it is a database write while the
+    // student record only changed in local form state: closing the card without pressing
+    // שמור left the submission marked seen — gone from the banner, gone from the list's
+    // unseen map, gone from the strip — with the CV and the preference list never
+    // adopted. The row's own adopt has always done it in the safe order (persist, then
+    // mark seen); the card now marks it seen on SAVE, in handleSubmit.
+    setPendingCvSeenOnSave(pendingCv.id);
     setPendingCv(null);
     setCvApplied(true);
   }
@@ -422,6 +439,14 @@ export default function StudentEditor({
       saved = { ...saved, placedAt: new Date().toISOString().slice(0, 10) };
     }
     onSave(saved);
+    // Now that the record is on its way to being persisted, the submission it came from
+    // can be marked seen. Doing it at adopt time — before any save — is how a submission
+    // could be consumed while the CV and the preference list were never adopted.
+    if (pendingCvSeenOnSave) {
+      const id = pendingCvSeenOnSave;
+      setPendingCvSeenOnSave(null);
+      void supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', id);
+    }
   }
 
   function openOutlookCompose() {
@@ -1057,7 +1082,7 @@ export default function StudentEditor({
                     const emp = resolveEmployerByName(orgName, employers);
                     if (!emp) { alert(`הארגון "${orgName}" לא נמצא ברשימת המעסיקים — בדוק/י את השם בדף המעסיקים`); return; }
                     if (!emp.contactPhone) { alert(`לא נמצא טלפון לארגון "${emp.name}" — הוסף טלפון בדף המעסיקים`); return; }
-                    openWhatsApp(emp.contactPhone, { name: emp.name });
+                    openWhatsAppTo(emp.contactPhone, { name: emp.name });
                   }}
                   title="פתח WhatsApp עם ארגון הראיון לבקשת משוב"
                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}

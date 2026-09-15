@@ -50,6 +50,23 @@ if (!skipBuildProbe && !offlineOnly) {
   }
 }
 
+// 1a². TYPES. The project had no tsconfig.json at all until 2026-09-15, so NOTHING
+//      checked types anywhere — and the first run of `tsc` found forty errors, among
+//      them a call that silently resolved to a same-named local function and would have
+//      messaged the wrong person, a dashboard row that filtered by `undefined`, and
+//      three settings fields that were used everywhere and declared nowhere. It costs a
+//      few seconds and it runs before anything opens a browser.
+{
+  console.log('\n━━━ typecheck (tsc --noEmit) ━━━');
+  const code = await new Promise((res) =>
+    spawn('npx', ['tsc', '--noEmit'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' }).on('exit', res));
+  if (code !== 0) {
+    console.error('\n❌ DEPLOY GATE FAILED — the types do not check out. Do NOT deploy.');
+    process.exit(1);
+  }
+  console.log('✅ typecheck passed');
+}
+
 // 1b. Static lints first — they need no browser, take milliseconds, and catch whole
 //     CLASSES of bug rather than one instance. Any scripts/audit/lint-*.mjs is picked up,
 //     so adding one needs no wiring here.

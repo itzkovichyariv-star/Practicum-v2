@@ -346,7 +346,7 @@ export default function App() {
     return (
       <Loader
         text={loadError}
-        action={<button onClick={refresh} style={{ ...btnPrimary(), marginTop: '24px' }}>נסה שוב</button>}
+        action={<button onClick={() => { void refresh(); }} style={{ ...btnPrimary(), marginTop: '24px' }}>נסה שוב</button>}
       />
     );
   }

@@ -1266,7 +1266,7 @@ function CoursesSection({ data, userName, onRefresh }: PageProps) {
           </div>
           <div className="flex gap-2">
             <button onClick={addCourse} disabled={saving} style={btnPrimary(saving)}>{saving ? 'שומר...' : 'הוסף →'}</button>
-            <button onClick={() => { setAdding(false); setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל', autoSendAcceptance: true, autoSendRejection: false, type: 'other', preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '' }); }}
+            <button onClick={() => { setAdding(false); setForm({ name: '', year: years[0] || 'תשפ״ו', institution: institutions[0] || 'אוניברסיטת אריאל', autoSendAcceptance: true, autoSendRejection: false, type: 'other' as const, preferenceCount: 3, reviewAgingThresholdDays: 14, acceptanceNote: '', workshopDate: '' }); }}
               className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold opacity-60 hover:opacity-100">
               בטל
             </button>

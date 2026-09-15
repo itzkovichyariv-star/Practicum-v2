@@ -60,7 +60,7 @@ test('an empty contact field is refused rather than opened empty', () => {
 test('THE PARTIAL BATCH: one bad organization no longer rides along with a good one', () => {
   // The old check refused only when EVERY entry lacked a contact, so in a batch the
   // address-less organization still opened an empty window and was confirmed as sent.
-  const employers = [
+  const employers: any = [
     { id: 'e1', name: 'ארגון א', contactEmail: 'ok@a.com', vacancySlots: [slot('sl1')] },
     { id: 'e2', name: 'ארגון ב', contactEmail: '', vacancySlots: [slot('sl2')] },
   ];

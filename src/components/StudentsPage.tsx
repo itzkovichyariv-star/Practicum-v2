@@ -15,7 +15,8 @@ import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
 import { planDispatch, applyDispatch, unsendOrg, dropOrg, placeDirect, splitSendable } from '../lib/dispatch';
 import { resolveCvUrl } from '../lib/cvUrl';
-import { resolveEmployerByName, firstEmailOf, openWhatsApp } from '../lib/placement';
+import { resolveEmployerByName, firstEmailOf, openWhatsApp, adoptSubmittedOrgs, promoteOrgToFirst,
+  releaseStudentSlotAt, orgKey } from '../lib/placement';
 import { placementStatus, isPlacementCourse, remindableChips, TURN_LABEL, TURN_COLOR,
   type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
 import type { Employer } from '../lib/supabase';
@@ -443,7 +444,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       // the old check only refused when EVERY entry lacked a contact.
       const { sendable, skipped: contactSkips } = splitSendable(plan);
       if (!sendable.length) { showToast(`לא נשלח — ${contactSkips.join(', ')}`, 'error'); return; }
-      const opened = [];
+      const opened: typeof sendable = [];
       const skipped = [...contactSkips];
       for (const e of sendable) {
         const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
@@ -473,12 +474,18 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       return;
     }
     if (action.id === 'unsend') {
-      const orgName = (action as any).targetOrg as string | undefined;
-      if (!orgName) { showToast('לא זוהה הארגון לשחרור — נסה/י מתוך הכרטיס', 'error'); return; }
-      const res = unsendOrg({
-        student, employers, dispatches: (data as any).dispatches || [],
-        orgName, userName, mode: 'never_sent',
-      });
+      // EVERY organization the send covered, not just the first. The bar reads "קו״ח
+      // ל‑A, B" and its button says "לא נשלח — בטל" without naming one, but it undid
+      // only A: B kept its reserved place and its pending dispatch while the row looked
+      // resolved, and the toast named only A.
+      const orgNames = ((action as any).targetOrgs as string[] | undefined)?.filter(Boolean)
+        || [(action as any).targetOrg].filter(Boolean) as string[];
+      if (!orgNames.length) { showToast('לא זוהה הארגון לשחרור — נסה/י מתוך הכרטיס', 'error'); return; }
+      let res = { student, employers, dispatches: (data as any).dispatches || [] };
+      for (const orgName of orgNames) {
+        res = unsendOrg({ ...res, orgName, userName, mode: 'never_sent' });
+      }
+      const orgName = orgNames.join(', ');
       const nextStudents = all.map(x => x.id === student.id ? res.student : x);
       setSaving(true);
       const saved = await saveSnapshot(
@@ -487,7 +494,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         { action: 'בוטלה שליחת קו״ח', entity: 'סטודנט', target: student.name },
       );
       setSaving(false);
-      if (saved.ok) { setRowSend(null); onRefresh(); showToast(`↩︎ ${orgName} חזר לרשימה — המקום שוחרר`, 'success'); }
+      if (saved.ok) {
+        setRowSend(null); onRefresh();
+        showToast(orgNames.length > 1
+          ? `↩︎ ${orgName} חזרו לרשימה — המקומות שוחררו`
+          : `↩︎ ${orgName} חזר לרשימה — המקום שוחרר`, 'success');
+      }
       else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
       return;
     }
@@ -516,13 +528,17 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     const email = String(student.email || '').trim().toLowerCase();
     const row = subs.unseen.get(email);
     if (!row) { showToast('ההגשה כבר נקלטה', 'info'); return; }
-    const next = all.map(x => x.id === student.id ? {
-      ...x,
-      ...(row.cv_file_path ? { cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } : {}),
-      ...(row.org_pref_1 ? { firstChoiceOrg: row.org_pref_1 } : {}),
-      ...(row.org_pref_2 ? { secondChoiceOrg: row.org_pref_2 } : {}),
-      ...(row.org_pref_3 ? { thirdChoiceOrg: row.org_pref_3 } : {}),
-    } as Student : x);
+    // Through adoptSubmittedOrgs, not the legacy fields: the submitted list LEADS the
+    // ranking, as the confirmation promises, instead of being appended below the
+    // organizations already there. An organization the student did not resubmit is kept
+    // — it may be holding a reserved place.
+    const submitted = [row.org_pref_1, row.org_pref_2, row.org_pref_3].filter(Boolean) as string[];
+    const next = all.map(x => {
+      if (x.id !== student.id) return x;
+      const withCv = row.cv_file_path
+        ? { ...x, cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } as Student : x;
+      return (submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv) as Student;
+    });
     await persistAndRefresh(next, '✓ ההגשה נקלטה לכרטיס', undefined,
       { action: 'נקלטה הגשת קו״ח והעדפות', entity: 'סטודנט', target: student.name });
     await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', row.id);
@@ -559,12 +575,23 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     // (" → ״) while the employer record keeps whatever was typed — so for those students
     // the gate simply never fired: they were saved as placed, NO vacancy was occupied,
     // and the organization went on offering that place to everyone else, silently.
-    const orgJustSet = !!s.acceptedOrg && !previous?.acceptedOrg;
-    if (orgJustSet) {
+    // …and a CHANGE is handled too. This used to fire only on the transition from
+    // empty, so correcting the hosting organization from A to B occupied nothing at B
+    // and released nothing at A: A went on counting a place as filled by a student who
+    // is no longer there, permanently, because a typed field was corrected.
+    const prevOrg = String(previous?.acceptedOrg || '').trim();
+    const nextOrg = String(s.acceptedOrg || '').trim();
+    const orgChanged = !!nextOrg && orgKey(prevOrg) !== orgKey(nextOrg);
+    if (orgChanged) {
       const empIdx = resolveEmployerByName(s.acceptedOrg, employers)
         ? employers.findIndex(e => e.id === resolveEmployerByName(s.acceptedOrg, employers)!.id) : -1;
       if (empIdx >= 0) {
-        const updatedEmps = occupyAcceptedOrgSlot(s, employers, { actorId: userName });
+        // Release the place at the organization being left BEFORE occupying the new one,
+        // so a correction cannot cost an organization a place it still has free.
+        const freed = prevOrg
+          ? releaseStudentSlotAt(s, employers, prevOrg, { actorId: userName, reason: 'accepted-org-changed' })
+          : employers;
+        const updatedEmps = occupyAcceptedOrgSlot(s, freed, { actorId: userName });
         setSaving(true); setSaveMsg(null);
         const res = await saveSnapshot(
           { ...data, students: next, employers: updatedEmps },
@@ -944,7 +971,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>נסה להסיר סינון או להוסיף חדש.</div>
           </div>
         ) : context.courseId === '__all__' ? (
-          groupByYearCourse(filtered, courses, context).map(group => (
+          groupByYearCourse<Student>(filtered, courses, context).map(group => (
             <div key={`${group.year}||${group.courseId}`}>
               <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
               <ul>
@@ -1034,7 +1061,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               // slotId === null, so undoing from it freed the preference but left the
               // place reserved.
               const fresh = (data.students || []).find((x: Student) => x.id === b.studentId);
-              if (fresh) runPlacementAction(fresh, { id: 'unsend', targetOrg: b.orgNames[0] } as any);
+              if (fresh) runPlacementAction(fresh, { id: 'unsend', targetOrgs: b.orgNames } as any);
             }}
             style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
               border: '1px solid #b45309', background: 'transparent', color: '#b45309', cursor: 'pointer' }}>
@@ -1320,8 +1347,11 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             // seen_at is RLS-blocked).
             const empWithPlace = ctx.courseId ? setCourseCapacity(emp, ctx.courseId, 1) : emp;
             const updatedEmps = [...employers, empWithPlace];
+            // promoteOrgToFirst, not a raw write to firstChoiceOrg: the approved
+            // organization goes to the TOP of the ranking and the choice that was
+            // there moves down, instead of being overwritten and lost.
             const updatedStudents = (data.students || []).map((s: Student) => s.id === ctx.studentId
-              ? { ...s, firstChoiceOrg: ctx.firstChoiceOrgName, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student
+              ? promoteOrgToFirst(s, updatedEmps, ctx.firstChoiceOrgName, empWithPlace.id) as Student
               : s);
             const dismissed = ctx.suggestionId
               ? Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), ctx.suggestionId]))
