@@ -22,7 +22,7 @@
 
 import {
   buildUnifiedOrgList, applyUnifiedList, reconcileEmployerCapacity, renderTemplate,
-  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence } from './placement';
+  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, orgKey, resolveEmployerFor } from './placement';
 import type { Employer, VacancySlot, Dispatch } from './supabase';
 
 export type DispatchChannel = 'whatsapp' | 'email';
@@ -55,15 +55,17 @@ export type DispatchPlan = {
   blockedReason: string;
 };
 
-const norm = (s?: string | null) => String(s ?? '').trim().toLowerCase();
+const norm = (s?: string | null) => orgKey(s);
 
-export function resolveEmployerByName(orgName: string, employers: Employer[]): Employer | undefined {
-  if (!orgName) return undefined;
-  const n = norm(orgName);
-  return (employers || []).find(e => e.name === orgName)
-    || (employers || []).find(e => norm(e.name) === n)
-    || (employers || []).find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
-}
+export { resolveEmployerByName } from './placement';
+
+/** Why a ranked organization is not open for a first send, in the coordinator's words. */
+const NOT_SENDABLE: Record<string, string> = {
+  under_review: 'קו״ח כבר נשלחו לשם',
+  placed: 'כבר שובץ/ה שם',
+  rejected: 'סומן כנדחה',
+  withdrawn: 'סומן כבוטל',
+};
 
 const slotOf = (emp: any, slotId: string | null | undefined): VacancySlot | undefined =>
   slotId ? ((emp?.vacancySlots || []) as any[]).find(s => s.id === slotId) : undefined;
@@ -108,9 +110,16 @@ export function planDispatch(input: PlanInput): DispatchPlan {
   // preference owns.
   const cards = buildUnifiedOrgList(student, employers);
   const sendable = input.allowResend ? ['tentative', 'under_review'] : ['tentative'];
-  const targets = cards.filter(c => orgNames.includes(c.orgName) && sendable.includes(c.status));
+  const wanted = (orgNames || []).map(orgKey).filter(Boolean);
+  const named = cards.filter(c => wanted.includes(orgKey(c.orgName)));
+  const targets = named.filter(c => sendable.includes(c.status));
   if (targets.length === 0) {
-    return { entries: [], skipped, blockedReason: 'לא נשלח — אין ארגון תקף שנבחר' };
+    // Say WHICH organization and WHY. "אין ארגון תקף שנבחר" named neither, and read as
+    // "no organization is linked" to a coordinator looking at a ranked, selected card.
+    const reason = named.length
+      ? named.map(c => `${c.orgName} — ${NOT_SENDABLE[c.status] || 'לא פתוח לשליחה'}`).join('; ')
+      : `${(orgNames || []).filter(Boolean).join(', ') || 'הארגון'} לא נמצא בדירוג של ${student?.name || 'הסטודנט/ית'}`;
+    return { entries: [], skipped, blockedReason: `לא נשלח — ${reason}` };
   }
 
   const entries: DispatchPlanEntry[] = [];
@@ -118,8 +127,10 @@ export function planDispatch(input: PlanInput): DispatchPlan {
 
   for (const card of targets) {
     const orgName = card.orgName;
-    const emp = resolveEmployerByName(orgName, employers);
-    if (!emp) { skipped.push(`${orgName} (לא זוהה מעסיק)`); continue; }
+    // By the preference's own link first — the same lookup the row's capacity chip
+    // makes — and by name only when it has none. See resolveEmployerFor.
+    const emp = resolveEmployerFor(card, employers);
+    if (!emp) { skipped.push(`${orgName} (לא זוהה מעסיק — הארגון אינו ברשימת המעסיקים)`); continue; }
     if (usedEmployerIds.has(emp.id)) { skipped.push(`${orgName} (אותו מעסיק כבר נשלח)`); continue; }
 
     const already = slotOf(emp, card.slotId);

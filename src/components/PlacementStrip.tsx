@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
 import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets } from '../lib/placementStatus';
-import { openWhatsApp } from '../lib/placement';
+import { openWhatsApp, resolveEmployerFor } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
 
@@ -332,12 +332,13 @@ export default function PlacementStrip({ status, employers, onAction }: {
   const tone = TURN_COLOR[status.turn];
   const tinted = status.turn === 'ours';
 
-  const norm = (s: any) => String(s ?? '').trim().toLowerCase();
-  const findEmp = (name: string) =>
-    (employers || []).find((e: any) => e?.name === name)
-    || (employers || []).find((e: any) => norm(e?.name) === norm(name))
-    || (employers || []).find((e: any) => { const n = norm(e?.name); return !!n && (n.startsWith(norm(name)) || norm(name).startsWith(n)); })
-    || null;
+  // Through the chip's own link first, then by name — the same resolution the capacity
+  // verdict and the planner make, so the contact the dialog shows is the one the send
+  // will open against.
+  const findEmp = (name: string) => {
+    const chip = status.chips.find(c => c.orgName === name);
+    return resolveEmployerFor({ employerId: chip?.employerId ?? null, orgName: name }, employers || []) || null;
+  };
 
   return (
     <div
