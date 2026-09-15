@@ -27,9 +27,11 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
   const [active, setActive] = useState<ReportKey>('yoy');
 
   const courses = data.courses || [];
-  const students   = (data.students   || []).filter((s: any) => sameContext(s, context, courses));
-  const candidates = (data.candidates || []).filter((c: any) => sameContext(c, context, courses));
-  const lectures   = (data.lectures   || []).filter((l: any) => sameContext(l, context, courses));
+  // Annotated: `data` is `any`, so filtering it produced `any`, and everything derived
+  // from it degraded to `unknown` — which is why the year pivot could not be indexed.
+  const students: any[]   = (data.students   || []).filter((s: any) => sameContext(s, context, courses));
+  const candidates: any[] = (data.candidates || []).filter((c: any) => sameContext(c, context, courses));
+  const lectures: any[]   = (data.lectures   || []).filter((l: any) => sameContext(l, context, courses));
 
   const allEmployers: Employer[] = data.employers || [];
   const allStudents: Student[]   = data.students  || [];
@@ -129,7 +131,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
 
         const lastYear = orgYears[orgYears.length - 1] ?? '';
 
-        const sorted = Object.entries(pivot)
+        const sorted = (Object.entries(pivot) as Array<[string, Record<string, number>]>)
           .map(([org, byYear]) => {
             const total  = Object.values(byYear).reduce((s, v) => s + v, 0);
             const inLast = byYear[lastYear] || 0;
@@ -475,7 +477,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
                     <th key={i}
                       className="mono text-[11.5px] uppercase tracking-[0.12em] font-semibold text-right px-4 py-3 whitespace-nowrap"
                       style={{ color: 'var(--ink)', borderBottom: '1px solid var(--divider)' }}>
-                      {h}
+                      {String(h)}
                     </th>
                   ))}
                 </tr>

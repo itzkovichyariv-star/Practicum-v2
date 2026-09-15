@@ -165,11 +165,18 @@ export default function LecturesPage({
       if (empIdx >= 0) {
         const emp = { ...allEmployers[empIdx] };
         let changed = false;
-        if (synced.lecturerEmail && synced.lecturerEmail !== emp.contactEmail) {
+        // FILL, NEVER OVERWRITE. This matched an employer by the NAME of its contact
+        // person and then replaced that employer's mail and phone with the lecturer's.
+        // Two people who share a name — or one person whose address for a guest lecture
+        // differs from their work address — silently rewrote the contact details every
+        // CV send, reminder and feedback request then used, and the only sign was a few
+        // words appended to a toast. An empty field is still worth filling in; a field
+        // that already holds something different is the employer's, and stays.
+        if (synced.lecturerEmail && !String(emp.contactEmail || '').trim()) {
           emp.contactEmail = synced.lecturerEmail;
           changed = true;
         }
-        if (synced.lecturerPhone && synced.lecturerPhone !== emp.contactPhone) {
+        if (synced.lecturerPhone && !String(emp.contactPhone || '').trim()) {
           emp.contactPhone = synced.lecturerPhone;
           changed = true;
         }
@@ -177,7 +184,7 @@ export default function LecturesPage({
           updatedEmployers = [...allEmployers];
           updatedEmployers[empIdx] = emp;
           (data.employers as any[]) = updatedEmployers;
-          action += ` · פרטי קשר של ${emp.name} עודכנו`;
+          action += ` · הושלמו פרטי קשר חסרים ב${emp.name}`;
         }
       }
     }

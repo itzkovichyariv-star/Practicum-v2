@@ -562,7 +562,7 @@ export function buildWhatsAppUrl(rawPhone: string, message: string): string {
 // everywhere — until the coordinator resolves it (accept → placed, reject →
 // released). Guards: the student must exist and have a course, must not already be
 // placed, and may hold only ONE org at a time. Pure: returns a new data blob.
-export function studentCurrentPlacement(data: any, email: string): { orgName: string; status: VacancySlotStatus | 'placed' } | null {
+export function studentCurrentPlacement(data: any, email: string): { orgName: string; status: VacancySlot['status'] | 'placed' } | null {
   const e = String(email || '').trim().toLowerCase();
   const student = (data?.students || []).find((s: any) => String(s.email || '').trim().toLowerCase() === e);
   if (!student) return null;
@@ -816,6 +816,67 @@ export function buildUnifiedOrgList(student: any, employers: any[] = []): Unifie
 }
 
 /**
+ * Fold a newly submitted organization list into the student's ranking.
+ *
+ * The two paths that adopt a submission — the row's "קלוט לכרטיס" and the card's pending
+ * banner — both wrote `firstChoiceOrg/second/third` DIRECTLY. Everything downstream
+ * reads `buildUnifiedOrgList`, which puts the structured `preferences[]` first and only
+ * APPENDS legacy names that are not already represented. So for any student who had ever
+ * had a CV sent (anyone with a materialised preference), the freshly submitted list
+ * landed BELOW the old ranking, with the old organizations still ranked ahead of it and
+ * still recommended for sending — while the confirmation had promised the list would be
+ * copied onto the card.
+ *
+ * Here the submission LEADS, in the order the student gave it, and an organization that
+ * is already in the ranking keeps everything it has earned — its interview result, its
+ * status, and the place it holds. An organization the student did NOT resubmit is kept
+ * after them rather than dropped: it may be holding a reserved place, and silently
+ * dropping it would leak that place and lose the interview result with it.
+ */
+export function adoptSubmittedOrgs<T extends Record<string, any>>(
+  student: T, employers: any[], submitted: Array<string | null | undefined>,
+): T {
+  const current = buildUnifiedOrgList(student, employers);
+  const wanted = (submitted || []).map(n => String(n ?? '').trim()).filter(Boolean);
+  const used = new Set<number>();
+  const lead: UnifiedOrgPref[] = [];
+  for (const name of wanted) {
+    const idx = current.findIndex((p, i) => !used.has(i) && eqName(p.orgName, name));
+    if (idx >= 0) { used.add(idx); lead.push(current[idx]); continue; }
+    if (lead.some(p => eqName(p.orgName, name))) continue; // the same name twice in one submission
+    lead.push({ rank: 0, orgName: name, employerId: resolveEmployerIdByName(name, employers),
+      interviewResult: 'pending', status: 'tentative', slotId: null });
+  }
+  const rest = current.filter((_, i) => !used.has(i));
+  return applyUnifiedList(student, [...lead, ...rest].map((p, i) => ({ ...p, rank: i + 1 })));
+}
+
+/**
+ * Put one organization at the top of the ranking without losing what is there.
+ *
+ * Approving an organization the student proposed used to write `firstChoiceOrg` raw,
+ * which OVERWROTE the existing first choice — for a student whose list had not been
+ * materialised that choice was simply gone — while the toast said the organization had
+ * been set as the first choice. For a materialised student the opposite happened: the
+ * structured list won, the approved organization was appended LAST, and the same toast
+ * was still wrong.
+ */
+export function promoteOrgToFirst<T extends Record<string, any>>(
+  student: T, employers: any[], orgName: string, employerId?: string | null,
+): T {
+  const name = String(orgName || '').trim();
+  if (!name) return student;
+  const current = buildUnifiedOrgList(student, employers);
+  const existing = current.find(p => eqName(p.orgName, name));
+  const head: UnifiedOrgPref = existing
+    ? { ...existing, employerId: existing.employerId || employerId || resolveEmployerIdByName(name, employers) }
+    : { rank: 0, orgName: name, employerId: employerId || resolveEmployerIdByName(name, employers),
+        interviewResult: 'pending', status: 'tentative', slotId: null };
+  const rest = current.filter(p => !eqName(p.orgName, name));
+  return applyUnifiedList(student, [head, ...rest].map((p, i) => ({ ...p, rank: i + 1 })));
+}
+
+/**
  * Reorder the unified list to match `orderedOrgNames` and re-number ranks 1..N. Each
  * entry KEEPS its interviewResult and status — the whole point: the result follows the
  * org, never the rank index. Names not found are ignored; entries not named keep their
@@ -1016,6 +1077,46 @@ export function addPlacementPreference(
 // occupies one vacancy at that org (→ placed), instead of the old bare
 // filledPositions++. Idempotent — if the student already holds a slot there it
 // just ensures it's marked placed. Returns a fresh employers array.
+/**
+ * Free the place a student holds at ONE organization.
+ *
+ * The counterpart to occupyAcceptedOrgSlot, and the thing that was missing: changing
+ * "ארגון מאכסן בפועל" from A to B occupied nothing at B (a strict name compare in the
+ * gate, fixed 2026-09-15) and released nothing at A — so A went on counting a place as
+ * filled by a student who is no longer there, for good. A correction to a typed field
+ * should not cost an organization a place.
+ *
+ * Only slots this student holds are touched, and a slot already `available` is left
+ * alone, so calling it twice is safe.
+ */
+export function releaseStudentSlotAt(
+  student: Student,
+  employers: Employer[],
+  orgName: string,
+  opts: { actorId: string; now?: string; reason?: string },
+): Employer[] {
+  const name = String(orgName || '').trim();
+  if (!name) return employers;
+  const now = opts.now || new Date().toISOString();
+  const resolved = resolveEmployerByName(name, employers);
+  if (!resolved) return employers;
+  let touched = false;
+  const out = employers.map(e => {
+    if (e.id !== resolved.id) return e;
+    const slots = ((e as any).vacancySlots || []).map((sl: any) => {
+      if (sl?.studentId !== student.id || sl?.status === 'available') return sl;
+      touched = true;
+      return {
+        ...sl, status: 'available', studentId: null, prefRank: null,
+        history: [...(sl.history || []), { at: now, from: sl.status, to: 'available',
+          by: 'admin', actorId: opts.actorId, reason: opts.reason || 'accepted-org-changed' }],
+      };
+    });
+    return reconcileEmployerCapacity({ ...(e as any), vacancySlots: slots });
+  });
+  return touched ? out : employers;
+}
+
 export function occupyAcceptedOrgSlot(
   student: Student,
   employers: Employer[],

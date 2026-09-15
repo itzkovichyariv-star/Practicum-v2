@@ -103,6 +103,14 @@ export type PlacementSettings = {
   defaultPreferenceCount: number;
   defaultAgingThresholdDays: number;
   whatsappTemplate: string;
+  /** The reminder wording. These have had defaults and a migration since the reminder
+   *  shipped, and were simply never declared here — so getDefaultPlacementSettings
+   *  returned three properties its own return type forbade, and nothing noticed because
+   *  the project had no tsconfig. A settings object built to the DECLARED type would
+   *  have rendered an empty reminder, silently. */
+  reminderWhatsappTemplate?: string;
+  reminderEmailSubjectTemplate?: string;
+  reminderEmailBodyTemplate?: string;
   emailSubjectTemplate: string;
   emailBodyTemplate: string;
   whatsappWithdrawalTemplate: string;

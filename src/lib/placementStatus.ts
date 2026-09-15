@@ -99,6 +99,15 @@ export type PlacementActionId =
  *  a warning saying clicking will do..."). The copy is derived from what the real
  *  handlers do — see the brief's table — never from what they sound like they do. */
 export type PlacementAction = {
+  /** Stamped by the caller: the organization this action acts on (the ✕ and ↻ set it
+   *  from the clicked chip; the dialog sets it from the selection). It was passed
+   *  everywhere and declared nowhere, so nothing checked that it survived the trip —
+   *  which is exactly how the ✕ and ↻ lost their argument on the last step. */
+  targetOrg?: string;
+  /** Several of them, for a send or an undo that covers more than one. */
+  targetOrgs?: string[];
+  /** Which channel the coordinator chose in the confirmation. */
+  channel?: 'whatsapp' | 'email';
   id: PlacementActionId;
   label: string;
   /** One word for the collapsed row. The full label + employer name stay in the
@@ -351,11 +360,23 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const suggestedNames = new Set(suggested.map(p => norm(p.orgName)));
   const isSug = (p: UnifiedOrgPref) => suggestedNames.has(norm(p.orgName));
 
-  const sent = list.filter(p => p.status === 'under_review');
-  const tentative = list.filter(p => p.status === 'tentative');
+  // A FAILED INTERVIEW CLOSES AN ORGANIZATION. The card has always offered
+  // "תוצאת ראיון: לא עבר", and nothing read it: the classifier looked only for
+  // 'passed'. So recording that the student did not pass left the row saying "קו״ח
+  // נשלחו · ממתין לתשובת המעסיק", and after the silence threshold it started asking to
+  // remind an employer who had already said no. It is a closed organization now, like a
+  // rejection — the difference being that the PLACE may still be held, which the chip
+  // says so it can be released.
+  const failedInterview = (p: UnifiedOrgPref) =>
+    p.interviewResult === 'failed' && p.status !== 'rejected' && p.status !== 'withdrawn' && p.status !== 'placed';
+  const sent = list.filter(p => p.status === 'under_review' && !failedInterview(p));
+  const tentative = list.filter(p => p.status === 'tentative' && !failedInterview(p));
   const tentativeList = tentative.filter(p => !isSug(p));
   const tentativeSuggested = tentative.filter(p => isSug(p));
-  const rejected = list.filter(p => p.status === 'rejected' || p.status === 'withdrawn');
+  const rejected = [
+    ...list.filter(p => p.status === 'rejected' || p.status === 'withdrawn'),
+    ...list.filter(failedInterview),
+  ];
   const passed = list.filter(p => p.interviewResult === 'passed' && p.status !== 'rejected');
 
   /** The pending dispatch for this preference, newest first. */
@@ -463,7 +484,8 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
         ? 'רשימת העדפות התקבלה — יש לקלוט לכרטיס'
         : 'קו״ח מעודכנים התקבלו — יש לקלוט לכרטיס',
       sub: newOrgs ? `${orgs.length} ארגונים בהגשה · טרם נקלטו` : 'ההגשה טרם נקלטה',
-      chips: orgs.map((o, i) => ({ rank: i + 1, orgName: o, suggested: false, tone: 'plain' as const, suffix: '' })),
+      chips: orgs.map((o, i) => ({ rank: i + 1, orgName: o, suggested: false, tone: 'plain' as const,
+        suffix: '', available: false, blockedReason: '', recommended: false })),
       age: `הוגשה ${agoPhrase(d)}`,
       action: act('adopt'),
     };
@@ -478,7 +500,8 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       headline: 'הצעת ארגון חדש — יש לבדוק ולאשר את הארגון',
       sub: withCvNote([pendingEmp.contactPerson && `איש קשר: ${pendingEmp.contactPerson}`, 'הוצע ע״י הסטודנט/ית']
         .filter(Boolean).join(' · ')),
-      chips: [{ rank: 1, orgName: pendingEmp.name, suggested: true, tone: 'plain', suffix: '' }],
+      chips: [{ rank: 1, orgName: pendingEmp.name, suggested: true, tone: 'plain', suffix: '',
+        available: false, blockedReason: '', recommended: false }],
       age: waitPhrase(waitDays),
       action: act('approve_org'),
     };
@@ -696,7 +719,9 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       key: 'exhausted', turn: 'ours',
       headline: `נדחה/תה ${placesPhrase(rejected.length)} — יש להציע ארגונים חדשים`,
       sub: withCvNote('לא נותרו ארגונים פעילים בדירוג'),
-      chips: rejected.map(p => chipFor(p, 'dead', p.status === 'withdrawn' ? 'בוטל' : 'נדחה')),
+      chips: rejected.map(p => chipFor(p, 'dead',
+        failedInterview(p) ? (p.slotId ? 'לא עבר ראיון · המקום עדיין תפוס' : 'לא עבר ראיון')
+          : p.status === 'withdrawn' ? 'בוטל' : 'נדחה')),
       age: '', action: act('add_orgs'),
     };
   }

@@ -38,7 +38,7 @@ const dispatch = (over: Record<string, any> = {}) => ({
 });
 
 const statusOf = (s: any, dispatches: any[]) =>
-  placementStatus({ student: s, employers: EMPLOYERS, dispatches, course: COURSE, now: NOW });
+  placementStatus({ student: s, employers: EMPLOYERS, dispatches, course: COURSE, now: NOW } as any);
 
 test('THE BUG: a CV out past the silence threshold asks us to remind', () => {
   const st = statusOf(student(), [dispatch()]);

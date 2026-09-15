@@ -10,7 +10,7 @@ import { employerContacts } from '../lib/employerContacts';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
-import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity, promoteOrgToFirst } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS, applyEmployerStatus, type ManualStatusKey } from '../lib/orgAvailability';
 
@@ -194,8 +194,10 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     // open vacancy in THEIR list (their first-priority org). Coordinator adjusts later.
     const empWithPlace = student?.courseId ? setCourseCapacity(emp, student.courseId, 1) : emp;
     const updatedEmps = [...all, empWithPlace];
+    // promoteOrgToFirst, not a raw write: the approved organization leads the ranking
+    // and the choice that was first moves down, rather than being overwritten.
     const updatedStudents = student
-      ? students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: o.name, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student : s)
+      ? students.map(s => s.id === student.id ? promoteOrgToFirst(s, updatedEmps, o.name, empWithPlace.id) as Student : s)
       : students;
     const dismissed = Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), sug.id]));
     setSaving(true);

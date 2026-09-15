@@ -251,13 +251,15 @@ export default function Dashboard({
   const courseBreakdown = useMemo(() => {
     if (context.courseId !== '__all__') return [];
     const courseMap = new Map(courses.map(c => [c.id, c]));
-    const map = new Map<string, { key: string; courseName: string; year: string; total: number; active: number; completed: number; hired: number }>();
+    // `courseId` was read by the row's click handler and never put on the row, so
+    // clicking a course in the breakdown asked to filter by `undefined`.
+    const map = new Map<string, { key: string; courseId: string; courseName: string; year: string; total: number; active: number; completed: number; hired: number }>();
     for (const s of students) {
       if (context.year !== '__all__' && normalizeYear(s.year) !== normalizeYear(context.year)) continue;
       const key = `${s.courseId}||${normalizeYear(s.year)}`;
       if (!map.has(key)) {
         map.set(key, {
-          key, year: normalizeYear(s.year) || '—',
+          key, courseId: s.courseId, year: normalizeYear(s.year) || '—',
           courseName: courseMap.get(s.courseId)?.name || s.courseId || '—',
           total: 0, active: 0, completed: 0, hired: 0,
         });
