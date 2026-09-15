@@ -6,6 +6,7 @@ import type { PageProps } from './pageShared';
 import { normalizeYear } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
+import { employerContacts } from '../lib/employerContacts';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
@@ -273,8 +274,12 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
         if (statusFilter !== 'all' && employerStatus(e, scope, STATUS_CTX).key !== statusFilter) continue;
         if (q) {
           // contactPhone included: the global search matches a number, and typing the
-          // same number here returned nothing.
-          const hay = [e.name, e.contactPerson, e.contactEmail, e.contactPhone, e.location].filter(Boolean).join(' ').toLowerCase();
+          // same number here returned nothing. Every contact, not just the active one:
+          // a stand-in is most often looked up by the name of the person they replaced,
+          // or the other way round.
+          const hay = [e.name, e.contactPerson, e.contactEmail, e.contactPhone, e.location,
+            ...employerContacts(e).flatMap(c => [c.name, c.role, c.phone, c.email]),
+          ].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) continue;
         }
         out.push({ emp: e, courseId: cid, year: normalizeYear((courses.find((c: any) => c.id === cid) || {}).year || '') });
