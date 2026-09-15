@@ -384,3 +384,20 @@ for the new one and leaves anything hand-edited alone — the same contract
 `LINK-keeps-custom-wording` already holds it to. `RENDER-days-substituted` moved to the
 WhatsApp reminder, which still quotes a number: that rule exists because v1.39 shipped a
 literal `{daysWaiting}` to real employers, and it has to keep running somewhere.
+
+## 2026-09-15 — the wait is phrased, not counted
+
+"לפני מספר שבועות" shipped as fixed text a few hours earlier, and the reminder can fire
+from about fourteen days — so a reminder sent on day 15 claimed "a few weeks", and one
+sent on day 40 understated it just as badly. Yariv: "תתאים את זה - מספר הימים."
+
+`{waitedFor}` now says the interval the way a person would: days under a week, where the
+exact number is the point and still reads as precise; past that, the unit a reader
+actually thinks in, which is never "23 days". Every boundary rounds DOWN — the sentence
+goes to someone who has not answered, and overstating the wait would be both wrong and
+pointed. With no number it says "לאחרונה" rather than inventing an interval.
+
+The superseded-wording constant became a LIST. Each revision leaves another stored copy
+out there, and a migration that only ever compares against the immediately previous
+wording strands whoever happened to deploy in between — which here would have been anyone
+who shipped in the few hours between the two passes.
