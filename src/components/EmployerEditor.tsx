@@ -3,6 +3,8 @@ import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
 import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity, openWhatsApp as waOpen } from '../lib/placement';
+import { employerContacts, activeContactId, applyContacts, removeContact, nextContactId,
+  contactIsEmpty, type EmployerContact } from '../lib/employerContacts';
 import { employerStatus, STATUS_COLORS, applyEmployerStatus } from '../lib/orgAvailability';
 import { normalizeYear } from './pageShared';
 import Modal from './Modal';
@@ -56,6 +58,43 @@ export default function EmployerEditor({
     setForm(f => ({ ...f, [k]: v }));
   }
 
+  // ── the people at this organization ─────────────────────────────────────────
+  // The list is DERIVED when the record predates it, so an employer saved by an older
+  // build opens with its one contact already on a card. Every write goes through
+  // applyContacts, which mirrors the ACTIVE contact into contactPerson/Phone/Email —
+  // the three fields the rest of the app reads, and therefore the whole mechanism by
+  // which choosing someone routes the sends, the reminders and the feedback to them.
+  const contacts = employerContacts(form);
+  const activeId = activeContactId(form);
+  const writeContacts = (list: EmployerContact[], active?: string | null) =>
+    setForm(f => applyContacts(f, list, active === undefined ? activeContactId(f) : active));
+
+  function editContact(i: number, key: keyof EmployerContact, v: string) {
+    // Keep the edited card's id as the active one when it IS the active one, even while
+    // its name is still being typed and the card is momentarily "empty".
+    setForm(f => {
+      const list = employerContacts(f).map((c, idx) => (idx === i ? { ...c, [key]: v } : c));
+      return applyContacts(f, list, activeContactId(f));
+    });
+  }
+  function addContact() {
+    setForm(f => {
+      const list = employerContacts(f);
+      // A new card starts empty, so it cannot be stored yet — it is held in state until
+      // it has a name, a phone or an address. Keeping it out of applyContacts is what
+      // stops an empty card from vanishing as it is typed into.
+      return { ...f, contacts: [...list, { id: nextContactId(list), name: '', role: '', phone: '', email: '', note: '' }] } as Employer;
+    });
+  }
+  function chooseActive(id: string) {
+    setForm(f => applyContacts(f, employerContacts(f), id));
+  }
+  function dropContact(id: string) {
+    const c = contacts.find(x => x.id === id);
+    if (c && !contactIsEmpty(c) && !window.confirm(`להסיר את ${c.name || 'איש הקשר'} מהארגון?`)) return;
+    setForm(f => removeContact(f, id));
+  }
+
   const [showAllCourses, setShowAllCourses] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -104,7 +143,10 @@ export default function EmployerEditor({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) { alert('שם הארגון חסר'); return; }
-    onSave(form);
+    // Normalise on the way out: a card added and never filled in is dropped, and the
+    // active contact is mirrored into contactPerson/Phone/Email one last time, so what
+    // is saved is exactly what every other screen will read.
+    onSave(applyContacts(form, employerContacts(form), activeContactId(form)));
   }
 
   function openOutlook() {
@@ -141,10 +183,80 @@ export default function EmployerEditor({
             <div className="col-span-full">
               <Field label="שם הארגון"><Input value={form.name} onChange={v=>update('name',v)} required/></Field>
             </div>
-            <Field label="איש קשר"><Input value={form.contactPerson||''} onChange={v=>update('contactPerson',v)}/></Field>
             <Field label="מיקום"><Input value={form.location||''} onChange={v=>update('location',v)} placeholder="עיר / איזור"/></Field>
-            <Field label="טלפון איש קשר"><Input type="tel" value={form.contactPhone||''} onChange={v=>update('contactPhone',v)}/></Field>
-            <Field label="מייל איש קשר"><Input type="email" value={form.contactEmail||''} onChange={v=>update('contactEmail',v)}/></Field>
+
+            {/* ── the people at this organization, and which of them everything goes to ──
+                Yariv 2026-09-15: a contact goes on holiday and has to be replaced for a
+                while, then handed back. So every person keeps their own card, and the
+                one marked פעיל is mirrored into the employer's contact fields — which is
+                what routes the CV sends, the reminders, the feedback request and every
+                screen to them without anything else changing. */}
+            <div className="col-span-full">
+              <div className="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+                <span className="small-caps" style={{ letterSpacing: '0.12em' }}>אנשי קשר</span>
+                <button type="button" data-add-contact onClick={addContact}
+                  className="mono text-[11px] font-semibold"
+                  style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  ＋ הוסף איש קשר
+                </button>
+              </div>
+              <div className="text-[11.5px] mb-3" style={{ color: 'var(--text-soft)', lineHeight: 1.5 }}>
+                כל הפניות לארגון — שליחת קו״ח, תזכורות, בקשת חוות דעת וטופס המשוב — יוצאות לאיש הקשר המסומן <b>פעיל</b>.
+                כדי להחליף איש קשר שיצא לחופשה, הוסף/י אותו כאן וסמן/י אותו כפעיל; הכרטיס של הקודם נשמר, וההחזרה היא סימון חוזר.
+              </div>
+
+              {contacts.length === 0 && (
+                <div className="text-[13px] mb-3 rounded-xl p-3" style={{ color: '#b45309', background: 'rgba(180,83,9,0.07)', border: '1px solid rgba(180,83,9,0.25)' }}>
+                  אין עדיין איש קשר לארגון — בלעדיו לא ניתן לשלוח קו״ח, לתזכר או לבקש חוות דעת.
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3">
+                {contacts.map((c, i) => {
+                  const isActive = c.id === activeId;
+                  return (
+                    <div key={c.id} data-contact-card={c.id}
+                      className="rounded-xl p-3.5"
+                      style={{
+                        border: isActive ? '1.5px solid var(--accent)' : '1px solid var(--divider)',
+                        background: isActive ? 'var(--accent-soft)' : 'transparent',
+                      }}>
+                      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                        <button type="button" role="radio" aria-checked={isActive} data-make-active={c.id}
+                          onClick={() => chooseActive(c.id)}
+                          title={isActive ? 'איש הקשר הפעיל — כל הפניות יוצאות אליו' : `העבר את כל הפניות ל${c.name || 'איש קשר זה'}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+                          <span aria-hidden style={{
+                            display: 'inline-grid', placeItems: 'center', width: 18, height: 18, borderRadius: '50%',
+                            border: `2px solid ${isActive ? 'var(--accent)' : 'var(--divider-strong)'}`,
+                            background: isActive ? 'var(--accent)' : 'transparent', color: '#fff', fontSize: 10, flexShrink: 0,
+                          }}>{isActive ? '✓' : ''}</span>
+                          <span className="text-[12.5px] font-bold" style={{ color: isActive ? 'var(--accent)' : 'var(--text-soft)' }}>
+                            {isActive ? 'פעיל · כל הפניות אליו' : 'סמן/י כפעיל'}
+                          </span>
+                        </button>
+                        {contacts.length > 1 && (
+                          <button type="button" data-remove-contact={c.id} onClick={() => dropContact(c.id)}
+                            title="הסר איש קשר" className="mono text-[11px]"
+                            style={{ color: 'var(--text-soft)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                            ✕ הסר
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <Field label="שם"><Input value={c.name} onChange={(v: string) => editContact(i, 'name', v)}/></Field>
+                        <Field label="תפקיד"><Input value={c.role||''} onChange={(v: string) => editContact(i, 'role', v)} placeholder="מנהלת משאבי אנוש"/></Field>
+                        <Field label="טלפון"><Input type="tel" value={c.phone||''} onChange={(v: string) => editContact(i, 'phone', v)}/></Field>
+                        <Field label="מייל"><Input type="email" value={c.email||''} onChange={(v: string) => editContact(i, 'email', v)}/></Field>
+                        <div className="sm:col-span-2">
+                          <Field label="הערה (לא נשלחת לאף אחד)"><Input value={c.note||''} onChange={(v: string) => editContact(i, 'note', v)} placeholder="בחופשה עד 1.10"/></Field>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="col-span-full">
               <span className="small-caps block mb-2" style={{ letterSpacing: '0.12em' }}>מקומות התנסות — לפי שנה וקורס</span>
