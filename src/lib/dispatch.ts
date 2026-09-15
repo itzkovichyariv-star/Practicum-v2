@@ -22,7 +22,8 @@
 
 import {
   buildUnifiedOrgList, applyUnifiedList, reconcileEmployerCapacity, renderTemplate,
-  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, orgKey, resolveEmployerFor } from './placement';
+  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, orgKey, resolveEmployerFor,
+  firstEmailOf, isDialablePhone } from './placement';
 import type { Employer, VacancySlot, Dispatch } from './supabase';
 
 export type DispatchChannel = 'whatsapp' | 'email';
@@ -145,7 +146,13 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     } as Record<string, string>;
     const rem = input.reminder;
     const dispatchId = input.newId ? input.newId() : `d-${target.id}`;
-    const origin = input.origin || (typeof window !== 'undefined' ? window.location.origin : '');
+    // The coordinator's OWN address bar is the wrong base for a link an employer will
+    // open days later: sent from a local run or a preview build it is localhost or a
+    // *.pages.dev URL, and the employer is left with a dead link in their inbox for
+    // weeks. `publicSiteUrl` exists in the settings for exactly this and was read by
+    // nothing (Yariv could set it and it changed no link). It wins when set.
+    const configuredOrigin = String((settings as any)?.publicSiteUrl || '').trim().replace(/\/+$/, '');
+    const origin = configuredOrigin || input.origin || (typeof window !== 'undefined' ? window.location.origin : '');
     // The link is a single point of failure — it can be stripped by a mail client,
     // wrapped by a plain-text renderer, or point at a dispatch whose confirmation was
     // never given. contactBack is the human route back when it fails.
@@ -156,16 +163,24 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     if (channel === 'whatsapp') {
       messageSnapshot = renderTemplate(
         (rem ? settings?.reminderWhatsappTemplate : settings?.whatsappTemplate) || '', ctxR);
-      url = buildWhatsAppUrl(emp.contactPhone || '', messageSnapshot);
-      missingContact = !String(emp.contactPhone || '').trim();
+      // A number with a missing digit is NOT a reachable recipient: WhatsApp answers it
+      // with "not on WhatsApp", which reads as the employer not being there rather than
+      // the number being wrong, and the coordinator then confirms the send and the place
+      // is taken. isDialablePhone exists for this and the planner never called it.
+      const phone = String(emp.contactPhone || '').trim();
+      url = buildWhatsAppUrl(phone, messageSnapshot);
+      missingContact = !phone || !isDialablePhone(phone);
     } else {
       const subject = renderTemplate(
         (rem ? settings?.reminderEmailSubjectTemplate : settings?.emailSubjectTemplate) || '', ctxR);
       const body = renderTemplate(
         (rem ? settings?.reminderEmailBodyTemplate : settings?.emailBodyTemplate) || '', ctxR);
       messageSnapshot = `${subject}\n\n${body}`;
-      url = buildMailtoUrl(emp.contactEmail || '', subject, body);
-      missingContact = !String(emp.contactEmail || '').trim();
+      // The field is typed by hand and really does hold "a@x.com/ b@y.com" or stray
+      // "mailto:" text; the raw value opens a compose window with a malformed To.
+      const email = firstEmailOf(emp.contactEmail);
+      url = buildMailtoUrl(email, subject, body);
+      missingContact = !email;
     }
 
     usedEmployerIds.add(emp.id);
@@ -174,12 +189,38 @@ export function planDispatch(input: PlanInput): DispatchPlan {
       orgName, employerId: emp.id, slotId: target.id, reusingSlot: !!already,
       channel, url, messageSnapshot, prefRank: card.rank ?? null,
       contactName: emp.contactPerson || emp.name,
-      recipient: channel === 'whatsapp' ? String(emp.contactPhone || '') : String(emp.contactEmail || ''),
+      recipient: channel === 'whatsapp' ? String(emp.contactPhone || '') : firstEmailOf(emp.contactEmail),
       missingContact,
     });
   }
 
   return { entries, skipped, blockedReason: '' };
+}
+
+/**
+ * Split a plan into what can actually reach a person and what cannot.
+ *
+ * An entry with no phone (WhatsApp) or no address (mail) opens a compose window with an
+ * EMPTY recipient. That window opens successfully, so every caller that only checked
+ * "did the window open?" treated it as sent, offered the confirmation, and on a yes
+ * reserved the employer's place and wrote a dispatch row for a message that reached
+ * nobody — the phantom send this module was created to end, reopened from the other
+ * side. The student card never checked at all; the students list checked only whether
+ * EVERY entry was missing a contact, so ticking three organizations where one has no
+ * address still opened that one empty.
+ *
+ * So the check lives here, once, and both callers use it.
+ */
+export function splitSendable(plan: DispatchPlan): { sendable: DispatchPlanEntry[]; skipped: string[] } {
+  const sendable = plan.entries.filter(e => !e.missingContact);
+  const skipped = [...plan.skipped, ...plan.entries.filter(e => e.missingContact).map(e => {
+    const has = !!String(e.recipient || '').trim();
+    const what = e.channel === 'whatsapp'
+      ? (has ? `מספר לא תקין (${e.recipient})` : 'אין טלפון')
+      : (has ? `כתובת מייל לא תקינה (${e.recipient})` : 'אין כתובת מייל');
+    return `${e.orgName} (${what} — תקן/י בכרטיס המעסיק)`;
+  })];
+  return { sendable, skipped };
 }
 
 export type ApplyInput = {
@@ -252,12 +293,20 @@ export function dropOrg(input: { student: any; employers: Employer[]; orgName: s
     }));
     return reconcileEmployerCapacity({ ...e, vacancySlots: slots });
   });
-  const kept = (input.student.preferences || [])
+  // MATERIALISE FIRST. This was the one placement writer that read `preferences[]` raw,
+  // and it is destructive. A student whose organizations still live only in the legacy
+  // firstChoiceOrg/second/third fields has an EMPTY preferences array — which is every
+  // student until their first send — so `kept` came out empty, and applyUnifiedList then
+  // wrote all three legacy fields back as ''. One click on the small ✕ of a blocked
+  // organization erased the student's entire ranking, every interview result with it,
+  // and saved that to the cloud under a success toast. applyDispatch and placeDirect
+  // both materialise for exactly this reason; the card's own release does too, which is
+  // why the same gesture was safe inside the card and destroyed the list outside it.
+  const materialised = buildUnifiedOrgList(input.student, input.employers);
+  const kept = materialised
     .filter((p: any) => norm(p.orgName) !== norm(input.orgName))
     .map((p: any, i: number) => ({ ...p, rank: i + 1 }));
-  const student = applyUnifiedList({ ...input.student, preferences: kept },
-    kept.map((p: any, i: number) => ({ rank: i + 1, orgName: p.orgName, employerId: p.employerId || null,
-      interviewResult: p.interviewResult || 'pending', status: p.status || 'tentative', slotId: p.slotId ?? null })));
+  const student = applyUnifiedList(input.student, kept);
   return { student, employers };
 }
 
@@ -454,8 +503,11 @@ export function placeDirect(input: {
   const courseId = student.courseId;
   if (!courseId) return { ok: false, error: 'לא הוגדר קורס לסטודנט/ית', student: input.student, employers: input.employers };
 
-  const pref = (student.preferences || []).find((p: any) => p.orgName === input.orgName);
-  const emp = (input.employers || []).find((e: any) => e.name === input.orgName || e.id === (pref || {}).employerId);
+  // Both lookups went through a strict `===` on the name while every other lookup in
+  // this module normalises: a caller passing a name that differs by a direction mark or
+  // a quote style got "לא זוהה ארגון" for an organization plainly on the screen.
+  const pref = (student.preferences || []).find((p: any) => norm(p.orgName) === norm(input.orgName));
+  const emp = resolveEmployerFor({ employerId: (pref || {}).employerId ?? null, orgName: input.orgName }, input.employers || []);
   if (!pref || !emp) return { ok: false, error: 'לא זוהה ארגון', student: input.student, employers: input.employers };
 
   const slots: any[] = ((emp as any).vacancySlots || []);

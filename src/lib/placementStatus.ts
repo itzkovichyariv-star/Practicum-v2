@@ -228,10 +228,12 @@ const norm = (s: any) => orgKey(s);
  *  a conversation + approval (= placement), NOT a CV send. OrgHub models this as
  *  `place_direct`; the strip has to speak the same way (Yariv 2026-08-09). */
 function isSuggestedOrg(pref: UnifiedOrgPref, employers: any[], studentId: string): boolean {
-  const emp = pref.employerId
-    ? (employers || []).find((e: any) => e?.id === pref.employerId)
-    : (employers || []).find((e: any) => norm(e?.name) === norm(pref.orgName));
-  return !!emp && emp.restrictedToStudentId === studentId;
+  // Through the shared resolver: this used to be a private id-then-name lookup with no
+  // prefix fallback, so the SAME preference could resolve to an employer for its
+  // capacity chip and to nothing here — and an organization the student brought was
+  // then offered "שלח קו״ח" instead of "אשר השמה".
+  const emp = resolveEmployerFor(pref, employers || []);
+  return !!emp && (emp as any).restrictedToStudentId === studentId;
 }
 
 /**
@@ -628,7 +630,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   // ── 5. an org the student brought — talk and approve, never "send CV" ───────
   if (tentativeSuggested.length > 0) {
     const s0 = tentativeSuggested[0];
-    const emp = (employers || []).find((e: any) => e?.id === s0.employerId || norm(e?.name) === norm(s0.orgName));
+    const emp = resolveEmployerFor(s0, employers || []);
     const alsoList = tentativeList.length;
     return {
       key: 'suggested_org', turn: 'ours',
@@ -733,6 +735,22 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
  * So: an action that already names its target keeps it. Selection fills in only when
  * it does not.
  */
+/**
+ * The organizations a REMINDER can go to: the CV is out and the employer has not
+ * answered. Late first, then merely sent — the order the coordinator would chase in.
+ *
+ * Yariv 2026-09-15, on עיריית אריאל: the confirmation offered "אין מייל לארגון" and
+ * "אין טלפון לארגון" with both buttons dead, while the employers page showed a phone
+ * AND an email for that organization. Nothing was wrong with the employer. The strip
+ * built its target list only for send_cv/place_direct rows, so on a REMIND row the list
+ * was empty, the dialog had no organization to look up, and it reported the empty
+ * lookup as the employer having no contact details. One definition, used by the strip
+ * and by the row's handler, is what stops the two from disagreeing again.
+ */
+export function remindableChips(chips: PlacementChip[]): PlacementChip[] {
+  return [...(chips || []).filter(c => c.tone === 'late'), ...(chips || []).filter(c => c.tone === 'sent')];
+}
+
 export function resolveActionTargets(
   action: { targetOrg?: string },
   chosen: { orgName: string }[],

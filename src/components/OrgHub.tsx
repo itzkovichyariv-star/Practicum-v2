@@ -31,7 +31,7 @@ import type {
 import { randomId } from '../lib/dataApi';
 import {
   renderTemplate, buildWhatsAppUrl, buildMailtoUrl, reconcileEmployerCapacity, countSlotsByStatus,
-  buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName, orgKey, resolveEmployerFor,
+  buildUnifiedOrgList, reorderUnifiedList, applyUnifiedList, normalizeOrgName, orgKey, resolveEmployerFor, firstEmailOf,
   type UnifiedOrgPref, type InterviewResult,
 } from '../lib/placement';
 import { orgAvailability } from '../lib/orgAvailability';
@@ -40,7 +40,7 @@ import { btnSmall, btnSecondary, btnPrimary } from '../lib/design';
 import { showToast } from '../lib/toast';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 import { openMailto } from '../lib/openMailto';
-import { planDispatch, applyDispatch, unsendOrg, placeDirect } from '../lib/dispatch';
+import { planDispatch, applyDispatch, unsendOrg, placeDirect, splitSendable } from '../lib/dispatch';
 import { SILENCE_DAYS } from '../lib/placementStatus';
 
 export type OrgHubExtras = {
@@ -99,6 +99,11 @@ export default function OrgHub({
   } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set()); // orgNames checked to send
   const [sendSheet, setSendSheet] = useState(false);
+  // "↻ שלח שוב" opens the SAME channel sheet as a first send, and the sheet's buttons
+  // called dispatchMany without allowResend — so the planner refused every resend with
+  // "קו״ח כבר נשלחו לשם", i.e. the button whose only purpose is re-sending was refused
+  // because the CV had been sent. The sheet has to remember which of the two it is.
+  const [resendMode, setResendMode] = useState(false);
   const [draftOrg, setDraftOrg] = useState<string | null>(null); // "➕ הוסף ארגון" input open
   const formRef = useRef(form);
   useEffect(() => { formRef.current = form; }, [form]);
@@ -218,12 +223,22 @@ export default function OrgHub({
     });
     if (plan.blockedReason) { setSelected(new Set()); showToast(plan.blockedReason, 'error'); return; }
 
+    // An organization with no phone/address opens an EMPTY compose window, which looks
+    // exactly like a real one and is how a place gets reserved for a message nobody
+    // received. The list already refused these; the card never did.
+    const { sendable, skipped: contactSkips } = splitSendable(plan);
+    if (!sendable.length) {
+      setSelected(new Set());
+      showToast(contactSkips.length ? `לא נשלח — ${contactSkips.join(', ')}` : 'לא נשלח', 'error');
+      return;
+    }
+
     // Open the channel FIRST, per org. WhatsApp is https, so a null window really does
     // mean the popup was blocked. mailto cannot be verified — iOS reports nothing either
     // way — so nothing here is committed until the coordinator confirms below.
     const opened: typeof plan.entries = [];
-    const skipped = [...plan.skipped];
-    for (const e of plan.entries) {
+    const skipped = [...contactSkips];
+    for (const e of sendable) {
       const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
       if (!ok) { skipped.push(`${e.orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
       opened.push(e);
@@ -257,20 +272,33 @@ export default function OrgHub({
    */
   async function handleResult(orgName: string, result: 'placed' | 'rejected' | 'withdrawn', openChannel?: 'whatsapp' | 'email') {
     const { student } = materialise();
-    const pref = (student.preferences as any[]).find(p => p.orgName === orgName);
-    if (!pref) { setConfirmDialog(null); return; }
+    // Both of these used to close the dialog and do nothing at all — no toast, no
+    // alert — which is exactly the "הכפתור לא עובד … לא עושה כלום" shape. The card even
+    // shows a "לא זוהה מעסיק" badge and still offers these buttons, so the unresolved
+    // case is reachable from the screen.
+    const pref = (student.preferences as any[]).find(p => orgKey(p.orgName) === orgKey(orgName));
+    if (!pref) { setConfirmDialog(null); showToast(`${orgName} לא נמצא בדירוג של הסטודנט/ית — רענן/י ונסה/י שוב`, 'error'); return; }
     const emp = resolveEmployer(orgName);
-    if (!emp) { setConfirmDialog(null); return; }
+    if (!emp) { setConfirmDialog(null); showToast(`הארגון "${orgName}" לא נמצא ברשימת המעסיקים — תקן/י את שם הארגון ונסה/י שוב`, 'error'); return; }
     const now = new Date().toISOString();
     const empLive = employers.find(e => e.id === emp.id) || emp;
     const isPlacedNow = student.submissionStatus === 'placed';
 
     if (openChannel && result === 'withdrawn') {
       const ctx = buildCtx(empLive);
+      // The same recipient guard the send path has. Without it this opened WhatsApp with
+      // no number, or a mail draft with an empty To, and the candidacy was marked
+      // withdrawn anyway — so the employer was never told it had been pulled.
+      const waPhone = String(empLive.contactPhone || '').trim();
+      const mailTo = firstEmailOf(empLive.contactEmail);
+      if (openChannel === 'whatsapp' && !waPhone) { showToast(`אין טלפון ל‑${empLive.name} — לא נפתחה הודעת ביטול`, 'error'); setConfirmDialog(null); return; }
+      if (openChannel === 'email' && !mailTo) { showToast(`אין כתובת מייל ל‑${empLive.name} — לא נפתחה הודעת ביטול`, 'error'); setConfirmDialog(null); return; }
       let url = '';
-      if (openChannel === 'whatsapp') url = buildWhatsAppUrl(empLive.contactPhone || '', renderTemplate(placementSettings.whatsappWithdrawalTemplate, ctx));
-      else url = buildMailtoUrl(empLive.contactEmail || '', renderTemplate(placementSettings.emailWithdrawalSubjectTemplate, ctx), renderTemplate(placementSettings.emailWithdrawalBodyTemplate, ctx));
-      window.open(url, '_blank');
+      if (openChannel === 'whatsapp') url = buildWhatsAppUrl(waPhone, renderTemplate(placementSettings.whatsappWithdrawalTemplate || '', ctx));
+      else url = buildMailtoUrl(mailTo, renderTemplate(placementSettings.emailWithdrawalSubjectTemplate || '', ctx), renderTemplate(placementSettings.emailWithdrawalBodyTemplate || '', ctx));
+      // A mailto through window.open is a silent no-op on iOS — openMailto exists for
+      // exactly that and every other mailto in this file already uses it.
+      if (openChannel === 'email') openMailto(url); else window.open(url, '_blank');
     }
 
     // Resolve the target slot robustly: the pref's slotId if present, else the slot this
@@ -513,7 +541,7 @@ export default function OrgHub({
                 {/* Outlook didn't open, or they never replied — reopen the same message and
                     keep the place. The send is re-confirmed like any other. */}
                 <button type="button" data-resend={idx}
-                  onClick={() => { setSelected(new Set([card.orgName])); setSendSheet(true); }}
+                  onClick={() => { setSelected(new Set([card.orgName])); setResendMode(true); setSendSheet(true); }}
                   title="פתח שוב את ההודעה לאותו מעסיק — המקום נשמר"
                   style={btnSmall()}>↻ שלח שוב</button>
                 {/* The exit that was missing: the message never went, so free the place and
@@ -606,7 +634,7 @@ export default function OrgHub({
         <div className="flex items-center justify-between gap-3 flex-wrap mt-3 p-3 rounded-xl" style={{ background: 'var(--accent-soft)', border: '1px solid var(--accent)' }}>
           <span className="text-[12.5px] font-semibold" style={{ color: 'var(--accent)' }}>נבחרו {selected.size} ארגונים לשליחת קו"ח</span>
           <div className="flex gap-2">
-            <button type="button" data-send-selected onClick={() => setSendSheet(true)} style={{ ...btnPrimary(), padding: '9px 18px' }}>שלח קו"ח →</button>
+            <button type="button" data-send-selected onClick={() => { setResendMode(false); setSendSheet(true); }} style={{ ...btnPrimary(), padding: '9px 18px' }}>שלח קו"ח →</button>
             <button type="button" onClick={() => setSelected(new Set())} style={{ ...btnSmall(), color: 'var(--text-soft)' }}>נקה</button>
           </div>
         </div>
@@ -617,11 +645,17 @@ export default function OrgHub({
         <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setSendSheet(false)}>
           <div onClick={e => e.stopPropagation()} className="w-full sm:max-w-[380px] rounded-t-2xl sm:rounded-2xl border p-5"
             style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 -8px 40px rgba(0,0,0,0.2)', direction: 'rtl' }}>
-            <div className="serif text-[18px] mb-1" style={{ color: 'var(--ink)' }}>שליחת קו"ח ל‑{selected.size} ארגונים</div>
-            <div className="text-[12px] mb-4" style={{ color: 'var(--text-soft)' }}>הפעולה תופסת מקום בכל ארגון נבחר ותפתח את הערוץ.</div>
+            <div className="serif text-[18px] mb-1" style={{ color: 'var(--ink)' }}>
+              {resendMode ? `שליחה חוזרת ל‑${selected.size} ארגונים` : `שליחת קו"ח ל‑${selected.size} ארגונים`}
+            </div>
+            <div className="text-[12px] mb-4" style={{ color: 'var(--text-soft)' }}>
+              {resendMode
+                ? 'המקום כבר תפוס ולא ייתפס שוב — ההודעה הקיימת תיפתח מחדש.'
+                : 'הפעולה תופסת מקום בכל ארגון נבחר ותפתח את הערוץ.'}
+            </div>
             <div className="flex gap-2">
-              <button type="button" data-dispatch="whatsapp" onClick={() => dispatchMany([...selected], 'whatsapp')} style={{ ...dispatchChip(true), flex: 1, justifyContent: 'center', padding: '11px' }}><WhatsAppIcon /> WhatsApp</button>
-              <button type="button" data-dispatch="email" onClick={() => dispatchMany([...selected], 'email')} style={{ ...dispatchChip(true), flex: 1, justifyContent: 'center', padding: '11px', color: 'var(--accent)' }}><MailIcon /> מייל</button>
+              <button type="button" data-dispatch="whatsapp" onClick={() => dispatchMany([...selected], 'whatsapp', resendMode)} style={{ ...dispatchChip(true), flex: 1, justifyContent: 'center', padding: '11px' }}><WhatsAppIcon /> WhatsApp</button>
+              <button type="button" data-dispatch="email" onClick={() => dispatchMany([...selected], 'email', resendMode)} style={{ ...dispatchChip(true), flex: 1, justifyContent: 'center', padding: '11px', color: 'var(--accent)' }}><MailIcon /> מייל</button>
             </div>
             <button type="button" onClick={() => setSendSheet(false)} className="mono text-[11px] mt-3 w-full text-center" style={{ color: 'var(--text-soft)', background: 'none', border: 'none', cursor: 'pointer' }}>ביטול</button>
           </div>

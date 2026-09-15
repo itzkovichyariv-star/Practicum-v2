@@ -4,7 +4,7 @@ import {
   type CandidateAction, type CandidateChipTone, type CandidateStatus,
 } from '../lib/candidateStatus';
 import type { Candidate } from '../lib/supabase';
-import { resolveCvUrl, openCv } from '../lib/cvUrl';
+import { resolveCvUrl, warnIfCvUnreadable } from '../lib/cvUrl';
 
 /**
  * The applicants-page counterpart to PlacementStrip: the status sentence, whose
@@ -106,7 +106,7 @@ export default function CandidateStrip({
               return href
                 ? <a key={`${c.label}#${i}`} data-cand-chip={c.label} href={href}
                      target="_blank" rel="noopener noreferrer"
-                     onClick={e => { e.preventDefault(); void openCv(c.fileRef); }}
+                     onClick={() => { void warnIfCvUnreadable(c.fileRef); }}
                      style={{ ...style, textDecoration: 'none' }}>{body}</a>
                 : <span key={`${c.label}#${i}`} data-cand-chip={c.label} style={style}>{body}</span>;
             })}
