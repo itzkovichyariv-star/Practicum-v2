@@ -90,7 +90,33 @@ const DEFAULT_REMINDER_WHATSAPP = `שלום {contactName},
 
 const DEFAULT_REMINDER_EMAIL_SUBJECT = `תזכורת — מועמדות {studentName} ל{positionTitle}`;
 
-const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactName},
+/**
+ * The wording Yariv dictated on 2026-09-15, replacing the one above it.
+ *
+ * Four deliberate changes, all his:
+ *   • the greeting uses the FIRST NAME only and asks after them — "שלום אורטל, מה
+ *     שלומך?" rather than "שלום אורטל חוברה," 
+ *   • "רק מזכיר בעדינות —" is gone; the mail opens on what was actually done
+ *   • "לפני {daysWaiting} ימים" becomes "לפני מספר שבועות" — no day count is quoted
+ *   • the ask now comes BEFORE the one-click link, and the sign-off is "המון תודה"
+ *
+ * Dropping {daysWaiting} here is the reason RENDER-days-substituted moved to the
+ * WhatsApp reminder in the gate: the rule exists because v1.39 shipped the literal
+ * "לפני {daysWaiting} ימים" to real employers, and that protection has to keep running
+ * somewhere a day count is still quoted.
+ */
+const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactFirstName}, מה שלומך?
+שלחנו אליכם את קורות החיים של {studentName} לפני מספר שבועות, במסגרת {courseName}.
+קישור לקו"ח: {cvLink}
+נשמח לדעת אם המועמדות רלוונטית עבורכם. גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
+לתשובה בלחיצה אחת: {responseLink}
+{contactBack}
+המון תודה,
+{adminName}`;
+
+/** The wording this replaced. Kept so the migration can recognise a template nobody has
+ *  edited and swap it, while leaving a hand-edited one alone. */
+const SUPERSEDED_REMINDER_EMAIL_BODY = `שלום {contactName},
 רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים, במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
 לתשובה בלחיצה אחת: {responseLink}
@@ -334,9 +360,19 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       const tpl = ps[key];
       if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{responseLink}')) continue;
       const lines = tpl.split('\n');
-      const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
+      const at = lines.findIndex((l: string) => /^\s*(המון\s+)?תודה/.test(l));
       lines.splice(at === -1 ? lines.length : at, 0, line);
       ps[key] = lines.join('\n');
+      changed = true;
+    }
+
+    // The reminder wording Yariv replaced on 2026-09-15. A template is only swapped when
+    // it is EXACTLY the one that shipped — anything hand-edited is somebody's own words
+    // and is left alone, the same contract LINK-keeps-custom-wording already holds the
+    // migration to. Without this the new wording would reach only a practicum whose
+    // settings had never been saved, and his own, saved long ago, would keep the old one.
+    if (ps.reminderEmailBodyTemplate === SUPERSEDED_REMINDER_EMAIL_BODY) {
+      ps.reminderEmailBodyTemplate = DEFAULT_REMINDER_EMAIL_BODY;
       changed = true;
     }
 
@@ -348,7 +384,7 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       const tpl = ps[key];
       if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{contactBack}')) continue;
       const lines = tpl.split('\n');
-      const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
+      const at = lines.findIndex((l: string) => /^\s*(המון\s+)?תודה/.test(l));
       lines.splice(at === -1 ? lines.length : at, 0, line);
       ps[key] = lines.join('\n');
       changed = true;
@@ -664,8 +700,45 @@ export function studentSetRequests(
   return { ok: true, data: { ...data, students: nextStudents }, employerName: emp.name, requests: next };
 }
 
+/**
+ * Lay a Hebrew message out right-to-left in the recipient's mail client.
+ *
+ * A mailto: body is PLAIN TEXT and carries no direction of its own, so the client
+ * guesses one per line from the first strong character it finds. Every line that opens
+ * with a Latin word or a URL — `קישור לקו"ח: https://…` is the one Yariv saw — is then
+ * laid out left-to-right, and the Hebrew in it lands on the wrong side of the line while
+ * the rest of the message sits right-aligned around it.
+ *
+ * U+200F RIGHT-TO-LEFT MARK is a strong RTL character with no width and no glyph. One at
+ * the head of each line makes that line's base direction RTL whatever follows, so the
+ * text reads from the right and a URL inside it still runs left-to-right as a unit —
+ * which is exactly how it should look. Nothing is added to the words themselves, so the
+ * message is unchanged as text: it is the same wording, laid out the right way round.
+ */
+export function rtlBody(body: string): string {
+  const RLM = '\u200f';
+  return String(body ?? '')
+    .split('\n')
+    .map(line => (line.trim() && !line.startsWith(RLM) ? RLM + line : line))
+    .join('\n');
+}
+
+/**
+ * The name to greet someone by: the first word of what is stored.
+ *
+ * The contact field holds a full name ("אורטל חוברה"), and a reminder that opens with
+ * both names reads like a letter from an institution rather than from a person Yariv has
+ * already been in touch with. Yariv 2026-09-15: "רק שם פרטי של הלקוח".
+ *
+ * A one-word entry is returned unchanged, and an empty one stays empty rather than
+ * becoming a bare "שלום ,".
+ */
+export function firstNameOf(full: string | null | undefined): string {
+  return String(full ?? '').trim().split(/\s+/)[0] || '';
+}
+
 export function buildMailtoUrl(email: string, subject: string, body: string): string {
-  return `mailto:${encodeURIComponent(String(email || '').trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${encodeURIComponent(String(email || '').trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(rtlBody(body))}`;
 }
 
 /**

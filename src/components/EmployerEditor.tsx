@@ -3,7 +3,7 @@ import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
 import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity, openWhatsApp as waOpen } from '../lib/placement';
-import { employerContacts, activeContactId, applyContacts, removeContact, nextContactId,
+import { employerContacts, activeContactId, applyContacts, removeContact, nextContactId, normalizeContacts,
   contactIsEmpty, type EmployerContact } from '../lib/employerContacts';
 import { employerStatus, STATUS_COLORS, applyEmployerStatus } from '../lib/orgAvailability';
 import { normalizeYear } from './pageShared';
@@ -143,10 +143,12 @@ export default function EmployerEditor({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) { alert('שם הארגון חסר'); return; }
-    // Normalise on the way out: a card added and never filled in is dropped, and the
-    // active contact is mirrored into contactPerson/Phone/Email one last time, so what
-    // is saved is exactly what every other screen will read.
-    onSave(applyContacts(form, employerContacts(form), activeContactId(form)));
+    // Normalise on the way out — and ONLY on the way out: every field is trimmed here,
+    // a card added and never filled in is dropped, and the active contact is mirrored
+    // into contactPerson/Phone/Email one last time, so what is saved is exactly what
+    // every other screen will read. Doing this tidying while typing is what stopped the
+    // space bar working inside the cards.
+    onSave(applyContacts(form, normalizeContacts(employerContacts(form)), activeContactId(form)));
   }
 
   function openOutlook() {

@@ -23,7 +23,7 @@
 import {
   buildUnifiedOrgList, applyUnifiedList, reconcileEmployerCapacity, renderTemplate,
   buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, orgKey, resolveEmployerFor,
-  firstEmailOf, isDialablePhone } from './placement';
+  firstEmailOf, isDialablePhone, firstNameOf } from './placement';
 import type { Employer, VacancySlot, Dispatch } from './supabase';
 
 export type DispatchChannel = 'whatsapp' | 'email';
@@ -140,7 +140,11 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     if (!target) { skipped.push(`${orgName} (אין מקום פנוי)`); continue; }
 
     const ctx = {
-      contactName: emp.contactPerson || emp.name, studentName: student.name,
+      contactName: emp.contactPerson || emp.name,
+      // The greeting uses the first name alone. Supplied wherever contactName is, so a
+      // template carrying it can never ship the literal "{contactFirstName}".
+      contactFirstName: firstNameOf(emp.contactPerson) || emp.name,
+      studentName: student.name,
       positionTitle: emp.name, adminName: userName,
       courseName: input.courseName || '', cvLink, employerName: emp.name,
     } as Record<string, string>;

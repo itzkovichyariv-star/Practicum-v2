@@ -358,3 +358,29 @@ question, drifted apart — the same shape as the four private employer resolver
 call `submissionHasUnappliedOrgs` / `submissionHasNewCv` in placement.ts. The card's copy
 also compared raw strings, so an RTL mark in a submitted name would have nagged forever;
 the shared helper compares through `orgKey`.
+
+## 2026-09-15 — the space bar, the mail's direction, and the reminder's wording
+
+**The space bar did not work inside a contact card.** Every keystroke went through
+`applyContacts`, and every field was trimmed there — so a space at the end of a word was
+deleted between one keystroke and the next, and "רונית לוי" could not be typed. A space
+put back BETWEEN two words survived, because there it is no longer trailing, which is
+exactly how Yariv described it. Whitespace is now decided at the two edges where it
+matters and never mid-typing: `contactIsEmpty` still asks with a trim, the three mirrored
+fields are still written trimmed so nothing is ever dialled or mailed with a stray space,
+and `normalizeContacts` tidies the stored list once, on save.
+
+**The mail opened left-aligned.** A mailto: body is plain text and carries no direction,
+so the client guesses one per line from the first strong character — and the line
+`קישור לקו"ח: https://…` guesses wrong. `buildMailtoUrl` now prefixes each line with
+U+200F, which is invisible, makes the line's base direction RTL whatever follows, and
+still lets a URL inside it run left-to-right as a unit.
+
+**The reminder wording is Yariv's, dictated the same day.** First name only, and it asks
+after them; no "רק מזכיר בעדינות"; "לפני מספר שבועות" instead of a day count; the ask
+before the one-click link; "המון תודה". A new default would have reached nobody who had
+ever saved their settings, so the migration swaps a stored copy of the superseded wording
+for the new one and leaves anything hand-edited alone — the same contract
+`LINK-keeps-custom-wording` already holds it to. `RENDER-days-substituted` moved to the
+WhatsApp reminder, which still quotes a number: that rule exists because v1.39 shipped a
+literal `{daysWaiting}` to real employers, and it has to keep running somewhere.
