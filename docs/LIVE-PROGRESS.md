@@ -338,3 +338,23 @@ Binding rule (same as family-tasks): during any working session the assistant ap
   * **The lecturer sync fills empty employer contact fields and never overwrites.** It matched an employer by its contact person's NAME and replaced that employer's mail and phone with the lecturer's — two people sharing a name silently rerouted every CV send and feedback request, announced by four words appended to a toast.
   * **THE PROJECT NOW HAS A `tsconfig.json`, and the gate typechecks.** There was none at all, so nothing anywhere checked types. The first `tsc` run found **40 errors**, including: a call that resolved to a same-named LOCAL function and would have opened WhatsApp with the student instead of the interview organization (introduced earlier the same day, caught the moment there was a typechecker); a dashboard course row that filtered by `undefined` because `courseId` was read and never set; the three reminder templates used everywhere and declared nowhere, so a settings object built to the declared type would have sent an empty reminder; `PlacementAction.targetOrg`, passed everywhere and declared nowhere, which is how the ✕ and ↻ lost their argument in August; and two chip literals missing required fields. All forty fixed, `npm run typecheck` added, and the gate runs it before it opens a browser.
   * 112 unit tests green, offline gate green, build clean. **Not verified on the device.**
+
+## 2026-09-15 — the pending banner nagged after a correct adopt (gate cell 53)
+
+The first full gate after the audit work failed on one cell out of seventy-odd:
+`53-cv-resubmission`, with `reNags=true`. Everything else in the cell passed — the
+re-submission was surfaced, the CV was replaced, the new organization was adopted — and
+then the banner came straight back.
+
+The card decided "already adopted" by comparing the record's three org fields to the
+submission's, field by field. `adoptSubmittedOrgs` keeps an organization the student did
+NOT resubmit, because it may be holding a reserved place, so after a correct adopt the
+record carries more organizations than the submission does. Equality could never be
+reached again.
+
+The strip had already learned this (הדר עוזירי, 2026-08-09, a CV-only submission reading
+as "a list is waiting") and asked the question as a membership test. Two copies of one
+question, drifted apart — the same shape as the four private employer resolvers. Both now
+call `submissionHasUnappliedOrgs` / `submissionHasNewCv` in placement.ts. The card's copy
+also compared raw strings, so an RTL mark in a submitted name would have nagged forever;
+the shared helper compares through `orgKey`.

@@ -10,7 +10,8 @@ import { orgAvailability } from '../lib/orgAvailability';
 // with the student instead of the interview organization. Aliased, and caught by the
 // typechecker the moment there was one.
 import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName,
-  openWhatsApp as openWhatsAppTo, adoptSubmittedOrgs } from '../lib/placement';
+  openWhatsApp as openWhatsAppTo, adoptSubmittedOrgs,
+  submissionHasUnappliedOrgs, submissionHasNewCv } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
@@ -126,20 +127,19 @@ export default function StudentEditor({
       .order('uploaded_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
-        // "Pending" = the latest submission differs from what's currently on the
-        // student record — in EITHER the CV file OR the org preferences. An org-only
+        // "Pending" = the latest submission brings something the record has not taken
+        // in — a newer CV file, or an organization not yet on the ranking. An org-only
         // update deliberately reuses the current CV path (cv_updates needs one), so a
-        // file-only guard would hide it; comparing orgs too surfaces it. Once the
-        // coordinator adopts (fields match the row), it stops nagging — which is what
-        // carries the guard even though anon can't write cv_updates.seen_at (RLS).
+        // file-only guard would hide it; checking orgs too surfaces it. Adopting makes
+        // both false, which is what stops the nagging even though anon cannot write
+        // cv_updates.seen_at (RLS) — so the test has to mean "already taken in", not
+        // "identical to the record". The strip asks the same question; one helper now
+        // answers it for both, because two copies of it had already drifted apart.
         const row = data?.[0];
         if (!row) return;
-        const currentFile = (student?.cvUpdatedUrl || '').split('/').pop();
-        const same = (a?: string | null, b?: string | null) => (a || '').trim() === (b || '').trim();
-        const cvChanged = row.cv_file_path.split('/').pop() !== currentFile;
-        const orgsChanged = !same(row.org_pref_1, student?.firstChoiceOrg)
-          || !same(row.org_pref_2, student?.secondChoiceOrg)
-          || !same(row.org_pref_3, (student as any)?.thirdChoiceOrg);
+        const cvChanged = submissionHasNewCv(row.cv_file_path, student);
+        const orgsChanged = submissionHasUnappliedOrgs(
+          [row.org_pref_1, row.org_pref_2, row.org_pref_3], student as any);
         if (cvChanged || orgsChanged) setPendingCv(row);
       });
   }, [student?.email, student?.cvUpdatedUrl, student?.firstChoiceOrg, student?.secondChoiceOrg, (student as any)?.thirdChoiceOrg]);
