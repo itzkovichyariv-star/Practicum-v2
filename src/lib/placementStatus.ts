@@ -22,7 +22,8 @@
  * come from buildUnifiedOrgList().
  */
 
-import { buildUnifiedOrgList, countSlotsByStatus, orgKey, resolveEmployerFor, type UnifiedOrgPref } from './placement';
+import { buildUnifiedOrgList, countSlotsByStatus, orgKey, resolveEmployerFor,
+  submissionHasUnappliedOrgs, submissionHasNewCv, type UnifiedOrgPref } from './placement';
 
 /** The DEFAULT days of employer silence before the ball comes back to us, for a course
  *  that does not set its own `reviewAgingThresholdDays`.
@@ -256,20 +257,14 @@ function isSuggestedOrg(pref: UnifiedOrgPref, employers: any[], studentId: strin
  */
 function pendingHasNewOrgs(pending: CvSubmission | null, student: any): boolean {
   if (!pending) return false;
-  const sub = [pending.org_pref_1, pending.org_pref_2, pending.org_pref_3].map(norm).filter(Boolean);
-  if (sub.length === 0) return false;
-  const rec = [student?.firstChoiceOrg, student?.secondChoiceOrg, student?.thirdChoiceOrg].map(norm).filter(Boolean);
-  return sub.some(o => !rec.includes(o));
+  return submissionHasUnappliedOrgs([pending.org_pref_1, pending.org_pref_2, pending.org_pref_3], student);
 }
 
-/** A newer CV file than the one on the record — compared by filename, the way
- *  StudentEditor's own pending check does it. */
+/** A newer CV file than the one on the record — the same helper the card's pending
+ *  banner uses, so the strip and the card can never disagree about it. */
 function pendingHasNewCv(pending: CvSubmission | null, student: any): boolean {
   if (!pending) return false;
-  const incoming = String(pending.cv_file_path || '').split('/').pop() || '';
-  if (!incoming) return false;
-  const current = String(student?.cvUpdatedUrl || '').split('/').pop() || '';
-  return incoming !== current;
+  return submissionHasNewCv(pending.cv_file_path, student);
 }
 
 const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { label: string }> = {

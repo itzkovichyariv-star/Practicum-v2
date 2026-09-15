@@ -1341,3 +1341,46 @@ export function countSlotsByStatus(
     placed: filtered.filter((s: any) => s.status === 'placed').length,
   };
 }
+
+/**
+ * Has this submission brought organizations the record has not taken in yet?
+ *
+ * This is the "still pending" test, and it is a MEMBERSHIP test on purpose.
+ *
+ * Two ways a field-by-field equality comparison gets it wrong, both found live:
+ *
+ *   An empty form read as a difference. A CV-only re-upload leaves all three org fields
+ *   blank, and comparing blank against a live ranking says "a list is waiting" — which
+ *   is how הדר עוזירי (2026-08-09) was reported as having an unadopted list weeks after
+ *   hers had been adopted. Only positions the student actually filled can count.
+ *
+ *   An adopted submission read as unadopted. `adoptSubmittedOrgs` keeps an organization
+ *   the student did NOT resubmit, because it may be holding a reserved place — so after
+ *   a correct adopt the record legitimately carries MORE organizations than the
+ *   submission does. Equality can never be reached again, and the banner nags forever
+ *   (gate cell 53, 2026-09-15). Adopted means every organization the student named is
+ *   now on the record, not that the two lists are identical.
+ *
+ * Compared through `orgKey`, so an invisible RTL mark in a submitted name is not a
+ * difference either.
+ */
+export function submissionHasUnappliedOrgs(
+  submitted: Array<string | null | undefined>,
+  student: { firstChoiceOrg?: string | null; secondChoiceOrg?: string | null; thirdChoiceOrg?: string | null } | null | undefined,
+): boolean {
+  const sub = (submitted || []).map(orgKey).filter(Boolean);
+  if (!sub.length) return false;
+  const rec = [student?.firstChoiceOrg, student?.secondChoiceOrg, student?.thirdChoiceOrg].map(orgKey).filter(Boolean);
+  return sub.some(o => !rec.includes(o));
+}
+
+/** A newer CV file than the one on the record, compared by filename. A submission with
+ *  no file at all carries no new CV — it cannot be "newer" than what is there. */
+export function submissionHasNewCv(
+  cvFilePath: string | null | undefined,
+  student: { cvUpdatedUrl?: string | null } | null | undefined,
+): boolean {
+  const incoming = String(cvFilePath || '').split('/').pop() || '';
+  if (!incoming) return false;
+  return incoming !== (String(student?.cvUpdatedUrl || '').split('/').pop() || '');
+}
