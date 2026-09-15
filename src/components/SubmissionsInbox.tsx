@@ -445,48 +445,26 @@ function SubmissionCard({ s, selected, orphan, onToggle, onDelete }: {
   );
 }
 
+/**
+ * An attachment on a submission. ONE opener, the shared one.
+ *
+ * This pill used to keep a second mechanism for PDFs: open a blank tab, await a fetch of
+ * the file, build a blob, then point the held tab at it. That is precisely the shape the
+ * CV opener was rewritten to remove — the await spends the user's click, so iOS refuses
+ * the navigation and the held tab stays blank, which is the blank page reported five
+ * times over. It also never checked the response: with the service worker answering a
+ * failed fetch with `{"error":"offline"}` (public/sw.js), those JSON bytes were wrapped
+ * in a `application/pdf` blob and handed to the viewer as a "PDF", so a network blip
+ * rendered as an empty document that looks exactly like a missing file.
+ *
+ * The public URL already serves a PDF inline. Hand it over and let the platform open it.
+ */
 function FilePill({ label, path }: { label: string; path: string }) {
-  const [loading, setLoading] = useState(false);
-
-  async function open() {
-    const ext = path.split('.').pop()?.toLowerCase() || '';
-    const isWord = ext === 'docx' || ext === 'doc';
-
-    const { data } = supabase.storage.from('candidate-uploads').getPublicUrl(path);
-    const publicUrl = data.publicUrl;
-
-    if (isWord) {
-  // Every CV opener goes through openCv, and none of them reroutes Word through
-  // Microsoft's Office Online viewer any more: that viewer answers with an empty frame whenever
-  // it cannot fetch the file, and that empty frame was the blank page reported five
-  // times. window.open is gone with it — an installed PWA has no tab bar to put one in.
-      void openCv(publicUrl);
-      return;
-    }
-
-    // PDF: fetch via public URL, force application/pdf so browser shows inline (not download)
-    setLoading(true);
-    const win = window.open('about:blank', '_blank'); // open before await
-    try {
-      const resp = await fetch(publicUrl);
-      const buf = await resp.arrayBuffer();
-      const blob = new Blob([buf], { type: 'application/pdf' });
-      const blobUrl = URL.createObjectURL(blob);
-      if (win) win.location.href = blobUrl;
-      else window.open(blobUrl, '_blank');
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000);
-    } catch {
-      if (win) win.location.href = publicUrl;
-      else window.open(publicUrl, '_blank');
-    }
-    setLoading(false);
-  }
-
   return (
-    <button onClick={open} disabled={loading}
-      className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-1 rounded-full border hover:bg-[rgba(122,30,43,0.08)] disabled:opacity-50"
+    <button onClick={() => { void openCv(`storage://candidate-uploads/${path}`); }}
+      className="mono text-[10.5px] uppercase tracking-[0.14em] font-semibold px-2.5 py-1 rounded-full border hover:bg-[rgba(122,30,43,0.08)]"
       style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-      {loading ? '...' : `${label} ↗`}
+      {`${label} ↗`}
     </button>
   );
 }

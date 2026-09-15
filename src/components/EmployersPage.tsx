@@ -272,7 +272,9 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
         if (posFilter === 'none' && av.total > 0) continue;
         if (statusFilter !== 'all' && employerStatus(e, scope, STATUS_CTX).key !== statusFilter) continue;
         if (q) {
-          const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
+          // contactPhone included: the global search matches a number, and typing the
+          // same number here returned nothing.
+          const hay = [e.name, e.contactPerson, e.contactEmail, e.contactPhone, e.location].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) continue;
         }
         out.push({ emp: e, courseId: cid, year: normalizeYear((courses.find((c: any) => c.id === cid) || {}).year || '') });
@@ -1184,7 +1186,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                           const st = decisionData.student;
                           const scope = decisionData.decision === 'student-only' ? 'פרטית עבורך' : 'לכל הקורס';
                           const msg = renderTemplate(placementSettings.studentNotifyApprovedTemplateWhatsApp || '', { studentName: st.name, employerName: req.draft.name || '', scope, adminName: userName });
-                          if (st.phone) window.open(buildWhatsAppUrl(st.phone, msg), '_blank');
+                          if (!st.phone) { showToast(`אין טלפון ל‑${st.name} — לא ניתן להודיע ב‑WhatsApp`, 'error'); return; }
+                          openWhatsApp(st.phone, { name: st.name, message: msg });
                         }} style={{ ...btnSmall(), background: '#25D366', color: 'white', borderColor: '#25D366' }}>
                           📱 הודע לסטודנט (WhatsApp)
                         </button>
@@ -1193,7 +1196,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                           const scope = decisionData.decision === 'student-only' ? 'פרטית עבורך' : 'לכל הקורס';
                           const subject = renderTemplate(placementSettings.studentNotifyApprovedTemplateEmailSubject || '', { employerName: req.draft.name || '' });
                           const body = renderTemplate(placementSettings.studentNotifyApprovedTemplateEmailBody || '', { studentName: st.name, employerName: req.draft.name || '', scope, adminName: userName });
-                          if (st.email) window.open(buildMailtoUrl(st.email, subject, body), '_blank');
+                          if (!st.email) { showToast(`אין כתובת מייל ל‑${st.name} — לא ניתן להודיע במייל`, 'error'); return; }
+                          openMailto(buildMailtoUrl(st.email, subject, body));
                         }} style={{ ...btnSmall(), background: '#2563eb', color: 'white', borderColor: '#2563eb' }}>
                           ✉ הודע לסטודנט (Email)
                         </button>
@@ -1204,7 +1208,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                         <button onClick={() => {
                           const st = decisionData.student;
                           const msg = renderTemplate(placementSettings.studentNotifyRejectedTemplateWhatsApp || '', { studentName: st.name, employerName: req.draft.name || '', adminName: userName });
-                          if (st.phone) window.open(buildWhatsAppUrl(st.phone, msg), '_blank');
+                          if (!st.phone) { showToast(`אין טלפון ל‑${st.name} — לא ניתן להודיע ב‑WhatsApp`, 'error'); return; }
+                          openWhatsApp(st.phone, { name: st.name, message: msg });
                         }} style={{ ...btnSmall(), background: '#25D366', color: 'white', borderColor: '#25D366' }}>
                           📱 הודע לסטודנט (WhatsApp)
                         </button>
@@ -1212,7 +1217,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                           const st = decisionData.student;
                           const subject = renderTemplate(placementSettings.studentNotifyRejectedTemplateEmailSubject || '', { employerName: req.draft.name || '' });
                           const body = renderTemplate(placementSettings.studentNotifyRejectedTemplateEmailBody || '', { studentName: st.name, employerName: req.draft.name || '', adminName: userName });
-                          if (st.email) window.open(buildMailtoUrl(st.email, subject, body), '_blank');
+                          if (!st.email) { showToast(`אין כתובת מייל ל‑${st.name} — לא ניתן להודיע במייל`, 'error'); return; }
+                          openMailto(buildMailtoUrl(st.email, subject, body));
                         }} style={{ ...btnSmall(), background: '#2563eb', color: 'white', borderColor: '#2563eb' }}>
                           ✉ הודע לסטודנט (Email)
                         </button>

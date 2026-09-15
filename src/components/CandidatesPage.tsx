@@ -18,7 +18,7 @@ import ExcelImport from './ExcelImport';
 //   - Resend HTML (Edge Function) — auto-send when course.autoSendAcceptance=true
 import { openMailto } from '../lib/openMailto';
 import { sendAcceptanceEmail } from '../lib/emailApi';
-import { resolveCvUrl, openCv } from '../lib/cvUrl';
+import { resolveCvUrl, warnIfCvUnreadable } from '../lib/cvUrl';
 import CandidateStrip from './CandidateStrip';
 import type { CandidateAction } from '../lib/candidateStatus';
 
@@ -1555,13 +1555,14 @@ function FileChip({ label, url, fileRef, onOpen, openTitle }: {
       </span>
     );
   }
-  // The href stays real — copy-link, middle-click and "open in new tab" all still work,
-  // and it is what the chip degrades to if the script never runs. The CLICK goes through
-  // openCv, which checks the object resolves and, when it does not, replaces what used
-  // to be a blank tab with what actually went wrong.
+  // The href is real AND it is what opens the file: the browser's own navigation is the
+  // one hand-off no platform drops, and cancelling it to run a scripted open is what
+  // left the installed app opening nothing at all (Yariv 2026-09-15). The click only
+  // stops the row underneath from opening, and starts the probe that says what is wrong
+  // when the storage refuses the object.
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
-      onClick={e => { e.stopPropagation(); if (fileRef) { e.preventDefault(); void openCv(fileRef); } }}
+      onClick={e => { e.stopPropagation(); if (fileRef) void warnIfCvUnreadable(fileRef); }}
       className={`${base} hover:opacity-75`} title={`פתח ${label}`}
       style={{ color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' }}>
       {label} ✓

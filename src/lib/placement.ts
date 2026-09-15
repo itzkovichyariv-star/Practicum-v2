@@ -540,6 +540,16 @@ export function openWhatsApp(rawPhone: string, opts: { message?: string; name?: 
   return true;
 }
 
+/**
+ * The first real address in a contact field. Employers are typed in by hand and the
+ * field really does hold "a@x.com/ b@y.com" or stray "mailto:" text (StudentEditor has
+ * defended against this since 2026-07). A mailto: built from the raw field opens with a
+ * malformed To that the coordinator then confirms as sent.
+ */
+export function firstEmailOf(s?: string | null): string {
+  return String(s || '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)?.[0] || '';
+}
+
 export function buildWhatsAppUrl(rawPhone: string, message: string): string {
   return `https://wa.me/${normalizeIsraeliPhone(rawPhone)}?text=${encodeURIComponent(message)}`;
 }
@@ -655,7 +665,7 @@ export function studentSetRequests(
 }
 
 export function buildMailtoUrl(email: string, subject: string, body: string): string {
-  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${encodeURIComponent(String(email || '').trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 /**
@@ -879,7 +889,11 @@ export function buildPlacementPreferences(
     const orgName = (rawName || '').trim();
     if (!orgName) continue;
 
-    const empIdx = emps.findIndex(e => (e.name || '').trim().toLowerCase() === orgName.toLowerCase());
+    // orgKey, not a bare lowercase compare: the same organization written with a
+    // straight quote in the employer record and a Hebrew ״ in the student's choice is
+    // one organization, and so is one carrying a pasted direction mark.
+    const resolved = resolveEmployerByName(orgName, emps);
+    const empIdx = resolved ? emps.findIndex(e => e.id === resolved.id) : -1;
     if (empIdx < 0) { unresolved.push({ orgName, reason: 'לא נמצא ברשימת הארגונים' }); continue; }
 
     const emp = emps[empIdx];
@@ -1011,7 +1025,12 @@ export function occupyAcceptedOrgSlot(
   if (!orgName) return employers;
   const now = opts.now || new Date().toISOString();
   const emps = employers.map(e => ({ ...e }));
-  const idx = emps.findIndex(e => (e.name || '').trim().toLowerCase() === orgName.toLowerCase());
+  // Was a bare lowercase compare, and `acceptedOrg` is written THROUGH normalizeOrgName
+  // (" → ״) while the employer record keeps whatever was typed. On a mismatch this
+  // returned the employers UNTOUCHED and silently: the student read as placed while the
+  // organization went on advertising a free place it did not have.
+  const resolved = resolveEmployerByName(orgName, emps);
+  const idx = resolved ? emps.findIndex(e => e.id === resolved.id) : -1;
   if (idx < 0) return employers;
   const emp: any = emps[idx];
 

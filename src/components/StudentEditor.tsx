@@ -4,7 +4,7 @@ import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, Plac
 import { supabase } from '../lib/supabase';
 import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName, openWhatsApp } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
@@ -1049,14 +1049,15 @@ export default function StudentEditor({
                   onClick={() => {
                     const orgName = form.placementInterviewOrg || form.acceptedOrg;
                     if (!orgName) { alert('לא הוגדר ארגון לראיון שיבוץ'); return; }
-                    const emp = employers.find(e => e.name === orgName);
-                    if (!emp?.contactPhone) {
-                      alert(`לא נמצא טלפון לארגון "${orgName}" — הוסף טלפון בדף המעסיקים`);
-                      return;
-                    }
-                    let n = emp.contactPhone.replace(/[^\d]/g, '');
-                    if (n.startsWith('0')) n = '972' + n.slice(1);
-                    window.open(`https://wa.me/${n}`, '_blank');
+                    // Through the shared resolver: a strict name match failed whenever
+                    // the interview organization was typed free-text, or the student's
+                    // name went through normalizeOrgName (" → ״) while the employer
+                    // record kept a straight quote — and the coordinator was told the
+                    // organization had no phone when the employers page showed one.
+                    const emp = resolveEmployerByName(orgName, employers);
+                    if (!emp) { alert(`הארגון "${orgName}" לא נמצא ברשימת המעסיקים — בדוק/י את השם בדף המעסיקים`); return; }
+                    if (!emp.contactPhone) { alert(`לא נמצא טלפון לארגון "${emp.name}" — הוסף טלפון בדף המעסיקים`); return; }
+                    openWhatsApp(emp.contactPhone, { name: emp.name });
                   }}
                   title="פתח WhatsApp עם ארגון הראיון לבקשת משוב"
                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
