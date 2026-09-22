@@ -99,6 +99,9 @@ const OFFLINE_CHECKS = [
   'interview-cancel-check.mjs',
   'placement-headline-check.mjs',
   'cv-open-check.mjs',
+  // Every typed time (lectures, placement interview, interview slots) is saved as typed,
+  // under a clock frozen at the midnight the damaged lectures were written (2026-09-22).
+  'lecture-time-check.mjs',
   // Runs a dev server of its own: everything above proves dist/, and dist/ is not what
   // `npm run dev` builds. A module Babel rejects and esbuild elides passes all of them.
   'dev-render-check.mjs',
