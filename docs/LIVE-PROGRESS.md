@@ -401,3 +401,123 @@ The superseded-wording constant became a LIST. Each revision leaves another stor
 out there, and a migration that only ever compares against the immediately previous
 wording strands whoever happened to deploy in between — which here would have been anyone
 who shipped in the few hours between the two passes.
+
+## 2026-09-22 19:45 IL — תשפ״ז lecture data fixed in Supabase (practicum_data.lectures), for Yariv
+- Read-only check against Ariel's 2026-27 academic calendar found broken times and a lecture on a day off. With Yariv's
+  approval, updated via `supabase db query --linked` (jsonb update by lecture id; all 39 lectures intact):
+  - lec-…-1 25.10 (Michal Laufer Psagot) 23:18–00:20 → 17:00–20:00; lec-jgavtw94-mtpm2taa 16.5 (year summary)
+    23:17–23:20 → 17:00–20:00.
+  - מיומנויות ייעוץ ב order kept, all at 15:00: Haya Wagner Mishori 23.3 (Purim break!) → 30.3 15:00–17:00;
+    Shela Dayan 30.3 → 6.4 15:00–17:00; Yaniv Altaras 6.4 → 13.4 15:00–16:30 (semester label א → ב).
+- Backups of the full lectures array before each change: session scratchpad `practicum_lectures_backup_1920.json` /
+  `…_backup_…b.json`. Lecturers were NOT notified by this (direct data edit) — Yariv to inform the tentative ones.
+- **IN PROGRESS:** time-entry bug ("twists the time when I type numbers") — branch `fix/lecture-time-input`
+  (worktree ../practicum-v2-timefix), NOT deployed yet.
+
+## 2026-09-22 — typed times are saved as typed (lectures, interview slots, placement interview) — ⚠️ NOT DEPLOYED yet
+
+Yariv: *"מנגנון השעה לא מגיב טוב למספרים ומסובב לי את השעה כשאני מכניס אותה"*. Production
+held **23:18–00:20** for a lecture he entered as 17:00–20:00, and **00:19–00:21**, **23:17–23:20**.
+
+**Root cause.** Every time field was a native `<input type="time">` (LectureEditor.tsx:169-170,
+StudentEditor.tsx:1043, ManagementPage.tsx:752/758/959/963 before this change), and the editor
+saved whatever the control reported, unread and unchecked. Reproduced locally, no live data:
+* **Chrome** — the clock icon at the end of the field (or Space / Alt+↓) opens a picker; digits
+  typed into it go nowhere and **Enter writes the current time**: "1700"+Enter at 19:38 → `19:38`.
+  That is the damaged rows: 23:17, 23:18, 23:20, 00:19, 00:21 — minutes around midnight, when
+  they were typed. A click on the minutes segment also sends a typed hour into the minutes
+  ("20" → HH:20).
+* **Safari (WebKit 26.4)** — "1700" never leaves the hour segment (hour 00, minutes empty →
+  nothing saved); the empty field shows a grey "12:30" that reads as a value; on the RTL page
+  it is drawn minutes:hours. `dir="ltr"` alone does not fix the typing.
+* Ruled out: no app code puts the clock into a lecture time; no timezone/`toISOString` in the
+  lecture save path (times are plain "HH:MM" strings); no 12h misreading (all stored values are
+  24h); the only auto-derived end was a dead `addHour()` (`% 24`) that nothing called.
+* Not done: matching the damaged values to the `history` timestamps in production — a read-only
+  query was blocked by this session's permission policy. It would confirm the clock-time
+  pattern; the local reproduction already shows the mechanism.
+
+**Fix — branch `fix/lecture-time-input`, v1.43.0+build.130.** New `src/lib/timeInput.ts` is
+the only reader of a typed time: 15, 9, 1500, 0930, 930, 15:00, 9:30, 15.00 → HH:MM; 25:00,
+15:75, "9:5", am/pm refused in Hebrew, never guessed; it never reads the clock. New
+`TimeInput` (plain text, no mask, normalised on blur) replaces all six native fields. Lectures:
+save re-reads the text (Enter submits before any blur), an end at/before the start is refused
+inline ("8" after 17:00 offers 20:00, never applies it), and with only a start an end is
+*offered* — start + the course's usual lecture length, else +2h, never past midnight. Same
+helper for the interview-slot planner, the single-slot edit, and the placement-interview time.
+Commits `b1be5a9a` `52a2cbae` `123d1731` `473687d2` `1cf6d9b6`.
+
+**Verified:** unit **156/156** (24 new, `unit/time-input.spec.ts`); new offline check
+`scripts/lecture-time-check.mjs` (added to the gate) **51/51 in Chromium and 51/51 in WebKit**,
+clock frozen at 23:18, asserting on the saved payload, and shown to FAIL when the parser is
+bypassed or the end-before-start guard removed; `deploy-gate --offline` **green**; typecheck and
+build clean. The full gate was **not** run — its numbered cells write to the live project.
+
+**Still open — next steps:**
+1. **Deploy** (Yariv/parent): merge the branch into `main`, then `npm run ship`. The main
+   checkout had uncommitted `src/lib/version.ts` + `public/sw.js` from another session — settle
+   those first; if the merge conflicts on the version line, keep main's and re-run
+   `npm run bump:minor`.
+2. **The damaged lectures are NOT repaired** (no data was touched). 23:18–00:20 now warns the
+   moment it is opened; 00:19–00:21 and 23:17–23:20 are valid ranges to the parser and must be
+   found and corrected by hand.
+3. **Semester labels** (report only): editor and filter use `ב׳` (U+05F3); the 2025-26 seed
+   import (ManagementPage.tsx:201-223) wrote bare `א`/`ב`. The lectures semester filter is an
+   exact match (LecturesPage.tsx:59) → seed lectures vanish under "ב׳" and cannot be selected;
+   the editor's `<select>` shows **א׳** for a lecture stored as `ב` (no matching option).
+4. The older offline checks open a realtime WebSocket to the live project (`ctx.route` does not
+   cover WebSockets); the new check holds it in a mock — the others should too.
+5. Later: `outlookCalendarUrl` / `openIcsEvent` add an hour with no wrap ("24:30") and treat an
+   empty time as a time.
+
+## 2026-09-22 20:45 IL — DEPLOYED typed-time fix (v1.43.0+build.136.6f54152d) + two production findings
+**DEPLOYED** — Cloudflare Pages deployment `810074f7` (https://810074f7.practicum-v2.pages.dev), version
+`v1.43.0+build.136.6f54152d`, via `npm run ship` on Yariv's OK: full deploy gate PASSED (all suites incl. the new
+`lecture-time-check`), then deploy. Lecture / interview-slot / student-interview times are plain text fields parsed by
+`src/lib/timeInput.ts` (1700, 17, 17:00, 17.00 …), never the clock.
+- Data (Supabase, with Yariv's approval, backups in the session scratchpad): מיומנויות ייעוץ א simulations moved with
+  the whole schedule (elections 27.10): 1.12 → **8.12 (שחקנית, "להחליף עם גלית")**, 8.12 → **15.12 (שחקן)**; Ayala
+  Reuven Lelong's workshop 24.11 → **1.12**. His notes kept; the move appended to each note.
+- **FINDING 1 — test rows written to production during the gate:** 3 lectures by "מרצה בדיקה" (topics "A · מ‑17 עד 20",
+  "C · 8 בערב", "D · Enter", ids `lec-*-mubot680`, no date/course) appeared in `practicum_data.lectures` during this ship
+  run. Removal is WAITING for Yariv's OK (auto mode refused the write). The check routes all HTTP locally, so the likely
+  escape is the app's service worker (Playwright route() does not intercept SW requests) → fix: `serviceWorkers: 'block'`
+  + fail if any request leaves the local origin.
+- **FINDING 2 — CRITICAL, pre-existing:** RLS on `practicum_data` has a permissive policy `ALL | public | using true |
+  check true`. Because permissive policies are OR-ed, the anonymous (publishable) key can SELECT/INSERT/UPDATE/DELETE the
+  whole practicum dataset (students, candidates, employers, lectures). Verified read-only: an anonymous GET returns the
+  row (HTTP 200). `practicum_snapshots` and `public_interview_slots` are anonymously readable too. The authenticated-only
+  policies are moot while `ALL true` exists. **NEXT (needs Yariv's OK):** map what the public forms (/register,
+  /cv-update, /feedback via `publicSupabase`) really need, drop `ALL true` and `SELECT true` on practicum_data (and review
+  snapshots), expose only what the forms need via narrow policies/RPCs, then run the full gate (registration suites).
+
+## 2026-09-22 21:00 IL — test data removed from production (Yariv approved "remove all testing data")
+- Removed from `practicum_data.lectures`: the 3 "מרצה בדיקה" test lectures (ids `lec-*-mubot680`) → 39 lectures again.
+- Removed 38 test rows from `practicum_snapshots` (editor "יריב בדיקה" / test employer "מעסיק — ארגון-תשובה…", 15.09 and
+  22.09 gate runs, plus the 3 history rows of the test lectures, v10816–10818). A JSON copy of the removed rows is in the
+  session scratchpad (`practicum_test_snapshots_removed.json`). 12 real backups remain (daily 06:00 16–22.09 + auto).
+- Verified intact after cleanup: 88 students · 16 candidates · 39 lectures · 28 employers (same as the 22.09 backups).
+  `candidate_submissions`, `cv_updates`, `public_interview_slots`: no test rows.
+- Observation: the gate's live suites write snapshot rows under the test user on every run; with the history capped at
+  ~50 rows they push real backups out. Worth excluding the test user from snapshots or cleaning up after the run.
+- Still open: the RLS fix (FINDING 2 above) — waiting for Yariv's go-ahead.
+
+## 2026-09-22 22:10 IL — access decision + security fix underway (NOT DEPLOYED)
+- **Yariv's go-ahead given** for the RLS/auth fix (FINDING 2 above). Being built on branch `feat/real-auth-and-rls`
+  (worktree `~/Code/practicum-v2-auth`, off b434e0e8). Nothing applied to production; no deploy without his explicit OK.
+- **Who gets access — decided 22.09:**
+  - `yarivi@ariel.ac.il` → **admin**, the ONLY seeded account.
+  - **Esther: not needed at all** (earlier assumption dropped).
+  - **`rachelshal@ariel.ac.il`: access removed — she is leaving the role.** Her hard-coded coordinator mapping in
+    `src/lib/permissions.ts` is deleted, NOT migrated. Her Supabase Auth user is left in place (standing rule: never
+    permanently delete); the allowlist is what stops her. A test asserts that an authenticated user absent from the
+    allowlist reads nothing.
+  - **Her replacement is "Shani" — email not yet known.** She will get `coordinator` + practicum-courses filter.
+- **Design consequence:** staff live in a DB table `practicum_staff(email, role, course_name_filter)`, not in code, so
+  Shani is added later with one INSERT — no code change, no deploy.
+- Shape of the fix: Supabase Auth email one-time code with `shouldCreateUser:false` (no self-registration) replacing the
+  client-side passphrase `ariel2026`; RLS locked to staff on practicum_data/_snapshots/_versions/_audit; anon INSERT-only
+  for the public forms; slot booking + token pages via narrow SECURITY DEFINER RPCs; `candidate-uploads` bucket made
+  private with signed URLs; Emma's practicum reads moved to the service key (`fix/practicum-reads-service-key` in
+  family-tasks). Staged rollout (app auth first, then the lock) with per-stage rollback.
+- Also queued from the cleanup above: the gate's live suites must clean up the snapshot rows they create.

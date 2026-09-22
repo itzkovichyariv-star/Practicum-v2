@@ -15,10 +15,12 @@ import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByNa
 import { openMailto } from '../lib/openMailto';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
+import { parseTime } from '../lib/timeInput';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
 import Modal from './Modal';
 import OrgHub from './OrgHub';
+import TimeInput from './TimeInput';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 
 type PlacementExtras = {
@@ -104,6 +106,17 @@ export default function StudentEditor({
   // after onSave, so closing the card without saving leaves the submission pending
   // rather than silently consumed.
   const [pendingCvSeenOnSave, setPendingCvSeenOnSave] = useState<string | null>(null);
+  // The placement-interview time as TYPED. `form` only ever receives a readable HH:MM:
+  // OrgHub's placement actions and the feedback autosaves persist `form` directly, so it
+  // must never carry "25:00" or a half-typed "1". While the text is unreadable, `form`
+  // keeps the stored time, and שמור refuses the typed one with its reason.
+  const [ivTimeText, setIvTimeText] = useState(student?.placementInterviewTime || '');
+  const [showTimeError, setShowTimeError] = useState(false);
+  function typeIvTime(v: string) {
+    setIvTimeText(v);
+    const r = parseTime(v);
+    setForm(f => ({ ...f, placementInterviewTime: r.ok ? r.value : (student?.placementInterviewTime || '') }));
+  }
   const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
   const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
@@ -431,9 +444,18 @@ export default function StudentEditor({
       return;
     }
 
+    // The interview time is saved as typed (normalised to HH:MM) or not at all. The field
+    // sits in an accordion that may be closed, so the reason is also said out loud here.
+    const ivTime = parseTime(ivTimeText);
+    if (!ivTime.ok) {
+      setShowTimeError(true);
+      alert(`שעת ראיון השיבוץ לא נשמרה: ${ivTime.error}`);
+      return;
+    }
+
     // Merge over the original student so placement fields the form doesn't track
     // (preferences, submissionStatus, vacancy data, …) are never clobbered on save.
-    let saved: Student = { ...((student || {}) as Student), ...form };
+    let saved: Student = { ...((student || {}) as Student), ...form, placementInterviewTime: ivTime.value };
     // Auto-stamp placedAt the first time acceptedOrg is recorded
     if (saved.acceptedOrg && !student?.acceptedOrg && !saved.placedAt) {
       saved = { ...saved, placedAt: new Date().toISOString().slice(0, 10) };
@@ -1040,7 +1062,11 @@ export default function StudentEditor({
           <Accordion title="ראיון שיבוץ (רחל)"
             hint={form.feedbackSubmittedAt ? '✓ מעסיק מילא משוב' : (form.placementInterviewDate ? `ראיון ${form.placementInterviewDate}` : undefined)}>
             <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>
-            <Field label="שעת ראיון שיבוץ"><Input type="time" value={form.placementInterviewTime||''} onChange={v=>update('placementInterviewTime',v)}/></Field>
+            <Field label="שעת ראיון שיבוץ">
+              <TimeInput id="placement-interview-time" name="placement-interview-time" value={ivTimeText}
+                onChange={typeIvTime} showError={showTimeError}
+                style={{ padding: '12px 16px', fontSize: '14.5px' }}/>
+            </Field>
             <div className="col-span-full">
               <Field label="ארגון לראיון שיבוץ">
                 <Select value={form.placementInterviewOrg||''} onChange={v=>update('placementInterviewOrg',v)}
