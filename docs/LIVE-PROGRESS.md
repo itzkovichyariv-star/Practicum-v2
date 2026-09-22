@@ -473,3 +473,14 @@ build clean. The full gate was **not** run — its numbered cells write to the l
   policies are moot while `ALL true` exists. **NEXT (needs Yariv's OK):** map what the public forms (/register,
   /cv-update, /feedback via `publicSupabase`) really need, drop `ALL true` and `SELECT true` on practicum_data (and review
   snapshots), expose only what the forms need via narrow policies/RPCs, then run the full gate (registration suites).
+
+## 2026-09-22 21:00 IL — test data removed from production (Yariv approved "remove all testing data")
+- Removed from `practicum_data.lectures`: the 3 "מרצה בדיקה" test lectures (ids `lec-*-mubot680`) → 39 lectures again.
+- Removed 38 test rows from `practicum_snapshots` (editor "יריב בדיקה" / test employer "מעסיק — ארגון-תשובה…", 15.09 and
+  22.09 gate runs, plus the 3 history rows of the test lectures, v10816–10818). A JSON copy of the removed rows is in the
+  session scratchpad (`practicum_test_snapshots_removed.json`). 12 real backups remain (daily 06:00 16–22.09 + auto).
+- Verified intact after cleanup: 88 students · 16 candidates · 39 lectures · 28 employers (same as the 22.09 backups).
+  `candidate_submissions`, `cv_updates`, `public_interview_slots`: no test rows.
+- Observation: the gate's live suites write snapshot rows under the test user on every run; with the history capped at
+  ~50 rows they push real backups out. Worth excluding the test user from snapshots or cleaning up after the run.
+- Still open: the RLS fix (FINDING 2 above) — waiting for Yariv's go-ahead.
