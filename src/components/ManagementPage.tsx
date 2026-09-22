@@ -9,7 +9,9 @@ import { CONTACT_PATCHES } from '../lib/contactPatches';
 import { showToast } from '../lib/toast';
 import * as fs from '../lib/folderCreation';
 import { countSlotsByStatus, setCourseCapacity, reconcileEmployerCapacity } from '../lib/placement';
+import { parseTime, checkTimeRange, toMinutes, timeOrEmpty } from '../lib/timeInput';
 import EmployerEditor from './EmployerEditor';
+import TimeInput from './TimeInput';
 
 export default function ManagementPage(props: PageProps) {
   return (
@@ -487,12 +489,35 @@ function fmtMin(m: number) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+/**
+ * Everything wrong with a slot start/end pair, in words, for the row to say once and at
+ * full width — the time fields here are ~85px wide on a phone, too narrow to explain
+ * themselves. A field still being typed in is not judged yet.
+ */
+function slotTimeProblems(start: string, end: string, typing: { start: boolean; end: boolean }): string[] {
+  const out: string[] = [];
+  const read = (label: string, raw: string, busy: boolean) => {
+    if (busy) return;
+    const r = parseTime(raw);
+    if (!r.ok) out.push(`${label}: ${r.error}`);
+    else if (!r.value) out.push(`${label}: חסרה שעה`);
+  };
+  read('התחלה', start, typing.start);
+  read('סיום', end, typing.end);
+  if (!typing.start && !typing.end) {
+    const r = checkTimeRange(start, end);
+    if (!r.ok) out.push(r.error);
+  }
+  return out;
+}
+
+// The day's hours are typed text (TimeInput); only a readable pair counts.
 function countSlots(d: DayConfig): number {
-  if (!d.date || !d.startTime || !d.endTime) return 0;
-  const [sh, sm] = d.startTime.split(':').map(Number);
-  const [eh, em] = d.endTime.split(':').map(Number);
+  const start = timeOrEmpty(d.startTime);
+  const end = timeOrEmpty(d.endTime);
+  if (!d.date || !start || !end) return 0;
   const step = Math.max(5, d.minutesEach);
-  const diff = (eh * 60 + em) - (sh * 60 + sm);
+  const diff = toMinutes(end) - toMinutes(start);
   return diff > 0 ? Math.floor(diff / step) : 0;
 }
 
@@ -505,6 +530,11 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
   const [days, setDays] = useState<DayConfig[]>([newDayConfig()]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ start_time: '', end_time: '', note: '' });
+  // A slot edit that was refused keeps its errors up until it is fixed.
+  const [editTried, setEditTried] = useState(false);
+  // Which time field is being typed in ("<uid>-start", "edit-end", …) — a start-vs-end
+  // warning waits until the typing stops, instead of flashing at the first digit.
+  const [slotTimeFocus, setSlotTimeFocus] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [view, setView] = useState<'all' | 'booked'>('all');
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -566,10 +596,10 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
     }
     const rows: any[] = [];
     for (const d of validDays) {
-      const [sh, sm] = d.startTime.split(':').map(Number);
+      // validDays holds only days whose two times read (countSlots > 0).
       const step = Math.max(5, d.minutesEach);
-      const endMin = d.endTime.split(':').map(Number).reduce((h, m, i) => i === 0 ? h + m * 60 : h + m, 0);
-      for (let t = sh * 60 + sm; t + step <= endMin; t += step) {
+      const endMin = toMinutes(timeOrEmpty(d.endTime));
+      for (let t = toMinutes(timeOrEmpty(d.startTime)); t + step <= endMin; t += step) {
         rows.push({
           date: d.date,
           start_time: fmtMin(t),
@@ -654,12 +684,22 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
 
   function startEdit(s: SlotRow) {
     setEditingId(s.id);
-    setEditForm({ start_time: s.start_time, end_time: s.end_time, note: s.note || '' });
+    setEditTried(false);
+    // The table can hand back "10:00:00"; show it the way it is typed.
+    setEditForm({ start_time: timeOrEmpty(s.start_time) || s.start_time, end_time: timeOrEmpty(s.end_time) || s.end_time, note: s.note || '' });
   }
 
   async function saveEdit(id: string) {
+    // This row is what the public registration form offers. Only two readable times,
+    // end after start, ever reach it — otherwise nothing is written and the row says why.
+    const start = parseTime(editForm.start_time);
+    const end = parseTime(editForm.end_time);
+    if (!start.ok || !end.ok || !start.value || !end.value || !checkTimeRange(start.value, end.value).ok) {
+      setEditTried(true);
+      return;
+    }
     const { error: err } = await supabase.from('public_interview_slots')
-      .update({ start_time: editForm.start_time, end_time: editForm.end_time, note: editForm.note || null })
+      .update({ start_time: start.value, end_time: end.value, note: editForm.note || null })
       .eq('id', id);
     if (err) { alert('שגיאה: ' + err.message); return; }
     setEditingId(null);
@@ -719,7 +759,7 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
 
           <div className="space-y-3">
             {days.map((d, i) => (
-              <div key={d.uid} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.6)', border: '1px solid var(--divider)' }}>
+              <div key={d.uid} className="rounded-xl p-4" style={{ background: 'var(--surface-1)', border: '1px solid var(--divider)' }}>
                 {/* Row header */}
                 <div className="flex items-center justify-between mb-3">
                   <span className="mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-soft)' }}>
@@ -748,16 +788,18 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
                   </div>
                   <div className="flex gap-2 flex-1">
                     <div className="flex flex-col gap-1 flex-1 min-w-[80px]">
-                      <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>התחלה</label>
-                      <input type="time" value={d.startTime} dir="ltr"
-                        onChange={e => updateDay(d.uid, { startTime: e.target.value })}
-                        className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                      <label htmlFor={`slot-day-${d.uid}-start`} className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>התחלה</label>
+                      <TimeInput id={`slot-day-${d.uid}-start`} name="slot-day-start" inlineError={false} value={d.startTime} required
+                        onChange={v => updateDay(d.uid, { startTime: v })}
+                        onFocus={() => setSlotTimeFocus(`${d.uid}-start`)} onBlur={() => setSlotTimeFocus(null)}
+                        placeholder="--:--" style={{ fontSize: '13px', padding: '8px 10px' }} />
                     </div>
                     <div className="flex flex-col gap-1 flex-1 min-w-[80px]">
-                      <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>סיום</label>
-                      <input type="time" value={d.endTime} dir="ltr"
-                        onChange={e => updateDay(d.uid, { endTime: e.target.value })}
-                        className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
+                      <label htmlFor={`slot-day-${d.uid}-end`} className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>סיום</label>
+                      <TimeInput id={`slot-day-${d.uid}-end`} name="slot-day-end" inlineError={false} value={d.endTime} required
+                        onChange={v => updateDay(d.uid, { endTime: v })}
+                        onFocus={() => setSlotTimeFocus(`${d.uid}-end`)} onBlur={() => setSlotTimeFocus(null)}
+                        placeholder="--:--" style={{ fontSize: '13px', padding: '8px 10px' }} />
                     </div>
                     <div className="flex flex-col gap-1 w-20 shrink-0">
                       <label className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>דק׳ לראיון</label>
@@ -773,6 +815,16 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
                       className="input" style={{ fontSize: '13px', padding: '8px 10px' }} />
                   </div>
                 </div>
+                {(() => {
+                  const problems = slotTimeProblems(d.startTime, d.endTime,
+                    { start: slotTimeFocus === `${d.uid}-start`, end: slotTimeFocus === `${d.uid}-end` });
+                  return problems.length ? (
+                    <div role="alert" data-time-range-error className="mt-2 text-[12px] leading-snug" style={{ color: 'var(--tl-red)' }}>
+                      {problems.map(p => <div key={p}>{p}</div>)}
+                      <div>ביום הזה לא ייווצרו מועדים עד שהשעות יתוקנו.</div>
+                    </div>
+                  ) : null;
+                })()}
               </div>
             ))}
           </div>
@@ -956,13 +1008,19 @@ th{background:#f5f0f0;font-weight:bold}
                     return (
                       <div key={s.id} className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl w-full"
                         style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid var(--accent)' }}>
-                        <input type="time" value={editForm.start_time} dir="ltr"
-                          onChange={e => setEditForm(f => ({ ...f, start_time: e.target.value }))}
-                          className="input" style={{ fontSize: '13px', padding: '5px 8px', width: '100px' }} />
+                        <div className="flex flex-col">
+                          <TimeInput name="slot-edit-start" inlineError={false} value={editForm.start_time} required showError={editTried}
+                            onChange={v => setEditForm(f => ({ ...f, start_time: v }))}
+                            onFocus={() => setSlotTimeFocus('edit-start')} onBlur={() => setSlotTimeFocus(null)}
+                            placeholder="--:--" style={{ fontSize: '13px', padding: '5px 8px', width: '100px' }} />
+                        </div>
                         <span className="mono text-[12px]" style={{ color: 'var(--text-soft)' }}>–</span>
-                        <input type="time" value={editForm.end_time} dir="ltr"
-                          onChange={e => setEditForm(f => ({ ...f, end_time: e.target.value }))}
-                          className="input" style={{ fontSize: '13px', padding: '5px 8px', width: '100px' }} />
+                        <div className="flex flex-col">
+                          <TimeInput name="slot-edit-end" inlineError={false} value={editForm.end_time} required showError={editTried}
+                            onChange={v => setEditForm(f => ({ ...f, end_time: v }))}
+                            onFocus={() => setSlotTimeFocus('edit-end')} onBlur={() => setSlotTimeFocus(null)}
+                            placeholder="--:--" style={{ fontSize: '13px', padding: '5px 8px', width: '100px' }} />
+                        </div>
                         <input type="text" value={editForm.note} placeholder="הערה"
                           onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
                           className="input flex-1 min-w-[80px]" style={{ fontSize: '13px', padding: '5px 8px' }} />
@@ -972,6 +1030,18 @@ th{background:#f5f0f0;font-weight:bold}
                           borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap',
                         }}>שמור</button>
                         <button onClick={() => setEditingId(null)} className="mono text-[11px] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>בטל</button>
+                        {(() => {
+                          const problems = slotTimeProblems(editForm.start_time, editForm.end_time, {
+                            start: !editTried && slotTimeFocus === 'edit-start',
+                            end: !editTried && slotTimeFocus === 'edit-end',
+                          });
+                          return problems.length ? (
+                            <div role="alert" data-time-range-error className="w-full text-[12px] leading-snug" style={{ color: 'var(--tl-red)' }}>
+                              {problems.map(p => <div key={p}>{p}</div>)}
+                              <div>המועד לא יישמר כך.</div>
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
                     );
                   }

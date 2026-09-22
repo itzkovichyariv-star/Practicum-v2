@@ -332,6 +332,7 @@ export default function LecturesPage({
           defaultYear={context.year}
           typeOptions={Array.from(new Set(all.map(l => l.type).filter(Boolean))) as string[]}
           statusOptions={Array.from(new Set(all.map(l => l.status).filter(Boolean))) as string[]}
+          lectures={all}
           onSave={handleSave}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
