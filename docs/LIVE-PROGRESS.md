@@ -384,3 +384,59 @@ for the new one and leaves anything hand-edited alone — the same contract
 `LINK-keeps-custom-wording` already holds it to. `RENDER-days-substituted` moved to the
 WhatsApp reminder, which still quotes a number: that rule exists because v1.39 shipped a
 literal `{daysWaiting}` to real employers, and it has to keep running somewhere.
+
+## 2026-09-22 — typed times are saved as typed (lectures, interview slots, placement interview) — ⚠️ NOT DEPLOYED yet
+
+Yariv: *"מנגנון השעה לא מגיב טוב למספרים ומסובב לי את השעה כשאני מכניס אותה"*. Production
+held **23:18–00:20** for a lecture he entered as 17:00–20:00, and **00:19–00:21**, **23:17–23:20**.
+
+**Root cause.** Every time field was a native `<input type="time">` (LectureEditor.tsx:169-170,
+StudentEditor.tsx:1043, ManagementPage.tsx:752/758/959/963 before this change), and the editor
+saved whatever the control reported, unread and unchecked. Reproduced locally, no live data:
+* **Chrome** — the clock icon at the end of the field (or Space / Alt+↓) opens a picker; digits
+  typed into it go nowhere and **Enter writes the current time**: "1700"+Enter at 19:38 → `19:38`.
+  That is the damaged rows: 23:17, 23:18, 23:20, 00:19, 00:21 — minutes around midnight, when
+  they were typed. A click on the minutes segment also sends a typed hour into the minutes
+  ("20" → HH:20).
+* **Safari (WebKit 26.4)** — "1700" never leaves the hour segment (hour 00, minutes empty →
+  nothing saved); the empty field shows a grey "12:30" that reads as a value; on the RTL page
+  it is drawn minutes:hours. `dir="ltr"` alone does not fix the typing.
+* Ruled out: no app code puts the clock into a lecture time; no timezone/`toISOString` in the
+  lecture save path (times are plain "HH:MM" strings); no 12h misreading (all stored values are
+  24h); the only auto-derived end was a dead `addHour()` (`% 24`) that nothing called.
+* Not done: matching the damaged values to the `history` timestamps in production — a read-only
+  query was blocked by this session's permission policy. It would confirm the clock-time
+  pattern; the local reproduction already shows the mechanism.
+
+**Fix — branch `fix/lecture-time-input`, v1.43.0+build.130.** New `src/lib/timeInput.ts` is
+the only reader of a typed time: 15, 9, 1500, 0930, 930, 15:00, 9:30, 15.00 → HH:MM; 25:00,
+15:75, "9:5", am/pm refused in Hebrew, never guessed; it never reads the clock. New
+`TimeInput` (plain text, no mask, normalised on blur) replaces all six native fields. Lectures:
+save re-reads the text (Enter submits before any blur), an end at/before the start is refused
+inline ("8" after 17:00 offers 20:00, never applies it), and with only a start an end is
+*offered* — start + the course's usual lecture length, else +2h, never past midnight. Same
+helper for the interview-slot planner, the single-slot edit, and the placement-interview time.
+Commits `b1be5a9a` `52a2cbae` `123d1731` `473687d2` `1cf6d9b6`.
+
+**Verified:** unit **156/156** (24 new, `unit/time-input.spec.ts`); new offline check
+`scripts/lecture-time-check.mjs` (added to the gate) **51/51 in Chromium and 51/51 in WebKit**,
+clock frozen at 23:18, asserting on the saved payload, and shown to FAIL when the parser is
+bypassed or the end-before-start guard removed; `deploy-gate --offline` **green**; typecheck and
+build clean. The full gate was **not** run — its numbered cells write to the live project.
+
+**Still open — next steps:**
+1. **Deploy** (Yariv/parent): merge the branch into `main`, then `npm run ship`. The main
+   checkout had uncommitted `src/lib/version.ts` + `public/sw.js` from another session — settle
+   those first; if the merge conflicts on the version line, keep main's and re-run
+   `npm run bump:minor`.
+2. **The damaged lectures are NOT repaired** (no data was touched). 23:18–00:20 now warns the
+   moment it is opened; 00:19–00:21 and 23:17–23:20 are valid ranges to the parser and must be
+   found and corrected by hand.
+3. **Semester labels** (report only): editor and filter use `ב׳` (U+05F3); the 2025-26 seed
+   import (ManagementPage.tsx:201-223) wrote bare `א`/`ב`. The lectures semester filter is an
+   exact match (LecturesPage.tsx:59) → seed lectures vanish under "ב׳" and cannot be selected;
+   the editor's `<select>` shows **א׳** for a lecture stored as `ב` (no matching option).
+4. The older offline checks open a realtime WebSocket to the live project (`ctx.route` does not
+   cover WebSockets); the new check holds it in a mock — the others should too.
+5. Later: `outlookCalendarUrl` / `openIcsEvent` add an hour with no wrap ("24:30") and treat an
+   empty time as a time.
