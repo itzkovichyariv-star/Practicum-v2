@@ -484,3 +484,23 @@ build clean. The full gate was **not** run — its numbered cells write to the l
 - Observation: the gate's live suites write snapshot rows under the test user on every run; with the history capped at
   ~50 rows they push real backups out. Worth excluding the test user from snapshots or cleaning up after the run.
 - Still open: the RLS fix (FINDING 2 above) — waiting for Yariv's go-ahead.
+
+## 2026-09-22 22:10 IL — access decision + security fix underway (NOT DEPLOYED)
+- **Yariv's go-ahead given** for the RLS/auth fix (FINDING 2 above). Being built on branch `feat/real-auth-and-rls`
+  (worktree `~/Code/practicum-v2-auth`, off b434e0e8). Nothing applied to production; no deploy without his explicit OK.
+- **Who gets access — decided 22.09:**
+  - `yarivi@ariel.ac.il` → **admin**, the ONLY seeded account.
+  - **Esther: not needed at all** (earlier assumption dropped).
+  - **`rachelshal@ariel.ac.il`: access removed — she is leaving the role.** Her hard-coded coordinator mapping in
+    `src/lib/permissions.ts` is deleted, NOT migrated. Her Supabase Auth user is left in place (standing rule: never
+    permanently delete); the allowlist is what stops her. A test asserts that an authenticated user absent from the
+    allowlist reads nothing.
+  - **Her replacement is "Shani" — email not yet known.** She will get `coordinator` + practicum-courses filter.
+- **Design consequence:** staff live in a DB table `practicum_staff(email, role, course_name_filter)`, not in code, so
+  Shani is added later with one INSERT — no code change, no deploy.
+- Shape of the fix: Supabase Auth email one-time code with `shouldCreateUser:false` (no self-registration) replacing the
+  client-side passphrase `ariel2026`; RLS locked to staff on practicum_data/_snapshots/_versions/_audit; anon INSERT-only
+  for the public forms; slot booking + token pages via narrow SECURITY DEFINER RPCs; `candidate-uploads` bucket made
+  private with signed URLs; Emma's practicum reads moved to the service key (`fix/practicum-reads-service-key` in
+  family-tasks). Staged rollout (app auth first, then the lock) with per-stage rollback.
+- Also queued from the cleanup above: the gate's live suites must clean up the snapshot rows they create.
