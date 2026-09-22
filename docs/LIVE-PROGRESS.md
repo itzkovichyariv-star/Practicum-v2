@@ -384,3 +384,15 @@ for the new one and leaves anything hand-edited alone — the same contract
 `LINK-keeps-custom-wording` already holds it to. `RENDER-days-substituted` moved to the
 WhatsApp reminder, which still quotes a number: that rule exists because v1.39 shipped a
 literal `{daysWaiting}` to real employers, and it has to keep running somewhere.
+
+## 2026-09-22 19:45 IL — תשפ״ז lecture data fixed in Supabase (practicum_data.lectures), for Yariv
+- Read-only check against Ariel's 2026-27 academic calendar found broken times and a lecture on a day off. With Yariv's
+  approval, updated via `supabase db query --linked` (jsonb update by lecture id; all 39 lectures intact):
+  - lec-…-1 25.10 (Michal Laufer Psagot) 23:18–00:20 → 17:00–20:00; lec-jgavtw94-mtpm2taa 16.5 (year summary)
+    23:17–23:20 → 17:00–20:00.
+  - מיומנויות ייעוץ ב order kept, all at 15:00: Haya Wagner Mishori 23.3 (Purim break!) → 30.3 15:00–17:00;
+    Shela Dayan 30.3 → 6.4 15:00–17:00; Yaniv Altaras 6.4 → 13.4 15:00–16:30 (semester label א → ב).
+- Backups of the full lectures array before each change: session scratchpad `practicum_lectures_backup_1920.json` /
+  `…_backup_…b.json`. Lecturers were NOT notified by this (direct data edit) — Yariv to inform the tentative ones.
+- **IN PROGRESS:** time-entry bug ("twists the time when I type numbers") — branch `fix/lecture-time-input`
+  (worktree ../practicum-v2-timefix), NOT deployed yet.
