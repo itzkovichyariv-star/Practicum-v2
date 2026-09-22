@@ -452,3 +452,24 @@ build clean. The full gate was **not** run — its numbered cells write to the l
    cover WebSockets); the new check holds it in a mock — the others should too.
 5. Later: `outlookCalendarUrl` / `openIcsEvent` add an hour with no wrap ("24:30") and treat an
    empty time as a time.
+
+## 2026-09-22 20:45 IL — DEPLOYED typed-time fix (v1.43.0+build.136.6f54152d) + two production findings
+**DEPLOYED** — Cloudflare Pages deployment `810074f7` (https://810074f7.practicum-v2.pages.dev), version
+`v1.43.0+build.136.6f54152d`, via `npm run ship` on Yariv's OK: full deploy gate PASSED (all suites incl. the new
+`lecture-time-check`), then deploy. Lecture / interview-slot / student-interview times are plain text fields parsed by
+`src/lib/timeInput.ts` (1700, 17, 17:00, 17.00 …), never the clock.
+- Data (Supabase, with Yariv's approval, backups in the session scratchpad): מיומנויות ייעוץ א simulations moved with
+  the whole schedule (elections 27.10): 1.12 → **8.12 (שחקנית, "להחליף עם גלית")**, 8.12 → **15.12 (שחקן)**; Ayala
+  Reuven Lelong's workshop 24.11 → **1.12**. His notes kept; the move appended to each note.
+- **FINDING 1 — test rows written to production during the gate:** 3 lectures by "מרצה בדיקה" (topics "A · מ‑17 עד 20",
+  "C · 8 בערב", "D · Enter", ids `lec-*-mubot680`, no date/course) appeared in `practicum_data.lectures` during this ship
+  run. Removal is WAITING for Yariv's OK (auto mode refused the write). The check routes all HTTP locally, so the likely
+  escape is the app's service worker (Playwright route() does not intercept SW requests) → fix: `serviceWorkers: 'block'`
+  + fail if any request leaves the local origin.
+- **FINDING 2 — CRITICAL, pre-existing:** RLS on `practicum_data` has a permissive policy `ALL | public | using true |
+  check true`. Because permissive policies are OR-ed, the anonymous (publishable) key can SELECT/INSERT/UPDATE/DELETE the
+  whole practicum dataset (students, candidates, employers, lectures). Verified read-only: an anonymous GET returns the
+  row (HTTP 200). `practicum_snapshots` and `public_interview_slots` are anonymously readable too. The authenticated-only
+  policies are moot while `ALL true` exists. **NEXT (needs Yariv's OK):** map what the public forms (/register,
+  /cv-update, /feedback via `publicSupabase`) really need, drop `ALL true` and `SELECT true` on practicum_data (and review
+  snapshots), expose only what the forms need via narrow policies/RPCs, then run the full gate (registration suites).
