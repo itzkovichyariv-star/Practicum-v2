@@ -102,6 +102,11 @@ const OFFLINE_CHECKS = [
   // Every typed time (lectures, placement interview, interview slots) is saved as typed,
   // under a clock frozen at the midnight the damaged lectures were written (2026-09-22).
   'lecture-time-check.mjs',
+  // The academic-year screen. Its verdict on a date ("אין לימודים / תקופת בחינות / יום
+  // השלמה") is computed in a lib the unit tests already pin — this proves the verdict
+  // reaches the SCREEN, at the 430px Yariv works at, with the lecture layer legible on
+  // top of the university's paper and the day panel able to book the date.
+  'academic-calendar-check.mjs',
   // Runs a dev server of its own: everything above proves dist/, and dist/ is not what
   // `npm run dev` builds. A module Babel rejects and esbuild elides passes all of them.
   'dev-render-check.mjs',

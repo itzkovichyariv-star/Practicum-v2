@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { Context } from '../lib/session';
 import { APP_VERSION } from '../lib/version';
 
-export type Page = 'dashboard' | 'lectures' | 'students' | 'employers' | 'trainers' | 'candidates' | 'calendar' | 'reports' | 'forms' | 'management' | 'settings';
+export type Page = 'dashboard' | 'lectures' | 'students' | 'employers' | 'trainers' | 'candidates' | 'calendar' | 'academic' | 'reports' | 'forms' | 'management' | 'settings';
 
 type Option = { value: string; label: string };
 
@@ -29,6 +29,7 @@ const NAV: { label: string; page: Page; emoji: string }[] = [
   { label: 'מנחים/מרצים', page: 'trainers', emoji: '🧑‍🏫' },
   { label: 'מועמדים',   page: 'candidates', emoji: '🎯' },
   { label: 'לוח שנה',   page: 'calendar',   emoji: '📅' },
+  { label: 'לוח אקדמי', page: 'academic',   emoji: '🎓' },
   { label: 'דוחות',     page: 'reports',    emoji: '📊' },
   { label: 'טפסים',     page: 'forms',      emoji: '📄' },
   { label: 'ניהול',     page: 'management', emoji: '⚙️' },
