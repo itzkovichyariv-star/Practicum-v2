@@ -6,22 +6,28 @@ import {
   buildAcademicDayMap,
   buildAcademicMarkIndex,
   buildAcademicMonths,
+  academicCourseKeysFor,
   dayBlockers,
   dayVerdict,
+  initialMonthKey,
+  isTeachingSession,
   type AcademicDayItem,
 } from '../src/lib/academicCalendar';
 import {
   buildLectureDayMap,
   buildLectureMarkIndex,
+  countTrainerMatches,
   daySchedulingReport,
   findLectureConflicts,
   lectureIso,
+  lectureIsGuest,
   lectureState,
   lectureMarksFor,
+  lecturerContact,
+  matchTrainer,
   undatedLectures,
 } from '../src/lib/lectureCalendar';
-import { initialMonthKey } from '../src/components/AcademicYearPage';
-import type { Lecture } from '../src/lib/supabase';
+import type { Lecture, Trainer } from '../src/lib/supabase';
 
 /**
  * The academic-year screen, as logic.
@@ -306,4 +312,161 @@ test('the screen opens on the current month — and on October when today is out
 test('an empty day has no fill, no paint and no accents', () => {
   const marks = academicMarksFor([] as AcademicDayItem[]);
   expect(marks).toEqual({ categories: [], paint: null, fill: null, accents: [], count: 0 });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * THE DAY SHEET'S THREE QUESTIONS
+ *
+ * Yariv 2026-09-23, after the two calendars were merged into one:
+ *   "הקשה עליו צריכה להראות גם אם יש לימודים וקורס מסויים וגם אם יש באותו יום
+ *    הרצאת אורח ואם אפשר שתהיה מחוברת לפרטי המרצה שקיימים כבר"
+ * Three questions — is there teaching and in which course, is there a guest lecture,
+ * and who is the lecturer — so three groups of cells.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+const TRAINERS: Trainer[] = [
+  { id: 't1', name: 'מיכל לאופר פסגות', role: 'מרצה', email: 'michal@psagot.example',
+    phone: '050-1234567', organization: 'פסגות', courseId: 'hr', year: 'תשפ״ז' },
+  { id: 't2', name: 'ד״ר חיה וגנר מישורי', role: 'מרצה אורחת', email: 'haya@example.com',
+    phone: '052-7654321', organization: 'אוניברסיטת אריאל', courseId: 'hr', year: 'תשפ״ז' },
+  { id: 't3', name: 'רון כהן', role: 'מנחה', courseId: 'hr', year: 'תשפ״ז' },
+];
+
+/* ── 1. is there teaching, and in which course ────────────────────────────── */
+
+test('a teaching day names its course, its session number and its hour', () => {
+  // 25.10.2026 — סמינריון פרקטיקום, meeting 1, 17:00–20:00. One session, no simulation.
+  const items = dayMap.get('2026-10-25') ?? [];
+  const sessions = items.filter(isTeachingSession);
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0].course).toBe('semA');
+  expect(sessions[0].courseTitle).toContain('סמינריון פרקטיקום');
+  expect(sessions[0].session).toBe(1);
+  expect(sessions[0].time).toBe('17:00–20:00');
+  expect(sessions[0].code).toBe('2-2531510-1');
+});
+
+test('a day with teaching but no guest lecture is exactly that — a session, zero guests', () => {
+  const iso = '2026-10-25';
+  const sessions = (dayMap.get(iso) ?? []).filter(isTeachingSession);
+  expect(sessions.length).toBeGreaterThan(0);
+  const dayLectures = buildLectureDayMap([lec({ id: 'l-elsewhere', date: '2026-11-02', lecturer: 'אופיר קרקו' })]);
+  expect(dayLectures.get(iso) ?? []).toHaveLength(0);
+});
+
+test('8.12.2026 carries BOTH — session 7 of מיומנויות א׳ AND the simulation that moved it', () => {
+  const items = dayMap.get('2026-12-08') ?? [];
+  const sessions = items.filter(isTeachingSession);
+  expect(sessions.length).toBeGreaterThanOrEqual(1);
+  const sim = sessions.find((s) => s.category === 'simulation');
+  expect(sim, 'the simulation is the session, moved to another hour — not a separate item').toBeTruthy();
+  expect(sim!.course).toBe('skA');
+  expect(sim!.courseTitle).toContain('מיומנויות ייעוציות');
+  expect(sim!.session).toBe(7);
+  expect(sim!.time).toBe('15:00–17:00');
+  // and a guest lecture put on the same date shows up beside it, not instead of it
+  const withGuest = buildLectureDayMap([lec({ id: 'l-sim-day', date: '2026-12-08', lecturer: 'רון כהן', topic: 'גיוס' })]);
+  expect(withGuest.get('2026-12-08')).toHaveLength(1);
+  expect(withGuest.get('2026-12-08')![0].isGuest).toBe(true);
+});
+
+test('every kind:session row is teaching and every other kind is the university around it', () => {
+  let sessions = 0, other = 0;
+  for (const items of dayMap.values()) {
+    for (const it of items) (isTeachingSession(it) ? sessions++ : other++);
+  }
+  expect(sessions).toBeGreaterThan(50);      // 52 course meetings, none of them lost
+  expect(other).toBeGreaterThan(0);
+  // a holiday is never mistaken for a class
+  expect((dayMap.get('2027-04-24') ?? []).every((it) => !isTeachingSession(it))).toBe(true);
+});
+
+test('the course filter resolves against the academic course list, or does not filter at all', () => {
+  expect(academicCourseKeysFor('מיומנויות ייעוציות — חלק א׳')).toEqual(['skA']);
+  expect(academicCourseKeysFor('מיומנויות ייעוציות')).toEqual(expect.arrayContaining(['skA', 'skB']));
+  // a course this dataset never heard of resolves to nothing — the caller must then
+  // leave teaching UNFILTERED rather than render an empty "no class today"
+  expect(academicCourseKeysFor('פרקטיקום משאבי אנוש 2026')).toEqual([]);
+  expect(academicCourseKeysFor('__all__')).toEqual([]);
+});
+
+/* ── 2. is there a guest lecture ──────────────────────────────────────────── */
+
+test('a named lecturer who is not Yariv makes it a guest lecture; no name makes it his own', () => {
+  expect(lectureIsGuest(lec({ lecturer: 'אופיר קרקו' }), 'יריב איצקוביץ')).toBe(true);
+  expect(lectureIsGuest(lec({ lecturer: '' }), 'יריב איצקוביץ')).toBe(false);
+  expect(lectureIsGuest(lec({ lecturer: '   ' }), 'יריב איצקוביץ')).toBe(false);
+  // he is the one giving it — a session of his, not a guest
+  expect(lectureIsGuest(lec({ lecturer: 'יריב איצקוביץ' }), 'יריב איצקוביץ')).toBe(false);
+  expect(lectureIsGuest(lec({ lecturer: 'ד״ר יריב איצקוביץ' }), 'יריב איצקוביץ')).toBe(false);
+  // `type` cannot make the call — a guest lecture and his own class are both "הרצאה"
+  expect(lectureIsGuest(lec({ type: 'הרצאה', lecturer: 'דנה לוי' }), 'יריב איצקוביץ')).toBe(true);
+  expect(lectureIsGuest(lec({ type: 'סדנה', lecturer: 'דנה לוי' }), 'יריב איצקוביץ')).toBe(true);
+});
+
+test('the day map carries the guest flag through to the sheet', () => {
+  const map = buildLectureDayMap([
+    lec({ id: 'g', date: '2026-11-02', lecturer: 'דנה לוי', topic: 'אורחת' }),
+    lec({ id: 'o', date: '2026-11-02', lecturer: '', topic: 'שיעור שלי' }),
+  ], 'יריב איצקוביץ');
+  const day = map.get('2026-11-02')!;
+  expect(day.filter((l) => l.isGuest).map((l) => l.id)).toEqual(['g']);
+  expect(day.filter((l) => !l.isGuest).map((l) => l.id)).toEqual(['o']);
+});
+
+/* ── 3. the lecturer's details, from the records that already exist ───────── */
+
+test('a lecturer who matches a trainer resolves to that record, with its contact details', () => {
+  const c = lecturerContact(lec({ lecturer: 'מיכל לאופר פסגות', lecturerEmail: 'stale@old.example' }), TRAINERS);
+  expect(c).toBeTruthy();
+  expect(c!.source).toBe('trainer');
+  expect(c!.trainerId).toBe('t1');
+  expect(c!.email).toBe('michal@psagot.example');   // the record wins over the lecture's copy
+  expect(c!.phone).toBe('050-1234567');
+  expect(c!.organization).toBe('פסגות');
+  expect(c!.role).toBe('מרצה');
+});
+
+test('a title on either side does not stop the match — ד״ר חיה וגנר מישורי is חיה וגנר מישורי', () => {
+  expect(matchTrainer('חיה וגנר מישורי', TRAINERS)?.id).toBe('t2');
+  expect(matchTrainer('ד״ר חיה וגנר מישורי', TRAINERS)?.id).toBe('t2');
+  expect(matchTrainer('חיה וגנר', TRAINERS)?.id).toBe('t2');      // two shared parts is enough
+});
+
+test('a lecturer with no trainer record falls back to the lecture\'s own contact fields', () => {
+  const c = lecturerContact(
+    lec({ lecturer: 'אופיר קרקו', lecturerEmail: 'ofir@example.com', lecturerPhone: '0504014350', institution: 'חברה' }),
+    TRAINERS);
+  expect(c).toBeTruthy();
+  expect(c!.source).toBe('lecture');
+  expect(c!.trainerId).toBeNull();
+  expect(c!.name).toBe('אופיר קרקו');
+  expect(c!.email).toBe('ofir@example.com');
+  expect(c!.phone).toBe('0504014350');
+});
+
+test('a lecturer with no record and no contact details renders NO card at all', () => {
+  // an empty contact card implies a record exists and is empty — worse than none.
+  expect(lecturerContact(lec({ lecturer: 'מישהו לגמרי חדש' }), TRAINERS)).toBeNull();
+  expect(lecturerContact(lec({ lecturer: '' }), TRAINERS)).toBeNull();
+});
+
+test('a shared first name alone never links two different people', () => {
+  const two: Trainer[] = [
+    { id: 'a', name: 'רון כהן', courseId: 'hr' },
+    { id: 'b', name: 'רון לוי', courseId: 'hr' },
+  ];
+  expect(matchTrainer('רון', two)).toBeNull();
+  expect(matchTrainer('רון מזרחי', two)).toBeNull();
+  expect(matchTrainer('רון כהן', two)?.id).toBe('a');
+});
+
+test('countTrainerMatches reports named-vs-matched, which is how the rule gets judged', () => {
+  const lectures = [
+    lec({ id: '1', lecturer: 'מיכל לאופר פסגות' }),
+    lec({ id: '2', lecturer: 'ד״ר חיה וגנר מישורי' }),
+    lec({ id: '3', lecturer: 'אופיר קרקו' }),
+    lec({ id: '4', lecturer: '' }),
+  ];
+  expect(countTrainerMatches(lectures, TRAINERS)).toEqual({ named: 3, matched: 2 });
 });
