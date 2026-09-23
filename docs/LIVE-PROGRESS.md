@@ -576,3 +576,46 @@ build clean. The full gate was **not** run — its numbered cells write to the l
 - **NEXT: the security lock** (`feat/real-auth-and-rls`), which Yariv deferred until after this. Merge conflict surface
   is small — that branch does not touch supabase.ts / dataApi.ts / LecturesPage.tsx / LectureEditor.tsx / TopBar.tsx;
   it overlaps only in App.tsx and deploy-gate.mjs, in different regions.
+
+## 2026-09-23 08:26 IL — NOT DEPLOYED, NOT PUSHED: one calendar — לוח אקדמי folded into לוח שנה
+- **Branch** `fix/one-calendar` in worktree `~/Code/practicum-v2-onecal`, commit **74cf0a07**, branched from `main`
+  at 3e3b8c3b. `main`, `practicum-v2-auth` and `practicum-v2-calendar` were not touched.
+- **The error being fixed:** v1.43.0+build.137 shipped `🎓 לוח אקדמי` as a SECOND calendar an hour after `📅 לוח שנה`
+  already drew lectures, interviews, free interview slots, preparations and holidays. Yariv: "זה מה שצריך לוח מאוחד
+  עם האירועים ובכל מקרה אין לי אפשרות בחירה על המסך."
+- **What shipped on the branch:** `לוח שנה` is the only calendar. `page === 'academic'` removed from `App.tsx` and
+  `TopBar.tsx`; `AcademicYearPage.tsx` deleted; a stored page of `'academic'` migrates to `'calendar'` so nobody
+  resumes onto a blank screen. The month view keeps its nav/filters/chips/list and gains the Ariel fills UNDER them;
+  a header toggle swaps month ⇄ the twelve-month poster (never both); one day sheet; the conflict banner; one legend.
+- **Precedence on a month cell (written on the screen, not only here):** academic fill (simulation red > gold
+  boundary/exam > cream no-teaching) → today's wine tint → the Jewish-holiday grey. Inside תשפ״ז the real dataset
+  wins; outside it (where the dataset is silent) the grey still marks the holiday. The holiday NAME shows either way.
+  A fill forces black ink; event chips gain a 90%-white underlay, measured at 10.25:1 on the simulation red.
+- **Day sheet answers Yariv's three questions** (added mid-task): `לימודים ביום זה` (the academic dataset's 52
+  `kind:'session'` rows — course title, מפגש N, hour, code), then `הרצאות אורח ביום זה`, then the lecturer's own
+  details resolved against `data.trainers` by normalised name (titles/punctuation stripped, ≥2 shared name parts,
+  ambiguous ⇒ no match) with tap-to-call / tap-to-mail, falling back to the lecture's own contact fields, then the
+  university's other items, then the booking button. `src/lib/lectureSave.ts` is still the single lecture-write path.
+- **Guest-vs-own rule:** a lecture is a GUEST lecture when it names a `lecturer` who is not the signed-in user.
+  `type` cannot make the call — a guest lecture and his own class are both stored as "הרצאה".
+- **Filters:** the year filter scopes interviews/slots/preparations only. It does NOT reach lectures — a lecture
+  hidden by a filter is a lecture that gets double-booked, and it would make the grid disagree with the sheet, the
+  poster and the conflict banner. Stated on screen under the header.
+- **Nav finding (fixed, small + safe):** nothing is dropped at 430px — all 11 nav items render in the ☰ drawer and
+  every one hit-tests to itself. The real defect was the drawer's hardcoded `paddingTop: '64px'` against a header
+  that is **133px** tall at 430px: the drawer's OWN course/year selectors sat 69px under the fixed header (z-50 over
+  z-40) and could be neither read nor tapped. Now `var(--header-h)`, the value TopBar already measures.
+- **Green:** `npm run test:unit` **191 passed** (+13 new cells for teaching-days, guest-vs-own and trainer matching) ·
+  `npx tsc --noEmit` clean · `npm run build` 7 pages · `node scripts/calendar-check.mjs` **35/35**.
+- **Audit moved, not kept:** `scripts/academic-calendar-check.mjs` → `scripts/calendar-check.mjs`, rewritten against
+  `page === 'calendar'`. No cell targets a `לוח אקדמי` route; one cell asserts the migration and one asserts the nav
+  offers exactly one calendar. `deploy-gate.mjs` rewired to the new filename.
+- **Screenshots (430px):** `test-results/calendar/` — `month-430.png`, `year-430.png`, `day-sheet-both-430.png`,
+  `day-sheet-blocked-430.png`, `day-sheet-teaching-430.png`, `day-sheet-open-430.png`, `month-430-dark.png`,
+  plus `day-sheet-exams-1180.png`.
+- **STILL OPEN / next step:** (1) **the FULL gate has NOT been run** — the 72 live suites are unrun on this branch,
+  so the snapshot-row cleanup count is unknown. A dev server for THIS worktree is up on **port 4341** (4321 is held
+  by `~/Code/practicum-v2`'s own server), so the gate must be run as
+  `AUDIT_BASE_URL=http://localhost:4341 node scripts/deploy-gate.mjs`. (2) not pushed, not deployed, by instruction.
+  (3) The trainer-match rate over the 39 REAL lectures was never measured — production data was not read; the rule is
+  proven only against fixtures. If the real rate is low, loosen `matchTrainer` in `src/lib/lectureCalendar.ts`.
