@@ -564,3 +564,32 @@ build clean. The full gate was **not** run — its numbered cells write to the l
   push the branch and merge it BEFORE `feat/real-auth-and-rls` (this branch is the smaller diff). The screen currently
   ignores the top bar's YEAR filter by design (it is itself a year) — if that surprises him, the note under the
   headline is where to change it. No permission gate is applied: every staff member who can see lectures sees this.
+
+## 2026-09-23 07:00 IL — DEPLOYED: לוח אקדמי — the academic year with the lecture schedule on it
+- **Live** at practicum.yarivitzkovich.org as **v1.43.0+build.137** (Pages deploy `8404cc78`). Yariv asked for this
+  BEFORE the security lock, and asked that the calendar carry the lecture schedule itself:
+  "בפרקטיקום הייתי מציע שהלוח יכלול את לוח ההרצאות".
+- **What it is:** a new screen (לוח אקדמי) showing Oct 2026 → Sep 2027 in two layers. Background = the university's
+  year in the printed palette (white paper, black ink, gold `#FFD966` boundaries/exams, cream `#FFF2CC` no-teaching),
+  fixed in BOTH themes. Foreground = every lecture on its day — wine approved, amber not-approved, grey struck-through
+  cancelled; amber wins a mixed day, because chasing the unapproved ones is the job.
+- Tapping a day opens a sheet led by a VERDICT (`לא מתאים לקביעת הרצאה` / `אפשרי — אבל שים לב` / `מתאים`) quoting the
+  calendar's own title, then that day's lectures and academic items, then the booking button. On arrival a banner lists
+  every lecture already standing on a blocked date (cancelled ones excluded).
+- **One lecture-save path:** the write (Outlook sync, fill-never-overwrite employer contacts, CAS-guarded saveSnapshot)
+  was extracted verbatim from `LecturesPage.tsx` into `src/lib/lectureSave.ts`; the list screen and the calendar both
+  call it. `LectureEditor` gained one optional `defaultDate`. Behaviour-preservation proven by `lecture-time-check` 51/51.
+- **Verification before deploy:** unit **178 passed**; **full deploy gate PASSED — all 72 suites, exit 0**, including
+  the new `academic-calendar-check` 23/23; `npm run build` clean.
+- **Gate pollution handled:** the live suites added **30 snapshot rows** (28 "יריב בדיקה" + 2 test employer). Backed up
+  to scratchpad `practicum_gate_snapshots_2026-09-23.json`, then deleted. Production verified back to the exact
+  pre-gate baseline: **39 lectures · 88 students · 16 candidates · 28 employers · 14 snapshots**. Real data never moved.
+- Deployed via `SHIP_GATE_PASSED=i-ran-the-gate-myself npm run deploy` — the escape hatch the predeploy guard itself
+  documents — because the full gate had already been run and passed; re-running it via `npm run ship` would have added
+  another 30 rows to clean.
+- **Two judgement calls left for Yariv:** (1) the screen ignores the top bar's YEAR filter by design (it IS a year;
+  filtering to תשפ״ו would blank a grid titled תשפ״ז) — the course filter IS honoured, and both are stated on screen;
+  (2) **no permission gate** — anyone who can see lectures sees this screen, unlike Maestro's which is Yariv-only.
+- **NEXT: the security lock** (`feat/real-auth-and-rls`), which Yariv deferred until after this. Merge conflict surface
+  is small — that branch does not touch supabase.ts / dataApi.ts / LecturesPage.tsx / LectureEditor.tsx / TopBar.tsx;
+  it overlaps only in App.tsx and deploy-gate.mjs, in different regions.
