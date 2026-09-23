@@ -10,7 +10,6 @@ import EmployersPage from './EmployersPage';
 import TrainersPage from './TrainersPage';
 import CandidatesPage from './CandidatesPage';
 import CalendarPage from './CalendarPage';
-import AcademicYearPage from './AcademicYearPage';
 import ReportsPage from './ReportsPage';
 import FormsPage from './FormsPage';
 import ManagementPage from './ManagementPage';
@@ -88,7 +87,13 @@ export default function App() {
   const realtimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [page, setPage] = useState<Page>(() => {
     if (typeof localStorage === 'undefined') return 'dashboard';
-    return (localStorage.getItem(PAGE_STORAGE) as Page) || 'dashboard';
+    const saved = localStorage.getItem(PAGE_STORAGE);
+    // 'academic' was a SECOND calendar, shipped in v1.43.0 and folded back into
+    // 'calendar' an hour later. Anyone whose last screen was that one would otherwise
+    // resume onto a page that no longer renders anything at all, so the stored value is
+    // migrated here rather than left to fail silently.
+    if (saved === 'academic') return 'calendar';
+    return (saved as Page) || 'dashboard';
   });
 
   // Resume session on page load
@@ -390,7 +395,6 @@ export default function App() {
       {page === 'trainers'   && <TrainersPage  {...pageProps} />}
       {page === 'candidates' && <CandidatesPage {...pageProps} />}
       {page === 'calendar'   && <CalendarPage  {...pageProps} />}
-      {page === 'academic'   && <AcademicYearPage {...pageProps} />}
       {page === 'reports'    && <ReportsPage   {...pageProps} />}
       {page === 'forms'      && <FormsPage     {...pageProps} />}
       {page === 'management' && <ManagementPage {...pageProps} />}

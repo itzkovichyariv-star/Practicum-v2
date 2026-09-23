@@ -15,9 +15,9 @@
  * screen, which keeps this feature out of the way of the auth/RLS work in flight.
  */
 
-import type { Lecture } from './supabase';
+import type { Lecture, Trainer } from './supabase';
 import type { AcademicDayItem } from './academicCalendar';
-import { dayBlockers, type DayBlocker } from './academicCalendar';
+import { dayBlockers, normalizeName, type DayBlocker } from './academicCalendar';
 
 /**
  * Three states, because that is how many Yariv acts on differently:
@@ -73,6 +73,110 @@ export function lectureColor(state: LectureState): string {
   return LECTURE_INK[state];
 }
 
+/* ── WHO is giving it: a guest, or Yariv himself ──────────────────────────────
+ *
+ * Yariv 2026-09-23: "אם יש באותו יום הרצאת אורח". The day sheet has to separate the two,
+ * and `type` cannot do it — a guest lecture and his own class are BOTH stored as
+ * "הרצאה" (the editor's default), and 'סדנה' / 'סימולציה' occur in both roles. The one
+ * field that actually means "who is standing in front of the room" is `lecturer`.
+ *
+ * So: a lecture is a GUEST lecture when it names a lecturer who is not him. No name at
+ * all means he is taking it himself — that is what an empty `lecturer` has always meant
+ * on the lectures screen, where the column is filled in precisely when someone is being
+ * brought in. `type` is still shown verbatim on the row, so "סדנה" reads as a workshop
+ * rather than being flattened into the word הרצאה.
+ */
+export function samePerson(a?: string | null, b?: string | null): boolean {
+  const x = normalizePersonName(a), y = normalizePersonName(b);
+  return !!x && x === y;
+}
+
+/** A person's name, comparable: titles dropped, punctuation dropped, spaces collapsed. */
+export function normalizePersonName(s?: string | null): string {
+  return normalizeName(String(s || '').replace(/(^|\s)(ד"ר|דר|פרופ|פרופסור|מר|גב|עו"ד|עוד|ד״ר|פרופ׳|גב׳)\s+/g, ' '));
+}
+
+export function lectureIsGuest(l: Pick<Lecture, 'lecturer'>, ownerName?: string | null): boolean {
+  const who = (l.lecturer || '').trim();
+  if (!who) return false;
+  return !samePerson(who, ownerName);
+}
+
+/**
+ * The lecturer's details, wherever they live.
+ *
+ * Yariv 2026-09-23: "ואם אפשר שתהיה מחוברת לפרטי המרצה שקיימים כבר". Two sources, both
+ * already in the snapshot, in this order:
+ *   1. `data.trainers` — the app's own people records, matched on the name. This is the
+ *      richer one (role, organization, specialty) and it is a RECORD, so the sheet can
+ *      offer to open it.
+ *   2. the lecture's own `lecturerEmail` / `lecturerPhone` / `institution` fields.
+ * When neither has anything the panel is not rendered at all — an empty contact card
+ * that implies a record exists is worse than no card.
+ */
+export interface LecturerContact {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  organization: string | null;
+  role: string | null;
+  /** Which source answered — so the sheet can offer to open the trainer's record. */
+  source: 'trainer' | 'lecture';
+  trainerId: string | null;
+}
+
+/**
+ * The trainer whose name is this lecturer's, or null.
+ *
+ * Matched on the normalised name, then — because "חיה וגנר מישורי" and "חיה וגנר" are
+ * one person written twice — on a token-subset match, which requires at least two
+ * shared name parts so a shared first name alone can never link two different people.
+ */
+export function matchTrainer(lecturerName: string | null | undefined, trainers: Trainer[]): Trainer | null {
+  const want = normalizePersonName(lecturerName);
+  if (!want) return null;
+  const exact = trainers.find((t) => normalizePersonName(t.name) === want);
+  if (exact) return exact;
+  const wantParts = want.split(' ').filter(Boolean);
+  if (wantParts.length < 2) return null;
+  const subset = trainers.filter((t) => {
+    const have = normalizePersonName(t.name).split(' ').filter(Boolean);
+    if (have.length < 2) return false;
+    const shared = have.filter((p) => wantParts.includes(p));
+    return shared.length >= 2 && (shared.length === have.length || shared.length === wantParts.length);
+  });
+  return subset.length === 1 ? subset[0] : null;   // ambiguous ⇒ no match, never a guess
+}
+
+export function lecturerContact(l: Lecture, trainers: Trainer[]): LecturerContact | null {
+  const name = (l.lecturer || '').trim();
+  if (!name) return null;
+  const t = matchTrainer(name, trainers);
+  if (t) {
+    return {
+      name: t.name || name,
+      email: (t.email || l.lecturerEmail || '').trim() || null,
+      phone: (t.phone || l.lecturerPhone || '').trim() || null,
+      organization: (t.organization || l.institution || '').trim() || null,
+      role: (t.role || '').trim() || null,
+      source: 'trainer',
+      trainerId: t.id,
+    };
+  }
+  const email = (l.lecturerEmail || '').trim() || null;
+  const phone = (l.lecturerPhone || '').trim() || null;
+  const organization = (l.institution || '').trim() || null;
+  if (!email && !phone && !organization) return null;
+  return { name, email, phone, organization, role: null, source: 'lecture', trainerId: null };
+}
+
+/** How many lectures resolve to a trainer record — the number that says whether the
+ *  matching rule is tight enough to be useful. Used by the unit cells and the report. */
+export function countTrainerMatches(lectures: Lecture[], trainers: Trainer[]): { named: number; matched: number } {
+  const named = lectures.filter((l) => (l.lecturer || '').trim());
+  return { named: named.length, matched: named.filter((l) => !!matchTrainer(l.lecturer, trainers)).length };
+}
+
 /** A lecture positioned on a day, with everything the day panel shows. */
 export interface LectureDayItem {
   id: string;
@@ -84,6 +188,8 @@ export interface LectureDayItem {
   time: string | null;
   title: string;
   lecturer: string | null;
+  /** True when an outside lecturer is named — see `lectureIsGuest`. */
+  isGuest: boolean;
   courseName: string | null;
   type: string | null;
   semester: string | null;
@@ -125,7 +231,7 @@ function formatTime(l: Lecture): string | null {
   return start || null;
 }
 
-export function toLectureDayItem(l: Lecture, iso: string): LectureDayItem {
+export function toLectureDayItem(l: Lecture, iso: string, ownerName?: string | null): LectureDayItem {
   return {
     id: l.id,
     iso,
@@ -134,6 +240,7 @@ export function toLectureDayItem(l: Lecture, iso: string): LectureDayItem {
     time: formatTime(l),
     title: (l.topic || l.title || l.courseName || 'הרצאה').trim(),
     lecturer: (l.lecturer || '').trim() || null,
+    isGuest: lectureIsGuest(l, ownerName),
     courseName: (l.courseName || '').trim() || null,
     type: (l.type || '').trim() || null,
     semester: (l.semester || '').trim() || null,
@@ -149,12 +256,12 @@ export function toLectureDayItem(l: Lecture, iso: string): LectureDayItem {
  * cannot be drawn on a calendar, and inventing a day for it would put a booking on a
  * date nobody chose. The screen reports the count separately instead.
  */
-export function buildLectureDayMap(lectures: Lecture[]): Map<string, LectureDayItem[]> {
+export function buildLectureDayMap(lectures: Lecture[], ownerName?: string | null): Map<string, LectureDayItem[]> {
   const map = new Map<string, LectureDayItem[]>();
   for (const l of lectures) {
     const iso = lectureIso(l);
     if (!iso) continue;
-    const item = toLectureDayItem(l, iso);
+    const item = toLectureDayItem(l, iso, ownerName);
     const list = map.get(iso);
     if (list) list.push(item);
     else map.set(iso, [item]);
