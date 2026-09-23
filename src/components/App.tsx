@@ -10,6 +10,7 @@ import EmployersPage from './EmployersPage';
 import TrainersPage from './TrainersPage';
 import CandidatesPage from './CandidatesPage';
 import CalendarPage from './CalendarPage';
+import AcademicYearPage from './AcademicYearPage';
 import ReportsPage from './ReportsPage';
 import FormsPage from './FormsPage';
 import ManagementPage from './ManagementPage';
@@ -389,6 +390,7 @@ export default function App() {
       {page === 'trainers'   && <TrainersPage  {...pageProps} />}
       {page === 'candidates' && <CandidatesPage {...pageProps} />}
       {page === 'calendar'   && <CalendarPage  {...pageProps} />}
+      {page === 'academic'   && <AcademicYearPage {...pageProps} />}
       {page === 'reports'    && <ReportsPage   {...pageProps} />}
       {page === 'forms'      && <FormsPage     {...pageProps} />}
       {page === 'management' && <ManagementPage {...pageProps} />}
