@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { Context } from '../lib/session';
 import { APP_VERSION } from '../lib/version';
 
-export type Page = 'dashboard' | 'lectures' | 'students' | 'employers' | 'trainers' | 'candidates' | 'calendar' | 'academic' | 'reports' | 'forms' | 'management' | 'settings';
+export type Page = 'dashboard' | 'lectures' | 'students' | 'employers' | 'trainers' | 'candidates' | 'calendar' | 'reports' | 'forms' | 'management' | 'settings';
 
 type Option = { value: string; label: string };
 
@@ -29,7 +29,6 @@ const NAV: { label: string; page: Page; emoji: string }[] = [
   { label: 'מנחים/מרצים', page: 'trainers', emoji: '🧑‍🏫' },
   { label: 'מועמדים',   page: 'candidates', emoji: '🎯' },
   { label: 'לוח שנה',   page: 'calendar',   emoji: '📅' },
-  { label: 'לוח אקדמי', page: 'academic',   emoji: '🎓' },
   { label: 'דוחות',     page: 'reports',    emoji: '📊' },
   { label: 'טפסים',     page: 'forms',      emoji: '📄' },
   { label: 'ניהול',     page: 'management', emoji: '⚙️' },
@@ -193,8 +192,15 @@ export default function TopBar({
 
       {/* ── Mobile drawer ── */}
       {menuOpen && (
+        /* paddingTop is --header-h, NOT a literal. The header is fixed and z-50 and this
+           drawer is z-40, so whatever the padding fails to clear is painted over. At
+           430px the real header is 133px tall (version line + brand row + the course/
+           year row) and the literal here was 64px — so the drawer's OWN course and year
+           selectors, 69px of them, sat underneath the header where they could be neither
+           read nor tapped. The effect above already measures the header into --header-h
+           for the page spacer; this is the same number. */
         <div className="fixed inset-0 z-40 flex flex-col md:hidden"
-          style={{ background: 'var(--nav-bg)', backdropFilter: 'blur(20px)', paddingTop: '64px' }}>
+          style={{ background: 'var(--nav-bg)', backdropFilter: 'blur(20px)', paddingTop: 'var(--header-h, 108px)' }}>
 
           {/* Context selectors */}
           <div className="px-5 py-4 border-b flex gap-4 items-center" style={{ borderColor: 'var(--divider)' }}>

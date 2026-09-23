@@ -75,8 +75,25 @@ export interface AcademicDayItem {
   time: string | null;
   /** Session number (מפגש N) when the item is a course session. */
   session: number | null;
+  /** The dataset's own course key — semA / skA / prA / semB / skB / prB. */
+  course: string | null;
   courseTitle: string | null;
+  /** The university's course code, e.g. "2-1891410-1". */
+  code: string | null;
   note: string | null;
+}
+
+/**
+ * Is this item TEACHING — a class of his that actually meets on that day?
+ *
+ * Yariv 2026-09-23: "הקשה עליו צריכה להראות גם אם יש לימודים וקורס מסויים". The
+ * dataset draws the distinction itself: `kind: 'session'` rows are the 52 course
+ * meetings (סמינריון / מיומנויות / פרקטיקום, simulations included — a simulation IS the
+ * class, moved to another hour); every other kind describes the university's year
+ * around them (holidays, exam windows, semester boundaries, reminders).
+ */
+export function isTeachingSession(item: AcademicDayItem): boolean {
+  return item.kind === 'session';
 }
 
 export interface AcademicMonth {
@@ -208,9 +225,53 @@ function formatItem(e: AcademicRawEvent): AcademicDayItem {
     hex: e.hex,
     time: e.start && e.end ? `${e.start}–${e.end}` : null,
     session: typeof e.n === 'number' ? e.n : null,
+    course: e.course ?? null,
     courseTitle: e.course_title ?? null,
+    code: e.code ?? null,
     note: e.note ? e.note : null,
   };
+}
+
+/* ── Which of HIS courses a top-bar course filter means, over THIS dataset ──────
+ *
+ * The two vocabularies are different on purpose. The top bar filters by the app's own
+ * courses (`data.courses[].name`, e.g. "פרקטיקום משאבי אנוש"); this dataset names the
+ * university's, by key and title ("skA" → "מיומנויות ייעוציות — חלק א׳"). Nothing
+ * guarantees they overlap, so the filter is resolved rather than assumed: a selection
+ * that matches no academic course leaves the academic layer UNFILTERED and says so,
+ * because filtering teaching down to nothing would read as "no class that day" — the
+ * exact wrong answer on the screen whose job is to say whether a date is free.
+ */
+
+/** Trim, drop the Hebrew geresh/gershayim and punctuation, collapse spaces, case-fold. */
+export function normalizeName(s: string): string {
+  return String(s || '')
+    .replace(/[׳״'"׳״]/g, '')
+    .replace(/[-–—_.,:;()[\]/\\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** key → title, for every course the dataset actually schedules. */
+export const ACADEMIC_COURSE_TITLES: Map<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const e of ACADEMIC_EVENTS) {
+    if (e.kind === 'session' && e.course && e.course_title) m.set(e.course, e.course_title);
+  }
+  return m;
+})();
+
+/** The academic course keys a given course NAME refers to. Empty = no overlap. */
+export function academicCourseKeysFor(courseName: string): string[] {
+  const needle = normalizeName(courseName);
+  if (needle.length < 3) return [];
+  const out: string[] = [];
+  for (const [key, title] of ACADEMIC_COURSE_TITLES) {
+    const hay = normalizeName(title);
+    if (hay === needle || hay.includes(needle) || needle.includes(hay)) out.push(key);
+  }
+  return out;
 }
 
 /** How one day is MARKED: the document's fill, the course bars, the categories, the count. */
@@ -327,6 +388,25 @@ export function buildAcademicMonths(
     });
   }
   return months;
+}
+
+/** Today, as a local ISO date — never `toISOString()`, which would shift it before 02:00. */
+export function todayIso(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Which month the year poster opens on.
+ *
+ * "The month that was on screen" is only meaningful while that month is inside the
+ * academic year. The month view navigates to any month there is — September 2026 is one
+ * month BEFORE the year starts — so outside the window it opens on the first month
+ * instead, which is also the right answer once the year has ended.
+ */
+export function initialMonthKey(months: AcademicMonth[], today = todayIso()): string {
+  const key = today.slice(0, 7);
+  return months.some((m) => m.key === key) ? key : (months[0]?.key ?? ACADEMIC_GRID_FIRST_MONTH);
 }
 
 /* ═════════════════ §SCHEDULING — the reason this screen exists ══════════════
