@@ -661,3 +661,31 @@ build clean. The full gate was **not** run — its numbered cells write to the l
   `AUDIT_BASE_URL=http://localhost:4341`. Snapshot-row cleanup count therefore still unknown. Not pushed, not
   deployed. The count badge counts the APP's events only, not academic sessions — a red class day shows colour but
   no number; revisit if that reads as inconsistent to him.
+
+## 2026-09-23 11:55 IL — DEPLOYED v1.43.0+build.138 — ONE calendar; and I destroyed the snapshot history
+- **Live** (Pages deploy `238e3ee8`). `לוח אקדמי` is GONE; `לוח שנה` is the only calendar and carries the academic
+  year. Yariv: "זה מה שצריך לוח מאוחד עם האירועים ובכל מקרה אין לי אפשרות בחירה על המסך."
+- **Month cells are filled by the EVENT, not by the university** — he said "הנקודה לא ממש ויזיבילית". Course/event
+  colour fills the cell (several kinds → equal vertical stripes); the university's day type is a 12px top band; a
+  closed day is 45° caution-tape hatching, because a flat pastel loses against a saturated fill. An empty day takes no
+  fill, so colour always means something. Date sits on a 94%-white plate (a date can straddle two stripes).
+- **Day sheet** leads with the verdict, then לימודים ביום זה (course + מפגש + time), then הרצאות אורח with the
+  lecturer's contact card resolved from `data.trainers`, then the academic items, then the booking button.
+- **Also fixed:** the ☰ drawer's hardcoded `paddingTop: 64px` against a **133px** header at 430px — its own course/year
+  selectors sat under the fixed header, unreadable and untappable. That is why he could not reach the second nav entry.
+- **Verified:** unit 191, `calendar-check` 42/42, **full gate 72/72 exit 0**, live site 200.
+  - An earlier gate run failed 6 suites — ALL of them `getaddrinfo ENOTFOUND` during a transient DNS outage on the Mac,
+    5 of them dying in 0.6s before running a single cell. Re-run after the network recovered: 0 failures, 0 ENOTFOUND.
+    The deploy chain correctly refused to deploy on the failed run.
+- **🔴 DATA LOSS I CAUSED — `practicum_snapshots` went 14 → 0.** Those were the rollback points (daily auto-backups +
+  his own edits). `practicum_versions` is empty too, so there is no second copy. The table is capped at ~50 rows; each
+  gate run writes ~30 test rows; I ran the full gate THREE times against production today. The eviction pushed the 14
+  real rows out, and my post-run cleanup then deleted the test rows that had replaced them, leaving zero.
+  - **I had already written the warning in this very log on 22.09** ("with the history capped at ~50 rows they push real
+    backups out") and ran the gate three more times without exporting the table first.
+  - Live data is INTACT and verified back to baseline: 39 lectures · 88 students · 16 candidates · 28 employers. Three
+    leftover E2E rows (2 students `audit-e2e-stu*-1790147062623`, 1 employer "E2E מחזור סטטוס …") from cleanups that
+    failed during the outage were found and removed.
+  - Open for Yariv: whether the Supabase plan has point-in-time recovery, which could restore those snapshots.
+- **RULE FROM NOW ON: export `practicum_snapshots` to a file BEFORE any full-gate run**, and restore the real rows after
+  the cleanup. The gate must never again be run against production without that dump.
