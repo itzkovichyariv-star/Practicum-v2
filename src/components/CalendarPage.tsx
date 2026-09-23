@@ -39,8 +39,9 @@ import {
   ARIEL_PAPER,
   DAY_VERDICT_LABEL,
   academicCourseKeysFor,
+  academicMarksFor,
   buildAcademicDayMap,
-  buildAcademicMarkIndex,
+  dayBlockers,
   buildAcademicMonths,
   academicItemsOutsideGrid,
   dayVerdict,
@@ -132,31 +133,119 @@ function longHebrewDate(iso: string): string {
   return `${ACADEMIC_WEEKDAY_LABELS[d.getUTCDay()]}׳ · ${d.getUTCDate()} ב${HEB_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
-/**
- * THE PRECEDENCE RULE — which layer paints a day of the month grid.
+/* ══════════════════════ THE LAYERING RULE ══════════════════════
  *
- * A cell gets exactly one background. Most decisive first:
- *   1. THE ACADEMIC LAYER. The Ariel document's own fill for the day, exactly the one
- *      the poster uses (red for a simulation, else gold for a semester boundary or an
- *      exam window, else cream for a no-teaching day / special arrangement / make-up
- *      day). This is the layer he SCHEDULES against, so it outranks everything.
- *   2. TODAY's wine tint, when the academic layer says nothing about the day.
- *   3. The Jewish-holiday grey, when neither of the above applies.
+ * Yariv 2026-09-23, on the first cut, which put the university's gold and cream in the
+ * cell and his own events in little dots on top of it:
+ *   "אני מציע שאם זו התצוגה תצבע את כל הריבוע בצבע המתאים כי הנקודה לא ממש ויזיבילית"
  *
- * The grey and the academic fill therefore never fight: the grey was always a stand-in
- * for "the university is probably shut", and where the real dataset speaks — all of
- * תשפ״ז — the stand-in yields to it. Outside תשפ״ז the dataset is silent and the grey
- * is still the only signal there is, so it keeps drawing. The holiday's NAME renders in
- * the cell corner either way, so a day that is both is never mute about it.
+ * So the two layers swapped places, and the rule is now:
  *
- * Today never loses its identity to this: its wine ring and its wine date badge are
- * drawn ON TOP of whatever fill won, so "today" and "exam period" can both be true.
+ *   THE FILL BELONGS TO THE EVENTS. What is HAPPENING on a day colours the whole cell —
+ *   his הרצאה, ראיון, מועד פנוי and הכנה, plus the university's own teaching sessions
+ *   (which are events too: a class that meets is the most booked a day can be). A day
+ *   with several kinds is split into equal vertical stripes, one per kind, running
+ *   right to left in a fixed order, so the common single-kind day is ONE solid block of
+ *   colour and a mixed day still shows every colour it earns instead of hiding all but
+ *   one. Nothing is capped: five kinds is five stripes.
+ *
+ *   THE UNIVERSITY'S DAY TYPE BECOMES A BAND across the top of the cell — gold for a
+ *   semester boundary or an exam window, cream for a no-teaching day / special
+ *   arrangement / make-up day, and the dataset's own grey for a Jewish holiday that
+ *   falls outside תשפ״ז, where the Ariel data has nothing to say. It keeps the
+ *   document's fixed hexes in both themes, and it carries its label on a plate beside
+ *   the date, so the band is never a colour you have to remember.
+ *
+ *   "DO NOT BOOK HERE" IS NOT A COLOUR. It was the whole point of the second calendar
+ *   and it matters MORE now that the fill is spoken for, so on a day the university is
+ *   shut — אין לימודים or תקופת בחינות — the band is drawn as CAUTION TAPE: a diagonal
+ *   hatch of the fill against near-black. Hatching survives being next to a saturated
+ *   event colour in a way that another flat pastel would not, its label goes bold, and
+ *   the day sheet still leads with the verdict in words.
+ *
+ *   TODAY AND THE OPEN DAY ARE CHROME, NEVER COLOUR. Today lost its wine wash: the
+ *   fill now MEANS "something is here", so tinting an empty today would claim a lecture
+ *   that does not exist. Today is its wine date badge plus a ring; the open day is a
+ *   thicker ring. On a filled cell both go white with a dark outer edge so they read on
+ *   a pale session pastel and on the dark wine alike.
+ *
+ *   ALL TEXT SITS ON A PLATE. A date can straddle two stripes, so guessing one ink per
+ *   cell cannot work: the date, the band's label, the event chips and the היום stamp
+ *   each get a 94%-white plate and black-or-own-colour ink on it. That is one contrast
+ *   to reason about instead of one per colour per theme, and it is the same in dark
+ *   mode, where the fills do not change.
  */
-function cellBackground(fill: string | null, isToday: boolean, holiday: string | undefined): string {
-  if (fill) return fill;
-  if (isToday) return 'rgba(122, 30, 43, 0.1)';
-  if (holiday) return 'rgba(26, 22, 18, 0.04)';
-  return 'transparent';
+
+/** The plate every glyph on a filled cell sits on. */
+const PLATE = 'rgba(255,255,255,0.94)';
+/** The band across the top of a cell that carries a university day type. */
+const BAND_H = 12;
+
+/** Priority order for the stripes — what he is most likely to be looking for, first. */
+function eventStripes(dayEvents: CalEvent[], academic: AcademicDayItem[]): string[] {
+  const out: string[] = [];
+  const has = (t: CalEvent['type']) => dayEvents.some((e) => e.type === t);
+  if (has('lecture')) out.push(eventColor('lecture'));
+  // the university's own teaching, in the dataset's course colours
+  for (const hex of new Set(academic.filter(isTeachingSession).map((s) => s.hex))) out.push(hex);
+  if (has('interview')) out.push(eventColor('interview'));
+  if (has('prep')) out.push(eventColor('prep'));
+  if (has('slot')) out.push(eventColor('slot'));
+  return out;
+}
+
+/** Equal vertical stripes, right to left — the reading direction of the page. */
+function stripeBackground(colors: string[]): string | undefined {
+  if (colors.length === 0) return undefined;
+  const step = 100 / colors.length;
+  const stops = colors.map((c, i) => `${c} ${(i * step).toFixed(3)}% ${((i + 1) * step).toFixed(3)}%`);
+  return `linear-gradient(to left, ${stops.join(', ')})`;
+}
+
+/** The dataset's own grey for אין לימודים — reused for a holiday it does not cover. */
+const HOLIDAY_BAND = '#BFBFBF';
+
+/* The legend's groups, and the band's own source of truth — one list, so the grid and
+ * the legend cannot drift apart when a future תשפ״ח JSON adds a category. */
+
+/** Teaching. These own the CELL FILL. */
+const SESSION_CATEGORY_KEYS = ['seminar', 'skills', 'practicum', 'simulation'];
+
+/**
+ * The five categories that describe what KIND OF DAY it is, and nothing else. These own
+ * the BAND.
+ *
+ * Deliberately a list rather than "everything that is not a session": the dataset has
+ * two `reminder` rows filed under `simulation` — "לתאם החלפת שיעור: סימולציה ב-15.12" —
+ * which are notes ABOUT a simulation, not a simulation. Taking every non-session item
+ * painted 1.12.2026 with a red "simulation" band on a day whose only real content is a
+ * מיומנויות session, which the first cut of this screen did until calendar-check caught
+ * it. A to-do is not a day type; it still shows in the day sheet, where it belongs.
+ */
+const BAND_CATEGORY_KEYS = ['boundary', 'exam', 'off', 'special', 'makeup_day'];
+
+const SESSION_CATEGORIES = ACADEMIC_CATEGORIES.filter((c) => SESSION_CATEGORY_KEYS.includes(c.key));
+const BAND_CATEGORIES = ACADEMIC_CATEGORIES.filter((c) => BAND_CATEGORY_KEYS.includes(c.key));
+const TODO_CATEGORIES = ACADEMIC_CATEGORIES.filter(
+  (c) => !SESSION_CATEGORY_KEYS.includes(c.key) && !BAND_CATEGORY_KEYS.includes(c.key));
+
+type AcademicBand = { color: string; label: string; category: string; blocked: boolean };
+
+/**
+ * The band, from the day-TYPE items only — see BAND_CATEGORY_KEYS. Teaching moved to
+ * the fill, so a seminar no longer paints a band; a holiday, an exam window, a semester
+ * edge and a make-up day still do, and so does a Jewish holiday outside the dataset's
+ * window, in the dataset's own grey.
+ */
+function academicBand(academic: AcademicDayItem[], holiday: string | undefined): AcademicBand | null {
+  const dayTypes = academic.filter((it) => BAND_CATEGORY_KEYS.includes(it.category));
+  const marks = academicMarksFor(dayTypes);
+  const blocked = dayBlockers(dayTypes).some((b) => b.level === 'blocked');
+  if (marks.fill && marks.paint) {
+    return { color: marks.fill, label: marks.paint.label, category: marks.paint.key, blocked };
+  }
+  if (holiday) return { color: HOLIDAY_BAND, label: holiday, category: 'holiday', blocked: true };
+  return null;
 }
 
 export default function CalendarPage({ data, context, onNavigate, userName, onRefresh }: PageProps) {
@@ -174,7 +263,6 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
 
   /* The academic year is static — derive it once, not on every render. */
   const academicDayMap = useMemo(() => buildAcademicDayMap(), []);
-  const academicMarks = useMemo(() => buildAcademicMarkIndex(academicDayMap), [academicDayMap]);
   const posterMonths = useMemo(() => buildAcademicMonths(academicDayMap), [academicDayMap]);
   const outside = useMemo(() => academicItemsOutsideGrid(), []);
 
@@ -575,15 +663,16 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
               const dayEvents = eventsByDay[key] || [];
               const holiday = HEB_HOLIDAYS[key];
               const isToday = key === today;
+              const isOpen = openDay === key;
               const hasEvents = dayEvents.length > 0;
               const academic = academicDayMap.get(key) ?? [];
-              const marks = academicMarks.get(key) ?? null;
-              const fill = marks?.fill ?? null;
-              /* A pale document fill forces black ink: gold and cream are light in BOTH
-                 themes (they are the printed page's colours, not the app's), so every
-                 glyph on a filled cell is re-inked here rather than left on var(--ink). */
-              const onPaper = !!fill;
               const verdict = dayVerdict(academic);
+
+              /* THE FILL IS THE EVENTS' — see `eventStripes`. */
+              const stripes = eventStripes(dayEvents, academic);
+              const filled = stripes.length > 0;
+              /* THE UNIVERSITY'S DAY TYPE IS THE BAND — see `academicBand`. */
+              const band = academicBand(academic, holiday);
 
               return (
                 <div
@@ -591,76 +680,114 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
                   data-day-cell={key}
                   data-verdict={verdict}
                   data-lectures={lectureMarks.get(key)?.total ?? 0}
+                  data-filled={filled ? stripes.length : 0}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${longHebrewDate(key)}${hasEvents ? ` · ${dayEvents.length} אירועים` : ''}`}
+                  aria-label={`${longHebrewDate(key)}${hasEvents ? ` · ${dayEvents.length} אירועים` : ''}${band ? ` · ${band.label}` : ''}`}
                   onClick={() => setOpenDay(key)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenDay(key); } }}
                   className="h-28 border-t border-l p-2 overflow-hidden flex flex-col gap-1 relative cursor-pointer"
                   style={{
                     borderColor: 'var(--divider)',
-                    background: cellBackground(fill, isToday, holiday),
-                    color: onPaper ? ARIEL_PAPER.ink : 'var(--ink)',
-                    boxShadow: isToday ? 'inset 0 0 0 2px var(--accent)' : undefined,
+                    backgroundImage: stripeBackground(stripes),
+                    /* No tint for "today" any more: the fill now MEANS "an event is
+                       here", so a wine wash on an empty today would claim a lecture that
+                       does not exist. Today is the ring and the badge instead. */
+                    backgroundColor: 'transparent',
+                    /* Selected outranks today, and both are drawn as chrome rather than
+                       colour so neither can be confused with an event. On a filled cell
+                       they go white (with a dark outer edge when selected, so the ring
+                       survives a pale session colour); on an empty one they stay the
+                       theme's own ink and accent. */
+                    boxShadow: isOpen
+                      ? (filled ? 'inset 0 0 0 3px #fff, inset 0 0 0 5px rgba(0,0,0,0.55)' : 'inset 0 0 0 3px var(--ink)')
+                      : isToday
+                        ? (filled ? 'inset 0 0 0 3px #fff, inset 0 0 0 4px rgba(0,0,0,0.35)' : 'inset 0 0 0 2px var(--accent)')
+                        : undefined,
                   }}
                 >
-                  <div className="flex items-baseline justify-between gap-1">
+                  {/* ── The university's day type: a band across the top. Caution tape on a
+                         day it is SHUT — the one treatment that still reads "do not book
+                         here" when a strong event colour is filling the cell under it. ── */}
+                  {band && (
+                    <span
+                      data-academic-band={band.category}
+                      data-band-blocked={band.blocked ? '1' : '0'}
+                      aria-hidden="true"
+                      className="absolute top-0 left-0 right-0"
+                      style={{
+                        height: BAND_H,
+                        background: band.blocked
+                          ? `repeating-linear-gradient(45deg, ${band.color} 0 5px, rgba(0,0,0,0.55) 5px 10px)`
+                          : band.color,
+                        borderBottom: `1px solid ${ARIEL_PAPER.edge}`,
+                      }}
+                    />
+                  )}
+
+                  {/* Everything TEXTUAL sits on a near-white plate, so it is readable on
+                      any stripe — the app's dark wine/green/blue/brown and the dataset's
+                      pale pastels alike — in both themes, without guessing an ink per
+                      stripe for a date that may straddle two of them. */}
+                  <div className="flex items-start justify-between gap-1" style={{ marginTop: band ? BAND_H - 2 : 0 }}>
                     {isToday ? (
                       <span
                         className="serif text-[18px] leading-none rounded-full flex items-center justify-center shrink-0"
-                        style={{ width: 30, height: 30, background: 'var(--accent)', color: onPaper ? '#fff' : 'var(--bg)' }}
+                        style={{
+                          width: 30, height: 30, background: 'var(--accent)', color: '#fff',
+                          boxShadow: filled ? '0 0 0 2px rgba(255,255,255,0.95)' : undefined,
+                        }}
                       >
                         {day}
                       </span>
                     ) : (
                       <span
-                        className="serif leading-none shrink-0"
+                        className="serif leading-none shrink-0 rounded"
                         style={{
-                          /* On a document fill the date is BLACK, as it is on the poster.
-                             Wine on the simulation red is 3.06:1 — it scrapes past the
-                             large-text floor and nothing more; black on the same red is
-                             6.3:1. "This day has something" survives in the size and the
-                             weight, and the chip under it still carries the colour. */
-                          color: onPaper
-                            ? ARIEL_PAPER.ink
-                            : (hasEvents ? 'var(--accent)' : 'var(--ink)'),
+                          color: filled ? ARIEL_PAPER.ink : (hasEvents ? 'var(--accent)' : 'var(--ink)'),
                           fontSize: hasEvents ? '22px' : '20px',
                           fontWeight: hasEvents ? 700 : 400,
+                          background: filled ? PLATE : 'transparent',
+                          padding: filled ? '1px 5px' : 0,
                         }}
                       >
                         {day}
                       </span>
                     )}
-                    {holiday && (
-                      <span className="mono text-[9px] uppercase tracking-[0.1em] truncate max-w-[70%]" title={holiday}
-                        style={{ color: onPaper ? ARIEL_PAPER.muted : 'var(--text-soft)', opacity: onPaper ? 1 : 0.7 }}>
-                        {holiday}
+                    {/* The band's NAME, from 640px up only. A 55px cell has ~20px left
+                        beside the date, which turns "אין לימודים" into "א…" — noise that
+                        reads as a rendering fault rather than as information. On the
+                        phone the band's colour and its caution-tape hatch carry it (both
+                        named in the legend), the cell's aria-label says it in full, and
+                        the day sheet leads with it in words. */}
+                    {band && (
+                      <span className="mono text-[9px] uppercase tracking-[0.1em] truncate max-w-[62%] rounded hidden sm:inline-block"
+                        title={band.label} data-band-label={band.category}
+                        style={{
+                          color: ARIEL_PAPER.ink,
+                          background: PLATE,
+                          padding: '2px 4px',
+                          fontWeight: band.blocked ? 700 : 400,
+                        }}>
+                        {band.label}
                       </span>
                     )}
                   </div>
 
-                  {/* The academic layer's own course colours, as dots — the same marks the
-                      poster draws, so a teaching day reads the same in both views. */}
-                  {marks && marks.accents.length > 0 && (
-                    <span className="flex gap-[3px] -mt-0.5" data-academic-accents>
-                      {marks.accents.map((hex, n) => (
-                        <span key={n} className="inline-block rounded-full"
-                          style={{ width: 6, height: 6, background: hex, border: `0.5px solid ${ARIEL_PAPER.edge}` }} />
-                      ))}
-                    </span>
-                  )}
-
-                  {/* Inline preview — first 2 events. UNCHANGED in shape and ink; on a
-                      filled cell the chip gets a near-white underlay so the wine / green /
-                      blue / brown stays at full contrast instead of sinking into gold. */}
-                  <div className="flex flex-col gap-0.5 overflow-hidden">
+                  {/* ── The event titles, from 640px up. Same shape, same ink, same
+                         right bar as they have always had; on a filled cell the plate
+                         under them keeps the wine / green / blue / brown at full
+                         contrast. Below 640px a 55px cell truncates every one of them to
+                         two characters, so the phone gets a COUNT instead and the titles
+                         live one tap away, in the day sheet. ── */}
+                  <div className="hidden sm:flex flex-col gap-0.5 overflow-hidden">
                     {dayEvents.slice(0, 2).map(e => (
                       <span
                         key={e.id}
                         data-event-chip={e.type}
                         className="text-right text-[10.5px] truncate rounded px-1.5 py-0.5"
                         style={{
-                          background: onPaper ? 'rgba(255,255,255,0.90)' : eventColor(e.type) + '22',
+                          background: filled ? PLATE : eventColor(e.type) + '22',
                           color: eventColor(e.type),
                           borderRight: `2px solid ${eventColor(e.type)}`,
                         }}
@@ -669,16 +796,38 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
                       </span>
                     ))}
                     {dayEvents.length > 2 && (
-                      <span className="text-[10px] mono tracking-[0.12em]"
-                        style={{ color: onPaper ? ARIEL_PAPER.muted : 'var(--text-soft)' }}>
+                      <span className="text-[10px] mono tracking-[0.12em] rounded self-start"
+                        style={{
+                          color: filled ? ARIEL_PAPER.ink : 'var(--text-soft)',
+                          background: filled ? PLATE : 'transparent',
+                          padding: filled ? '0 4px' : 0,
+                        }}>
                         +{dayEvents.length - 2} נוספים
                       </span>
                     )}
                   </div>
 
+                  {hasEvents && (
+                    <span
+                      data-event-count={dayEvents.length}
+                      className="sm:hidden mono text-[11px] font-bold rounded-full self-start grid place-items-center"
+                      style={{
+                        minWidth: 18, height: 18, padding: '0 5px',
+                        background: filled ? PLATE : 'var(--accent)',
+                        color: filled ? ARIEL_PAPER.ink : 'var(--bg)',
+                      }}
+                    >
+                      {dayEvents.length}
+                    </span>
+                  )}
+
                   {isToday && (
-                    <span className="absolute bottom-1.5 right-2 mono text-[9px] uppercase tracking-[0.15em] font-bold"
-                      style={{ color: onPaper ? ARIEL_PAPER.ink : 'var(--accent)' }}>היום</span>
+                    <span className="absolute bottom-1.5 right-2 mono text-[9px] uppercase tracking-[0.15em] font-bold rounded"
+                      style={{
+                        color: filled ? ARIEL_PAPER.ink : 'var(--accent)',
+                        background: filled ? PLATE : 'transparent',
+                        padding: filled ? '1px 4px' : 0,
+                      }}>היום</span>
                   )}
                 </div>
               );
@@ -751,23 +900,75 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
           מקרא
         </h2>
 
+        {/* ── 1. THE FILL: what is happening on the day. ── */}
         <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
-          אירועים על הלוח
+          צבע התא — מה קורה ביום
         </div>
         <ul className="flex flex-wrap gap-x-6 gap-y-2.5 mb-6">
           {([['lecture', 'הרצאה'], ['interview', 'ראיון'], ['slot', 'מועד פנוי'], ['prep', 'הכנה']] as const).map(([t, label]) => (
             <li key={t} className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--ink)' }}>
-              <span data-legend-swatch={t} className="inline-block rounded-full"
-                style={{ width: 11, height: 11, background: eventColor(t) }} />
+              <span data-legend-swatch={t} className="inline-block rounded-[3px]"
+                style={{ width: 20, height: 14, background: eventColor(t), border: `1px solid ${ARIEL_PAPER.edge}` }} />
               {label}
+            </li>
+          ))}
+          {SESSION_CATEGORIES.map((c) => (
+            <li key={c.key} className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--ink)' }}>
+              <span data-legend-swatch={c.key} className="inline-block rounded-[3px]"
+                style={{ width: 20, height: 14, background: c.swatch, border: `1px solid ${ARIEL_PAPER.edge}` }} />
+              {c.label}
+            </li>
+          ))}
+        </ul>
+        <p className="text-[12.5px] leading-[1.7] mb-7" style={{ color: 'var(--text-soft)' }}>
+          יום שיש בו כמה סוגים נחלק לפסים אנכיים שווים — פס אחד לכל סוג, מימין לשמאל — כך שיום עם סוג אחד
+          הוא ריבוע אחיד ויום מעורב עדיין מראה כל צבע שיש בו.
+        </p>
+
+        {/* ── 2. THE BAND: what the university says the day IS. ── */}
+        <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+          הפס העליון — יום האוניברסיטה
+        </div>
+        <ul className="flex flex-wrap gap-x-6 gap-y-2.5 mb-3">
+          {BAND_CATEGORIES.map((c) => (
+            <li key={c.key} className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--ink)' }}>
+              <span data-legend-swatch={c.key} className="inline-block rounded-[3px]"
+                style={{ width: 24, height: 12, background: c.swatch, border: `1px solid ${ARIEL_PAPER.edge}` }} />
+              {c.label}
+            </li>
+          ))}
+          <li className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--ink)' }}>
+            <span data-legend-swatch="holiday" className="inline-block rounded-[3px]"
+              style={{ width: 24, height: 12, background: HOLIDAY_BAND, border: `1px solid ${ARIEL_PAPER.edge}` }} />
+            חג יהודי
+          </li>
+        </ul>
+        <ul className="flex flex-wrap gap-x-6 gap-y-2.5 mb-3">
+          <li className="inline-flex items-center gap-2 text-[13.5px] font-semibold" style={{ color: 'var(--ink)' }}>
+            <span data-legend-swatch="blocked-band" className="inline-block rounded-[3px]"
+              style={{
+                width: 24, height: 12,
+                background: `repeating-linear-gradient(45deg, ${ARIEL_PAPER.gold} 0 5px, rgba(0,0,0,0.55) 5px 10px)`,
+                border: `1px solid ${ARIEL_PAPER.edge}`,
+              }} />
+            לא לקבוע הרצאה — אין לימודים או תקופת בחינות
+          </li>
+        </ul>
+        <ul className="flex flex-wrap gap-x-6 gap-y-2.5 mb-7">
+          {TODO_CATEGORIES.map((c) => (
+            <li key={c.key} className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--text-soft)' }}>
+              <span data-legend-swatch={c.key} className="inline-block rounded-[3px]"
+                style={{ width: 20, height: 14, background: c.swatch, border: `1px solid ${ARIEL_PAPER.edge}` }} />
+              {c.label} — מופיע בכרטיס היום
             </li>
           ))}
         </ul>
 
+        {/* ── 3. The year view's own marks. ── */}
         <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
           מצב ההרצאה — הטבעת והפסים בתצוגת השנה
         </div>
-        <ul className="flex flex-wrap gap-x-6 gap-y-2.5 mb-6">
+        <ul className="flex flex-wrap gap-x-6 gap-y-2.5">
           {(['approved', 'pending', 'cancelled'] as const).map((s) => (
             <li key={s} className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--ink)' }}>
               <span
@@ -780,25 +981,11 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
           ))}
         </ul>
 
-        <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
-          לוח אוניברסיטת אריאל — רקע התא
-        </div>
-        <ul className="flex flex-wrap gap-x-6 gap-y-2.5">
-          {ACADEMIC_CATEGORIES.map((c) => (
-            <li key={c.key} className="inline-flex items-center gap-2 text-[13.5px]" style={{ color: 'var(--ink)' }}>
-              <span
-                data-legend-swatch={c.key}
-                className="inline-block rounded-[3px]"
-                style={{ width: 18, height: 14, background: c.swatch, border: `1px solid ${ARIEL_PAPER.edge}` }}
-              />
-              {c.label}
-            </li>
-          ))}
-        </ul>
-
         <p className="mt-5 text-[12.5px] leading-[1.7]" data-precedence-note style={{ color: 'var(--text-soft)' }}>
-          רקע התא הוא של הלוח האקדמי. חג יהודי מודגש ברקע אפור רק בימים שהלוח האקדמי שותק לגביהם —
-          כלומר מחוץ לשנה״ל תשפ״ז; בתוכה הלוח של האוניברסיטה הוא הקובע, ושם החג ממשיך להופיע בפינת התא.
+          צבע התא שייך לאירועים; יום האוניברסיטה עבר לפס העליון, ובימים שאין בהם לימודים או שהם בתקופת בחינות
+          הפס מסורגל — זהו הסימן ״לא לקבוע כאן״, והוא נשאר גם כשהתא מלא בצבע. חג יהודי מסומן בפס אפור רק בימים
+          שהלוח האקדמי שותק לגביהם — כלומר מחוץ לשנה״ל תשפ״ז; בתוכה הלוח של האוניברסיטה הוא הקובע. ״היום״ והיום
+          הפתוח מסומנים במסגרת בלבד, לעולם לא בצבע מילוי, כדי שלא ייקראו כאירוע.
         </p>
 
         {outside.length > 0 && (

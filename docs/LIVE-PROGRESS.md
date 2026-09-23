@@ -619,3 +619,45 @@ build clean. The full gate was **not** run — its numbered cells write to the l
   `AUDIT_BASE_URL=http://localhost:4341 node scripts/deploy-gate.mjs`. (2) not pushed, not deployed, by instruction.
   (3) The trainer-match rate over the 39 REAL lectures was never measured — production data was not read; the rule is
   proven only against fixtures. If the real rate is low, loosen `matchTrainer` in `src/lib/lectureCalendar.ts`.
+
+## 2026-09-23 08:47 IL — NOT DEPLOYED, NOT PUSHED: the month cell is coloured by the EVENT, not by the university
+- Follow-up on `fix/one-calendar`. Yariv, on the first cut: **"אני מציע שאם זו התצוגה תצבע את כל הריבוע בצבע
+  המתאים כי הנקודה לא ממש ויזיבילית"** — the academic fill owned the cell and his events were dots on top of it,
+  and the dots were not visible on his phone. The two layers have swapped places.
+- **THE FILL BELONGS TO THE EVENTS.** הרצאה (wine) · ראיון (green) · מועד פנוי (blue) · הכנה (brown), plus the
+  university's own teaching sessions in the dataset's course colours (סמינריון purple, מיומנויות light blue,
+  פרקטיקום green, סימולציה red) — a class that meets is the most booked a day can be. A day with several kinds is
+  split into **equal vertical stripes, one per kind, right to left**, so the common single-kind day is one solid
+  block and a mixed day still shows every colour it earns. Nothing is capped. 8.12.2026 is wine | red.
+- **THE UNIVERSITY'S DAY TYPE BECAME A 12px BAND** across the top: gold (תחילת/סיום סמסטר, מועדי בחינות), cream
+  (אין לימודים, הסדר מיוחד, יום השלמה), and the dataset's own grey `#BFBFBF` for a Jewish holiday outside תשפ״ז.
+- **"DO NOT BOOK HERE" IS NOT A COLOUR.** On a day the university is shut (off / exam) the band is **caution tape**
+  — a 45° hatch of the fill against near-black — which survives sitting next to a saturated event colour in a way
+  another flat pastel would not. Its label goes bold, and the day sheet still leads with the verdict in words.
+- **TODAY AND THE OPEN DAY ARE CHROME, NEVER COLOUR.** Today lost its wine wash — the fill now MEANS "something is
+  here", so tinting an empty today would claim a lecture that does not exist. Today = the wine date badge + a ring;
+  the open day = a thicker ring. On a filled cell both go white with a dark outer edge so they read on a pale
+  session pastel and on dark wine alike.
+- **ALL TEXT SITS ON A 94%-WHITE PLATE** (date, band label, event titles, היום). A date can straddle two stripes,
+  so one ink per cell cannot work. Measured 10.25:1 for the wine title on its plate; identical in dark mode,
+  because the fills do not change with the theme.
+- **430px shows colour + date + COUNT; titles and the band's name appear from 640px up.** A 55px cell truncated
+  "אין לימודים" to "א…" and "ראיון עומק בארגון" to "רא…" — noise that reads as a rendering fault. The phone gets a
+  readable count badge; the cell's `aria-label` still says the band's name in full, and the titles are one tap away
+  in the day sheet.
+- **BUG FOUND BY THE CHECK, not by review:** the band was first taken from "every academic item that is not a
+  session". The dataset has two `reminder` rows filed under `category: 'simulation'` ("לתאם החלפת שיעור: סימולציה
+  ב-15.12"), so 1.12.2026 — whose only real content is a מיומנויות session — drew a red "simulation" day-type band.
+  The band now comes from an explicit five-key list (boundary, exam, off, special, makeup_day); a to-do is not a day
+  type and still shows in the day sheet. `CAL-band-absent` pins it.
+- **Green:** `npm run test:unit` **191 passed** · `npx tsc --noEmit` clean · `npm run build` 7 pages ·
+  `node scripts/calendar-check.mjs` **42/42** (was 35; +7 for the fill/band split, the caution tape, the empty-day
+  rule, the open ring and the desktop title legibility).
+- **Screenshots (430px), regenerated:** `test-results/calendar/` — `month-430.png`, `month-430-full.png`,
+  `month-430-dark.png`, `year-430.png`, `day-sheet-both-430.png`, `day-sheet-blocked-430.png`,
+  `day-sheet-teaching-430.png`, `day-sheet-open-430.png`, plus `day-sheet-exams-1180.png`.
+- **STILL OPEN:** the FULL gate has still NOT been run on this branch (the coordinator is running it). A dev server
+  for this worktree is on **port 4341** — 4321 belongs to `~/Code/practicum-v2` — so it needs
+  `AUDIT_BASE_URL=http://localhost:4341`. Snapshot-row cleanup count therefore still unknown. Not pushed, not
+  deployed. The count badge counts the APP's events only, not academic sessions — a red class day shows colour but
+  no number; revisit if that reads as inconsistent to him.
