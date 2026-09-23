@@ -19,6 +19,11 @@ type Props = {
   years: string[];
   defaultCourseId?: string;
   defaultYear?: string;
+  /** Pre-fill the date of a NEW lecture (ignored when editing an existing one).
+   *  Set by the academic-year screen, which books a date first and the rest after —
+   *  so "add a lecture on this day" opens this same editor, already on that day,
+   *  rather than a second form that would have to be kept in step with this one. */
+  defaultDate?: string;
   typeOptions?: string[];     // merged presets + existing data
   statusOptions?: string[];   // merged presets + existing data
   /** Every lecture — read only for the course's usual length, to suggest an end time. */
@@ -29,7 +34,7 @@ type Props = {
 };
 
 export default function LectureEditor({
-  lecture, courses, years, defaultCourseId, defaultYear, typeOptions, statusOptions, lectures, onSave, onDelete, onClose,
+  lecture, courses, years, defaultCourseId, defaultYear, defaultDate, typeOptions, statusOptions, lectures, onSave, onDelete, onClose,
 }: Props) {
   const types = Array.from(new Set([...(typeOptions || []), ...DEFAULT_TYPES])).filter(Boolean);
   const statuses = Array.from(new Set([...(statusOptions || []), ...DEFAULT_STATUSES])).filter(Boolean);
@@ -41,7 +46,7 @@ export default function LectureEditor({
     semester: lecture?.semester || 'ב׳',
     courseId: lecture?.courseId || (defaultCourseId !== '__all__' ? defaultCourseId : ''),
     year: lecture?.year || (defaultYear !== '__all__' ? defaultYear : ''),
-    date: lecture?.date || '',
+    date: lecture?.date || defaultDate || '',
     startTime: lecture?.startTime || '',
     endTime: lecture?.endTime || '',
     topic: lecture?.topic || '',
