@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: 'practicum@yarivitzkovich.org',
         to: [candidate.email],
-        bcc: [supervisorEmail],
+        cc: [supervisorEmail],
         subject: `ברכות — התקבלת לתכנית הפרקטיקום`,
         html,
       }),
