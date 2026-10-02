@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { normalizeSemester } from '../lib/semester';
 import type { PageProps } from './pageShared';
 import type { Course, Employer } from '../lib/supabase';
 import { btnPrimary, btnSecondary, btnTab, btnGhost, btnDanger, btnSmall } from '../lib/design';
@@ -443,7 +444,7 @@ async function doSeed(
       courseId: courseId || '',
       courseName: raw.courseName,
       year: raw.year,
-      semester: raw.semester,
+      semester: normalizeSemester(raw.semester),
       topic: raw.topic,
       lecturer: raw.lecturer,
       lecturerEmail: raw.lecturerEmail,
