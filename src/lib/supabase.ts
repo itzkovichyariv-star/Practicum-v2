@@ -329,6 +329,9 @@ export type PracticumData = {
   dispatches?: Dispatch[];
   employerApprovalRequests?: EmployerApprovalRequest[];
   placementSettings?: PlacementSettings;
+  // The calendar's לתאם items he has closed: key (see lib/calendarCell.ts) → who/when,
+  // and whether it was coordinated or simply no longer needed.
+  calendarDone?: Record<string, { status: 'done' | 'not_needed'; by: string; at: string }>;
 };
 
 export type CloudSnapshot = {

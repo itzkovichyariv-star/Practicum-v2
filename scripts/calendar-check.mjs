@@ -220,82 +220,47 @@ console.log('PHONE (430px) — the month view');
   check('CAL-tap — no tap target under 44px on the month view', small.length === 0,
     small.length ? small.slice(0, 4).map((s) => `${s.what} ${s.w}×${s.h}`).join(' · ') : 'day cells and the view toggle all clear it');
 
-  // ── CAL-event-fill: the EVENTS own the whole cell ─────────────────────────
-  // Yariv: "תצבע את כל הריבוע בצבע המתאים כי הנקודה לא ממש ויזיבילית". 8.12 carries the
-  // simulation session AND a guest lecture, so it must be TWO stripes across the whole
-  // cell — not a dot, and not one colour hiding the other.
+  // ── The month cell, Yariv 2026-10-02: Ariel's paper. THE FILL is the kind of day
+  //    (one of his three courses, named; a day off, named; a מועד), ONE WORD at the
+  //    bottom says what to know or do, and a red ring means "move it". ──
   await openDayInMonth(pg, SIMULATION_1);
   await pg.keyboard.press('Escape');
   await pg.waitForTimeout(150);
-  const fills = await pg.evaluate((iso) => {
+  const sim = await pg.evaluate((iso) => {
     const e = document.querySelector(`[data-day-cell="${iso}"]`);
     if (!e) return null;
-    const cs = getComputedStyle(e);
-    const r = e.getBoundingClientRect();
-    return { image: cs.backgroundImage, stripes: e.getAttribute('data-filled'),
-             w: Math.round(r.width), h: Math.round(r.height) };
-  }, SIMULATION_1);
-  check('CAL-event-fill — 8.12 fills the WHOLE cell: a lecture stripe and the simulation stripe',
-    fills?.stripes === '2'
-      && /linear-gradient/.test(fills.image)
-      && fills.image.includes('rgb(122, 30, 43)')     // הרצאה
-      && fills.image.includes('rgb(224, 102, 102)'),  // סימולציה
-    `data-filled=${fills?.stripes} over ${fills?.w}\u00d7${fills?.h}px — ${String(fills?.image).slice(0, 120)}`);
-
-  // a single-kind day is ONE solid block, which is what "colour the whole square" means
-  const solid = await pg.evaluate(() => {
-    const e = [...document.querySelectorAll('[data-day-cell][data-filled="1"]')][0];
-    return e ? { iso: e.getAttribute('data-day-cell'), image: getComputedStyle(e).backgroundImage } : null;
-  });
-  check('CAL-event-fill-solid — a day with one kind of event is a single solid block of colour',
-    !!solid && /linear-gradient/.test(solid.image) && solid.image.split('rgb').length === 3,
-    solid ? `${solid.iso}: ${solid.image.slice(0, 100)}` : 'no single-kind day in this month');
-
-  // ── CAL-events-kept: at 430px the cell is colour + date + COUNT. A 55px cell
-  //    truncates every title to two characters, so the titles move to the day sheet
-  //    and the phone gets a number it can actually read. ──
-  const marks = await pg.evaluate((iso) => {
-    const cell = document.querySelector(`[data-day-cell="${iso}"]`);
-    const badge = cell?.querySelector('[data-event-count]');
-    const chip = cell?.querySelector('[data-event-chip]');
+    const chip = e.querySelector('[data-chip]');
     return {
-      count: badge?.getAttribute('data-event-count') ?? null,
-      countVisible: badge ? getComputedStyle(badge).display !== 'none' : false,
-      countText: badge?.innerText.trim() ?? null,
-      chipInDom: !!chip,
-      chipHidden: chip ? getComputedStyle(chip.parentElement).display === 'none' : null,
-      lectures: cell?.getAttribute('data-lectures'),
-      verdict: cell?.getAttribute('data-verdict'),
+      fill: e.getAttribute('data-fill'), course: e.getAttribute('data-course'),
+      bg: getComputedStyle(e).backgroundColor,
+      label: e.querySelector('[data-cell-label]')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+      simulation: !!e.querySelector('[data-simulation]'),
+      chip: chip ? { kind: chip.getAttribute('data-chip'), text: chip.innerText.trim(),
+                     visible: getComputedStyle(chip).display !== 'none',
+                     clipped: chip.scrollWidth > chip.clientWidth + 1 } : null,
+      lectures: e.getAttribute('data-lectures'),
     };
   }, SIMULATION_1);
-  check('CAL-events-kept — at 430px the cell carries a readable event COUNT, not a truncated title',
-    marks.count === '1' && marks.countVisible && marks.countText === '1'
-      && marks.chipInDom && marks.chipHidden === true && marks.lectures === '1',
-    `count=${marks.countText} (visible=${marks.countVisible}), titles hidden at this width=${marks.chipHidden}, data-lectures=${marks.lectures}`);
+  check('CAL-event-fill — 8.12 is painted as its COURSE, named, with the simulation mark',
+    sim?.fill === 'course' && sim.course === 'skills' && sim.bg === 'rgb(220, 234, 247)'
+      && sim.label === 'מיומנויות ייעוץ' && sim.simulation,
+    JSON.stringify(sim));
+  check('CAL-event-fill-solid — the course is written in full, not left to a colour',
+    !!sim?.label && sim.label.length > 4, `label="${sim?.label}"`);
+  check('CAL-events-kept — at 430px the guest lecture is ONE readable word, not a truncated title',
+    !!sim?.chip && sim.chip.visible && !sim.chip.clipped && sim.chip.text === 'ממתין' && sim.lectures === '1',
+    JSON.stringify(sim?.chip));
 
-  // ── CAL-band: the university's day type moved to a band, and "do not book here"
-  //    is CAUTION TAPE, which survives sitting next to a saturated event colour. ──
-  const band = await pg.evaluate(() => {
-    const walk = (iso) => {
-      const c = document.querySelector(`[data-day-cell="${iso}"]`);
-      const b = c?.querySelector('[data-academic-band]');
-      if (!b) return null;
-      const cs = getComputedStyle(b);
-      const cr = c.getBoundingClientRect(), br = b.getBoundingClientRect();
-      return { category: b.getAttribute('data-academic-band'), blocked: b.getAttribute('data-band-blocked'),
-               image: cs.backgroundImage, color: cs.backgroundColor,
-               h: Math.round(br.height), fullWidth: Math.abs(br.width - cr.width) <= 1,
-               aria: c.getAttribute('aria-label') };
-    };
-    return { hanukkah: walk('2026-12-04'), plain: walk('2026-12-01') };
+  const special = await pg.evaluate(() => {
+    const c = document.querySelector('[data-day-cell="2026-12-04"]');
+    const p = document.querySelector('[data-day-cell="2026-12-01"]');
+    return { mark: c?.querySelector('[data-special]')?.getAttribute('data-special') ?? null,
+             plain: p?.querySelector('[data-special]') ? 'has' : null };
   });
-  check('CAL-band-present — a university day type draws a full-width band, and names itself to the reader',
-    !!band.hanukkah && band.hanukkah.fullWidth && band.hanukkah.h >= 10
-      && band.hanukkah.category === 'special'
-      && /הסדר מיוחד/.test(String(band.hanukkah.aria)),
-    band.hanukkah ? `${band.hanukkah.category} band ${band.hanukkah.h}px, full width=${band.hanukkah.fullWidth}, aria="${String(band.hanukkah.aria).slice(0, 70)}"` : 'no band on 4.12');
-  check('CAL-band-absent — a day the university says nothing about draws no band at all',
-    band.plain === null, band.plain ? `unexpected ${band.plain.category} band` : 'no band, as intended');
+  check('CAL-band-present — a special-arrangement day carries its ⏱ mark',
+    special.mark === '⏱', `4.12 mark=${special.mark}`);
+  check('CAL-band-absent — a day the university says nothing special about carries none',
+    special.plain === null, special.plain ? 'unexpected mark on 1.12' : 'none, as intended');
 
   await pg.screenshot({ path: join(SHOTS, 'month-430.png'), fullPage: false });
   // the whole screen in one image — grid, legend and month list — which is what
@@ -315,41 +280,30 @@ console.log('\nTHE BLOCKED SIGNAL (430px)');
   await pg.waitForTimeout(150);
   const shut = await pg.evaluate((iso) => {
     const c = document.querySelector(`[data-day-cell="${iso}"]`);
-    const b = c?.querySelector('[data-academic-band]');
+    const chip = c?.querySelector('[data-chip]');
     return {
       verdict: c?.getAttribute('data-verdict'),
-      filled: c?.getAttribute('data-filled'),
-      cellImage: getComputedStyle(c).backgroundImage,
-      bandBlocked: b?.getAttribute('data-band-blocked') ?? null,
-      bandImage: b ? getComputedStyle(b).backgroundImage : null,
-      aria: c?.getAttribute('aria-label') ?? null,
-      labelCategory: c?.querySelector('[data-band-label]')?.getAttribute('data-band-label') ?? null,
-      labelWeight: c?.querySelector('[data-band-label]') ? getComputedStyle(c.querySelector('[data-band-label]')).fontWeight : null,
+      fill: c?.getAttribute('data-fill'),
+      conflict: c?.getAttribute('data-conflict'),
+      ring: c ? getComputedStyle(c).boxShadow : null,
+      label: c?.querySelector('[data-cell-label]')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+      chip: chip ? { kind: chip.getAttribute('data-chip'), text: chip.innerText.trim() } : null,
     };
   }, PESACH);
-  check('CAL-blocked-band — a shut day keeps its event fill AND is hatched as caution tape',
-    shut.verdict === 'blocked'
-      && shut.filled !== '0'
-      && shut.bandBlocked === '1'
-      && /repeating-linear-gradient/.test(String(shut.bandImage)),
-    `verdict=${shut.verdict}, stripes=${shut.filled}, band blocked=${shut.bandBlocked}, ${String(shut.bandImage).slice(0, 90)}`);
-  check('CAL-blocked-label — and it names which kind of shut day it is, in bold from 640px up',
-    shut.labelCategory === 'off' && Number(shut.labelWeight) >= 700 && /אין לימודים/.test(String(shut.aria)),
-    `category=${shut.labelCategory} weight=${shut.labelWeight} aria="${String(shut.aria).slice(0, 70)}"`);
+  check('CAL-blocked-band — a lecture on a shut day is ringed red and says להזיז',
+    shut.verdict === 'blocked' && shut.fill === 'off' && shut.conflict === '1'
+      && /211, 47, 47/.test(String(shut.ring)) && shut.chip?.kind === 'move' && shut.chip.text === 'להזיז',
+    JSON.stringify(shut));
+  check('CAL-blocked-label — and the day says WHICH day off it is, by name',
+    shut.label === 'חופשת פסח', `label="${shut.label}"`);
 
-  // ── CAL-today-chrome: today and the open day are chrome, never a colour ────
-  const chrome = await pg.evaluate(() => {
-    const cells = [...document.querySelectorAll('[data-day-cell]')];
-    const filled = cells.find((c) => c.getAttribute('data-filled') !== '0');
-    const empty = cells.find((c) => c.getAttribute('data-filled') === '0');
-    return {
-      emptyHasNoFill: empty ? getComputedStyle(empty).backgroundImage === 'none'
-        && getComputedStyle(empty).backgroundColor === 'rgba(0, 0, 0, 0)' : null,
-      filledIso: filled?.getAttribute('data-day-cell') ?? null,
-    };
+  const empty = await pg.evaluate(() => {
+    const c = [...document.querySelectorAll('[data-day-cell][data-fill="none"]')]
+      .find((e) => e.getAttribute('data-chips') === '');
+    return c ? { bg: getComputedStyle(c).backgroundColor, ring: getComputedStyle(c).boxShadow } : null;
   });
-  check('CAL-empty-day-uncoloured — a day with nothing on it takes no fill at all',
-    chrome.emptyHasNoFill === true, `empty cell painted: ${!chrome.emptyHasNoFill}`);
+  check('CAL-empty-day-uncoloured — a day with nothing on it is plain white paper',
+    !!empty && empty.bg === 'rgb(255, 255, 255)', JSON.stringify(empty));
 
   // the open day must be unmistakable even though the fill is spoken for
   await pg.click(`[data-day-cell="${PESACH}"]`);
@@ -409,6 +363,28 @@ console.log('\nTHE DAY SHEET (430px) — teaching · guests · who the lecturer 
   check('CAL-add-lecture — the sheet opens the app\'s OWN lecture editor, pre-filled with the date',
     editor.date === PESACH && editor.isNew && editor.createBtn,
     `date field = ${editor.date}, "הרצאה חדשה" = ${editor.isNew}`);
+
+  // ── CAL-save-warns: "צריך להתריע עליה כבר בנסיון לשמור אותה" (Yariv 2026-10-02).
+  //    The editor says so the moment the date is a shut day, and asks before saving.
+  const warn = await pg.evaluate(() => document.querySelector('[data-date-blocked]')?.innerText.replace(/\s+/g, ' ').trim() || null);
+  check('CAL-save-warns — the editor warns as soon as the chosen date is a shut day',
+    !!warn && warn.includes('חופשת פסח'), `"${warn}"`);
+  let asked = null;
+  pg.once('dialog', (d) => { asked = d.message(); d.dismiss(); });
+  await pg.fill('input[placeholder="שם מלא"]', 'מרצה בדיקה').catch(() => {});
+  const inputs = await pg.$$('form input');
+  for (const el of inputs) {
+    const ph = await el.getAttribute('placeholder');
+    if (ph && /05X|טלפון/.test(ph)) await el.fill('0500000000');
+    if (ph && /@|מייל/.test(ph)) await el.fill('t@example.com');
+  }
+  await pg.fill('#lecture-start-time', '17:00');
+  await pg.fill('#lecture-end-time', '19:00');
+  await pg.click('button[type="submit"]');
+  await pg.waitForTimeout(400);
+  check('CAL-save-asks — saving on a shut day asks first, and cancelling saves nothing',
+    !!asked && asked.includes('לשמור בכל זאת') && !!(await pg.$('#lecture-start-time')),
+    `dialog="${String(asked).slice(0, 80)}"`);
   await ctx.close();
 }
 
@@ -485,10 +461,14 @@ console.log('\nYEAR VIEW + CONFLICTS + LEGEND (430px)');
     const b = document.querySelector('[data-conflict-banner]');
     if (!b) return null;
     return { text: b.innerText.replace(/\s+/g, ' ').trim(), rows: b.querySelectorAll('li').length,
+             classRows: b.querySelectorAll('[data-class-conflict]').length,
              top: Math.round(b.getBoundingClientRect().top) };
   });
-  check('CAL-conflict-banner — the two misplaced lectures are listed on arrival',
-    !!banner && banner.rows === 2 && banner.text.includes('חופשת פסח') && banner.text.includes('בחינות'),
+  // two misplaced lectures, plus the one CLASS of his that falls on his own vacation
+  // (פרקטיקום ייעוץ, Friday 20.11, inside חופשה באילת 18–21.11).
+  check('CAL-conflict-banner — the misplaced lectures and the class to move are listed on arrival',
+    !!banner && banner.rows === 3 && banner.classRows === 1 && banner.text.includes('חופשת פסח')
+      && banner.text.includes('בחינות') && banner.text.includes('חופשה באילת'),
     banner ? `${banner.rows} rows at y=${banner.top}: "${banner.text.slice(0, 100)}"` : 'no banner');
   check('CAL-conflict-cancelled-excluded — the cancelled lecture on פסח is NOT called a conflict',
     !!banner && !banner.text.includes('מפגש שבוטל'),
@@ -547,21 +527,17 @@ console.log('\nYEAR VIEW + CONFLICTS + LEGEND (430px)');
       precedence: els[0]?.querySelector('[data-precedence-note]')?.innerText.replace(/\s+/g, ' ').trim() || null,
     };
   });
-  const needed = ['lecture', 'interview', 'slot', 'prep',
-    'approved', 'pending', 'cancelled',
-    'off', 'boundary', 'makeup_day', 'simulation', 'skills', 'practicum', 'seminar', 'todo', 'exam', 'special',
-    // the two the fill/band split added: the holiday grey and the caution tape
-    'holiday', 'blocked-band'];
+  // Yariv 2026-10-02: his three courses, Ariel's two highlights and the semester edge,
+  // and the four words — מאושר / לתאם / ממתין / להזיז.
+  const needed = ['skills', 'hr', 'consult', 'off', 'exam', 'edge', 'approved', 'todo', 'notApproved', 'move'];
   const missing = needed.filter((k) => !legend.swatches.includes(k));
-  check('CAL-legend — ONE legend, and every colour on either layer has a label',
+  check('CAL-legend — ONE legend, and every colour and word on the grid has a label',
     legend.count === 1 && missing.length === 0,
     missing.length ? `${legend.count} legends, missing: ${missing.join(', ')}` : `1 legend, ${legend.swatches.length} swatches, all named`);
-  check('CAL-precedence-stated — the fill-vs-band rule is written on the screen',
+  check('CAL-precedence-stated — the one rule is written on the screen',
     !!legend.precedence
-      && legend.precedence.includes('צבע התא שייך לאירועים')
-      && legend.precedence.includes('מסורגל')
-      && legend.precedence.includes('אפור')
-      && legend.precedence.includes('תשפ״ז'),
+      && legend.precedence.includes('צבע היום')
+      && legend.precedence.includes('המילה בתחתית'),
     legend.precedence ? `"${legend.precedence.slice(0, 110)}"` : 'no precedence note');
 
   await ctx.close();
@@ -620,19 +596,15 @@ console.log('\nDARK MODE (430px)');
   await pg.waitForTimeout(150);
   const darkCell = await pg.evaluate((iso) => {
     const e = document.querySelector(`[data-day-cell="${iso}"]`);
+    const sheet = document.querySelector('[data-ariel-sheet]');
     if (!e) return null;
-    const date = e.querySelector('[data-band-label]')?.previousElementSibling
-      || e.querySelector('span.serif');
-    const ds = date ? getComputedStyle(date) : null;
-    return { image: getComputedStyle(e).backgroundImage, stripes: e.getAttribute('data-filled'),
-             dateInk: ds?.color ?? null, datePlate: ds?.backgroundColor ?? null };
+    return { cellBg: getComputedStyle(e).backgroundColor, cellInk: getComputedStyle(e).color,
+             sheetBg: sheet ? getComputedStyle(sheet).backgroundColor : null };
   }, SIMULATION_1);
-  check('CAL-dark-month-fill — the event fill is identical in dark mode, and the date keeps its plate',
-    darkCell?.stripes === '2'
-      && darkCell.image.includes('rgb(224, 102, 102)')
-      && darkCell.dateInk === 'rgb(0, 0, 0)'
-      && /255, 255, 255/.test(String(darkCell.datePlate)),
-    `stripes=${darkCell?.stripes}, date ink ${darkCell?.dateInk} on plate ${darkCell?.datePlate}`);
+  check('CAL-dark-month-fill — the month sheet stays Ariel paper in dark mode: same course tint, black ink',
+    darkCell?.cellBg === 'rgb(220, 234, 247)' && darkCell.cellInk === 'rgb(0, 0, 0)'
+      && darkCell.sheetBg === 'rgb(255, 255, 255)',
+    JSON.stringify(darkCell));
   await pg.screenshot({ path: join(SHOTS, 'month-430-dark.png'), fullPage: false });
   await ctx.close();
 }
@@ -651,7 +623,7 @@ console.log('\nDESKTOP (1180px)');
   await pg.waitForTimeout(150);
   const chip = await pg.evaluate((iso) => {
     const cell = document.querySelector(`[data-day-cell="${iso}"]`);
-    const c = cell?.querySelector('[data-event-chip]');
+    const c = cell?.querySelector('[data-chip]');
     if (!c) return null;
     const lum = (rgb) => {
       const [r, g, b] = rgb.match(/\d+/g).slice(0, 3).map(Number).map((v) => {
@@ -663,15 +635,15 @@ console.log('\nDESKTOP (1180px)');
     const cs = getComputedStyle(c);
     const L1 = lum(cs.backgroundColor), L2 = lum(cs.color);
     return {
-      type: c.getAttribute('data-event-chip'),
-      shown: getComputedStyle(c.parentElement).display !== 'none',
+      type: c.getAttribute('data-chip'),
+      shown: getComputedStyle(c).display !== 'none',
       text: c.innerText.trim(),
       bg: cs.backgroundColor, fg: cs.color,
       contrast: +(((Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05)).toFixed(2)),
     };
   }, SIMULATION_1);
-  check('CAL-chip-legible — at 1180px the event title is shown, untruncated, and clears 4.5:1 on the fill',
-    !!chip && chip.shown && chip.contrast >= 4.5 && chip.text.length > 4 && !chip.text.endsWith('…'),
+  check('CAL-chip-legible — at 1180px the chip says its word AND what it is about, at 4.5:1 or better',
+    !!chip && chip.shown && chip.contrast >= 4.5 && chip.text.startsWith('ממתין') && chip.text.includes('ראיון עומק'),
     chip ? `"${chip.text}" — ${chip.fg} on ${chip.bg} = ${chip.contrast}:1` : 'no chip on the simulation day');
 
   await openDayInMonth(pg, EXAMS);
