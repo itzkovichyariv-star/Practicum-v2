@@ -49,7 +49,6 @@ import {
   type AcademicMonth,
 } from '../lib/academicCalendar';
 import {
-  LECTURE_STATE_LABEL,
   buildLectureDayMap,
   buildLectureMarkIndex,
   daySchedulingReport,
@@ -71,6 +70,7 @@ import {
   cellModel,
   sessionConflicts,
   type CellChip,
+  type CellModel,
   type DoneMap,
   TODO_LEAD_DAYS,
   type TodoItem,
@@ -98,9 +98,6 @@ type CalendarView = 'month' | 'year';
 const HEB_DAYS = ACADEMIC_WEEKDAY_LABELS;
 const HEB_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
-/* One-handed at 430px: 430 − 32 (page gutter) − 12 (card padding) = 386 across seven
- * columns ⇒ 55px each, over the 44px minimum. */
-const CELL_MIN = 52;
 
 /**
  * Jewish holidays, as a FALLBACK layer only.
@@ -423,6 +420,22 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
     return { move, todo };
   }, [year, month, classConflicts, conflicts, todoMap, done]);
 
+  /** One day's model — the SAME for the month grid and the year view. */
+  function modelFor(key: string): CellModel {
+    const academic = academicDayMap.get(key) ?? [];
+    return cellModel({
+      academic,
+      lectures: lectureDayMap.get(key) ?? [],
+      todos: todoMap.get(key) ?? [],
+      done,
+      other: (eventsByDay[key] || [])
+        .filter((e) => e.type !== 'lecture')
+        .map((e) => ({ type: e.type as 'interview' | 'slot' | 'prep', title: e.title })),
+      /* The Jewish-holiday fallback speaks only where the Ariel data is silent. */
+      holiday: academic.length === 0 ? HEB_HOLIDAYS[key] : undefined,
+    });
+  }
+
   function goPrev() { setCursor(new Date(year, month - 1, 1)); }
   function goNext() { setCursor(new Date(year, month + 1, 1)); }
   function goToday() { setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); }
@@ -486,7 +499,7 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
   }, [courses, data.lectures, data.academicYears]);
 
   return (
-    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28" data-calendar-page data-calendar-view={view}>
+    <main className="max-w-[1200px] mx-auto px-2 sm:px-10 pt-14 pb-28" data-calendar-page data-calendar-view={view}>
 
       <section className="pt-4 pb-10 border-b mb-8" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">VI · לוח שנה</div>
@@ -607,7 +620,7 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
         <section className="mb-12" data-month-grid={`${year}-${String(month + 1).padStart(2, '0')}`}>
           {/* Ariel's paper: white sheet, separate rounded days, black serif dates — the
               printed calendar he called elegant. Fixed colours in both themes. */}
-          <div className="grid grid-cols-7 gap-[3px] sm:gap-1.5 rounded-2xl p-1.5 sm:p-2.5"
+          <div className="grid grid-cols-7 gap-[2px] sm:gap-1.5 rounded-2xl p-1 sm:p-2.5"
             data-ariel-sheet
             style={{ background: ARIEL_PAPER.paper, border: `1px solid ${ARIEL_PAPER.edge}`, boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
             {HEB_DAYS.map(d => (
@@ -617,104 +630,12 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
             ))}
             {cells.map((day, i) => {
               if (day === null) return <div key={i} aria-hidden="true" />;
-              const cellDate = new Date(year, month, day);
-              const key = dayKey(cellDate);
-              const dayEvents = eventsByDay[key] || [];
-              const academic = academicDayMap.get(key) ?? [];
-              const isToday = key === today;
-              const isOpen = openDay === key;
-              const verdict = dayVerdict(academic);
-              const model = cellModel({
-                academic,
-                lectures: lectureDayMap.get(key) ?? [],
-                todos: todoMap.get(key) ?? [],
-                done,
-                other: dayEvents
-                  .filter((e) => e.type !== 'lecture')
-                  .map((e) => ({ type: e.type as 'interview' | 'slot' | 'prep', title: e.title })),
-                /* The Jewish-holiday fallback speaks only where the Ariel data is silent. */
-                holiday: academic.length === 0 ? HEB_HOLIDAYS[key] : undefined,
-              });
-              const cs = model.course ? COURSE_STYLE[model.course] : null;
-              const fill = model.fill === 'course' && cs ? cs.tint
-                : model.fill === 'off' ? DAY_FILL.off
-                : model.fill === 'exam' ? DAY_FILL.exam
-                : ARIEL_PAPER.paper;
-              const rings = [
-                model.conflict ? 'inset 0 0 0 3px #D32F2F' : '',
-                isOpen ? '0 0 0 2px #1A1A1A' : isToday ? '0 0 0 2px var(--accent)' : '',
-              ].filter(Boolean).join(', ');
-              const [first, ...rest] = model.chips;
-
+              const key = dayKey(new Date(year, month, day));
               return (
-                <div
-                  key={i}
-                  data-day-cell={key}
-                  data-verdict={verdict}
-                  data-lectures={lectureMarks.get(key)?.total ?? 0}
-                  data-fill={model.fill}
-                  data-course={model.course ?? ''}
-                  data-conflict={model.conflict ? '1' : '0'}
-                  data-chips={model.chips.map((c) => c.kind).join(',')}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={[longHebrewDate(key), model.label, ...model.chips.map((c) => `${c.text}${c.detail ? ` — ${c.detail}` : ''}`)]
-                    .filter(Boolean).join(' · ')}
-                  onClick={() => setOpenDay(key)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenDay(key); } }}
-                  className="relative flex flex-col cursor-pointer overflow-hidden rounded-[7px] sm:rounded-lg p-[3px] sm:p-1.5 min-h-[80px] sm:min-h-[108px]"
-                  style={{
-                    background: fill,
-                    color: ARIEL_PAPER.ink,
-                    border: `1px solid ${ARIEL_PAPER.rule}`,
-                    borderRight: cs ? `3px solid ${cs.strong}` : undefined,
-                    borderTop: model.semesterEdge ? `5px solid ${DAY_FILL.exam}` : undefined,
-                    boxShadow: rings || undefined,
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-1">
-                    <span
-                      className="serif leading-none shrink-0 text-[17px] sm:text-[20px]"
-                      style={isToday
-                        ? { background: 'var(--accent)', color: '#fff', borderRadius: 999, padding: '2px 5px' }
-                        : { color: ARIEL_PAPER.ink }}
-                    >
-                      {day}
-                    </span>
-                    {model.special && (
-                      <span data-special={model.special} className="text-[12px] sm:text-[14px] leading-none"
-                        style={{ color: ARIEL_PAPER.muted }}
-                        title={model.special === '↻' ? 'יום השלמה — מתכונת של יום אחר' : 'יום מיוחד — שינוי בשעות'}>
-                        {model.special}
-                      </span>
-                    )}
-                  </div>
-
-                  {model.label && (
-                    <div data-cell-label className="font-bold leading-[1.15] mt-0.5 text-[9.5px] sm:text-[13px] tracking-[-0.2px]">
-                      {model.label}
-                    </div>
-                  )}
-                  {model.simulation && (
-                    <div data-simulation className="leading-none mt-0.5 text-[17px] sm:text-[20px]" aria-label="סימולציה" title="סימולציה">🎭</div>
-                  )}
-
-                  <div className="mt-auto flex flex-col gap-0.5 pt-0.5">
-                    {first && <Chip chip={first} />}
-                    {rest.slice(0, 2).map((c, j) => <Chip key={j} chip={c} desktopOnly />)}
-                    {rest.length > 0 && (
-                      <span data-more-chips={rest.length} className="sm:hidden text-center text-[9px] font-bold leading-none"
-                        dir="ltr" style={{ color: ARIEL_PAPER.muted }}>
-                        +{rest.length}
-                      </span>
-                    )}
-                    {rest.length > 2 && (
-                      <span className="hidden sm:block text-[10.5px] font-bold" style={{ color: ARIEL_PAPER.muted }}>
-                        +{rest.length - 2} נוספים
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <DayCell key={i} iso={key} day={day} model={modelFor(key)}
+                  verdict={dayVerdict(academicDayMap.get(key) ?? [])}
+                  lectures={lectureMarks.get(key)?.total ?? 0}
+                  isToday={key === today} isOpen={openDay === key} onOpen={setOpenDay} />
               );
             })}
           </div>
@@ -766,6 +687,7 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
                   month={m}
                   academicDayMap={academicDayMap}
                   lectureMarks={lectureMarks}
+                  modelFor={modelFor}
                   today={today}
                   openDay={openDay}
                   onOpenDay={setOpenDay}
@@ -821,18 +743,6 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
           <li className="inline-flex items-center gap-2"><span className="text-[14px]">⏱</span>יום מיוחד — שינוי בשעות</li>
           <li className="inline-flex items-center gap-2"><span className="text-[14px]">↻</span>יום השלמה — מתכונת של יום אחר</li>
         </ul>
-        {view === 'year' && (
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 mt-3 text-[13px]" style={{ color: 'var(--ink)' }}>
-            <li style={{ color: 'var(--text-soft)' }}>בתצוגת השנה, הטבעת סביב יום היא הרצאה:</li>
-            {(['approved', 'pending', 'cancelled'] as const).map((st) => (
-              <li key={st} className="inline-flex items-center gap-2">
-                <span data-legend-swatch={st} className="inline-block rounded-[3px]"
-                  style={{ width: 18, height: 10, background: lectureColor(st), border: `1px solid ${ARIEL_PAPER.edge}` }} />
-                {LECTURE_STATE_LABEL[st]}
-              </li>
-            ))}
-          </ul>
-        )}
         <p className="mt-3 text-[12.5px]" data-precedence-note style={{ color: 'var(--text-soft)' }}>
           צבע היום = מה קורה בו · המילה בתחתית = מה צריך לדעת או לעשות · לחיצה על יום פותחת את כל הפרטים.
         </p>
@@ -932,99 +842,37 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
 /* ══════════════════════ one poster month ══════════════════════ */
 
 function PosterMonth({
-  month, academicDayMap, lectureMarks, today, openDay, onOpenDay,
+  month, academicDayMap, lectureMarks, modelFor, today, openDay, onOpenDay,
 }: {
   month: AcademicMonth;
   academicDayMap: Map<string, AcademicDayItem[]>;
   lectureMarks: Map<string, LectureDayMark>;
+  modelFor: (iso: string) => CellModel;
   today: string;
   openDay: string | null;
   onOpenDay: (iso: string) => void;
 }) {
+  /* The year is twelve of the SAME month grids — one look, one set of words
+     (Yariv 2026-10-02: the year view had kept the old colours and layout). */
   return (
     <div data-month={month.key}>
       <div className="serif text-[20px] text-center mb-2.5" style={{ color: ARIEL_PAPER.ink }}>
         {month.label}
       </div>
-      <div className="grid grid-cols-7" style={{ gap: 2 }}>
+      <div className="grid grid-cols-7 gap-[2px] sm:gap-1.5">
         {ACADEMIC_WEEKDAY_LABELS.map((d) => (
-          <div key={d} className="mono text-[11px] font-bold text-center pb-1"
-            style={{ color: ARIEL_PAPER.muted }}>
+          <div key={d} className="serif text-center text-[13px] pb-1" style={{ color: ARIEL_PAPER.muted }}>
             {d}
           </div>
         ))}
         {month.cells.map((cell) => {
-          if (!cell.inMonth) {
-            return <div key={cell.iso} style={{ minHeight: CELL_MIN }} aria-hidden="true" />;
-          }
-          const lm = lectureMarks.get(cell.iso);
-          const items = academicDayMap.get(cell.iso) ?? [];
-          const verdict = dayVerdict(items);
-          const isToday = cell.iso === today;
-          const isOpen = cell.iso === openDay;
-
-          /* The lecture ring is what lifts a booked day off the paper. Amber the
-             moment anything on the day is still unapproved — chasing those is the
-             actual job, so "something here needs me" outranks "something here is
-             settled" on a single cell. */
-          const ring = lm
-            ? (lm.hasPending ? lectureColor('pending') : lm.approved > 0 ? lectureColor('approved') : lectureColor('cancelled'))
-            : null;
-
+          if (!cell.inMonth) return <div key={cell.iso} aria-hidden="true" />;
           return (
-            <button
-              key={cell.iso}
-              data-academic-day={cell.iso}
-              data-verdict={verdict}
-              data-lectures={lm?.total ?? 0}
-              aria-label={`${longHebrewDate(cell.iso)}${lm ? ` · ${lm.total} הרצאות` : ''}`}
-              onClick={() => onOpenDay(cell.iso)}
-              className="relative rounded-[6px] flex flex-col items-center justify-start"
-              style={{
-                minHeight: CELL_MIN,
-                padding: '3px 1px 4px',
-                background: cell.fill ?? ARIEL_PAPER.paper,
-                color: ARIEL_PAPER.ink,
-                border: `1px solid ${isToday ? ARIEL_PAPER.ink : ARIEL_PAPER.rule}`,
-                boxShadow: isOpen
-                  ? `0 0 0 3px ${ARIEL_PAPER.ink}`
-                  : ring ? `inset 0 0 0 2px ${ring}` : undefined,
-                cursor: 'pointer',
-                overflow: 'hidden',
-              }}
-            >
-              <span
-                className="serif leading-none"
-                style={{ fontSize: 17, fontWeight: isToday ? 700 : 400, marginTop: 1 }}
-              >
-                {cell.day}
-              </span>
-
-              {/* the academic layer's own course colours, as dots */}
-              {cell.accents.length > 0 && (
-                <span className="flex gap-[2px] mt-[3px]">
-                  {cell.accents.map((hex, i) => (
-                    <span key={i} className="inline-block rounded-full"
-                      style={{ width: 5, height: 5, background: hex, border: `0.5px solid ${ARIEL_PAPER.edge}` }} />
-                  ))}
-                </span>
-              )}
-
-              {/* the FOREGROUND: one bar per lecture, colour = its state */}
-              {lm && lm.total > 0 && (
-                <span className="flex gap-[2px] mt-auto w-full justify-center" data-lecture-bars>
-                  {barsFor(lm).map((color, i) => (
-                    <span key={i} className="inline-block rounded-[2px]"
-                      style={{ width: 9, height: 5, background: color }} />
-                  ))}
-                  {lm.total > 3 && (
-                    <span className="mono" style={{ fontSize: 8, lineHeight: '5px', color: ARIEL_PAPER.ink }}>
-                      +{lm.total - 3}
-                    </span>
-                  )}
-                </span>
-              )}
-            </button>
+            <DayCell key={cell.iso} iso={cell.iso} day={cell.day} model={modelFor(cell.iso)}
+              verdict={dayVerdict(academicDayMap.get(cell.iso) ?? [])}
+              lectures={lectureMarks.get(cell.iso)?.total ?? 0}
+              isToday={cell.iso === today} isOpen={cell.iso === openDay} onOpen={onOpenDay}
+              poster />
           );
         })}
       </div>
@@ -1032,13 +880,96 @@ function PosterMonth({
   );
 }
 
-/** Up to three bars, pending first — the unapproved ones must never be the ones cut off. */
-function barsFor(lm: LectureDayMark): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < lm.pending && out.length < 3; i++) out.push(lectureColor('pending'));
-  for (let i = 0; i < lm.approved && out.length < 3; i++) out.push(lectureColor('approved'));
-  for (let i = 0; i < lm.cancelled && out.length < 3; i++) out.push(lectureColor('cancelled'));
-  return out;
+/**
+ * One day, as the month grid and the year view both draw it. The fill is the kind of
+ * day, the label names it, one word at the bottom says what to know or do, and a red
+ * ring means "move it". Sized for a 375px phone: nothing in it may clip.
+ */
+function DayCell({
+  iso, day, model, verdict, lectures, isToday, isOpen, onOpen, poster,
+}: {
+  iso: string; day: number; model: CellModel; verdict: string; lectures: number;
+  isToday: boolean; isOpen: boolean; onOpen: (iso: string) => void; poster?: boolean;
+}) {
+  const cs = model.course ? COURSE_STYLE[model.course] : null;
+  const fill = model.fill === 'course' && cs ? cs.tint
+    : model.fill === 'off' ? DAY_FILL.off
+    : model.fill === 'exam' ? DAY_FILL.exam
+    : ARIEL_PAPER.paper;
+  const rings = [
+    model.conflict ? 'inset 0 0 0 3px #D32F2F' : '',
+    isOpen ? '0 0 0 2px #1A1A1A' : isToday ? '0 0 0 2px var(--accent)' : '',
+  ].filter(Boolean).join(', ');
+  const [first, ...rest] = model.chips;
+  return (
+    <div
+      {...(poster ? { 'data-academic-day': iso } : { 'data-day-cell': iso })}
+      data-verdict={verdict}
+      data-lectures={lectures}
+      data-fill={model.fill}
+      data-course={model.course ?? ''}
+      data-conflict={model.conflict ? '1' : '0'}
+      data-chips={model.chips.map((c) => c.kind).join(',')}
+      role="button"
+      tabIndex={0}
+      aria-label={[longHebrewDate(iso), model.label, ...model.chips.map((c) => `${c.text}${c.detail ? ` — ${c.detail}` : ''}`)]
+        .filter(Boolean).join(' · ')}
+      onClick={() => onOpen(iso)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(iso); } }}
+      className="relative flex flex-col cursor-pointer overflow-hidden rounded-[6px] sm:rounded-lg p-[2px] sm:p-1.5 min-h-[76px] sm:min-h-[108px] min-w-0"
+      style={{
+        background: fill,
+        color: ARIEL_PAPER.ink,
+        border: `1px solid ${ARIEL_PAPER.rule}`,
+        borderRight: cs ? `3px solid ${cs.strong}` : undefined,
+        borderTop: model.semesterEdge ? `5px solid ${DAY_FILL.exam}` : undefined,
+        boxShadow: rings || undefined,
+      }}
+    >
+      <div className="flex items-start justify-between gap-0.5">
+        <span
+          className="serif leading-none shrink-0 text-[16px] sm:text-[20px]"
+          style={isToday
+            ? { background: 'var(--accent)', color: '#fff', borderRadius: 999, padding: '2px 4px' }
+            : { color: ARIEL_PAPER.ink }}
+        >
+          {day}
+        </span>
+        {model.special && (
+          <span data-special={model.special} className="text-[11px] sm:text-[14px] leading-none"
+            style={{ color: ARIEL_PAPER.muted }}
+            title={model.special === '↻' ? 'יום השלמה — מתכונת של יום אחר' : 'יום מיוחד — שינוי בשעות'}>
+            {model.special}
+          </span>
+        )}
+      </div>
+
+      {model.label && (
+        <div data-cell-label className="font-bold leading-[1.12] mt-0.5 text-[min(8.5px,2.1vw)] sm:text-[13px] tracking-[-0.3px] sm:tracking-normal">
+          {model.label}
+        </div>
+      )}
+      {model.simulation && (
+        <div data-simulation className="leading-none mt-0.5 text-[15px] sm:text-[20px]" aria-label="סימולציה" title="סימולציה">🎭</div>
+      )}
+
+      <div className="mt-auto flex flex-col gap-0.5 pt-0.5">
+        {first && <Chip chip={first} />}
+        {rest.slice(0, 2).map((c, j) => <Chip key={j} chip={c} desktopOnly />)}
+        {rest.length > 0 && (
+          <span data-more-chips={rest.length} className="sm:hidden text-center text-[9px] font-bold leading-none"
+            dir="ltr" style={{ color: ARIEL_PAPER.muted }}>
+            +{rest.length}
+          </span>
+        )}
+        {rest.length > 2 && (
+          <span className="hidden sm:block text-[10.5px] font-bold" style={{ color: ARIEL_PAPER.muted }}>
+            +{rest.length - 2} נוספים
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* ══════════════════════ the day sheet ══════════════════════ */
@@ -1497,7 +1428,7 @@ function Chip({ chip, desktopOnly }: { chip: CellChip; desktopOnly?: boolean }) 
     <span
       data-chip={chip.kind}
       title={chip.detail ?? undefined}
-      className={`${desktopOnly ? 'hidden sm:block' : 'block'} rounded text-center sm:text-right font-bold leading-[1.35] truncate px-0.5 sm:px-1.5 text-[10px] sm:text-[11px]`}
+      className={`${desktopOnly ? 'hidden sm:block' : 'block'} rounded text-center sm:text-right font-bold leading-[1.35] truncate px-0 sm:px-1.5 text-[9.5px] sm:text-[11px] tracking-[-0.2px] sm:tracking-normal`}
       style={{ background: st.bg, color: st.fg }}
     >
       {chip.text}

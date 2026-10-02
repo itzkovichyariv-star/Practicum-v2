@@ -78,7 +78,7 @@ export const CHIP_STYLE: Record<ChipKind, { bg: string; fg: string; text: string
   notApproved: { bg: '#F28C28', fg: '#1A1A1A', text: 'ממתין' },
   approved: { bg: '#2E7D32', fg: '#FFFFFF', text: 'מאושר' },
   interview: { bg: '#E6E1DC', fg: '#2A2422', text: 'ראיון' },
-  slot: { bg: '#E6E1DC', fg: '#2A2422', text: 'מועד פנוי' },
+  slot: { bg: '#E6E1DC', fg: '#2A2422', text: 'פנוי' },
   prep: { bg: '#E6E1DC', fg: '#2A2422', text: 'הכנה' },
 };
 
