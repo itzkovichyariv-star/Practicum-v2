@@ -6,6 +6,7 @@ import { sameContext, normalizeYear, outlookCalendarUrl } from './pageShared';
 import { saveLecture, deleteLecture } from '../lib/lectureSave';
 import { showToast } from '../lib/toast';
 import LectureEditor from './LectureEditor';
+import { SEMESTERS, sameSemester, normalizeSemester } from '../lib/semester';
 import { RowActions, NeedsUpdate, RefreshButton, StatusDot, type DotStatus } from './StudentsPage';
 
 function hebMonth(d: Date) {
@@ -55,7 +56,7 @@ export default function LecturesPage({
     return scoped.filter(l => {
       if (filters.status && l.status !== filters.status) return false;
       if (filters.type && l.type !== filters.type) return false;
-      if (filters.semester && l.semester !== filters.semester) return false;
+      if (filters.semester && !sameSemester(l.semester, filters.semester)) return false;
       if (filters.hidePast && l.date) {
         const d = new Date(l.date);
         if (!isNaN(d.getTime()) && d < today) return false;
@@ -190,7 +191,7 @@ export default function LecturesPage({
           label="סמסטר"
           value={filters.semester}
           onChange={v => setFilters(f => ({ ...f, semester: v }))}
-          options={['א׳', 'ב׳', 'קיץ']}
+          options={[...SEMESTERS]}
         />
         <label className="inline-flex items-center gap-2 mono text-[12px] uppercase tracking-[0.14em] font-semibold cursor-pointer" style={{ color: 'var(--ink)' }}>
           <input
@@ -303,7 +304,7 @@ function LectureItem({ lec, now, onEdit }: { lec: Lecture; now: Date; onEdit: ()
           {/* Details line */}
           <div className="text-[12.5px] leading-snug" style={{ color: 'var(--text-soft)' }}>
             {[lec.courseName, lec.lecturer, lec.institution || lec.location].filter(Boolean).join(' · ')}
-            {lec.semester && ` · סמ׳ ${lec.semester}`}
+            {lec.semester && ` · סמ׳ ${normalizeSemester(lec.semester)}`}
           </div>
           {(!lec.lecturer || !lec.lecturerPhone || !lec.lecturerEmail) && (
             <div className="mt-1"><NeedsUpdate /></div>

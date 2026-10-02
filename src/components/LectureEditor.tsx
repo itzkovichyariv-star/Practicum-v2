@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { SEMESTERS, normalizeSemester } from '../lib/semester';
 import type { Lecture, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { outlookCalendarUrl } from './pageShared';
@@ -10,7 +11,6 @@ import TimeInput from './TimeInput';
 
 const DEFAULT_TYPES = ['הרצאה', 'סדנה', 'סימולציה', 'מפגש', 'ייעוץ'];
 const DEFAULT_STATUSES = ['מאושר', 'ממתין לאישור', 'בקשה נשלחה', 'שינוי מתבצע', 'בוטל'];
-const SEMESTERS = ['א׳', 'ב׳', 'קיץ'];
 const DELIVERY_MODES = ['פרונטלי', 'זום', 'היברידי'];
 
 type Props = {
@@ -43,7 +43,7 @@ export default function LectureEditor({
     id: lecture?.id || randomId('lec'),
     type: lecture?.type || 'הרצאה',
     status: lecture?.status || 'ממתין לאישור',
-    semester: lecture?.semester || 'ב׳',
+    semester: normalizeSemester(lecture?.semester) || 'ב׳',
     courseId: lecture?.courseId || (defaultCourseId !== '__all__' ? defaultCourseId : ''),
     year: lecture?.year || (defaultYear !== '__all__' ? defaultYear : ''),
     date: lecture?.date || defaultDate || '',
@@ -193,7 +193,7 @@ export default function LectureEditor({
               <Select value={form.year||''} onChange={v=>update('year',v)} options={years} placeholder="בחר שנה" />
             </Field>
 
-            <Field label="סמסטר"><Select value={form.semester||''} onChange={v=>update('semester',v)} options={SEMESTERS}/></Field>
+            <Field label="סמסטר"><Select value={form.semester||''} onChange={v=>update('semester',v)} options={[...SEMESTERS]}/></Field>
             <Field label="מוסד"><Input value={form.institution||''} onChange={v=>update('institution',v)} placeholder="אוניברסיטת אריאל"/></Field>
 
             <Field label="תאריך"><Input type="date" value={form.date||''} onChange={v=>update('date',v)}/></Field>
