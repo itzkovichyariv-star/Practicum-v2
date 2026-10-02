@@ -222,7 +222,7 @@ const SESSION_CATEGORY_KEYS = ['seminar', 'skills', 'practicum', 'simulation'];
  * מיומנויות session, which the first cut of this screen did until calendar-check caught
  * it. A to-do is not a day type; it still shows in the day sheet, where it belongs.
  */
-const BAND_CATEGORY_KEYS = ['boundary', 'exam', 'off', 'special', 'makeup_day'];
+const BAND_CATEGORY_KEYS = ['boundary', 'exam', 'off', 'away', 'special', 'makeup_day'];
 
 const SESSION_CATEGORIES = ACADEMIC_CATEGORIES.filter((c) => SESSION_CATEGORY_KEYS.includes(c.key));
 const BAND_CATEGORIES = ACADEMIC_CATEGORIES.filter((c) => BAND_CATEGORY_KEYS.includes(c.key));
@@ -951,7 +951,7 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
                 background: `repeating-linear-gradient(45deg, ${ARIEL_PAPER.gold} 0 5px, rgba(0,0,0,0.55) 5px 10px)`,
                 border: `1px solid ${ARIEL_PAPER.edge}`,
               }} />
-            לא לקבוע הרצאה — אין לימודים או תקופת בחינות
+            לא לקבוע הרצאה — אין לימודים, תקופת בחינות או חופשה
           </li>
         </ul>
         <ul className="flex flex-wrap gap-x-6 gap-y-2.5 mb-7">

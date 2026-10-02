@@ -126,7 +126,7 @@ export const ACADEMIC_WEEKDAY_LABELS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'
  * Every other category on the day still shows, so nothing is hidden.
  */
 export const ACADEMIC_CATEGORY_PRIORITY = [
-  'off', 'boundary', 'makeup_day', 'simulation', 'skills', 'practicum', 'seminar', 'todo', 'exam', 'special',
+  'off', 'away', 'boundary', 'makeup_day', 'simulation', 'skills', 'practicum', 'seminar', 'todo', 'exam', 'special',
 ];
 
 /**
@@ -159,13 +159,14 @@ export const ACADEMIC_DOT_EDGE = ARIEL_PAPER.edge;
  *   accent — teaching and to-dos: the cell stays paper white and the course colour
  *            appears as a bar under the date.
  */
-export type AcademicPaperTreatment = 'gold' | 'cream' | 'red' | 'accent';
+export type AcademicPaperTreatment = 'gold' | 'cream' | 'away' | 'red' | 'accent';
 export const ACADEMIC_PAPER_TREATMENT: Record<string, AcademicPaperTreatment> = {
   boundary: 'gold',
   exam: 'gold',
   off: 'cream',
   special: 'cream',
   makeup_day: 'cream',
+  away: 'away',
   simulation: 'red',
   skills: 'accent',
   practicum: 'accent',
@@ -173,13 +174,13 @@ export const ACADEMIC_PAPER_TREATMENT: Record<string, AcademicPaperTreatment> = 
   todo: 'accent',
 };
 /** A filled day wins in this order — a simulation is never hidden by a holiday. */
-const FILL_ORDER: AcademicPaperTreatment[] = ['red', 'gold', 'cream'];
+const FILL_ORDER: AcademicPaperTreatment[] = ['red', 'gold', 'away', 'cream'];
 
 export function paperSwatch(key: string, hex: string): string {
   const treatment = ACADEMIC_PAPER_TREATMENT[key] ?? 'accent';
   if (treatment === 'gold') return ARIEL_PAPER.gold;
   if (treatment === 'cream') return ARIEL_PAPER.cream;
-  return hex;     // the export's own red, or the course colour drawn as a bar
+  return hex;     // 'away' keeps its own colour     // the export's own red, or the course colour drawn as a bar
 }
 
 /* The JSON is data, not a schema: TypeScript widens its tuples to string[] and its
@@ -187,9 +188,24 @@ export function paperSwatch(key: string, hex: string): string {
  * boundary where the file is read — rather than at every call site. The shapes are
  * pinned by unit/academic-calendar.spec.ts, which checks the real file rather than
  * these declarations. */
-export const ACADEMIC_CATEGORIES: AcademicCategory[] = Object.entries(
-  rawCalendar.categories as unknown as Record<string, RawCategory>,
-)
+/**
+ * Yariv's own days away. NOT the university's — the JSON above stays a verbatim copy of
+ * the Maestro file — so they live here, beside it, in the same shape. A day away blocks
+ * booking exactly like a day the university is shut: nobody is there to host the guest.
+ */
+const PERSONAL_CATEGORIES: Record<string, RawCategory> = {
+  away: ['חופשה', '', '#76A5AF'],
+};
+const PERSONAL_EVENTS: AcademicRawEvent[] = [
+  // Yariv 2026-10-02: "תוסיף חופשה באילת בין התאריכים 18.11-21.11"
+  { kind: 'academic', title: 'חופשה באילת', start_date: '2026-11-18', end_date: '2026-11-21',
+    all_day: true, category: 'away', category_label: 'חופשה', hex: '#76A5AF', note: '' },
+];
+
+export const ACADEMIC_CATEGORIES: AcademicCategory[] = Object.entries({
+  ...(rawCalendar.categories as unknown as Record<string, RawCategory>),
+  ...PERSONAL_CATEGORIES,
+})
   .map(([key, [label, , hex]]) => ({
     key,
     label,
@@ -201,7 +217,7 @@ export const ACADEMIC_CATEGORIES: AcademicCategory[] = Object.entries(
 
 const CATEGORY_BY_KEY = new Map(ACADEMIC_CATEGORIES.map((c) => [c.key, c]));
 
-export const ACADEMIC_EVENTS = rawCalendar.events as AcademicRawEvent[];
+export const ACADEMIC_EVENTS = [...(rawCalendar.events as AcademicRawEvent[]), ...PERSONAL_EVENTS];
 
 // ── date helpers — UTC arithmetic only, so no timezone can shift a date ──────
 function isoOf(y: number, m0: number, d: number): string {
@@ -438,7 +454,7 @@ export interface DayBlocker {
  * `makeup_day` is deliberately NOT blocked: it IS a teaching day, just running another
  * weekday's timetable — but it is the single easiest day to get wrong, so it warns.
  */
-const BLOCKING_CATEGORIES = new Set(['off', 'exam']);
+const BLOCKING_CATEGORIES = new Set(['off', 'exam', 'away']);
 const CAUTION_CATEGORIES = new Set(['makeup_day', 'special', 'boundary']);
 
 /**
@@ -461,7 +477,9 @@ export function dayBlockers(items: AcademicDayItem[]): DayBlocker[] {
         category: it.category,
         reason: it.category === 'off'
           ? `אין לימודים — ${it.title}`
-          : `תקופת בחינות — ${it.title}`,
+          : it.category === 'away'
+            ? `אתה בחופשה — ${it.title}`
+            : `תקופת בחינות — ${it.title}`,
       });
     } else if (CAUTION_CATEGORIES.has(it.category)) {
       seen.add(it.category);
