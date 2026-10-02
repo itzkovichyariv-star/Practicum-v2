@@ -470,3 +470,17 @@ test('countTrainerMatches reports named-vs-matched, which is how the rule gets j
   ];
   expect(countTrainerMatches(lectures, TRAINERS)).toEqual({ named: 3, matched: 2 });
 });
+
+/* Yariv 2026-10-02: "תוסיף חופשה באילת בין התאריכים 18.11-21.11" */
+test('the Eilat vacation blocks 18–21.11.2026 and only those days', () => {
+  const dayMap = buildAcademicDayMap();
+  for (const iso of ['2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21']) {
+    const items = dayMap.get(iso) ?? [];
+    expect(dayVerdict(items)).toBe('blocked');
+    expect(dayBlockers(items)[0].reason).toContain('חופשה באילת');
+  }
+  expect(dayVerdict(dayMap.get('2026-11-17') ?? [])).not.toBe('blocked');
+  expect(dayVerdict(dayMap.get('2026-11-22') ?? [])).not.toBe('blocked');
+  // the Friday class inside it is still on the calendar — the vacation does not hide it
+  expect((dayMap.get('2026-11-20') ?? []).some(isTeachingSession)).toBe(true);
+});

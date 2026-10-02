@@ -7,6 +7,22 @@ import {
   parseTime, checkTimeRange, suggestEndTime, usualDurationMinutes, formatDuration, timeOrEmpty,
 } from '../lib/timeInput';
 import Modal from './Modal';
+import { buildAcademicDayMap, dayBlockers } from '../lib/academicCalendar';
+
+/* The academic year is static data — read it once for every editor. */
+const ACADEMIC_DAYS = buildAcademicDayMap();
+
+/**
+ * Why a date cannot host a lecture, or null. Yariv 2026-10-02: a guest lecture on a
+ * shut day is a conflict "וצריך להתריע עליה כבר בנסיון לשמור אותה" — so the editor
+ * says it the moment the date is chosen, and asks before saving it anyway.
+ */
+export function blockedReason(date: string | undefined, status?: string): string | null {
+  const iso = (date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || (status || '').trim() === 'בוטל') return null;
+  const b = dayBlockers(ACADEMIC_DAYS.get(iso) ?? []).find((x) => x.level === 'blocked');
+  return b ? b.reason : null;
+}
 import TimeInput from './TimeInput';
 
 const DEFAULT_TYPES = ['הרצאה', 'סדנה', 'סימולציה', 'מפגש', 'ייעוץ'];
@@ -98,6 +114,8 @@ export default function LectureEditor({
       document.getElementById(!start.ok ? 'lecture-start-time' : 'lecture-end-time')?.focus();
       return;
     }
+    const blocked = blockedReason(form.date, form.status);
+    if (blocked && !confirm(`⚠ התאריך הזה חסום: ${blocked}.\nהרצאה ביום כזה תסומן בלוח כ"להזיז".\n\nלשמור בכל זאת?`)) return;
     const selectedCourse = courses.find(c => c.id === form.courseId);
     const toSave: Lecture = {
       ...form,
@@ -196,7 +214,15 @@ export default function LectureEditor({
             <Field label="סמסטר"><Select value={form.semester||''} onChange={v=>update('semester',v)} options={[...SEMESTERS]}/></Field>
             <Field label="מוסד"><Input value={form.institution||''} onChange={v=>update('institution',v)} placeholder="אוניברסיטת אריאל"/></Field>
 
-            <Field label="תאריך"><Input type="date" value={form.date||''} onChange={v=>update('date',v)}/></Field>
+            <Field label="תאריך">
+              <Input type="date" value={form.date||''} onChange={v=>update('date',v)}/>
+              {blockedReason(form.date, form.status) && (
+                <div data-date-blocked role="alert" className="mt-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-semibold"
+                  style={{ background: '#FDECEA', color: '#B71C1C', border: '1px solid #D32F2F' }}>
+                  ⚠ תאריך חסום: {blockedReason(form.date, form.status)}. הרצאה ביום כזה תסומן בלוח "להזיז".
+                </div>
+              )}
+            </Field>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="שעת התחלה">
                 <TimeInput id="lecture-start-time" name="lecture-start" value={form.startTime} onChange={v=>update('startTime',v)}
