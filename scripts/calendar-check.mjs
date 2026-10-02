@@ -508,6 +508,21 @@ console.log('\nYEAR VIEW + CONFLICTS + LEGEND (430px)');
   await pg.keyboard.press('Escape');
   await pg.waitForTimeout(150);
 
+  // ── CAL-poster-same-cell: the year view draws the SAME day as the month grid —
+  //    "במבט שנתי הצבעים הישנים והמתווה הישן קיים" (Yariv, 2026-10-02). ──
+  const yearCell = await pg.evaluate(() => {
+    const c = document.querySelector('[data-academic-day="2026-11-20"]');
+    const s = document.querySelector('[data-academic-day="2026-12-08"]');
+    return { conflict: c?.getAttribute('data-conflict'), fill: c?.getAttribute('data-fill'),
+             label: c?.querySelector('[data-cell-label]')?.innerText.replace(/\s+/g, ' ').trim() ?? null,
+             simFill: s?.getAttribute('data-fill'), simCourse: s?.getAttribute('data-course'),
+             oldBars: document.querySelectorAll('[data-lecture-bars]').length };
+  });
+  check('CAL-poster-same-cell — the year view uses the new day: named, filled, ringed, no old bars',
+    yearCell.conflict === '1' && yearCell.fill === 'off' && yearCell.label === 'חופשה באילת'
+      && yearCell.simFill === 'course' && yearCell.simCourse === 'skills' && yearCell.oldBars === 0,
+    JSON.stringify(yearCell));
+
   // ── CAL-back-to-month ─────────────────────────────────────────────────────
   await pg.click('[data-view-btn="month"]');
   await pg.waitForSelector('[data-month-grid]', { timeout: 10000 });
