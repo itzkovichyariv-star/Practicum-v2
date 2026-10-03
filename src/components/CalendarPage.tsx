@@ -69,6 +69,7 @@ import {
   DAY_FILL,
   buildTodoMap,
   cellModel,
+  lectureOverlaps,
   sessionConflicts,
   type CellChip,
   type CellModel,
@@ -924,6 +925,7 @@ function DayCell({
       data-fill={model.fill}
       data-course={model.course ?? ''}
       data-conflict={model.conflict ? '1' : '0'}
+      data-overlap={model.overlap ? '1' : '0'}
       data-chips={model.chips.map((c) => c.kind).join(',')}
       role="button"
       tabIndex={0}
@@ -1032,6 +1034,7 @@ function DaySheet({
   const universityItems = academic.filter((it) => !isTeachingSession(it) && it.kind !== 'reminder' && it.kind !== 'makeup_todo');
   const guestLectures = lectures.filter((l) => l.isGuest);
   const ownLectures = lectures.filter((l) => !l.isGuest);
+  const overlaps = lectureOverlaps(lectures);
 
   return (
     <>
@@ -1205,6 +1208,18 @@ function DaySheet({
                not dead text. It resolves to the app's own trainer record when one
                exists, and to the lecture's own contact fields when it does not, with
                tap-to-call and tap-to-mail because he is holding a phone. ── */}
+        {overlaps.length > 0 && (
+          <div data-day-overlap={overlaps.length} role="alert"
+            className="mb-4 rounded-[10px] px-3.5 py-2.5 text-[13.5px] leading-[1.6]"
+            style={{ background: '#FDECEA', color: '#8A1C1C', border: '1px solid #F5C2C0' }}>
+            <b>⚠ {overlaps.length === 1 ? 'שתי הרצאות באותן שעות' : `${overlaps.length} חפיפות בשעות`} — יש לבחור אחת.</b>
+            {overlaps.map(([a, b], k) => (
+              <div key={k}>{a.time} {a.title} · {b.time} {b.title}</div>
+            ))}
+            <div className="text-[12px] opacity-80">כשאחת מהן תסומן "בוטל" האזהרה תיעלם.</div>
+          </div>
+        )}
+
         <section className="mb-5" data-day-guests={guestLectures.length}>
           <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
             הרצאות אורח ביום זה {guestLectures.length > 0 && `(${guestLectures.length})`}
