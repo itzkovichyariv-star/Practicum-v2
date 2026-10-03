@@ -19,7 +19,7 @@
 
 ## 3. בטרמינל (שורה אחת — להחליף את שני הערכים)
 ```bash
-cd ~/Code/practicum-v2 && git pull origin main && npx supabase secrets set GCAL_CALENDAR_ID="מזהה-היומן" GCAL_SA_KEY="$(cat ~/Downloads/שם-הקובץ.json)" --project-ref vpqgmcmavnszcnakhiat && npx supabase functions deploy gcal-sync --project-ref vpqgmcmavnszcnakhiat
+cd ~/Code/practicum-v2 && git pull origin main && npx supabase secrets set GCAL_CALENDAR_ID="מזהה-היומן" GCAL_SA_KEY="$(cat ~/Downloads/שם-הקובץ.json)" --project-ref vpqgmcmavnszcnakhiat && npx supabase functions deploy gcal-sync --no-verify-jwt --project-ref vpqgmcmavnszcnakhiat
 ```
 
 ## 4. פריסת האתר

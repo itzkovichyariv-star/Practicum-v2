@@ -18,7 +18,8 @@
 //   GCAL_CALENDAR_ID  the calendar's ID (Google Calendar → settings → "Integrate calendar")
 // Without them the function answers { configured: false } and does nothing.
 //
-// Deploy: supabase functions deploy gcal-sync --project-ref vpqgmcmavnszcnakhiat
+// Deploy: supabase functions deploy gcal-sync --no-verify-jwt --project-ref vpqgmcmavnszcnakhiat
+//   (--no-verify-jwt: the app calls with the sb_publishable key, which is not a JWT)
 // Secrets: supabase secrets set GCAL_CALENDAR_ID=... GCAL_SA_KEY="$(cat key.json)" --project-ref vpqgmcmavnszcnakhiat
 
 const CORS = {
