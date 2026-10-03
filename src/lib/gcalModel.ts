@@ -20,7 +20,7 @@
 
 import { ACADEMIC_EVENTS, buildAcademicDayMap, type AcademicDayItem } from './academicCalendar';
 import { buildLectureDayMap } from './lectureCalendar';
-import { buildTodoMap, type DoneMap } from './calendarCell';
+import { buildTodoMap, courseKindOf, type CourseKind, type DoneMap } from './calendarCell';
 import type { Lecture, PracticumData } from './supabase';
 
 export const GCAL_TZ = 'Asia/Jerusalem';
@@ -33,7 +33,8 @@ export interface GEvent {
   location?: string;
   start: { date: string } | { dateTime: string; timeZone: string };
   end: { date: string } | { dateTime: string; timeZone: string };
-  /** Google's event colour id: 10 = green (approved), 6 = orange (pending / לתאם), 8 = grey. */
+  /** Google's event colour id: a lecture takes its course's colour (7 / 10 / 3, as the app);
+   *  6 = orange for לתאם, 8 = grey for days away. */
   colorId: string;
 }
 
@@ -81,29 +82,73 @@ function sessionLines(s: AcademicDayItem): string[] {
   ].filter(Boolean);
 }
 
+/* Yariv 2026-10-03, on 8.12 in Google: the event lost the look the app gives it — the
+ * 🎭 of a simulation (it showed 🎤) and the course colours ("לא לכולם אותו צבע — לפי המודל
+ * של היומן של פרקטיקום"). So Google follows the app's calendar model (calendarCell.ts):
+ *   · colour = the COURSE (COURSE_STYLE): מיומנויות ייעוץ blue, פרקטיקום מש״א green,
+ *     פרקטיקום ייעוץ purple — the nearest of Google's event colours;
+ *   · icon = 🎭 for a simulation, 🎤 for a guest lecture;
+ *   · status = words, as the app's chip says it: ✓ (מאושר) / ⏳ ממתין, first in the title.
+ * A lecture that fills a course session also carries the session: course + מפגש N (and
+ * 🔴 החלפת שעה! where the dataset marks one) in the title, and the session's hours. */
+const COURSE_SHORT: Record<string, string> = {
+  semA: 'סמינריון א׳', semB: 'סמינריון ב׳', skA: 'מיומנויות א׳', skB: 'מיומנויות ב׳',
+  prA: 'פרקטיקום ייעוץ א׳', prB: 'פרקטיקום ייעוץ ב׳',
+};
+/** COURSE_STYLE.strong → Google colour id: blue 7 (Peacock), green 10 (Basil), purple 3 (Grape). */
+const GOOGLE_COURSE_COLOR: Record<CourseKind, string> = { skills: '7', hr: '10', consult: '3' };
+
+/** The app's course kind for a lecture: from its session, else from its course name. */
+function lectureKind(l: Lecture, session: AcademicDayItem | null): CourseKind | null {
+  const k = courseKindOf(session?.course);
+  if (k) return k;
+  const n = l.courseName || '';
+  if (/מיומנויות/.test(n)) return 'skills';
+  if (/משאבי אנוש|מש״א|מש"א/.test(n)) return 'hr';
+  if (/ייעוץ/.test(n)) return 'consult';
+  return null;
+}
+
 function lectureEvent(l: Lecture, iso: string, approved: boolean, session: AcademicDayItem | null = null): GEvent {
   const timed = isTime(l.startTime);
-  const end = isTime(l.endTime) ? l.endTime!.trim() : null;
+  const lStart = timed ? l.startTime!.trim() : null;
+  const lEnd = isTime(l.endTime) && lStart && l.endTime!.trim() > lStart ? l.endTime!.trim() : lStart;
   const title = (l.topic || l.title || l.courseName || 'הרצאה').trim();
+  // 🎭 for a simulation, as the app's own calendar draws it; 🎤 for a guest lecture.
+  const isSim = session?.category === 'simulation' || /סימולצי/.test(`${title} ${l.lecturer || ''}`);
+  const icon = isSim ? '🎭' : '🎤';
+
+  // The span: the session's hours when the lecture sits inside one — that is the time he is
+  // in the room — widened, never narrowed, so a lecture running past it still shows whole.
+  let from = lStart, to = lEnd;
+  if (session?.time && lStart) {
+    const [s0, s1] = session.time.split('–');
+    from = s0 < lStart ? s0 : lStart;
+    to = lEnd && lEnd > s1 ? lEnd : s1;
+  }
+  const sessionTag = session
+    ? ` · ${(session.course && COURSE_SHORT[session.course]) || session.courseTitle || ''}${session.session ? ` מפגש ${session.session}` : ''}`
+      + (/החלפת שעה/.test(session.title) ? ' · 🔴 החלפת שעה!' : '')
+    : '';
+
   return {
     key: `lec:${l.id}`,
-    summary: `${approved ? '✓' : '⏳ ממתין ·'} 🎤 ${title}${l.lecturer ? ` — ${l.lecturer}` : ''}`,
+    summary: `${approved ? '✓' : '⏳ ממתין ·'} ${icon} ${title}${l.lecturer ? ` — ${l.lecturer}` : ''}${sessionTag}`,
     description: [
       l.courseName ? `קורס: ${l.courseName}` : '',
       l.lecturer ? `מרצה: ${l.lecturer}` : '',
       l.lecturerPhone ? `טלפון: ${l.lecturerPhone}` : '',
       l.lecturerEmail ? `מייל: ${l.lecturerEmail}` : '',
       `סטטוס: ${(l.status || '').trim() || '—'}`,
+      lStart && (from !== lStart || to !== lEnd) ? `שעות ההרצאה: ${lStart}${lEnd && lEnd !== lStart ? `–${lEnd}` : ''}` : '',
       l.notes ? `\n${l.notes}` : '',
       ...(session ? sessionLines(session) : []),
       '\n— מסונכרן מאפליקציית הפרקטיקום. שינויים עושים באפליקציה.',
     ].filter(Boolean).join('\n'),
     location: (l.link || l.location || l.institution || '').trim() || undefined,
-    start: timed ? { dateTime: `${iso}T${l.startTime!.trim()}:00`, timeZone: GCAL_TZ } : { date: iso },
-    end: timed
-      ? { dateTime: `${iso}T${end && end > l.startTime!.trim() ? end : l.startTime!.trim()}:00`, timeZone: GCAL_TZ }
-      : { date: addDay(iso) },
-    colorId: approved ? '10' : '6',
+    start: from ? { dateTime: `${iso}T${from}:00`, timeZone: GCAL_TZ } : { date: iso },
+    end: to ? { dateTime: `${iso}T${to}:00`, timeZone: GCAL_TZ } : { date: addDay(iso) },
+    colorId: (() => { const k = lectureKind(l, session); return k ? GOOGLE_COURSE_COLOR[k] : approved ? '10' : '6'; })(),
   };
 }
 

@@ -15,7 +15,7 @@ test('an approved lecture is one timed event, keyed by the lecture id', () => {
   expect(e.summary).toContain('מקורות גיוס');
   expect(e.start).toEqual({ dateTime: '2026-11-26T09:30:00', timeZone: 'Asia/Jerusalem' });
   expect(e.end).toEqual({ dateTime: '2026-11-26T11:00:00', timeZone: 'Asia/Jerusalem' });
-  expect(e.colorId).toBe('10');
+  expect(e.colorId).toBe('10');               // course "פרקטיקום" — no kind known → status green
 });
 
 test('moving a lecture keeps its key — Google moves the event instead of adding one', () => {
@@ -59,6 +59,27 @@ test('a lecture inside a course session carries the session — so his old copy 
   expect(e.description).toContain('2-1891410-1');
   expect(e.description).toContain('חנוכה');
   expect(e.description).toContain('15:00–17:00');
+  // …and wears the session's face: course + מפגש N + 🔴 in the title, its hours, its colour.
+  expect(e.summary).toContain('מיומנויות א׳ מפגש 7');
+  expect(e.summary).toContain('🔴 החלפת שעה!');
+  expect(e.summary.startsWith('✓')).toBe(true);
+  expect(e.summary).toContain('🎭');          // a simulation, not a 🎤 guest lecture
+  expect(e.summary).not.toContain('🎤');
+  expect(e.start).toEqual({ dateTime: '2026-12-08T15:00:00', timeZone: 'Asia/Jerusalem' });
+  expect(e.end).toEqual({ dateTime: '2026-12-08T17:00:00', timeZone: 'Asia/Jerusalem' });
+  expect(e.colorId).toBe('7');                // מיומנויות ייעוץ — blue, as in the app
+  expect(e.description).toContain('שעות ההרצאה: 15:00–16:30');
+});
+
+test('a seminar lecture takes the seminar colour and its own hours', () => {
+  const e = ev({ lectures: [lec({ date: '2026-10-25', startTime: '17:00', endTime: '20:00', status: 'טנטטיבי' })] })
+    .find((x) => x.key === 'lec:l1')!;
+  expect(e.summary).toContain('סמינריון א׳ מפגש 1');
+  expect(e.summary).not.toContain('🔴');
+  expect(e.summary).toContain('ממתין');
+  expect(e.colorId).toBe('10');               // פרקטיקום מש״א — green, as in the app
+  expect(e.summary).toContain('🎤');
+  expect(e.description).not.toContain('שעות ההרצאה');
 });
 
 test('a lecture on a day with no session of his gets no session block', () => {
