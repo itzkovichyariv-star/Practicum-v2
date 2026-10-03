@@ -56,7 +56,8 @@ const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h
  * lecture fills the session, that copy and this event were the same meeting twice. So the
  * lecture's event carries the session too (course, מפגש N, code, the dataset's own note —
  * חנוכה break, "החלפת שעה!" …), which lets the primary copy go without losing a word.
- * Same day; the session whose hours overlap the lecture's; else the day's only session.
+ * Same day; the session whose hours overlap the lecture's (an untimed lecture: the day's
+ * only session).
  */
 export function sessionFor(l: Lecture, iso: string, dayItems: AcademicDayItem[] = []): AcademicDayItem | null {
   const sessions = dayItems.filter((i) => i.kind === 'session' && i.time);
@@ -68,7 +69,9 @@ export function sessionFor(l: Lecture, iso: string, dayItems: AcademicDayItem[] 
       const [s0, s1] = s.time!.split('–').map(toMin);
       return a < s1 && b > s0;
     });
-    if (hit) return hit;
+    // A timed lecture belongs to a session only if their hours meet — otherwise the
+    // span below would stretch it over hours it does not occupy.
+    return hit ?? null;
   }
   return sessions.length === 1 ? sessions[0] : null;
 }

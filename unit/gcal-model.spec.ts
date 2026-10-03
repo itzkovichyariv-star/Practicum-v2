@@ -52,34 +52,31 @@ test('the list is deterministic — same input, same order', () => {
 });
 
 test('a lecture inside a course session carries the session — so his old copy can go', () => {
-  // 8.12: skA מפגש 7, 15:00–17:00, with the חנוכה note; the simulation lecture is 15:00–16:30.
-  const e = ev({ lectures: [lec({ date: '2026-12-08', startTime: '15:00', endTime: '16:30', courseName: 'מיומנויות ייעוץ א' })] })
+  // 8.12: skA מפגש 7, back in the evening (19:00–21:00, Yariv 3.10); the simulation is 19:00–20:30.
+  const e = ev({ lectures: [lec({ date: '2026-12-08', startTime: '19:00', endTime: '20:30', courseName: 'מיומנויות ייעוץ א',
+    topic: 'סימולציית כניסה לארגון', lecturer: 'מרכז סימולציות', status: 'ממתין לאישור' })] })
     .find((x) => x.key === 'lec:l1')!;
   expect(e.description).toContain('מפגש 7');
   expect(e.description).toContain('2-1891410-1');
-  expect(e.description).toContain('חנוכה');
-  expect(e.description).toContain('15:00–17:00');
-  // …and wears the session's face: course + מפגש N + 🔴 in the title, its hours, its colour.
+  expect(e.description).toContain('19:00–21:00');
+  // …and wears the session's face: course + מפגש N in the title, its hours, the course colour.
   expect(e.summary).toContain('מיומנויות א׳ מפגש 7');
-  expect(e.summary).toContain('🔴 החלפת שעה!');
-  expect(e.summary.startsWith('✓')).toBe(true);
+  expect(e.summary).not.toContain('החלפת שעה');
+  expect(e.summary).toContain('ממתין');
   expect(e.summary).toContain('🎭');          // a simulation, not a 🎤 guest lecture
   expect(e.summary).not.toContain('🎤');
-  expect(e.start).toEqual({ dateTime: '2026-12-08T15:00:00', timeZone: 'Asia/Jerusalem' });
-  expect(e.end).toEqual({ dateTime: '2026-12-08T17:00:00', timeZone: 'Asia/Jerusalem' });
+  expect(e.start).toEqual({ dateTime: '2026-12-08T19:00:00', timeZone: 'Asia/Jerusalem' });
+  expect(e.end).toEqual({ dateTime: '2026-12-08T21:00:00', timeZone: 'Asia/Jerusalem' });
   expect(e.colorId).toBe('7');                // מיומנויות ייעוץ — blue, as in the app
-  expect(e.description).toContain('שעות ההרצאה: 15:00–16:30');
+  expect(e.description).toContain('שעות ההרצאה: 19:00–20:30');
 });
 
-test('a seminar lecture takes the seminar colour and its own hours', () => {
-  const e = ev({ lectures: [lec({ date: '2026-10-25', startTime: '17:00', endTime: '20:00', status: 'טנטטיבי' })] })
+test('a timed lecture outside the session hours is not stretched over them', () => {
+  const e = ev({ lectures: [lec({ date: '2026-12-08', startTime: '10:00', endTime: '11:00', courseName: 'מיומנויות ייעוץ א' })] })
     .find((x) => x.key === 'lec:l1')!;
-  expect(e.summary).toContain('סמינריון א׳ מפגש 1');
-  expect(e.summary).not.toContain('🔴');
-  expect(e.summary).toContain('ממתין');
-  expect(e.colorId).toBe('10');               // פרקטיקום מש״א — green, as in the app
-  expect(e.summary).toContain('🎤');
-  expect(e.description).not.toContain('שעות ההרצאה');
+  expect(e.start).toEqual({ dateTime: '2026-12-08T10:00:00', timeZone: 'Asia/Jerusalem' });
+  expect(e.end).toEqual({ dateTime: '2026-12-08T11:00:00', timeZone: 'Asia/Jerusalem' });
+  expect(e.description).not.toContain('מפגש הקורס');
 });
 
 test('a lecture on a day with no session of his gets no session block', () => {

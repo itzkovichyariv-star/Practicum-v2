@@ -72,7 +72,7 @@ test('marking it תואם removes it from the grid', () => {
   expect(cell('2026-11-12', lectures, '2026-10-02', doneMap).chips.map((c) => c.text)).not.toContain('לתאם');
 });
 
-test('the dataset\'s own swap reminders are לתאם on their date, and a simulation keeps its course', () => {
-  expect(cell('2026-11-24').chips.map((c) => c.text)).toContain('לתאם');
+test('no swap to coordinate any more (simulations back in the evening, 3.10), and a simulation keeps its course', () => {
+  expect(cell('2026-11-24').chips.map((c) => c.text)).not.toContain('לתאם');
   expect(cell('2026-12-08')).toMatchObject({ fill: 'course', course: 'skills', simulation: true });
 });

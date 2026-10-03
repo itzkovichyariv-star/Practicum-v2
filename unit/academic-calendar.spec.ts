@@ -104,7 +104,7 @@ test('8.12 and 15.12 read as simulations, and paint red rather than חנוכה c
     const sim = items.find((it) => it.category === 'simulation');
     expect(sim, `no simulation on ${iso}`).toBeTruthy();
     expect(sim!.categoryLabel).toBe('סימולציה');
-    expect(sim!.time).toBe('15:00–17:00');     // the hour swap is the point of the mark
+    expect(sim!.time).toBe('19:00–21:00');     // back in the evening, on Zoom (Yariv 3.10.2026)
 
     // 8.12 also sits inside the חנוכה arrangement (4–11.12). A simulation moves a
     // class to another hour, so it must win the cell — a red day hidden under cream
@@ -354,16 +354,16 @@ test('a day with teaching but no guest lecture is exactly that — a session, ze
   expect(dayLectures.get(iso) ?? []).toHaveLength(0);
 });
 
-test('8.12.2026 carries BOTH — session 7 of מיומנויות א׳ AND the simulation that moved it', () => {
+test('8.12.2026 carries BOTH — session 7 of מיומנויות א׳ AND its simulation', () => {
   const items = dayMap.get('2026-12-08') ?? [];
   const sessions = items.filter(isTeachingSession);
   expect(sessions.length).toBeGreaterThanOrEqual(1);
   const sim = sessions.find((s) => s.category === 'simulation');
-  expect(sim, 'the simulation is the session, moved to another hour — not a separate item').toBeTruthy();
+  expect(sim, 'the simulation is the session itself — not a separate item').toBeTruthy();
   expect(sim!.course).toBe('skA');
   expect(sim!.courseTitle).toContain('מיומנויות ייעוציות');
   expect(sim!.session).toBe(7);
-  expect(sim!.time).toBe('15:00–17:00');
+  expect(sim!.time).toBe('19:00–21:00');
   // and a guest lecture put on the same date shows up beside it, not instead of it
   const withGuest = buildLectureDayMap([lec({ id: 'l-sim-day', date: '2026-12-08', lecturer: 'רון כהן', topic: 'גיוס' })]);
   expect(withGuest.get('2026-12-08')).toHaveLength(1);
