@@ -81,6 +81,14 @@ const FIXTURE = {
       date: EXAMS, startTime: '10:00', endTime: '12:00', topic: 'מפגש בתקופת בחינות',
       lecturer: 'רון כהן', lecturerEmail: 'ron@example.com', lecturerPhone: '0533334444',
       type: 'הרצאה', semester: 'א׳', status: 'טנטטיבי', institution: 'אוניברסיטת אריאל' },
+    /* Yariv 3.10, on 1.12: a workshop AND a tentative simulation in the same hours —
+       "פספס את זה שיש 2 ארועים באותה שעה". The banner must list the pair. */
+    { id: 'lec-overlap-a', courseId: 'hr', courseName: 'מיומנויות ייעוץ א', year: 'תשפ״ז',
+      date: '2026-11-10', startTime: '19:00', endTime: '21:00', topic: 'מיומנויות קריטיות',
+      lecturer: 'איילה ראובן ללונג', type: 'סדנה', semester: 'א׳', status: 'טנטטיבי', institution: 'אוניברסיטת אריאל' },
+    { id: 'lec-overlap-b', courseId: 'hr', courseName: 'מיומנויות ייעוץ א', year: 'תשפ״ז',
+      date: '2026-11-10', startTime: '19:00', endTime: '20:30', topic: 'סימולציית כניסה לארגון',
+      lecturer: 'מרכז סימולציות', type: 'סימולציה', semester: 'א׳', status: 'ממתין לאישור', location: 'זום' },
     /* cancelled — visible, inert, and NEVER a conflict even though it is on פסח */
     { id: 'lec-cancelled', courseId: 'hr', courseName: 'פרקטיקום משאבי אנוש', year: 'תשפ״ז',
       date: PESACH, startTime: '09:00', endTime: '10:00', topic: 'מפגש שבוטל',
@@ -462,14 +470,19 @@ console.log('\nYEAR VIEW + CONFLICTS + LEGEND (430px)');
     if (!b) return null;
     return { text: b.innerText.replace(/\s+/g, ' ').trim(), rows: b.querySelectorAll('li').length,
              classRows: b.querySelectorAll('[data-class-conflict]').length,
+             overlapRows: b.querySelectorAll('[data-overlap-conflict]').length,
              top: Math.round(b.getBoundingClientRect().top) };
   });
-  // two misplaced lectures, plus the one CLASS of his that falls on his own vacation
+  // two misplaced lectures, one pair in the same hours (10.11), plus the one CLASS of his on his own vacation
   // (פרקטיקום ייעוץ, Friday 20.11, inside חופשה באילת 18–21.11).
   check('CAL-conflict-banner — the misplaced lectures and the class to move are listed on arrival',
-    !!banner && banner.rows === 3 && banner.classRows === 1 && banner.text.includes('חופשת פסח')
+    !!banner && banner.rows === 4 && banner.classRows === 1 && banner.text.includes('חופשת פסח')
       && banner.text.includes('בחינות') && banner.text.includes('חופשה באילת'),
     banner ? `${banner.rows} rows at y=${banner.top}: "${banner.text.slice(0, 100)}"` : 'no banner');
+  check('CAL-overlap-banner — two live lectures in the same hours are listed with the things to move',
+    !!banner && banner.overlapRows === 1 && banner.text.includes('שתי הרצאות באותן שעות')
+      && banner.text.includes('מיומנויות קריטיות') && banner.text.includes('סימולציית כניסה לארגון'),
+    banner ? `overlap rows=${banner.overlapRows}` : 'no banner');
   check('CAL-conflict-cancelled-excluded — the cancelled lecture on פסח is NOT called a conflict',
     !!banner && !banner.text.includes('מפגש שבוטל'),
     banner ? 'cancelled row absent, as intended' : 'no banner');

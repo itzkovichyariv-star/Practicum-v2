@@ -240,6 +240,13 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
   useEffect(() => { setDoneLocal(null); }, [data.calendarDone]);
   /** A class of his standing on a shut day — the university's slot, his absence. */
   const classConflicts = useMemo(() => sessionConflicts(academicDayMap), [academicDayMap]);
+  /** Two live lectures in the same hours (Yariv 3.10, on 1.12: "פספס את זה שיש 2 ארועים
+   *  באותה שעה") — listed with the things to move, until one of them is cancelled. */
+  const overlapRows = useMemo(
+    () => [...lectureDayMap].sort(([a], [b]) => a.localeCompare(b))
+      .flatMap(([iso, items]) => lectureOverlaps(items).map(([a, b]) => ({ iso, a, b }))),
+    [lectureDayMap],
+  );
 
   async function markTodo(t: TodoItem, status: 'done' | 'not_needed' | null) {
     const next: DoneMap = { ...done };
@@ -419,9 +426,10 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
     let move = 0, todo = 0;
     for (const c of classConflicts) if (c.iso.startsWith(prefix)) move++;
     for (const c of conflicts) if (c.iso.startsWith(prefix)) move++;
+    for (const o of overlapRows) if (o.iso.startsWith(prefix)) move++;
     for (const [iso, list] of todoMap) if (iso.startsWith(prefix)) todo += list.filter((t) => !done[t.key]).length;
     return { move, todo };
-  }, [year, month, classConflicts, conflicts, todoMap, done]);
+  }, [year, month, classConflicts, conflicts, overlapRows, todoMap, done]);
 
   /** "Google must reflect the calendar as it is now" — the full reconcile, on demand. */
   const [gsync, setGsync] = useState<'idle' | 'busy'>('idle');
@@ -589,16 +597,16 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
       </section>
 
       {/* ── Conflicts: lectures already standing on a day the university has closed ── */}
-      {(conflicts.length > 0 || classConflicts.length > 0) && (
+      {(conflicts.length > 0 || classConflicts.length > 0 || overlapRows.length > 0) && (
         <section
           data-conflict-banner
           className="mb-8 rounded-2xl p-4 sm:p-5"
           style={{ background: 'rgba(224,102,102,0.10)', border: '1px solid rgba(224,102,102,0.55)' }}
         >
           <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>
-            {conflicts.length + classConflicts.length === 1
+            {conflicts.length + classConflicts.length + overlapRows.length === 1
               ? 'דבר אחד שצריך להזיז'
-              : `${conflicts.length + classConflicts.length} דברים שצריך להזיז`}
+              : `${conflicts.length + classConflicts.length + overlapRows.length} דברים שצריך להזיז`}
           </div>
           <ul className="flex flex-col gap-2">
             {classConflicts.map((c) => (
@@ -611,6 +619,21 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
                   <span className="text-[14px]" style={{ color: 'var(--ink)' }}>שיעור {c.title}</span>
                   <span className="mono text-[11px] mx-2" dir="ltr" style={{ color: 'var(--text-soft)' }}>{c.iso}</span>
                   <span className="block text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{c.reason} — צריך להזיז את השיעור</span>
+                </button>
+              </li>
+            ))}
+            {overlapRows.map((o) => (
+              <li key={'overlap' + o.iso + o.a.id + o.b.id} data-overlap-conflict={o.iso}>
+                <button
+                  onClick={() => { showMonth(o.iso.slice(0, 7)); setOpenDay(o.iso); }}
+                  className="w-full text-right rounded-xl px-3 py-2"
+                  style={{ minHeight: 44, background: 'transparent', border: '1px solid var(--divider)', cursor: 'pointer' }}
+                >
+                  <span className="text-[14px]" style={{ color: 'var(--ink)' }}>{o.a.title} · {o.b.title}</span>
+                  <span className="mono text-[11px] mx-2" dir="ltr" style={{ color: 'var(--text-soft)' }}>{o.iso}</span>
+                  <span className="block text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                    שתי הרצאות באותן שעות ({o.a.time} · {o.b.time}) — יש לבחור אחת ולבטל את השנייה
+                  </span>
                 </button>
               </li>
             ))}
