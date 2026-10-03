@@ -76,3 +76,22 @@ test('no swap to coordinate any more (simulations back in the evening, 3.10), an
   expect(cell('2026-11-24').chips.map((c) => c.text)).not.toContain('לתאם');
   expect(cell('2026-12-08')).toMatchObject({ fill: 'course', course: 'skills', simulation: true });
 });
+
+/* Yariv 2026-10-03, on 1.12 (איילה's workshop + a tentative simulation, both 19:00):
+ * "כן תוסיף" — 🎭 for a simulation lecture, and a warning when two share hours. */
+const ayala = lec({ id: 'ay', date: '2026-12-01', startTime: '19:00', endTime: '21:00', topic: 'מיומנויות קריטיות', lecturer: 'איילה ראובן ללונג' });
+const sim1 = lec({ id: 'sm', date: '2026-12-01', startTime: '19:00', endTime: '20:30', topic: 'סימולציית כניסה לארגון', lecturer: 'מרכז סימולציות' });
+
+test('a simulation lecture puts 🎭 on the day, even where the session is an ordinary one', () => {
+  expect(cell('2026-12-01').simulation).toBe(false);
+  expect(cell('2026-12-01', [sim1]).simulation).toBe(true);
+  expect(cell('2026-12-01', [ayala]).simulation).toBe(false);
+  expect(cell('2026-12-01', [{ ...sim1, status: 'בוטל' } as Lecture]).simulation).toBe(false);
+});
+
+test('two live lectures in the same hours are an overlap — until one is cancelled', () => {
+  expect(cell('2026-12-01', [ayala, sim1]).overlap).toBe(true);
+  expect(cell('2026-12-01', [ayala, { ...sim1, status: 'בוטל' } as Lecture]).overlap).toBe(false);
+  expect(cell('2026-12-01', [ayala, { ...sim1, startTime: '21:00', endTime: '22:00' } as Lecture]).overlap).toBe(false);
+  expect(cell('2026-12-01', [ayala]).overlap).toBe(false);
+});

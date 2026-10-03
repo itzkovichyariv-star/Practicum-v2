@@ -203,6 +203,40 @@ export function buildTodoMap(
   return out;
 }
 
+/* ── Simulations and overlaps among the day's lectures ───────────────────────────
+ *
+ * Yariv 2026-10-03: 1.12 holds איילה's workshop AND a tentative simulation, 19:00 both.
+ * "כן תוסיף": the cell shows 🎭 for a simulation LECTURE too (not only when the academic
+ * dataset marks the session one), and the day sheet says when two live lectures share
+ * hours — one of them will have to go. A cancelled one never counts. */
+
+/** A lecture that is a simulation (מרכז הסימולציות), by its topic, lecturer or type. */
+export function isSimulationLecture(l: Pick<LectureDayItem, 'title' | 'lecturer' | 'type'>): boolean {
+  return /סימולצי/.test(`${l.title || ''} ${l.lecturer || ''} ${l.type || ''}`);
+}
+
+const hm = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
+function spanOf(l: LectureDayItem): [number, number] | null {
+  const [a, b] = (l.time || '').split('–');
+  if (!/^\d{1,2}:\d{2}$/.test(a || '')) return null;
+  const s = hm(a);
+  const e = /^\d{1,2}:\d{2}$/.test(b || '') && hm(b) > s ? hm(b) : s + 1;
+  return [s, e];
+}
+
+/** Pairs of live (not cancelled) lectures on one day whose hours meet. */
+export function lectureOverlaps(lectures: LectureDayItem[]): [LectureDayItem, LectureDayItem][] {
+  const live = lectures.filter((l) => l.state !== 'cancelled');
+  const out: [LectureDayItem, LectureDayItem][] = [];
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      const a = spanOf(live[i]), b = spanOf(live[j]);
+      if (a && b && a[0] < b[1] && b[0] < a[1]) out.push([live[i], live[j]]);
+    }
+  }
+  return out;
+}
+
 /* ── The cell ─────────────────────────────────────────────────────────────────── */
 
 export interface CellModel {
@@ -210,8 +244,10 @@ export interface CellModel {
   /** The words written in the cell under the date: a course, a holiday, a מועד. */
   label: string | null;
   course: CourseKind | null;
-  /** A simulation session — drawn with 🎭. */
+  /** A simulation session, or a simulation lecture on the day — drawn with 🎭. */
   simulation: boolean;
+  /** Two live lectures on the day share hours — the day sheet says so. */
+  overlap: boolean;
   /** First / last day of a semester — Ariel's gold, as a line along the top. */
   semesterEdge: boolean;
   /** ⏱ a special arrangement (shorter day), ↻ a make-up day (another weekday's timetable). */
@@ -282,7 +318,8 @@ export function cellModel(input: {
     fill,
     label,
     course,
-    simulation: sessions.some((s) => s.category === 'simulation'),
+    simulation: sessions.some((s) => s.category === 'simulation') || live.some(isSimulationLecture),
+    overlap: lectureOverlaps(live).length > 0,
     semesterEdge: academic.some((a) => a.category === 'boundary'),
     special,
     conflict,
