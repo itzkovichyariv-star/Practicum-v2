@@ -50,3 +50,18 @@ test('the list is deterministic — same input, same order', () => {
   const d: PracticumData = { lectures: [lec({}), lec({ id: 'l0', date: '2026-12-01' })] };
   expect(ev(d).map((x) => x.key)).toEqual(ev(d).map((x) => x.key));
 });
+
+test('a lecture inside a course session carries the session — so his old copy can go', () => {
+  // 8.12: skA מפגש 7, 15:00–17:00, with the חנוכה note; the simulation lecture is 15:00–16:30.
+  const e = ev({ lectures: [lec({ date: '2026-12-08', startTime: '15:00', endTime: '16:30', courseName: 'מיומנויות ייעוץ א' })] })
+    .find((x) => x.key === 'lec:l1')!;
+  expect(e.description).toContain('מפגש 7');
+  expect(e.description).toContain('2-1891410-1');
+  expect(e.description).toContain('חנוכה');
+  expect(e.description).toContain('15:00–17:00');
+});
+
+test('a lecture on a day with no session of his gets no session block', () => {
+  const e = ev({ lectures: [lec({ date: '2026-11-26' })] }).find((x) => x.key === 'lec:l1')!;
+  expect(e.description).not.toContain('מפגש הקורס');
+});

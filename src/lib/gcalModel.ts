@@ -45,7 +45,43 @@ function addDay(iso: string): string {
 
 const isTime = (t?: string) => /^\d{2}:\d{2}$/.test((t || '').trim());
 
-function lectureEvent(l: Lecture, iso: string, approved: boolean): GEvent {
+const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+
+/**
+ * The course session a guest lecture sits inside, if any.
+ *
+ * Yariv 2026-10-03: "תסיר רק כפילויות ותשאיר את הזימון שיש בו הכי הרבה מידע". His primary
+ * calendar got a one-time copy of every course session on 22.9; on the 14 days a guest
+ * lecture fills the session, that copy and this event were the same meeting twice. So the
+ * lecture's event carries the session too (course, מפגש N, code, the dataset's own note —
+ * חנוכה break, "החלפת שעה!" …), which lets the primary copy go without losing a word.
+ * Same day; the session whose hours overlap the lecture's; else the day's only session.
+ */
+export function sessionFor(l: Lecture, iso: string, dayItems: AcademicDayItem[] = []): AcademicDayItem | null {
+  const sessions = dayItems.filter((i) => i.kind === 'session' && i.time);
+  if (!sessions.length) return null;
+  if (isTime(l.startTime)) {
+    const a = toMin(l.startTime!.trim());
+    const b = isTime(l.endTime) ? toMin(l.endTime!.trim()) : a + 1;
+    const hit = sessions.find((s) => {
+      const [s0, s1] = s.time!.split('–').map(toMin);
+      return a < s1 && b > s0;
+    });
+    if (hit) return hit;
+  }
+  return sessions.length === 1 ? sessions[0] : null;
+}
+
+function sessionLines(s: AcademicDayItem): string[] {
+  return [
+    '\n— מפגש הקורס —',
+    `${s.courseTitle || s.title}${s.session ? ` · מפגש ${s.session}` : ''} · ${s.time}${s.code ? ` · קוד ${s.code}` : ''}`,
+    s.title !== s.courseTitle ? s.title : '',
+    s.note ? `הערות מהלוח האקדמי (22.9; הסטטוס העדכני — למעלה): ${s.note}` : '',
+  ].filter(Boolean);
+}
+
+function lectureEvent(l: Lecture, iso: string, approved: boolean, session: AcademicDayItem | null = null): GEvent {
   const timed = isTime(l.startTime);
   const end = isTime(l.endTime) ? l.endTime!.trim() : null;
   const title = (l.topic || l.title || l.courseName || 'הרצאה').trim();
@@ -59,6 +95,7 @@ function lectureEvent(l: Lecture, iso: string, approved: boolean): GEvent {
       l.lecturerEmail ? `מייל: ${l.lecturerEmail}` : '',
       `סטטוס: ${(l.status || '').trim() || '—'}`,
       l.notes ? `\n${l.notes}` : '',
+      ...(session ? sessionLines(session) : []),
       '\n— מסונכרן מאפליקציית הפרקטיקום. שינויים עושים באפליקציה.',
     ].filter(Boolean).join('\n'),
     location: (l.link || l.location || l.institution || '').trim() || undefined,
@@ -84,7 +121,7 @@ export function desiredGoogleEvents(
   for (const [iso, items] of lectureDayMap) {
     for (const it of items) {
       if (it.state === 'cancelled') continue;
-      out.push(lectureEvent(it.lecture, iso, it.state === 'approved'));
+      out.push(lectureEvent(it.lecture, iso, it.state === 'approved', sessionFor(it.lecture, iso, academicDayMap.get(iso))));
     }
   }
 
