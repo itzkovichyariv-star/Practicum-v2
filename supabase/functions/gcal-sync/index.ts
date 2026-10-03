@@ -100,7 +100,8 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'POST only' }, 405);
 
   const saRaw = Deno.env.get('GCAL_SA_KEY');
-  const calendarId = Deno.env.get('GCAL_CALENDAR_ID');
+  // Pasted secrets often carry a stray space, newline or quotes — Google then answers 404.
+  const calendarId = (Deno.env.get('GCAL_CALENDAR_ID') || '').trim().replace(/^["']+|["']+$/g, '').trim();
   if (!saRaw || !calendarId) return json({ ok: true, configured: false });
 
   let payload: any;
@@ -111,7 +112,8 @@ Deno.serve(async (req) => {
   const dryRun = !!payload?.dryRun;
 
   try {
-    const token = await accessToken(JSON.parse(saRaw));
+    const sa = JSON.parse(saRaw);
+    const token = await accessToken(sa);
     const H = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     const cal = `${API}/calendars/${encodeURIComponent(calendarId)}/events`;
 
@@ -126,6 +128,11 @@ Deno.serve(async (req) => {
       if (pageToken) u.searchParams.set('pageToken', pageToken);
       const r = await fetch(u, { headers: H });
       const j = await r.json();
+      if (r.status === 404) {
+        // Not secret, and the only two facts that explain a 404: which calendar, as whom.
+        throw new Error(`היומן לא נמצא (404). calendar=[${calendarId}] (${calendarId.length} תווים) · service account=${sa.client_email} — `
+          + 'בדוק/י שהיומן משותף עם החשבון הזה בהרשאת "ביצוע שינויים באירועים" ושהמזהה תואם בדיוק.');
+      }
       if (!r.ok) throw new Error(`list: ${r.status} ${JSON.stringify(j).slice(0, 200)}`);
       for (const ev of j.items || []) {
         const k = ev.extendedProperties?.private?.key;
