@@ -62,6 +62,7 @@ import {
 } from '../lib/lectureCalendar';
 import { saveLecture, deleteLecture } from '../lib/lectureSave';
 import { saveSnapshot } from '../lib/dataApi';
+import { syncGoogleNow, syncGoogleSoon } from '../lib/gcalSync';
 import {
   CHIP_STYLE,
   COURSE_STYLE,
@@ -256,6 +257,7 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
     );
     if (!res.ok) { setDoneLocal(null); showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
     showToast(status ? '✓ סומן — הוסר מהלוח' : 'הסימון בוטל', 'success');
+    syncGoogleSoon({ ...data, calendarDone: next });
     onRefresh();
   }
 
@@ -420,6 +422,18 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
     return { move, todo };
   }, [year, month, classConflicts, conflicts, todoMap, done]);
 
+  /** "Google must reflect the calendar as it is now" — the full reconcile, on demand. */
+  const [gsync, setGsync] = useState<'idle' | 'busy'>('idle');
+  async function syncNow() {
+    if (gsync === 'busy') return;
+    setGsync('busy');
+    const r = await syncGoogleNow({ ...data, calendarDone: done });
+    setGsync('idle');
+    if (!r.ok) { showToast('הסנכרון לגוגל נכשל: ' + r.error, 'error'); return; }
+    if (!r.configured) { showToast('הסנכרון לגוגל עוד לא הוגדר (חסרים מפתחות בשרת)', 'error'); return; }
+    showToast(`✓ גוגל מעודכן · ${r.created} נוספו · ${r.updated} עודכנו · ${r.deleted} הוסרו`, 'success');
+  }
+
   /** One day's model — the SAME for the month grid and the year view. */
   function modelFor(key: string): CellModel {
     const academic = academicDayMap.get(key) ?? [];
@@ -534,6 +548,7 @@ export default function CalendarPage({ data, context, onNavigate, userName, onRe
             <NavBtn onClick={goPrev}>← חודש קודם</NavBtn>
             <NavBtn onClick={goToday} primary>היום</NavBtn>
             <NavBtn onClick={goNext}>חודש הבא →</NavBtn>
+            <NavBtn onClick={syncNow}>{gsync === 'busy' ? '…מסנכרן' : '↻ סנכרן לגוגל'}</NavBtn>
             {monthAlerts.move > 0 && (
               <span data-month-pill="move" className="rounded-full px-3 py-1 text-[12.5px] font-bold"
                 style={{ background: CHIP_STYLE.move.bg, color: CHIP_STYLE.move.fg }}>

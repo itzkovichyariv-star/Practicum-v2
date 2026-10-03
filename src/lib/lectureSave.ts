@@ -27,6 +27,7 @@
 import type { Lecture, PracticumData } from './supabase';
 import { saveSnapshot } from './dataApi';
 import * as ms from './msGraph';
+import { syncGoogleSoon } from './gcalSync';
 
 export type LectureSaveResult =
   | { ok: true; lectures: Lecture[]; saved: Lecture; message: string }
@@ -169,6 +170,7 @@ export async function saveLecture(
   // called us shows the new row on its next render instead of waiting for the refetch.
   (data.lectures as Lecture[]) = next;
   if (filledFor) (data.employers as any[]) = employers;
+  syncGoogleSoon(data);   // mirror into Google — a moved lecture moves there too
 
   return { ok: true, lectures: next, saved: synced, message };
 }
@@ -192,5 +194,6 @@ export async function deleteLecture(
   if (!res.ok) return { ok: false, error: res.error || '' };
 
   (data.lectures as Lecture[]) = next;
+  syncGoogleSoon(data);
   return { ok: true, lectures: next, message: '✓ ההרצאה נמחקה' };
 }
