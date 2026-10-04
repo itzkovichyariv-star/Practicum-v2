@@ -523,6 +523,16 @@ export default function OrgHub({
                     title="הסטודנט/ית כבר במגעים מתקדמים — אישורך מהווה שיבוץ (השמה), ללא שליחת קו״ח"
                     style={{ ...btnSmall(), color: '#15803d', borderColor: '#15803d' }}>✓ כבר במגעים — אשר שיבוץ</button>
                 )}
+                {/* Yariv 2026-10-04: "אי אפשר לאשר סטודנט שהתקבל … הכפתור לא לחיץ". A student
+                    the org already took — before any CV went through the app, or with no
+                    updated CV on file — had only "שלח קו״ח", greyed out, and no way to say
+                    "נקלט". Any resolved org now offers the same direct placement; placeDirect
+                    takes a free place for the course, and says so when there is none. */}
+                {!isSuggested && emp && (
+                  <button type="button" data-accept-direct={idx} onClick={() => setConfirmDialog({ type: 'place_direct', orgName: card.orgName })}
+                    title="הארגון כבר קיבל את הסטודנט/ית — סמן שיבוץ ישירות, ללא שליחת קו״ח דרך המערכת"
+                    style={{ ...btnSmall(), color: '#15803d', borderColor: '#15803d' }}>✓ התקבל/ה — אשר שיבוץ</button>
+                )}
                 <button type="button" data-release={idx} onClick={() => handleRelease(card.orgName)}
                   title={card.slotId ? 'הסר וגם שחרר את המקום שנתפס' : 'הסר ארגון זה מהדירוג'}
                   style={{ ...btnSmall(), color: 'var(--text-soft)' }}>{card.slotId ? '✕ הסר ושחרר מקום' : '✕ הסר'}</button>
@@ -679,7 +689,7 @@ export default function OrgHub({
               </div>
               <div className="text-[13.5px] mb-5" style={{ color: 'var(--text-soft)' }}>
                 {type === 'placed' ? `לסמן שיבוץ של ${form.name} אצל ${emp?.name || orgName}?`
-                  : type === 'place_direct' ? `${form.name} כבר במגעים מתקדמים עם ${emp?.name || orgName}. לאשר שיבוץ ישיר — ללא שליחת קו"ח? פעולה זו מסמנת השמה ותופסת מקום.`
+                  : type === 'place_direct' ? `לאשר ש${form.name} שובץ/ה ב${emp?.name || orgName} — ללא שליחת קו"ח דרך המערכת? פעולה זו מסמנת השמה ותופסת מקום.`
                   : type === 'rejected' ? `לסמן שהמעסיק ${emp?.name || orgName} דחה את ${form.name}?`
                   : type === 'never_sent' ? `הקו״ח ל${emp?.name || orgName} לא נשלחו בפועל? המקום בארגון ישוחרר, והארגון יחזור לרשימה כ"טרם נשלח" כדי שאפשר יהיה לשלוח שוב. לא נשלחת שום הודעה.`
                   : isMarkCancelled ? `לסמן ביטול מועמדות אצל ${emp?.name || orgName} ללא פתיחת ערוץ תקשורת?`
