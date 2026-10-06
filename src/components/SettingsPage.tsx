@@ -51,7 +51,7 @@ function EmailSettingsCard({ data, userName, onRefresh }: { data: any; userName:
 
   function addExtra() {
     const v = newExtra.trim().toLowerCase();
-    if (!v) return;
+    if (!v) { setMsg('הקלד/י כתובת מייל להוספה'); setTimeout(() => setMsg(null), 2000); return; }
     if (extras.includes(v)) { setMsg('המייל כבר קיים ברשימה'); setTimeout(() => setMsg(null), 2000); return; }
     setExtras(prev => [...prev, v]);
     setNewExtra('');

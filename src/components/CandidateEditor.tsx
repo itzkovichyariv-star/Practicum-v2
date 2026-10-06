@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { dialPhone } from '../lib/dial';
 import { saveFile } from '../lib/saveFile';
 import { openHtmlDocument } from '../lib/printDoc';
 import { openCv } from '../lib/cvUrl';
@@ -152,8 +153,7 @@ export default function CandidateEditor({
   }
 
   function openCall() {
-    if (!form.phone) { alert('אין טלפון'); return; }
-    window.location.href = `tel:${form.phone.replace(/[^\d+]/g, '')}`;
+    dialPhone(form.phone, form.name);
   }
   function openWhatsApp() {
     if (!form.phone) { alert('אין טלפון'); return; }

@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { dialPhone } from '../lib/dial';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
 import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets, remindableChips } from '../lib/placementStatus';
 import { openWhatsApp, resolveEmployerFor } from '../lib/placement';
@@ -93,7 +94,7 @@ function EmployerDetails({ emp, orgName, onClose }: { emp: any | null; orgName: 
           {(phone || email) && (
             <div style={{ display: 'flex', gap: 8, marginTop: 11 }}>
               {phone && <button type="button" title={`התקשר ל${emp.contactPerson || emp.name}`} style={btn}
-                onClick={() => { window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`; }}><PhoneIcon size={15} /></button>}
+                onClick={() => dialPhone(phone)}><PhoneIcon size={15} /></button>}
               {phone && <button type="button" title="WhatsApp — הודעה חופשית" style={btn}
                 onClick={() => openWhatsApp(phone, { name: emp.name })}><WhatsAppIcon size={15} /></button>}
               {email && <button type="button" title="מייל — הודעה חופשית" style={btn}

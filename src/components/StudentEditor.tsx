@@ -1,4 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import { dialPhone } from '../lib/dial';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
@@ -479,9 +480,7 @@ export default function StudentEditor({
   }
 
   function openCall() {
-    if (!form.phone) { alert('לא הוזן טלפון'); return; }
-    // tel: opens the phone app on mobile / default dialer on desktop (Teams/FaceTime/etc)
-    window.location.href = `tel:${form.phone.replace(/[^\d+]/g, '')}`;
+    dialPhone(form.phone, form.name);
   }
 
   function openWhatsApp() {
