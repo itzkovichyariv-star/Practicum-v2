@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { saveFile } from '../lib/saveFile';
 import { openCv } from '../lib/cvUrl';
 import { btnPrimary, btnSecondary } from '../lib/design';
 import { supabase } from '../lib/supabase';
@@ -150,12 +151,7 @@ export default function SubmissionsInbox({ onAcceptIntoCandidates, refreshKey, h
       }
       const blob = await zip.generateAsync({ type: 'blob' });
       const name = mode === 'cv' ? 'קורות_חיים' : mode === 'application' ? 'טפסי_מועמדות' : 'מסמכי_מועמדים';
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${name}_${new Date().toISOString().slice(0, 10)}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await saveFile(blob, `${name}_${new Date().toISOString().slice(0, 10)}.zip`);
       setDownloadMsg(`✓ הורדו ${count} קבצים`);
       setTimeout(() => setDownloadMsg(null), 4000);
     } catch (e: any) {

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { saveFile } from '../lib/saveFile';
+import { openHtmlDocument } from '../lib/printDoc';
 import { openCv } from '../lib/cvUrl';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Candidate, Course } from '../lib/supabase';
@@ -406,9 +408,7 @@ function FileField({ label, value, onChange, placeholder }: { label: string; val
       const { data: blob } = await supabase.storage.from(bucket).download(path);
       if (blob) {
         const filename = path.split('/').pop() || 'file';
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-        URL.revokeObjectURL(url);
+        await saveFile(blob, filename);
         return;
       }
     }
@@ -519,23 +519,15 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
       </body></html>`;
   }
 
+  // window.open('') returns null in the installed app, and this returned silently —
+  // a print button that did nothing (2026-10-06). A blob page prints itself instead.
   function handlePrint() {
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(buildHtml());
-    w.document.close();
-    w.focus();
-    setTimeout(() => { w.print(); }, 300);
+    openHtmlDocument(buildHtml());
   }
 
   function handleDownload() {
     const blob = new Blob([buildHtml()], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `שאלון_${(candidateName || 'מועמד').replace(/\s+/g, '_')}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveFile(blob, `שאלון_${(candidateName || 'מועמד').replace(/\s+/g, '_')}.html`);
   }
 
   return (

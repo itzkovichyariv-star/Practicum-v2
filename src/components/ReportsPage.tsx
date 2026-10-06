@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { saveFile } from '../lib/saveFile';
+import { openPrintable, printableTableHtml } from '../lib/printDoc';
 import { btnTab, btnSecondary } from '../lib/design';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear } from './pageShared';
@@ -408,16 +410,22 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
     };
   }, [report]);
 
+  /** "הכפתור לא מגיב" (2026-10-06): window.print() is a no-op in the installed app —
+   *  the report opens as its own printable page instead (src/lib/printDoc.ts). */
+  function printReport() {
+    if (!compactReport) return;
+    const title = REPORTS.find(r => r.key === active)?.title || 'דוח';
+    openPrintable(title, printableTableHtml(title, compactReport.headers, compactReport.rows,
+      `${compactReport.rows.length} שורות · הופק ${new Date().toLocaleDateString('he-IL')}`));
+  }
+
   function downloadCsv() {
     if (!compactReport) return;
     const { headers, rows } = compactReport;
     const csv = [headers, ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`))]
       .map(r => r.join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${active}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+    saveFile(blob, `${active}-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   return (
@@ -448,7 +456,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
         {active !== 'timeline' && active !== 'placement_dispatches' && (
           <div className="flex gap-3 mt-5">
             <button onClick={downloadCsv} style={btnSecondary()}>📊 הורד CSV</button>
-            <button onClick={() => window.print()} style={btnSecondary()}>🖨 הדפס / PDF</button>
+            <button data-report-print onClick={printReport} style={btnSecondary()}>🖨 הדפס / PDF</button>
             {compactReport && (
               <span className="mr-auto mono text-[12px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
                 {compactReport.rows.length} שורות · {compactReport.headers.length} עמודות

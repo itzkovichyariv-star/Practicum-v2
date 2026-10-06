@@ -593,7 +593,7 @@ export default function StudentEditor({
       return;
     }
     // In-gesture (url came back synchronously) so the mail client actually opens.
-    window.open(`mailto:${empEmail}?subject=${subject}&body=${body}`, '_blank');
+    openMailto(`mailto:${empEmail}?subject=${subject}&body=${body}`);
   }
 
   async function handleSendFeedbackWhatsApp() {

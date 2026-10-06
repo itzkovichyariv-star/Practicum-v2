@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { saveFile } from '../lib/saveFile';
 import type { PageProps } from './pageShared';
 import EvaluationForm from './EvaluationForm';
 
@@ -42,10 +43,9 @@ function openBlobUrl(content: string, mimeType: string, forceDownload = false, f
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   if (forceDownload && filename) {
-    const a = document.createElement('a');
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    saveFile(blob, filename);
+    return;
   } else {
     // Open in new tab \u2014 works reliably across browsers including mobile Safari
     const a = document.createElement('a');
@@ -53,7 +53,7 @@ function openBlobUrl(content: string, mimeType: string, forceDownload = false, f
     document.body.appendChild(a); a.click();
     document.body.removeChild(a);
   }
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 function downloadAsWord(bodyHtml: string, title: string, filename: string) {

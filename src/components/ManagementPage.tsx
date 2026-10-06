@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { saveFile } from '../lib/saveFile';
 import { normalizeSemester } from '../lib/semester';
 import type { PageProps } from './pageShared';
 import type { Course, Employer } from '../lib/supabase';
@@ -88,12 +89,7 @@ function SnapshotsSection({ data, userName, onRefresh }: PageProps) {
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `practicum-backup-${ts}.json`;
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveFile(blob, filename);
     showToast(`✓ גיבוי הורד: ${filename}`, 'success');
   }
 
@@ -661,11 +657,7 @@ function SlotsSection({ data, userName, onRefresh }: PageProps) {
     }
     lines.push('END:VCALENDAR');
     const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'practicum-interviews.ics';
-    a.click();
-    URL.revokeObjectURL(a.href);
+    saveFile(blob, 'practicum-interviews.ics');
   }
 
   async function deleteSlot(id: string) {

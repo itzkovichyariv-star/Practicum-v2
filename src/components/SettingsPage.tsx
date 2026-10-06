@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { saveFile } from '../lib/saveFile';
 import { btnPrimary, btnSecondary } from '../lib/design';
 import type { PageProps } from './pageShared';
 import { saveSnapshot } from '../lib/dataApi';
@@ -342,14 +343,7 @@ function JsonBackupCard({ data }: { data: any }) {
   function download() {
     const stamp = new Date().toISOString().slice(0, 10);
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `גיבוי-פרקטיקום-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    saveFile(blob, `גיבוי-פרקטיקום-${stamp}.json`);
     setDone(true);
     setTimeout(() => setDone(false), 3000);
   }
