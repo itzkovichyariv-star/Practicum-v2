@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { dialPhone } from '../lib/dial';
 import { btnPrimary, btnSecondary, btnSmall, btnTab } from '../lib/design';
 import type { Employer, EmployerApprovalRequest, Student } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
@@ -738,7 +739,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
     : `0 0 0 2.5px ${st.color}30`;                        // others: a clean ring
   const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
 
-  function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
+  function callEmployer() { dialPhone(emp.contactPhone, emp.name); }
   function whatsappEmployer() {
     openWhatsApp(emp.contactPhone || '', { name: emp.name });
   }
@@ -879,8 +880,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
   const statusChip = cardStatusChip(st, yearAv);
 
   function callEmployer() {
-    if (!emp.contactPhone) return;
-    window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`;
+    dialPhone(emp.contactPhone, emp.name);
   }
   function whatsappEmployer() {
     openWhatsApp(emp.contactPhone || '', { name: emp.name });

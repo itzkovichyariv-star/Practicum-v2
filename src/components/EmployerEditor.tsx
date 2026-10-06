@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { dialPhone } from '../lib/dial';
 import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
@@ -159,8 +160,7 @@ export default function EmployerEditor({
   }
 
   function openCall() {
-    if (!form.contactPhone) { alert('אין טלפון איש קשר'); return; }
-    window.location.href = `tel:${form.contactPhone.replace(/[^\d+]/g, '')}`;
+    dialPhone(form.contactPhone, form.name);
   }
 
   function openWhatsApp() {

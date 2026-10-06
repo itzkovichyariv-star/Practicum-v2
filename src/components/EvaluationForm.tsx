@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { openHtmlDocument } from '../lib/printDoc';
 import type { Student, Course, Employer } from '../lib/supabase';
 
 type Props = {
@@ -35,19 +36,17 @@ export default function EvaluationForm({ student, courses, employers, onClose }:
     };
   }, []);
 
+  // Same failure as everywhere else in the installed app: window.open('') is null and
+  // window.print() a no-op, so the button did nothing (2026-10-06). Blob page instead.
   function handlePrint() {
     const content = document.getElementById('evaluation-print-body');
-    if (!content) { window.print(); return; }
-    const w = window.open('', '_blank');
-    if (!w) { window.print(); return; }
-    w.document.write(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>טופס הערכה — ${student.name}</title>
+    openHtmlDocument(`<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8"><title>טופס הערכה — ${student.name}</title>
       <style>
         body{font-family:Arial,sans-serif;direction:rtl;color:#1a1a1a;margin:1.5cm;font-size:11pt}
         input,textarea,select{font-family:inherit;font-size:inherit}
         @media print{@page{size:A4;margin:1.2cm}}
       </style></head>
-      <body>${content.innerHTML}<script>setTimeout(()=>window.print(),400)<\/script></body></html>`);
-    w.document.close();
+      <body>${content ? content.innerHTML : ''}</body></html>`);
   }
 
   return (

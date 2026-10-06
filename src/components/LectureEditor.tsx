@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from 'react';
+import { openMailto } from '../lib/openMailto';
+import { dialPhone } from '../lib/dial';
 import { SEMESTERS, normalizeSemester } from '../lib/semester';
 import type { Lecture, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
@@ -127,8 +129,7 @@ export default function LectureEditor({
   }
 
   function openCall() {
-    if (!form.lecturerPhone) { alert('לא הוזן טלפון של המרצה'); return; }
-    window.location.href = `tel:${form.lecturerPhone.replace(/[^\d+]/g, '')}`;
+    dialPhone(form.lecturerPhone, form.lecturer);
   }
 
   function openWhatsApp() {
@@ -154,8 +155,7 @@ export default function LectureEditor({
 תודה,
 ד״ר יריב איצקוביץ
 `);
-    const url = `mailto:${encodeURIComponent(form.lecturerEmail)}?subject=${subject}&body=${body}`;
-    window.location.href = url;
+    openMailto(`mailto:${encodeURIComponent(form.lecturerEmail)}?subject=${subject}&body=${body}`);
   }
 
   function addToOutlookCalendar() {
