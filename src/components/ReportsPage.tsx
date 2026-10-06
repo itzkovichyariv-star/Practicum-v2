@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { saveFile } from '../lib/saveFile';
+import { saveFile, isStandaloneApp } from '../lib/saveFile';
+import { tablePdf } from '../lib/pdfTable';
 import { openPrintable, printableTableHtml } from '../lib/printDoc';
 import { btnTab, btnSecondary } from '../lib/design';
 import type { PageProps } from './pageShared';
@@ -410,13 +411,27 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
     };
   }, [report]);
 
-  /** "הכפתור לא מגיב" (2026-10-06): window.print() is a no-op in the installed app —
-   *  the report opens as its own printable page instead (src/lib/printDoc.ts). */
+  /** "הכפתור לא מגיב" (2026-10-06): on his phone the app is installed, and nothing there
+   *  can print a web page — not this one, not a page it opens. A FILE it can: the report is
+   *  drawn into a real PDF (lib/pdfTable.ts) and handed to the share sheet, which has Print
+   *  and Save to Files. On a computer, "הדפס" still opens the printable page. */
+  function reportPdf(): { blob: Blob; name: string } | null {
+    if (!compactReport) return null;
+    const title = REPORTS.find(r => r.key === active)?.title || 'דוח';
+    const sub = `${compactReport.rows.length} שורות · הופק ${new Date().toLocaleDateString('he-IL')}`;
+    return { blob: tablePdf(title, sub, compactReport.headers, compactReport.rows),
+             name: `${title}-${new Date().toISOString().slice(0, 10)}.pdf` };
+  }
   function printReport() {
     if (!compactReport) return;
+    if (isStandaloneApp()) { const p = reportPdf(); if (p) saveFile(p.blob, p.name); return; }
     const title = REPORTS.find(r => r.key === active)?.title || 'דוח';
     openPrintable(title, printableTableHtml(title, compactReport.headers, compactReport.rows,
       `${compactReport.rows.length} שורות · הופק ${new Date().toLocaleDateString('he-IL')}`));
+  }
+  function downloadPdf() {
+    const p = reportPdf();
+    if (p) saveFile(p.blob, p.name);
   }
 
   function downloadCsv() {
@@ -456,7 +471,8 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
         {active !== 'timeline' && active !== 'placement_dispatches' && (
           <div className="flex gap-3 mt-5">
             <button onClick={downloadCsv} style={btnSecondary()}>📊 הורד CSV</button>
-            <button data-report-print onClick={printReport} style={btnSecondary()}>🖨 הדפס / PDF</button>
+            <button data-report-print onClick={printReport} style={btnSecondary()}>🖨 הדפס</button>
+            <button data-report-pdf onClick={downloadPdf} style={btnSecondary()}>⬇ הורד PDF</button>
             {compactReport && (
               <span className="mr-auto mono text-[12px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
                 {compactReport.rows.length} שורות · {compactReport.headers.length} עמודות
