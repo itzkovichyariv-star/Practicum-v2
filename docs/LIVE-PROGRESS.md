@@ -902,3 +902,9 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
 - The predeploy stamp (`version.ts`, `sw.js`) was left uncommitted and the deploy was not logged; both committed now.
 - **NOT verified from here:** whether `cv_updates_ma_status.sql` was run, whether the `notify-org-suggestion` /
   `notify-placement` functions were deployed, and whether the /ma link was sent. Check these before assuming the /ma flow works end to end.
+
+## 2026-10-08 — /ma release verified complete (read-only checks)
+- **SQL run:** `cv_updates` has `org_status`, `student_note`, `contact_permission`; `contact_after` is gone (42703) — the final three-column version.
+- **Functions deployed:** `notify-org-suggestion` (v10) and `notify-placement` (v4) deployed 2026-10-07 15:00 IL, after the last code change (14:51 IL).
+- **Site:** build 140 live (592db43f).
+- **Only remaining item:** sending the /ma link to students — Yariv's call. Not run: an end-to-end submit test (would write a real row + send a real mail).
