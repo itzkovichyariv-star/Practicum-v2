@@ -13,6 +13,7 @@ import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
 import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity, promoteOrgToFirst } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
+import { sendPlacementEmail } from '../lib/emailApi';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS, applyEmployerStatus, type ManualStatusKey } from '../lib/orgAvailability';
 
 function empCourseIds(e: Employer): string[] {
@@ -215,6 +216,19 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', sug.id).then(() => {});
     setPendingSuggestions(p => p.filter(x => x.id !== sug.id));
     showToast(student ? '✓ אושר — נוסף כארגון פרטי ונקבע כבחירה ראשונה' : '✓ אושר — נוסף כארגון פרטי', 'success');
+    // The form promised the student that ד"ר יריב איצקוביץ would approach the
+    // organization and that they would hear by email. This is that email — after
+    // the save, so a mail failure never costs the approval.
+    const notifyTo = (student?.email || sug.email || '').trim();
+    if (notifyTo) {
+      const res = await sendPlacementEmail(
+        { name: student?.name || sug.name || '', email: notifyTo },
+        o.name,
+        'org-approved',
+      );
+      if (!res.sent) showToast(`האישור נשמר, אבל המייל לסטודנט/ית לא נשלח${res.error ? ` (${res.error})` : ''}`, 'error');
+      else showToast(`✉︎ נשלח עדכון אישור ל${notifyTo}`, 'success');
+    }
     onRefresh();
   }
 
