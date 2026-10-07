@@ -5,6 +5,7 @@ import { openCv } from '../lib/cvUrl';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, normEmail, mutualNotice, partnerEmails, buildProposal,
+  submissionEmail,
   type MaContext, type PartnerMode, type MutualState,
 } from '../lib/maPracticum';
 
@@ -31,6 +32,9 @@ export default function MaPracticumForm() {
   const prefillEmail = params.get('email') || '';
 
   const [email, setEmail] = useState(prefillEmail);
+  // Typed only when the address matched nobody. A second key, not a second question: a
+  // student whose address IS on record never sees this field.
+  const [typedName, setTypedName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [orgChoice, setOrgChoice] = useState('');
   const [proposing, setProposing] = useState(false);
@@ -93,7 +97,15 @@ export default function MaPracticumForm() {
       .then(({ error }) => setSchema(error ? 'missing' : 'ready'));
   }, []);
 
-  const lookup = useMemo(() => resolveMaStudent(blob, email), [blob, email]);
+  // ?course= lets the coordinator preview the form as a student of another course row.
+  const previewCourse = params.get('course') || '';
+  const lookup = useMemo(
+    () => resolveMaStudent(blob, email, typedName, previewCourse),
+    [blob, email, typedName, previewCourse],
+  );
+  // The address the row is FILED under: the one on the student's card when we have it, so
+  // a student identified by name does not become a second identity nobody can pair up.
+  const filedEmail = useMemo(() => submissionEmail(lookup, email), [lookup, email]);
   const me = lookup.ok ? lookup.student : null;
   const partners = useMemo(() => (lookup.ok ? partnerOptions(blob, lookup.student) : []), [blob, lookup]);
   const orgs = useMemo(() => (lookup.ok ? maOrgOptions(blob, lookup.courseId) : []), [blob, lookup]);
@@ -138,7 +150,7 @@ export default function MaPracticumForm() {
   // returning student can change one answer without redoing the rest.
   const [myHistory, setMyHistory] = useState<Array<{ id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; partner_mode?: string | null; partner_names?: string[] | null }>>([]);
   useEffect(() => {
-    const em = normEmail(email);
+    const em = filedEmail;
     if (!em || schema === 'checking') { setMyHistory([]); return; }
     let alive = true;
     const cols = schema === 'ready'
@@ -148,7 +160,7 @@ export default function MaPracticumForm() {
       .order('uploaded_at', { ascending: false }).limit(10)
       .then(({ data }) => { if (alive) setMyHistory((data || []) as any); });
     return () => { alive = false; };
-  }, [email, schema, status]);
+  }, [filedEmail, schema, status]);
 
   // A returning student sees the same nudge about what they ALREADY submitted, so the
   // mismatch surfaces even if they never submit again. Keyed on the saved names so it runs
@@ -196,7 +208,7 @@ export default function MaPracticumForm() {
 
     let path = existingCvPath;
     if (file) {
-      const safe = normEmail(email).split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 40) || 'student';
+      const safe = filedEmail.split('@')[0].replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 40) || 'student';
       const ext = (file.name.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 8) || 'bin';
       path = `cv-updates/ma-${safe}-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('candidate-uploads').upload(path, file, {
@@ -215,7 +227,7 @@ export default function MaPracticumForm() {
     }) : null;
 
     const core = {
-      email: normEmail(email),
+      email: filedEmail,
       name: (me?.name || '').trim() || null,
       cv_file_path: path,
       // The single choice lands in org_pref_1 so the coordinator's existing "אמץ הגשה"
@@ -355,13 +367,47 @@ export default function MaPracticumForm() {
               <div className="mt-2 text-[13px] leading-[1.5] rounded-lg px-3 py-2" data-ma-identified
                 style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.3)', color: '#065f46' }}>
                 ✓ זיהינו אותך: <strong>{me?.name}</strong> · {lookup.ok ? lookup.courseName : ''}{me?.year ? ` · ${me.year}` : ''}
+                {/* Identified by a typed name, and the card carries a different address: say
+                    which one the submission lands on. That is the address the coordinator
+                    answers, and the one the partner question is asked about. */}
+                {lookup.ok && lookup.identifiedBy === 'preview' && (
+                  <div className="mt-1" data-ma-preview>
+                    זו תצוגה מקדימה של הטופס, לא רשומת סטודנט. שליחה מכאן <strong>כן</strong> נשמרת
+                    כהגשה אמיתית בטבלת cv_updates, וכדאי למחוק אותה אחרי הבדיקה.
+                  </div>
+                )}
+                {lookup.ok && lookup.identifiedBy === 'name' && filedEmail !== normEmail(email) && (
+                  <div className="mt-1" data-ma-filed-under>
+                    ההגשה תירשם על הכתובת שרשומה אצלנו: <strong>{filedEmail}</strong>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="mt-2 text-[13px] leading-[1.5] rounded-lg px-3 py-2" data-ma-unknown
                 style={{ background: 'rgba(122,30,43,0.07)', border: '1px solid var(--accent)', color: 'var(--accent)' }}>
-                הכתובת הזו אינה מופיעה ברשימת הסטודנטים של הפרקטיקום. בדקו אם זו הכתובת שדיווחתם לתכנית, או פנו לרכזת.
+                {lookup.ok === false && lookup.reason === 'unknown-name'
+                  ? 'לא מצאנו סטודנט/ית בשם הזה ברשימות התכנית. בדקו את האיות והשם המלא, או פנו לרכזת.'
+                  : lookup.ok === false && lookup.reason === 'ambiguous-name'
+                    ? 'יש יותר מסטודנט/ית אחד/ת בשם הזה. הזינו את המייל שרשום בתכנית, או פנו לרכזת.'
+                    : 'הכתובת הזו אינה מופיעה ברשימת הסטודנטים. הוסיפו את שמכם המלא למטה כדי שנזהה אתכם לפיו.'}
               </div>
             )
+          )}
+
+          {/* THE SECOND KEY. Shown only once the address has failed to identify anyone, so
+              the ordinary case stays a single field — and typed, never a list: a public page
+              that offered the cohort by name would let anyone holding the link read off who
+              is in it. The partner picker may show those names, but only to someone the
+              form has already identified. */}
+          {normEmail(email) && blob && !identified && (
+            <label className="block mt-3">
+              <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
+                השם המלא שלך, כפי שהוא רשום בתכנית *
+              </span>
+              <input type="text" value={typedName} onChange={e => setTypedName(e.target.value)}
+                data-ma-name autoComplete="name" placeholder="שם פרטי ושם משפחה"
+                className="input w-full" style={{ padding: '12px 16px', fontSize: '14.5px' }} />
+            </label>
           )}
         </div>
 

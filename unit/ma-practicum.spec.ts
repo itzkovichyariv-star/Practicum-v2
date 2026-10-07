@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, mutualNotice, partnerEmails, buildProposal, sameYear,
+  submissionEmail, normName, PREVIEW_EMAILS,
   type Blob, type MaContext, type MaSubmission,
 } from '../src/lib/maPracticum';
 import { promoteOrgToFirst, setCourseCapacity, countSlotsByStatus } from '../src/lib/placement';
@@ -100,6 +101,142 @@ test('an address the app does not know is REFUSED, not filed away', () => {
 test('while the data is still loading the form says so instead of refusing the person', () => {
   const ctx: MaContext = { lookup: resolveMaStudent(null, 'noa@ariel.ac.il'), partners: [], orgs: [] };
   expect(validateMaSubmission(base(), ctx)).toContain('נטענים');
+});
+
+/* ── the second key: the NAME ────────────────────────────────────────── */
+/**
+ * Yariv 2026-10-07: "המייל שלהן זה המייל שהם רשומים איתו לאוניברסיטה אז זה לא לתכנית
+ * ואם תהיה אי התאמה שיזה גם לפי שם". A mismatch is the EXPECTED case on a generic link, not an
+ * edge one, so these pin the fallback that keeps a real student from being turned away.
+ */
+
+test('THE MISMATCH CASE: an address nobody has on record, identified by the typed name', () => {
+  const r = resolveMaStudent(blob, 'noa.cohen.personal@gmail.com', 'נועה כהן');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.student.id).toBe('s1');
+    expect(r.identifiedBy).toBe('name');
+    expect(r.courseName).toBe('פרקטיקום תואר שני');
+  }
+});
+
+test('the address wins when it IS on record — a typed name cannot redirect the submission', () => {
+  // Otherwise a student could type someone else's name and file a CV against their record.
+  const r = resolveMaStudent(blob, 'noa@ariel.ac.il', 'אבי לוי');
+  expect(r.ok).toBe(true);
+  if (r.ok) {
+    expect(r.student.id).toBe('s1');
+    expect(r.identifiedBy).toBe('email');
+  }
+});
+
+test('word order, quote marks, a hyphen and double spaces do not break the match', () => {
+  for (const typed of ['לוי אבי', '  אבי   לוי ', 'אבי-לוי']) {
+    const r = resolveMaStudent(blob, 'avi.personal@gmail.com', typed);
+    expect(r.ok, `"${typed}" should identify אבי לוי`).toBe(true);
+    if (r.ok) expect(r.student.id).toBe('s2');
+  }
+  expect(normName('בן־צבי')).toBe(normName('בן צבי'));
+});
+
+test('ONE first name is not an identity', () => {
+  // 'נועה' matches no full name exactly, and the word-set path needs two words — a
+  // cohort has more than one נועה often enough that guessing would file a CV wrongly.
+  const r = resolveMaStudent(blob, 'someone@gmail.com', 'נועה');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.reason).toBe('unknown-name');
+});
+
+test('a name nobody on the list carries is refused, and says so in its own words', () => {
+  const r = resolveMaStudent(blob, 'someone@gmail.com', 'מיכל ברקוביץ');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.reason).toBe('unknown-name');
+  const ctx: MaContext = { lookup: r, partners: [], orgs: [] };
+  const err = validateMaSubmission(base({ email: 'someone@gmail.com' }), ctx);
+  expect(err).toContain('לא מצאנו');
+});
+
+test('two students really sharing a name is reported, never guessed', () => {
+  const twins: Blob = {
+    courses: blob.courses,
+    employers: blob.employers,
+    students: [...(blob.students || []),
+      { id: 's7', name: 'נועה כהן', email: 'noa.cohen2@ariel.ac.il', courseId: 'c-ba', year: 'תשפ״ז' }],
+  };
+  const r = resolveMaStudent(twins, 'personal@gmail.com', 'נועה כהן');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.reason).toBe('ambiguous-name');
+  const ctx: MaContext = { lookup: r, partners: [], orgs: [] };
+  expect(validateMaSubmission(base({ email: 'personal@gmail.com' }), ctx)).toContain('יותר מסטודנט');
+});
+
+test('a blank name does not match the record whose name is blank', () => {
+  // s6 carries '  ' as a name. Typing spaces must not become a key onto it.
+  const r = resolveMaStudent(blob, 'someone@gmail.com', '   ');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.reason).toBe('unknown-email');
+});
+
+test('ONE IDENTITY PER PERSON: a name match is filed under the address on the card', () => {
+  // The partner question looks the other student up BY the address on their card
+  // (partnerEmails), and the coordinator's intake keys on it too. A row filed under the
+  // personal address the student happened to type would be a second identity for one
+  // person, and no pair could ever be matched up.
+  const r = resolveMaStudent(blob, 'noa.cohen.personal@gmail.com', 'נועה כהן');
+  expect(submissionEmail(r, 'noa.cohen.personal@gmail.com')).toBe('noa@ariel.ac.il');
+});
+
+/**
+ * The coordinator's preview. Yariv 2026-10-07: "אני רוצה לעבור את כל התהליך אחר כך נסיר
+ * אותי אז כן תתן לי אפשרות לבחור שותף וכו" — so the preview has to reach the END of the
+ * form, not merely be let in, and that means a partner list and an organization list.
+ */
+test('THE PREVIEW WALKS THE WHOLE FORM — partners and organizations included', () => {
+  const r = resolveMaStudent(blob, PREVIEW_EMAILS[0], '', COURSE);
+  expect(r.ok).toBe(true);
+  if (!r.ok) return;
+  expect(r.identifiedBy).toBe('preview');
+  expect(r.student.id).toBe('__preview__');
+  // The year is what scopes a cohort, so an empty one would silently empty the picker.
+  expect(partnerOptions(blob, r.student).map(p => p.name))
+    .toEqual(['אבי לוי', 'דנה מזרחי', 'נועה כהן']);
+  expect(maOrgOptions(blob, r.courseId).map(o => o.name)).toEqual(['פסגות']);
+  expect(validateMaSubmission(
+    base({ email: PREVIEW_EMAILS[0], orgChoice: 'פסגות', partnerMode: 'with', partnerNames: ['אבי לוי'] }),
+    { lookup: r, partners: partnerOptions(blob, r.student), orgs: maOrgOptions(blob, r.courseId) },
+  )).toBeNull();
+});
+
+test('the preview takes the cohort\'s year when the course row carries none', () => {
+  const noYear: Blob = {
+    courses: [{ id: COURSE, name: 'פרקטיקום תואר שני', type: 'practicum' }],
+    employers: blob.employers,
+    students: blob.students,
+  };
+  const r = resolveMaStudent(noYear, PREVIEW_EMAILS[0], '', COURSE);
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(partnerOptions(noYear, r.student).length).toBeGreaterThan(0);
+});
+
+test('the preview is NOT a student — no cohort can pick it as a partner', () => {
+  // The whole reason it lives in code and not in a students row.
+  for (const em of PREVIEW_EMAILS) {
+    expect((blob.students || []).some((st: any) => st.email === em)).toBe(false);
+  }
+  expect(partnerOptions(blob, (blob.students || [])[0]).map(p => p.name))
+    .not.toContain('תצוגה מקדימה (רכז/ת)');
+});
+
+test('a student with NO address on record keeps the one they typed', () => {
+  const noMail: Blob = {
+    courses: blob.courses,
+    employers: blob.employers,
+    students: [{ id: 's8', name: 'עדי שרון', courseId: COURSE, year: 'תשפ״ז' }],
+  };
+  const r = resolveMaStudent(noMail, 'Adi.Sharon@Gmail.com', 'עדי שרון');
+  expect(r.ok).toBe(true);
+  // Lowercased, because it becomes the only address anybody has for them.
+  expect(submissionEmail(r, 'Adi.Sharon@Gmail.com')).toBe('adi.sharon@gmail.com');
 });
 
 /* ── the partner list ─────────────────────────────────────────────────── */

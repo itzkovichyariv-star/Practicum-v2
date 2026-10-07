@@ -39,33 +39,156 @@ export function normEmail(v?: string | null): string {
   return (v || '').trim().toLowerCase();
 }
 
-export type StudentLookup =
-  | { ok: true; student: any; courseId: string; courseName: string }
-  | { ok: false; reason: 'no-email' | 'not-loaded' | 'unknown-email' };
+export type IdentifiedBy = 'email' | 'name' | 'preview';
 
 /**
- * Who is this, according to the app's own student list?
+ * The address that may open this form as a PREVIEW, to walk the whole flow before a
+ * student does.
  *
- * FAIL CLOSED, and this is the whole reason the function exists. The BA form accepts any
- * address and lets the coordinator sort it out later, because a BA candidate may legitimately
- * not be a student yet. Here the opposite is true: the 15 people who get this link are
- * already entered, so an address with no match is a typo, a personal mail instead of the
- * university one, or someone who was never meant to have the link. Accepting it would file a
- * CV under an email no student record carries — and nothing in the app would ever surface it.
+ * Yariv 2026-10-07: "תכניס גם את המייל שלי כדי שאוכל לבדוק". Deliberately NOT a students row:
+ * a real row would put him in the partner picker of all fifteen students and in the
+ * coordinator's own screens. A code-only identity is visible to nobody but whoever types
+ * the address.
+ *
+ * Both of his addresses, at his word ("תכניס את שניהם") — asked first, because this file ships
+ * inside a public browser bundle and every address listed here becomes public with it.
+ *
+ * TEMPORARY, by his instruction ("אחר כך נסיר אותי"): emptying this array removes the
+ * preview completely, and nothing else has to change.
  */
-export function resolveMaStudent(blob: Blob | null, email: string): StudentLookup {
-  const em = normEmail(email);
-  if (!em) return { ok: false, reason: 'no-email' };
-  if (!blob) return { ok: false, reason: 'not-loaded' };
-  const student = (blob.students || []).find((s: any) => normEmail(s?.email) === em);
-  if (!student) return { ok: false, reason: 'unknown-email' };
+export const PREVIEW_EMAILS = ['yarivi@ariel.ac.il', 'itzkovichyariv@gmail.com'];
+
+/** The course row the /ma link was built for, and the one a preview stands in. */
+export const MA_COURSE_ID = 'counseling-practicum-tashpaz';
+
+export type StudentLookup =
+  | { ok: true; student: any; courseId: string; courseName: string; identifiedBy: IdentifiedBy }
+  | { ok: false; reason: 'no-email' | 'not-loaded' | 'unknown-email' | 'unknown-name' | 'ambiguous-name' };
+
+/**
+ * A name used as a key: quote marks dropped, hyphens and the maqaf read as spaces, runs of
+ * whitespace collapsed, Latin letters lowered.
+ *
+ * The same reasoning as sameYear(): תשפ״ז and תשפ"ז are one year, and «בן־צבי» typed with a
+ * plain hyphen, or with a space, is one person. Hebrew has no case, so lowering only
+ * affects a name written in Latin letters.
+ */
+export function normName(v?: string | null): string {
+  return String(v || '')
+    .replace(/["״'׳]/g, '')
+    .replace(/[-־–—]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/** The words of a name as a sorted set, so «לוי אבי» finds «אבי לוי». */
+function nameKey(v?: string | null): string {
+  return normName(v).split(' ').filter(Boolean).sort().join(' ');
+}
+
+function identified(blob: Blob, student: any, identifiedBy: IdentifiedBy): StudentLookup {
   const course = (blob.courses || []).find((c: any) => c?.id === student.courseId);
   return {
     ok: true,
     student,
     courseId: student.courseId || '',
     courseName: course?.name || student.courseId || '',
+    identifiedBy,
   };
+}
+
+/**
+ * Who is this, according to the app's own student list?
+ *
+ * TWO KEYS, TRIED IN ORDER, and still fail closed. The BA form accepts any address and
+ * lets the coordinator sort it out later, because a BA candidate may legitimately not be a
+ * student yet. Here the opposite is true: the people who get this link are already
+ * entered, so a submission that matches nobody would be filed under an identity no student
+ * record carries and nothing in the app would ever surface it.
+ *
+ * The address alone was not enough. Yariv 2026-10-07: "אני מעדיף קישור גנרי שבו
+ * הסטודנט יגדיר מייל וקורות חיים ואז זה ישוייך אליו גם לפי השם שלו". A generic link means
+ * whatever address the student happens to be sitting in front of — a personal Gmail rather
+ * than the university one — and refusing that is refusing the student.
+ *
+ * So the NAME is the second key, and it is TYPED, never picked from a list. A public page
+ * that offered the cohort by name would let anyone holding the link read off who is in it;
+ * the partner picker may do that only after the person is already identified. A typed name
+ * reveals nothing, which is the whole point.
+ */
+export function resolveMaStudent(
+  blob: Blob | null,
+  email: string,
+  name?: string,
+  previewCourseId?: string,
+): StudentLookup {
+  const em = normEmail(email);
+  if (!em) return { ok: false, reason: 'no-email' };
+  if (!blob) return { ok: false, reason: 'not-loaded' };
+
+  const students = blob.students || [];
+  const byEmail = students.find((s: any) => normEmail(s?.email) === em);
+  if (byEmail) return identified(blob, byEmail, 'email');
+
+  // The coordinator's own preview, before any name is asked for: he is not on the student
+  // list and never should be, so neither key can ever find him.
+  if (PREVIEW_EMAILS.includes(em)) {
+    const courseId = previewCourseId || MA_COURSE_ID;
+    const course = (blob.courses || []).find((c: any) => c?.id === courseId);
+    // The YEAR decides who the partner picker offers (a cohort is course × year), so a
+    // course row without one would hand the coordinator an empty list and look like a bug
+    // in the picker. Fall back to the year its own students carry.
+    const cohortYear = (blob.students || []).find((st: any) => st?.courseId === courseId && st?.year)?.year;
+    return {
+      ok: true,
+      identifiedBy: 'preview',
+      courseId,
+      courseName: course?.name || courseId,
+      student: {
+        id: '__preview__',
+        name: 'תצוגה מקדימה (רכז/ת)',
+        email: em,
+        courseId,
+        year: course?.year || cohortYear || '',
+      },
+    };
+  }
+
+  const typed = normName(name);
+  if (!typed) return { ok: false, reason: 'unknown-email' };
+
+  const named = students.filter((s: any) => String(s?.name || '').trim());
+  let hits = named.filter((s: any) => normName(s.name) === typed);
+  if (!hits.length && typed.split(' ').filter(Boolean).length >= 2) {
+    const want = nameKey(typed);
+    hits = named.filter((s: any) => nameKey(s.name) === want);
+  }
+
+  if (!hits.length) return { ok: false, reason: 'unknown-name' };
+  // Two students really do share a name: say so rather than guessing which one gets the CV.
+  if (hits.length > 1) return { ok: false, reason: 'ambiguous-name' };
+  return identified(blob, hits[0], 'name');
+}
+
+/**
+ * The address the submission is FILED under, which is not always the one typed.
+ *
+ * Everything downstream keys on this: the coordinator's intake path, the student's own
+ * submission history, and the mutual-partner question, which looks the partner up by the
+ * address on their card. So a student identified by NAME has their row filed under the
+ * address the app already holds for them — otherwise one person would carry two
+ * identities and a pair could never be matched up.
+ *
+ * A student with no address on record keeps the one they typed, which is then the only one
+ * anybody has for them.
+ */
+export function submissionEmail(lookup: StudentLookup, typed: string): string {
+  if (lookup.ok) {
+    const onRecord = normEmail(lookup.student?.email);
+    if (onRecord) return onRecord;
+  }
+  return normEmail(typed);
 }
 
 export type PartnerOption = { id: string; name: string };
@@ -176,8 +299,12 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
   if (!em) return 'יש להזין כתובת מייל';
   if (!EMAIL_RE.test(em)) return 'כתובת המייל אינה תקינה';
   if (ctx.lookup.ok === false) {
+    // One message per reason: "not on the list" and "that name matches nobody" send the
+    // student to different places, and a single sentence covering both sends them nowhere.
     if (ctx.lookup.reason === 'not-loaded') return 'הנתונים עוד נטענים — נסו שוב בעוד רגע';
-    return 'הכתובת הזו אינה מופיעה ברשימת הסטודנטים של הפרקטיקום. בדקו את הכתובת, או פנו לרכזת.';
+    if (ctx.lookup.reason === 'unknown-name') return 'לא מצאנו סטודנט/ית בשם הזה ברשימות התכנית. בדקו את האיות והשם המלא, או פנו לרכזת.';
+    if (ctx.lookup.reason === 'ambiguous-name') return 'יש יותר מסטודנט/ית אחד/ת בשם הזה. הזינו את המייל שרשום בתכנית, או פנו לרכזת.';
+    return 'הכתובת הזו אינה מופיעה ברשימת הסטודנטים. הוסיפו את שמכם המלא בשדה שנפתח, כדי שנזהה אתכם לפיו.';
   }
 
   if (!s.hasFile && !s.hasExistingCv) return 'יש לצרף קובץ קורות חיים (PDF או Word)';
