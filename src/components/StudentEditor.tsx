@@ -14,7 +14,7 @@ import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByNa
   openWhatsApp as openWhatsAppTo, adoptSubmittedOrgs,
   submissionHasUnappliedOrgs, submissionHasNewCv } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
-import { partnerSummary } from '../lib/maPracticum';
+import { partnerSummary, orgStatusHeadline, contactPermissionLine, type OrgStatus, type ContactPermission } from '../lib/maPracticum';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import { parseTime } from '../lib/timeInput';
@@ -121,7 +121,9 @@ export default function StudentEditor({
   }
   const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null;
     /** /ma (master's practicum): alone, or with these classmates. Absent on BA rows. */
-    partner_mode?: string | null; partner_names?: string[] | null } | null>(null);
+    partner_mode?: string | null; partner_names?: string[] | null;
+    org_status?: string | null; student_note?: string | null;
+    contact_permission?: string | null; contact_after?: string | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
   const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
   // Org-assignment dropdowns are gated to student-available orgs by default;
@@ -164,7 +166,7 @@ export default function StudentEditor({
   }, [student?.email, student?.cvUpdatedUrl, student?.firstChoiceOrg, student?.secondChoiceOrg, (student as any)?.thirdChoiceOrg]);
 
   // Full submission history for this candidate (every dated /cv-update submission).
-  type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null; partner_mode?: string | null; partner_names?: string[] | null };
+  type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null; partner_mode?: string | null; partner_names?: string[] | null; org_status?: string | null; student_note?: string | null; contact_permission?: string | null; contact_after?: string | null };
   const [cvHistory, setCvHistory] = useState<CvRow[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showCvHistory, setShowCvHistory] = useState(false); // the CV strip's קו״ח-history toggle
@@ -856,6 +858,23 @@ export default function StudentEditor({
                       ✦ פרקטיקום: {partnerSummary(pendingCv.partner_mode, pendingCv.partner_names)}
                     </div>
                   )}
+                  {/* THE PERMISSION, on the card he decides from. Yariv asked for the
+                      timing because it is what tells him whether to pick up the phone
+                      today, so it is the first thing on this line and it is in words —
+                      a bare date would make him work out what it means. */}
+                  {(pendingCv.org_status || pendingCv.contact_permission) && (
+                    <div className="text-[12px] mt-1.5 rounded-lg px-2.5 py-2" data-pending-status
+                      style={{ background: 'rgba(146,64,14,0.07)', border: '1px solid rgba(146,64,14,0.25)', color: '#92400e' }}>
+                      <div className="font-bold">
+                        {pendingCv.contact_permission
+                          ? `✦ ${contactPermissionLine(pendingCv.contact_permission as ContactPermission, pendingCv.contact_after || '')}`
+                          : `✦ ${orgStatusHeadline(pendingCv.org_status as OrgStatus)}`}
+                      </div>
+                      {pendingCv.student_note && (
+                        <div className="mt-1" style={{ whiteSpace: 'pre-wrap', fontWeight: 400 }}>{pendingCv.student_note}</div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button type="button" onClick={() => {
@@ -1072,6 +1091,13 @@ export default function StudentEditor({
                           <span className="font-semibold">{fmt(row.uploaded_at)}</span>{' · '}
                           <span>{ps.length ? ps.map((p, idx) => `${idx + 1}. ${p}`).join('   ') : '—'}</span>
                           {row.suggested_org?.name ? <span>{`· הצעה: ${row.suggested_org.name}`}</span> : null}
+                          {/* The permission reads as a line in the history, so the moment
+                              the student released us has a timestamp on the card. */}
+                          {row.contact_permission ? (
+                            <span data-history-status>{`· ${contactPermissionLine(row.contact_permission as ContactPermission, row.contact_after || '')}`}</span>
+                          ) : row.org_status === 'none' ? (
+                            <span data-history-status>· אין ארגון כרגע</span>
+                          ) : null}
                           {row.cv_file_path && (
                             <button type="button" onClick={() => openCv(`storage://candidate-uploads/${row.cv_file_path}`)}
                               className="text-[11px] underline" style={{ color: 'var(--accent)' }}>קו״ח ↗</button>

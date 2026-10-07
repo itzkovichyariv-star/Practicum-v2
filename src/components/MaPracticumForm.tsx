@@ -814,6 +814,19 @@ export default function MaPracticumForm() {
                 </div>
               </div>
 
+              {/* Said BEFORE sending, not only on the confirmation screen. Yariv
+                  2026-10-07: "בקשר עם ארגון עוד לא לפנו הסטודנט צריך לראות חזור ועדכן את
+                  הטופס כאשר ניתן יהיה לפנות לארגון". A student who learns this only after
+                  submitting has already chosen without knowing what releases the call —
+                  and a student who thinks we will chase it ourselves never comes back. */}
+              {(contactPermission === 'wait' || contactPermission === 'later') && (
+                <div className="rounded-lg px-3 py-2.5 text-[12.5px] leading-[1.6]" data-ma-hold-note
+                  style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid rgba(122,30,43,0.2)' }}>
+                  <strong>חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון.</strong> עד אז לא ניצור איתם קשר.
+                  בכניסה הבאה לקישור תמתין לכם כאן לחיצה אחת שמשחררת את הפנייה.
+                </div>
+              )}
+
               {/* Contact details: required to call TODAY, requested otherwise. A student
                   mid-conversation often does not have the direct line yet, and demanding
                   it produces an invented number — worse than a blank, because a blank is
