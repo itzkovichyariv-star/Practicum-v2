@@ -44,3 +44,25 @@ test('no RESEND key is a quiet no-send, never a thrown save', () => {
 test('a student with no address is refused before any send', () => {
   expect(fn).toContain("if (!student?.email) return json({ ok: false, error: 'no student email' }, 400)");
 });
+
+/**
+ * The mail YARIV gets when a student proposes an organization. One function serves two
+ * forms: /cv-update is genuinely a second stage, /ma has no stages at all, so the shared
+ * sentence "מועמד/ת מהשלב השני" was false for half its traffic — and named nobody.
+ * (Yariv 2026-10-07: "אין שלב שני במקרה הזה … סטודנט או לנקוב בשמו הציע ארגון".)
+ */
+const sug = readFileSync(new URL('../supabase/functions/notify-org-suggestion/index.ts', import.meta.url), 'utf8');
+
+test('the /ma form says which track it is, or the mail cannot tell', () => {
+  expect(form).toContain("track: 'ma'");
+});
+
+test('a /ma proposal names the student and claims no second stage', () => {
+  expect(sug).toContain("const isMa = record.track === 'ma'");
+  expect(sug).toContain('${candidateName} הציע/ה ארגון מטעמו/ה לפרקטיקום');
+});
+
+test('/ma calls them a student, /cv-update still a candidate', () => {
+  expect(sug).toContain("const person = isMa ? 'סטודנט/ית' : 'מועמד/ת'");
+  expect(sug).toContain('מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה');
+});

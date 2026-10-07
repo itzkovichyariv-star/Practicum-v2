@@ -260,7 +260,9 @@ export default function MaPracticumForm() {
         await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON}`, 'apikey': ANON },
-          body: JSON.stringify({ record: { candidateName: me?.name || null, candidateEmail: normEmail(email), suggestedOrg: proposal } }),
+          // track: 'ma' — this practicum has no second stage, so the mail must not
+          // call the sender "מועמד/ת מהשלב השני" (Yariv 2026-10-07).
+          body: JSON.stringify({ record: { candidateName: me?.name || null, candidateEmail: normEmail(email), suggestedOrg: proposal, track: 'ma' } }),
         });
       } catch { /* the proposal is already saved in cv_updates */ }
     }
