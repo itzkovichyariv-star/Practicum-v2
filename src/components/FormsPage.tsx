@@ -378,6 +378,7 @@ function QuickLinksCard() {
     { title: '🌐 ציבורי', links: [
       { label: 'שלב 1 · טופס הרשמת מועמדים', url: `${base}/register/`, hash: null },
       { label: 'שלב 2 · עדכון קו״ח + בחירת ארגון', url: `${base}/cv-update/`, hash: null },
+      { label: 'תואר שני · קו״ח + ארגון + שותף/ה', url: `${base}/ma/`, hash: null },
       { label: 'שלב 2 · רשימת הארגונים', url: `${base}/organizations`, hash: null },
       { label: 'המערכת הישנה (v1)', url: 'https://itzkovichyariv-star.github.io/Practicum/', hash: null },
     ]},
@@ -557,6 +558,42 @@ function Stage2LinkCard({ courseId }: { courseId?: string }) {
   );
 }
 
+/**
+ * The master's-practicum link. Separate card because it is a separate audience with a
+ * separate question: these students are already entered, there is no candidacy stage, and
+ * only this form asks whether the practicum is done alone or with a named classmate.
+ */
+function MaLinkCard() {
+  const [base, setBase] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined') setBase(window.location.origin);
+  }, []);
+  const root = base ? base.replace(/\/$/, '') : 'https://practicum.yarivitzkovich.org';
+  return (
+    <section className="mb-10 rounded-2xl border p-7" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
+      <div className="flex items-start justify-between gap-6 mb-4">
+        <div>
+          <div className="chapter-mark mb-2" style={{ fontSize: '11px' }}>Public Form · תואר שני</div>
+          <h2 className="serif text-[26px] leading-[1.15] tracking-tight" style={{ color: 'var(--ink)' }}>פרקטיקום תואר שני — קו״ח, ארגון ושותף/ה</h2>
+          <p className="text-[14px] mt-2 leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.82 }}>
+            קישור נפרד מזה של התואר הראשון. הסטודנט מזוהה לפי המייל שמוזן באפליקציה (אין שלב מועמדות),
+            מעלה קו״ח, בוחר ארגון מהרשימה של הקורס שלו או מציע ארגון, ומציין אם הפרקטיקום ייעשה לבד או עם
+            שותף/ה — מתוך רשימת הסטודנטים של אותו פרקטיקום. ההגשות נקלטות בכרטיס הסטודנט כמו בשלב 2.
+          </p>
+          <p className="text-[12.5px] mt-2 leading-[1.5]" style={{ color: 'var(--text-soft)' }}>
+            לפני שליחה ראשונה: להריץ <code>cv_updates_ma_partner.sql</code> ב‑Supabase (מוסיף את עמודות השותף/ה).
+            הטופס עצמו יתריע אם זה לא נעשה.
+          </p>
+        </div>
+        <span className="serif text-[34px] leading-none shrink-0">🎓</span>
+      </div>
+      <div className="flex flex-col gap-5">
+        <CopyOpenRow label="טופס פרקטיקום תואר שני" url={`${root}/ma/`} />
+      </div>
+    </section>
+  );
+}
+
 /* ─── Main page ──────────────────────────────────────────────────────── */
 
 export default function FormsPage(props: PageProps) {
@@ -628,6 +665,7 @@ export default function FormsPage(props: PageProps) {
 
       <RegistrationLinkCard />
       <Stage2LinkCard courseId={scopedCourseId} />
+      <MaLinkCard />
 
       {/* ── Student picker ── */}
       <section className="mb-8 rounded-xl border p-5" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.35)' }}>

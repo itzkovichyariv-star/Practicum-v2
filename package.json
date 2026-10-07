@@ -21,7 +21,8 @@
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:report": "playwright show-report e2e-report",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:forms": "playwright test --config=playwright.forms.config.ts"
   },
   "dependencies": {
     "@astrojs/react": "^4.0.0",

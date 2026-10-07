@@ -1,0 +1,13 @@
+---
+// The master's-practicum intake link: /ma  (optionally /ma?email=<student>)
+//
+// Deliberately short, like /f and /r, because this URL is pasted into WhatsApp and plain
+// email where a long one gets split by line-wrap and then does not resolve. Deliberately
+// SEPARATE from /cv-update, because the BA form asks different questions (three ranked
+// organizations, a candidacy stage) and this one asks who the practicum is done with.
+import Layout from '../layouts/Layout.astro';
+import MaPracticumForm from '../components/MaPracticumForm.tsx';
+---
+<Layout title="פרקטיקום תואר שני — קו״ח, ארגון ושותף/ה">
+  <MaPracticumForm client:only="react" />
+</Layout>

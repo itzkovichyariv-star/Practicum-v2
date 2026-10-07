@@ -14,6 +14,7 @@ import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByNa
   openWhatsApp as openWhatsAppTo, adoptSubmittedOrgs,
   submissionHasUnappliedOrgs, submissionHasNewCv } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
+import { partnerSummary } from '../lib/maPracticum';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
 import { parseTime } from '../lib/timeInput';
@@ -118,7 +119,9 @@ export default function StudentEditor({
     const r = parseTime(v);
     setForm(f => ({ ...f, placementInterviewTime: r.ok ? r.value : (student?.placementInterviewTime || '') }));
   }
-  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
+  const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null;
+    /** /ma (master's practicum): alone, or with these classmates. Absent on BA rows. */
+    partner_mode?: string | null; partner_names?: string[] | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
   const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
   // Org-assignment dropdowns are gated to student-available orgs by default;
@@ -135,7 +138,9 @@ export default function StudentEditor({
     // marks it seen, so a resolved submission won't re-appear.
     if (!email) return;
     supabase.from('cv_updates')
-      .select('id, cv_file_path, uploaded_at, org_pref_1, org_pref_2, org_pref_3, suggested_org')
+      // `*` so a column this deployment's table does not have yet (partner_mode /
+      // partner_names, added for /ma) cannot fail the query and hide the banner entirely.
+      .select('*')
       .eq('email', email)
       .is('seen_at', null)
       .order('uploaded_at', { ascending: false })
@@ -159,7 +164,7 @@ export default function StudentEditor({
   }, [student?.email, student?.cvUpdatedUrl, student?.firstChoiceOrg, student?.secondChoiceOrg, (student as any)?.thirdChoiceOrg]);
 
   // Full submission history for this candidate (every dated /cv-update submission).
-  type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null };
+  type CvRow = { id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null; partner_mode?: string | null; partner_names?: string[] | null };
   const [cvHistory, setCvHistory] = useState<CvRow[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showCvHistory, setShowCvHistory] = useState(false); // the CV strip's קו״ח-history toggle
@@ -168,7 +173,7 @@ export default function StudentEditor({
     if (!email) { setCvHistory([]); return; }
     let alive = true;
     supabase.from('cv_updates')
-      .select('id, uploaded_at, cv_file_path, org_pref_1, org_pref_2, org_pref_3, suggested_org')
+      .select('*') // see the pending query above: a named-but-absent column fails it all
       .eq('email', email)
       .order('uploaded_at', { ascending: false })
       .limit(40) // cap history — a heavily re-tested email can have dozens of rows
@@ -311,7 +316,12 @@ export default function StudentEditor({
     // organization the student did not resubmit is kept, because it may hold a place.
     const submitted = [pendingCv.org_pref_1, pendingCv.org_pref_2, pendingCv.org_pref_3].filter(Boolean) as string[];
     setForm(f => {
-      const withCv = { ...f, cvUpdatedUrl: storageUrl };
+      const withCv: any = { ...f, cvUpdatedUrl: storageUrl };
+      // Master's practicum (/ma): adopt the partner too. 'alone' is an answer, so it
+      // CLEARS a previous pairing instead of leaving a stale one on the card.
+      if (pendingCv.partner_mode) {
+        withCv.practicumPartners = pendingCv.partner_mode === 'with' ? (pendingCv.partner_names || []) : [];
+      }
       return submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv;
     });
     // `seen_at` is NOT written here. It used to be, and it is a database write while the
@@ -838,6 +848,14 @@ export default function StudentEditor({
                       ✦ העדפות ארגון: {[pendingCv.org_pref_1, pendingCv.org_pref_2, pendingCv.org_pref_3].filter(Boolean).join(' · ')}
                     </div>
                   )}
+                  {/* Master's practicum (/ma): the answer Yariv needs from this form —
+                      alone, or with whom. Shown here because this banner is where the
+                      submission is read and accepted. */}
+                  {pendingCv.partner_mode && (
+                    <div className="text-[12px] mt-1 font-semibold" data-pending-partner style={{ color: '#92400e' }}>
+                      ✦ פרקטיקום: {partnerSummary(pendingCv.partner_mode, pendingCv.partner_names)}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <button type="button" onClick={() => {
@@ -865,6 +883,15 @@ export default function StudentEditor({
               <div className="col-span-full mono text-[11px] uppercase tracking-[0.14em] font-semibold py-1"
                 style={{ color: '#15803d' }}>
                 ✓ CV מעודכן נוסף — לחץ שמור כדי לשמור
+              </div>
+            )}
+
+            {/* Who the practicum is done with, once adopted — the master's answer, kept
+                visible on the card so it is not something only the inbox ever knew. */}
+            {Array.isArray((form as any).practicumPartners) && (form as any).practicumPartners.length > 0 && (
+              <div className="col-span-full text-[13px] rounded-lg px-3 py-2" data-student-partners
+                style={{ background: 'rgba(122,30,43,0.05)', border: '1px solid var(--divider)', color: 'var(--ink)' }}>
+                <strong>פרקטיקום בזוג/קבוצה:</strong> {partnerSummary('with', (form as any).practicumPartners)}
               </div>
             )}
 

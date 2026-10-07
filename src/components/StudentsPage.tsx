@@ -275,7 +275,11 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   useEffect(() => {
     let alive = true;
     supabase.from('cv_updates')
-      .select('id, email, uploaded_at, seen_at, cv_file_path, org_pref_1, org_pref_2, org_pref_3')
+      // `*`, not a column list: the /ma form added partner_mode/partner_names, and a
+      // named column PostgREST cannot find fails the WHOLE query — which would have
+      // emptied this map, and with it every student's waiting-submission signal, on any
+      // deployment where the migration had not been run yet.
+      .select('*')
       .order('uploaded_at', { ascending: false })
       .limit(500)
       .then(({ data: rows }) => {
@@ -537,7 +541,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       if (x.id !== student.id) return x;
       const withCv = row.cv_file_path
         ? { ...x, cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } as Student : x;
-      return (submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv) as Student;
+      // The partner travels with the submission (master's practicum, /ma). 'alone' is a
+      // real answer, so it clears a previous pairing rather than being ignored.
+      const withPartner = row.partner_mode
+        ? { ...withCv, practicumPartners: row.partner_mode === 'with' ? (row.partner_names || []) : [] } as Student
+        : withCv;
+      return (submitted.length ? adoptSubmittedOrgs(withPartner, employers, submitted) : withPartner) as Student;
     });
     await persistAndRefresh(next, '✓ ההגשה נקלטה לכרטיס', undefined,
       { action: 'נקלטה הגשת קו״ח והעדפות', entity: 'סטודנט', target: student.name });

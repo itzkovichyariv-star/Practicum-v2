@@ -140,6 +140,10 @@ export type CvSubmission = {
   org_pref_1?: string | null;
   org_pref_2?: string | null;
   org_pref_3?: string | null;
+  /** /ma only: 'alone' | 'with' | null, and the classmates named with it. The BA form
+   *  never asks, so a BA row carries neither. */
+  partner_mode?: string | null;
+  partner_names?: string[] | null;
 };
 
 export type PlacementInput = {
