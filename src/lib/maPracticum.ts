@@ -101,15 +101,19 @@ export type MaOrgOption = {
 };
 
 /**
- * What the student may choose from: the course's own approved organizations.
+ * What the student may choose from: EXACTLY the rule the BA form applies.
  *
- * Deliberately the SAME rule the BA form and the public /organizations page apply
- * (green status, scoped to the course), so the three student-facing surfaces cannot
- * disagree about what is on offer. It differs in one way: an org whose places are all
- * taken is still LISTED, with its count, instead of vanishing. With one org on the
- * list, hiding it when it fills would leave an empty picker and no explanation —
- * whereas "פסגות · אין מקום פנוי" tells the student to propose their own, which is the
- * action actually available to them.
+ * Yariv 2026-10-07: "שם כל ארגון תופס מקום וגם כאן — לא ברורה לי ההפרדה". He is right,
+ * and the unclear separation was mine: an earlier version of this listed a FULL
+ * organization with a "already chosen by N students" counter, which invented a second
+ * meaning of "taken" that exists nowhere else in the app.
+ *
+ * There is one meaning, and it is the same for both degrees: a place is taken when the
+ * coordinator SENDS a CV to that employer (the slot goes under_review) — choosing on a
+ * form reserves nothing. So an organization is offered here on the same two conditions
+ * the BA form and /organizations use — green status, and at least one place still
+ * available — and when none is left the student is told and offered the proposal route,
+ * which is the action actually available to them.
  */
 export function maOrgOptions(blob: Blob | null, courseId: string): MaOrgOption[] {
   if (!blob || !courseId) return [];
@@ -123,10 +127,8 @@ export function maOrgOptions(blob: Blob | null, courseId: string): MaOrgOption[]
       const key = String(e.name);
       if (seen.has(key)) return false;
       seen.add(key);
-      // 'approved' needs a description AND configured places; an org with neither is
-      // not ready to be offered to a student.
-      return employerStatus(e, [courseId]).key === 'approved'
-        || countSlotsByStatus(e, courseId).total > 0;
+      if (employerStatus(e, [courseId]).key !== 'approved') return false;
+      return countSlotsByStatus(e, courseId).available > 0;
     })
     .map((e: any) => {
       const c = countSlotsByStatus(e, courseId);
@@ -211,6 +213,38 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
   return null;
 }
 
+/**
+ * The proposal exactly as `cv_updates.suggested_org`, in ONE definition.
+ *
+ * Yariv 2026-10-07: "מה שחשוב כמו בפרקטיקום משאבי אנוש שסטודנט שיציע ארגון הארגון יהפוך
+ * בחירה ראשונה שלו." That promotion is already implemented, once, in the coordinator's
+ * suggestion inbox (EmployersPage.approveSuggestion → setCourseCapacity +
+ * promoteOrgToFirst). It is reached by writing the SAME seven keys the BA form writes —
+ * so the one thing that can break the promise is this object drifting from those keys.
+ *
+ * Hence a named builder the form uses and a test asserts against, rather than an object
+ * literal inside a submit handler where a renamed key would go unnoticed.
+ */
+export type Proposal = {
+  name: string; contactName: string; contactRole: string;
+  email: string; phone: string; location: string; notes: string;
+};
+
+export function buildProposal(f: {
+  name: string; contactName: string; contactRole: string;
+  email: string; phone: string; location?: string; notes?: string;
+}): Proposal {
+  return {
+    name: f.name.trim(),
+    contactName: f.contactName.trim(),
+    contactRole: f.contactRole.trim(),
+    email: f.email.trim(),
+    phone: f.phone.trim(),
+    location: (f.location || '').trim(),
+    notes: (f.notes || '').trim(),
+  };
+}
+
 /** How the choice reads to the coordinator, in one line, in the inbox and the card. */
 export function partnerSummary(mode?: string | null, names?: string[] | null): string {
   const list = (names || []).map(n => String(n || '').trim()).filter(Boolean);
@@ -220,17 +254,44 @@ export function partnerSummary(mode?: string | null, names?: string[] | null): s
 }
 
 /**
- * Demand against capacity, for the one sentence the student needs in order to choose well.
+ * The places line, in the same words the rest of the app uses for the same number.
  *
- * 15 students and 8 places means some of them must propose their own organization, and the
- * only honest way to get that across is to say so on the form. `chosen` counts what has been
- * submitted through this link — intent, not reserved places — so it is reported as intent.
+ * `available` only — deliberately NOT a count of who chose it on a form. A place is taken
+ * when a CV is sent, and a second, form-based notion of "taken" would be a number the
+ * coordinator's own screens never show.
  */
-export function orgPressureNote(o: MaOrgOption, chosen: number | null): string {
-  const places = o.total > 0 ? `${o.total} מקומות` : 'מספר המקומות טרם נקבע';
-  if (chosen == null) return places;
-  if (o.total > 0 && chosen >= o.total) {
-    return `${places} · ${chosen} סטודנטים כבר בחרו בו — מעבר למספר המקומות. אפשר לבחור בו בכל זאת, אבל כדאי גם להציע ארגון נוסף.`;
-  }
-  return `${places} · ${chosen} סטודנטים כבר בחרו בו`;
+export function placesNote(o: MaOrgOption): string {
+  if (o.available <= 0) return 'אין מקום פנוי';
+  const word = o.available === 1 ? 'מקום פנוי' : 'מקומות פנויים';
+  return o.total > o.available
+    ? `${o.available} ${word} (מתוך ${o.total})`
+    : `${o.available} ${word}`;
+}
+
+/**
+ * Does the partner's own submission name this student back?
+ *
+ * Yariv 2026-10-07: a student whose partner marked something else "יקבל התראה שמבקשת ממנו
+ * לבדוק שהסטודנט השני גם סימן את זה **מבלי להגיד לו מה הוא סימן**".
+ *
+ * So this returns ONE BIT, and the caller may show only that bit. 'unconfirmed' covers
+ * every reason equally — the partner said «לבד», named someone else, or has not filled the
+ * form yet — precisely so the notice cannot be read backwards into what they chose.
+ */
+export type MutualState = 'confirmed' | 'unconfirmed';
+
+export function mutualNotice(state: MutualState, names: string[]): string {
+  if (state === 'confirmed') return '';
+  const who = names.length === 1 ? 'השותף/ה' : 'השותפים/ות';
+  return `בדקו עם ${who} שגם סימן/ה אותך בטופס — כרגע אין לנו סימון הדדי. (אנחנו לא מציגים מה סומן בטופס של אף אחד אחר.)`;
+}
+
+/** The addresses to ask about — resolved from the cohort, never typed by the student. */
+export function partnerEmails(blob: Blob | null, student: any, names: string[]): string[] {
+  if (!blob || !student?.courseId) return [];
+  const wanted = new Set(names.map(n => n.trim()).filter(Boolean));
+  return (blob.students || [])
+    .filter((s: any) => wanted.has(String(s?.name || '').trim()) && s?.id !== student.id)
+    .map((s: any) => normEmail(s?.email))
+    .filter(Boolean);
 }

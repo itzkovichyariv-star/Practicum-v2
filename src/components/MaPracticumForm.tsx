@@ -4,8 +4,8 @@ import { useFormDraft } from '../lib/useFormDraft';
 import { openCv } from '../lib/cvUrl';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
-  partnerSummary, orgPressureNote, normEmail,
-  type MaContext, type PartnerMode,
+  partnerSummary, placesNote, normEmail, mutualNotice, partnerEmails, buildProposal,
+  type MaContext, type PartnerMode, type MutualState,
 } from '../lib/maPracticum';
 
 /**
@@ -99,22 +99,33 @@ export default function MaPracticumForm() {
   const orgs = useMemo(() => (lookup.ok ? maOrgOptions(blob, lookup.courseId) : []), [blob, lookup]);
   const ctx: MaContext = { lookup, partners, orgs };
 
-  // How many students have already asked for each organization through this link. Only the
-  // org column is read — never anyone's email — so a public page carries no one else's data.
-  const [chosenCounts, setChosenCounts] = useState<Record<string, number> | null>(null);
-  useEffect(() => {
-    if (!orgs.length) return;
-    supabase.from('cv_updates').select('org_pref_1')
-      .then(({ data, error }) => {
-        if (error || !data) { setChosenCounts(null); return; }
-        const counts: Record<string, number> = {};
-        for (const r of data as any[]) {
-          const n = String(r?.org_pref_1 || '').trim();
-          if (n) counts[n] = (counts[n] || 0) + 1;
-        }
-        setChosenCounts(counts);
-      });
-  }, [orgs.length]);
+  /**
+   * Has the chosen partner named this student back?
+   *
+   * ONE BIT, asked of the database rather than computed here: the query is "is there a row
+   * by that address whose partner_names contains my name", and it selects `id` only. So the
+   * page never receives anyone else's answer — it cannot leak what the partner chose,
+   * because it was never told. 'unconfirmed' covers "said alone", "named someone else" and
+   * "has not filled it in yet" identically, which is what keeps the notice uninformative
+   * about the other student's choice.
+   */
+  const [mutual, setMutual] = useState<MutualState | null>(null);
+  async function checkMutual(names: string[]): Promise<MutualState | null> {
+    if (!lookup.ok || !names.length || schema !== 'ready') return null;
+    const emails = partnerEmails(blob, lookup.student, names);
+    if (!emails.length) return null;
+    const myName = String(lookup.student.name || '').trim();
+    for (const em of emails) {
+      const { data, error } = await supabase.from('cv_updates')
+        .select('id')
+        .eq('email', em)
+        .contains('partner_names', [myName])
+        .limit(1);
+      if (error) return null;            // never claim a mismatch we could not verify
+      if (!data || !data.length) return 'unconfirmed';
+    }
+    return 'confirmed';
+  }
 
   const existingCvPath = useMemo(() => {
     const ref = (me as any)?.cvUpdatedUrl || (me as any)?.cvUrl || '';
@@ -138,6 +149,20 @@ export default function MaPracticumForm() {
       .then(({ data }) => { if (alive) setMyHistory((data || []) as any); });
     return () => { alive = false; };
   }, [email, schema, status]);
+
+  // A returning student sees the same nudge about what they ALREADY submitted, so the
+  // mismatch surfaces even if they never submit again. Keyed on the saved names so it runs
+  // once per state, not once per keystroke.
+  const [savedMutual, setSavedMutual] = useState<MutualState | null>(null);
+  const checkedKey = useRef('');
+  useEffect(() => {
+    const last = myHistory[0];
+    const names = (last?.partner_mode === 'with' ? (last?.partner_names || []) : []) as string[];
+    const key = names.join('|');
+    if (!names.length || !lookup.ok || checkedKey.current === key) return;
+    checkedKey.current = key;
+    void checkMutual(names).then(setSavedMutual);
+  }, [myHistory, lookup.ok]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from what the record already says, once, and never over live typing.
   const prefilled = useRef(false);
@@ -181,10 +206,13 @@ export default function MaPracticumForm() {
     }
     if (!path) { setStatus('error'); setErr('אין קו״ח לשמור — יש לצרף קובץ.'); return; }
 
-    const proposal = proposing ? {
-      name: pName.trim(), contactName: pContact.trim(), contactRole: pRole.trim(),
-      email: pEmail.trim(), phone: pPhone.trim(), location: pLocation.trim(), notes: pNotes.trim(),
-    } : null;
+    // buildProposal, not a literal: these exact keys are what the coordinator's approve
+    // path reads in order to create the employer and promote it to the student's FIRST
+    // choice. A renamed key here would silently cost that promotion.
+    const proposal = proposing ? buildProposal({
+      name: pName, contactName: pContact, contactRole: pRole,
+      email: pEmail, phone: pPhone, location: pLocation, notes: pNotes,
+    }) : null;
 
     const core = {
       email: normEmail(email),
@@ -226,6 +254,9 @@ export default function MaPracticumForm() {
     }
 
     draft.clear();
+    // Asked AFTER the row is in, so the partner's own submission can already see this one —
+    // whoever submits second gets 'confirmed' without having to come back.
+    setMutual(partnerMode === 'with' ? await checkMutual(partnerNames) : null);
     setStatus('done');
   }
 
@@ -245,6 +276,20 @@ export default function MaPracticumForm() {
           <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4"
             style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
             שימו לב: בחירת השותף/ה לא נשמרה (העמודה חסרה במסד). קורות החיים והארגון נשמרו — אנא עדכנו את הרכזת מי השותף/ה.
+          </p>
+        )}
+        {/* The mutual-confirmation nudge. Says only that confirmation is missing — never
+            what the other student marked, and never whether they submitted at all. */}
+        {mutual === 'unconfirmed' && (
+          <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4" data-ma-mutual-warning
+            style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
+            {mutualNotice('unconfirmed', partnerNames)}
+          </p>
+        )}
+        {mutual === 'confirmed' && (
+          <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4" data-ma-mutual-ok
+            style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.35)', color: '#065f46' }}>
+            ✓ הסימון הדדי — גם השותף/ה סימן/ה אותך.
           </p>
         )}
         <button type="button" onClick={() => { setStatus('idle'); setFile(null); }}
@@ -292,10 +337,18 @@ export default function MaPracticumForm() {
         {/* ── who ─────────────────────────────────────────────────────── */}
         <div>
           <label className="block">
-            <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>המייל שאיתו את/ה רשום/ה בתכנית *</span>
+            <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
+              {prefillEmail ? 'הקישור האישי שלך' : 'המייל שאיתו את/ה רשום/ה בתכנית *'}
+            </span>
+            {/* A personal link carries the identity, so there is nothing to type and nothing
+                to mistype — the same arrangement the BA form has. Read-only rather than
+                hidden: the student should see whose form this is before uploading a CV. */}
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              data-ma-email
-              className="input w-full" style={{ padding: '12px 16px', fontSize: '14.5px' }} />
+              readOnly={!!prefillEmail} data-ma-email
+              className="input w-full" style={{
+                padding: '12px 16px', fontSize: '14.5px',
+                opacity: prefillEmail ? 0.7 : 1, cursor: prefillEmail ? 'default' : undefined,
+              }} />
           </label>
           {normEmail(email) && blob && (
             identified ? (
@@ -349,7 +402,6 @@ export default function MaPracticumForm() {
             <div className="space-y-2.5">
               {orgs.map(o => {
                 const selected = !proposing && orgChoice === o.name;
-                const chosen = chosenCounts ? (chosenCounts[o.name] || 0) : null;
                 return (
                   <label key={o.name} data-ma-org={o.name}
                     className="block rounded-xl border p-4 cursor-pointer transition-colors"
@@ -363,7 +415,7 @@ export default function MaPracticumForm() {
                         style={{ accentColor: 'var(--accent)', width: 16, height: 16, marginTop: 3 }} />
                       <div className="flex-1 min-w-0">
                         <div className="text-[15px] font-semibold" style={{ color: selected ? 'var(--accent)' : 'var(--ink)' }}>{o.name}</div>
-                        <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{orgPressureNote(o, chosen)}</div>
+                        <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{placesNote(o)}</div>
                         {o.notes.trim() && (
                           <div className="text-[12.5px] leading-[1.6] mt-1.5 whitespace-pre-wrap" style={{ color: 'var(--ink)', opacity: 0.78 }}>{o.notes}</div>
                         )}
@@ -401,7 +453,8 @@ export default function MaPracticumForm() {
           {proposing && (
             <div className="mt-3 rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
               <p className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
-                יש למלא את פרטי איש/אשת הקשר במלואם, כדי שנוכל לפנות לארגון.
+                ההצעה כפופה לאישור מנחה התכנית, ואם תאושר — הארגון יהפוך ל<strong>בחירה הראשונה שלך</strong>,
+                בדיוק כמו בפרקטיקום משאבי אנוש. יש למלא את פרטי איש/אשת הקשר במלואם, כדי שנוכל לפנות לארגון.
               </p>
               <Field label="שם הארגון *" value={pName} onChange={setPName} testid="ma-p-name" />
               <Field label="שם איש/אשת הקשר *" value={pContact} onChange={setPContact} testid="ma-p-contact" />
@@ -440,6 +493,13 @@ export default function MaPracticumForm() {
               );
             })}
           </div>
+
+          {savedMutual === 'unconfirmed' && (
+            <div className="mt-2.5 text-[13px] leading-[1.6] rounded-lg px-3 py-2.5" data-ma-saved-mutual-warning
+              style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
+              {mutualNotice('unconfirmed', (myHistory[0]?.partner_names || []) as string[])}
+            </div>
+          )}
 
           {partnerMode === 'with' && (
             <div className="mt-3 space-y-3">

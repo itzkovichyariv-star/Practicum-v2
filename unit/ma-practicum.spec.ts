@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
-  partnerSummary, orgPressureNote, sameYear,
+  partnerSummary, placesNote, mutualNotice, partnerEmails, buildProposal, sameYear,
   type Blob, type MaContext, type MaSubmission,
 } from '../src/lib/maPracticum';
+import { promoteOrgToFirst, setCourseCapacity, countSlotsByStatus } from '../src/lib/placement';
 
 /**
  * The master's-practicum link (/ma), tested where it actually decides things.
@@ -128,7 +129,9 @@ test('only the course\'s own public organizations are offered, with their places
   expect(orgs[0].available).toBe(8);
 });
 
-test('a full organization is still listed, so the picker is never empty without saying why', () => {
+test('a FULL organization is not offered — the same rule the BA form applies', () => {
+  // Yariv: "שם כל ארגון תופס מקום וגם כאן — לא ברורה לי ההפרדה". There is one meaning of
+  // taken, and one list rule, for both degrees.
   const full: Blob = {
     ...blob,
     employers: [{
@@ -136,21 +139,17 @@ test('a full organization is still listed, so the picker is never empty without 
       vacancySlots: Array.from({ length: 8 }, (_, i) => ({ id: `v${i}`, courseId: COURSE, status: 'placed' })),
     }],
   };
-  const orgs = maOrgOptions(full, COURSE);
-  expect(orgs.map(o => o.name)).toEqual(['פסגות']);
-  expect(orgs[0].available).toBe(0);
-  expect(orgs[0].total).toBe(8);
+  expect(maOrgOptions(full, COURSE)).toEqual([]);
 });
 
-test('15 students against 8 places is said out loud rather than discovered', () => {
+test('the places line says what the rest of the app says, and nothing it does not', () => {
   const o = maOrgOptions(blob, COURSE)[0];
-  expect(orgPressureNote(o, 3)).toContain('8 מקומות');
-  expect(orgPressureNote(o, 3)).toContain('3 סטודנטים');
-  const over = orgPressureNote(o, 9);
-  expect(over).toContain('מעבר למספר המקומות');
-  expect(over).toContain('להציע ארגון נוסף');
-  // Count unavailable (the aggregate query failed): still report the capacity.
-  expect(orgPressureNote(o, null)).toBe('8 מקומות');
+  expect(placesNote(o)).toBe('8 מקומות פנויים');
+  expect(placesNote({ ...o, available: 3, total: 8 })).toBe('3 מקומות פנויים (מתוך 8)');
+  expect(placesNote({ ...o, available: 1, total: 8 })).toBe('1 מקום פנוי (מתוך 8)');
+  // No count of who picked it on a form: a place is taken when a CV is sent, and a second
+  // notion of "taken" would be a number the coordinator's own screens never show.
+  expect(placesNote(o)).not.toContain('בחרו');
 });
 
 /* ── what cannot be submitted ─────────────────────────────────────────── */
@@ -210,4 +209,60 @@ test('alone, with one partner, and with two read as one line for the coordinator
   // A row written before the columns existed, or a half-saved one: never a bare "עם".
   expect(partnerSummary('with', [])).toContain('לא צוין שם');
   expect(partnerSummary(null, null)).toBe('');
+});
+
+/* ── the mutual-confirmation nudge ────────────────────────────────────── */
+
+test('THE NUDGE NEVER REVEALS THE OTHER ANSWER', () => {
+  // Yariv: ask the student to check with their partner "מבלי להגיד לו מה הוא סימן".
+  const text = mutualNotice('unconfirmed', ['אבי לוי']);
+  expect(text).toContain('בדקו עם השותף/ה');
+  // Not a word about what the partner marked, or whether they marked anything at all.
+  expect(text).not.toContain('לבד');
+  expect(text).not.toContain('אבי');      // not even the name is needed to say this
+  expect(text).not.toContain('לא מילא');
+  expect(text).not.toContain('בחר');
+  // Confirmed needs no nudge.
+  expect(mutualNotice('confirmed', ['אבי לוי'])).toBe('');
+});
+
+test('the addresses to verify against come from the cohort, never from typing', () => {
+  const me = blob.students![0];
+  expect(partnerEmails(blob, me, ['אבי לוי'])).toEqual(['avi@ariel.ac.il']);
+  expect(partnerEmails(blob, me, ['אבי לוי', 'דנה מזרחי'])).toEqual(['avi@ariel.ac.il', 'dana@ariel.ac.il']);
+  // Never the student's own address, and never a name outside the list.
+  expect(partnerEmails(blob, me, ['נועה כהן'])).toEqual([]);
+  expect(partnerEmails(blob, me, ['מישהו אחר'])).toEqual([]);
+});
+
+/* ── a proposed organization becomes the FIRST choice ─────────────────── */
+
+test('A PROPOSAL BECOMES FIRST CHOICE — the same path as משאבי אנוש', () => {
+  // Yariv: "שסטודנט שיציע ארגון הארגון יהפוך בחירה ראשונה שלו". That promotion lives in
+  // the coordinator's suggestion inbox and is reached by writing these exact keys, so what
+  // is pinned here is the contract between the two: the shape /ma submits, run through the
+  // promotion the inbox performs.
+  const proposal = buildProposal({
+    name: '  חברת ביטוח כלשהי ', contactName: ' שרה כהן ', contactRole: 'מנהלת משאבי אנוש',
+    email: ' Sara@insure.co.il ', phone: '050-1234567 ',
+  });
+  // Every key approveSuggestion reads, and nothing renamed.
+  expect(Object.keys(proposal).sort()).toEqual(
+    ['contactName', 'contactRole', 'email', 'location', 'name', 'notes', 'phone']);
+  expect(proposal.name).toBe('חברת ביטוח כלשהי'); // trimmed, or it will not match by name
+  expect(proposal.contactRole).toBe('מנהלת משאבי אנוש');
+
+  // The inbox creates the employer from it, reserves one place in the student's course,
+  // and promotes it. A student who had already ranked פסגות keeps it — one rank lower.
+  const student: any = { id: 's1', name: 'נועה כהן', courseId: COURSE, year: 'תשפ״ז',
+    firstChoiceOrg: 'פסגות', firstChoiceResult: 'pending', preferences: [] };
+  const emp: any = { id: 'emp-new', name: proposal.name, approvalStatus: 'approved',
+    restrictedToStudentId: 's1', courseIds: [COURSE] };
+  const withPlace = setCourseCapacity(emp, COURSE, 1);
+  const after = promoteOrgToFirst(student, [...(blob.employers as any[]), withPlace], proposal.name, withPlace.id);
+
+  const ranked = [after.firstChoiceOrg, after.secondChoiceOrg, after.thirdChoiceOrg].filter(Boolean);
+  expect(ranked[0]).toBe('חברת ביטוח כלשהי'); // FIRST
+  expect(ranked).toContain('פסגות');          // and the earlier choice is not lost
+  expect(countSlotsByStatus(withPlace, COURSE).available).toBe(1);
 });

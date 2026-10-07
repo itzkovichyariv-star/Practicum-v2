@@ -43,13 +43,17 @@ const BLOB = {
 
 type Captured = { inserts: any[]; uploads: string[] };
 
+/** What a classmate's own row says, for the mutual-confirmation probe. */
+type PartnerRows = Record<string, string[]>;
+
 /**
  * Stand in for Supabase. `partnerColumns:false` reproduces the deployment where the
  * migration has not been run — PostgREST's own answer, so the form's fallback is tested
  * against the shape it will really meet.
  */
-async function stubSupabase(page: Page, opts: { partnerColumns?: boolean } = {}): Promise<Captured> {
+async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partnerRows?: PartnerRows } = {}): Promise<Captured> {
   const partnerColumns = opts.partnerColumns !== false;
+  const partnerRows = opts.partnerRows || {};
   const captured: Captured = { inserts: [], uploads: [] };
 
   await page.route('**/rest/v1/practicum_data*', (route: Route) =>
@@ -78,6 +82,27 @@ async function stubSupabase(page: Page, opts: { partnerColumns?: boolean } = {})
       return route.fulfill({ status: 201, contentType: 'application/json', body: '[]' });
     }
 
+    // The mutual-confirmation probe: "is there a row by <email> naming <my name>?"
+    // It must answer with an id or nothing — never with anyone's answer.
+    //
+    // Read through searchParams, NOT decodeURIComponent: a space travels as `+` in a query
+    // string and decodeURIComponent leaves it alone, so "נועה כהן" arrived as "נועה+כהן"
+    // and every comparison was false. PostgREST itself decodes it as a space.
+    const q = new URL(url).searchParams;
+    const contains = q.get('partner_names');
+    const eqEmail = q.get('email');
+    if (contains?.startsWith('cs.') && eqEmail?.startsWith('eq.')) {
+      const email = eqEmail.slice(3);
+      const asked = parseContainsList(contains.slice(3));
+      const theirs = partnerRows[email] || [];
+      const named = asked.every(n => theirs.includes(n));
+      if (process.env.MA_DEBUG) console.log('PROBE', JSON.stringify({ email, asked, theirs, named }));
+      return route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify(named ? [{ id: 'row-1' }] : []),
+      });
+    }
+
     // The schema probe: select=partner_mode
     if (/select=partner_mode/.test(url) && !partnerColumns) {
       return route.fulfill({
@@ -93,6 +118,19 @@ async function stubSupabase(page: Page, opts: { partnerColumns?: boolean } = {})
     route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
   return captured;
+}
+
+/**
+ * PostgREST writes a `contains` filter as an array LITERAL — `cs.{"אבי לוי"}` — not as
+ * JSON, which is what the first version of this stub assumed and choked on. Both forms are
+ * accepted here so the stub cannot be the thing that breaks.
+ */
+function parseContainsList(raw: string): string[] {
+  const t = raw.trim();
+  const inner = t.startsWith('{') && t.endsWith('}') ? t.slice(1, -1)
+    : t.startsWith('[') && t.endsWith(']') ? t.slice(1, -1) : t;
+  if (!inner.trim()) return [];
+  return inner.split(',').map(x => x.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean);
 }
 
 async function attachCv(page: Page) {
@@ -249,4 +287,61 @@ test('?email= prefills, so a student who clicks the link is identified immediate
   await stubSupabase(page);
   await page.goto('/ma?email=' + encodeURIComponent('dana@ariel.ac.il'));
   await expect(page.locator('[data-ma-identified]')).toContainText('דנה מזרחי');
+});
+
+/* ── the personal link, and the mutual-confirmation nudge ─────────────── */
+
+test('a personal link needs no typing, and the address cannot be edited', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma?email=' + encodeURIComponent('noa@ariel.ac.il'));
+  const field = page.locator('[data-ma-email]');
+  await expect(field).toHaveValue('noa@ariel.ac.il');
+  await expect(field).toHaveAttribute('readonly', '');
+  await expect(page.locator('[data-ma-identified]')).toContainText('נועה כהן');
+  // And the whole form is usable from there without the student entering anything else.
+  await expect(page.locator('[data-ma-org="פסגות"]')).toBeVisible();
+});
+
+test('THE NUDGE: the partner has not named you back, and the page does not say what they chose', async ({ page }) => {
+  // אבי's own row says "alone" (he named nobody), so נועה's claim is unconfirmed.
+  await stubSupabase(page, { partnerRows: { 'avi@ariel.ac.il': [] } });
+  await page.goto('/ma?email=' + encodeURIComponent('noa@ariel.ac.il'));
+  await attachCv(page);
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await page.locator('[data-ma-mode="with"]').click();
+  await page.locator('[data-ma-partner1]').selectOption('אבי לוי');
+  await page.locator('[data-ma-submit]').click();
+
+  const warn = page.locator('[data-ma-mutual-warning]');
+  await expect(warn).toBeVisible();
+  await expect(warn).toContainText('בדקו עם השותף/ה');
+  // Nothing about the other answer leaks onto the page.
+  const body = await page.locator('body').innerText();
+  expect(body).not.toContain('לבד או');
+  expect(body).not.toMatch(/אבי לוי סימן|בחר לבד|לא מילא|טרם מילא/);
+});
+
+test('when both named each other, the page says so instead of nagging', async ({ page }) => {
+  await stubSupabase(page, { partnerRows: { 'avi@ariel.ac.il': ['נועה כהן'] } });
+  await page.goto('/ma?email=' + encodeURIComponent('noa@ariel.ac.il'));
+  await attachCv(page);
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await page.locator('[data-ma-mode="with"]').click();
+  await page.locator('[data-ma-partner1]').selectOption('אבי לוי');
+  await page.locator('[data-ma-submit]').click();
+
+  await expect(page.locator('[data-ma-mutual-ok]')).toContainText('הסימון הדדי');
+  await expect(page.locator('[data-ma-mutual-warning]')).toHaveCount(0);
+});
+
+test('choosing "alone" raises no partner nudge at all', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma?email=' + encodeURIComponent('dana@ariel.ac.il'));
+  await attachCv(page);
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  await expect(page.locator('[data-ma-mutual-warning]')).toHaveCount(0);
+  await expect(page.locator('[data-ma-mutual-ok]')).toHaveCount(0);
 });
