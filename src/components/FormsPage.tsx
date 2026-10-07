@@ -608,8 +608,8 @@ function MaLinkCard({ students, courseId }: { students: any[]; courseId?: string
             שותף/ה — מתוך רשימת הסטודנטים של אותו פרקטיקום. ההגשות נקלטות בכרטיס הסטודנט כמו בשלב 2.
           </p>
           <p className="text-[12.5px] mt-2 leading-[1.5]" style={{ color: 'var(--text-soft)' }}>
-            לפני שליחה ראשונה: להריץ <code>cv_updates_ma_partner.sql</code> ב‑Supabase (מוסיף את עמודות השותף/ה).
-            הטופס עצמו יתריע אם זה לא נעשה.
+            לפני שליחה ראשונה: להריץ ב‑Supabase את <code>cv_updates_ma_partner.sql</code> (עמודות השותף/ה)
+            ואת <code>cv_updates_ma_status.sql</code> (הסטטוס וההערה של הסטודנט). הטופס עצמו יתריע אם זה לא נעשה.
           </p>
         </div>
         <span className="serif text-[34px] leading-none shrink-0">🎓</span>

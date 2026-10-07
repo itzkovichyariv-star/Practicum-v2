@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, mutualNotice, partnerEmails, buildProposal, sameYear,
-  submissionEmail, normName, PREVIEW_EMAILS, MA_COURSE_ID,
+  submissionEmail, normName, PREVIEW_EMAILS, MA_COURSE_ID, orgStatusLine, orgStatusHeadline,
   type Blob, type MaContext, type MaSubmission,
 } from '../src/lib/maPracticum';
 import { promoteOrgToFirst, setCourseCapacity, countSlotsByStatus } from '../src/lib/placement';
@@ -460,4 +460,87 @@ test('two people who really share a name are still refused, duplicates or not', 
 test('a duplicated person is filed under their one address, once', () => {
   const r = resolveMaStudent(MULTI, 'shira.alon.private@gmail.com', 'שירה אלון');
   expect(submissionEmail(r, 'shira.alon.private@gmail.com')).toBe('shira@ariel.ac.il');
+});
+
+
+/**
+ * "NOT YET" IS AN ANSWER.
+ *
+ * Yariv 2026-10-07: "אפשרות לסטודנט לכתוב הערה בסגנון אני בקשר עם ארגון ועדיין זה לא סופי …
+ * אין לי ארגון (אבל אז שיגיד מדוע לא בחר בפסגות) … ומקום לסטטוס כללי שלא מוגבל לאחת מאלה".
+ *
+ * The form had two answers and a student halfway through a conversation with a company fit
+ * neither. Inventing a proposal they cannot back up is worse than saying "not yet", and
+ * abandoning the form teaches the coordinator nothing at all.
+ */
+const notYet = (over: Partial<MaSubmission> = {}) => ({
+  sub: base({ email: 'noa@ariel.ac.il', orgChoice: '', ...over }),
+  ctx: { ...ctxFor('noa@ariel.ac.il'), orgs: maOrgOptions(blob, COURSE) } as MaContext,
+});
+
+test('IN TOUCH, NOT SETTLED: a pending status submits without a proposal', () => {
+  const { sub, ctx } = notYet({ orgStatus: 'pending', pendingOrgName: 'מכון אביב' });
+  expect(validateMaSubmission(sub, ctx)).toBeNull();
+});
+
+test('a student who cannot yet NAME the organization is still allowed to say so', () => {
+  // The one thing they know is that they are mid-conversation. Demanding the name here
+  // would push them back to inventing a proposal, which is what this option prevents.
+  const { sub, ctx } = notYet({ orgStatus: 'pending' });
+  expect(validateMaSubmission(sub, ctx)).toBeNull();
+});
+
+test('NO ORGANIZATION: the form insists on the one question Yariv wants answered', () => {
+  const { sub, ctx } = notYet({ orgStatus: 'none' });
+  const err = validateMaSubmission(sub, ctx);
+  expect(err).toContain('פסגות');   // the refusal NAMES the organization on offer
+  const ok = notYet({ orgStatus: 'none', whyNotListed: 'מרחק נסיעה' });
+  expect(validateMaSubmission(ok.sub, ok.ctx)).toBeNull();
+});
+
+test('with nothing on the list, "why not them" degrades to "how is the search going"', () => {
+  const empty: Blob = { courses: blob.courses, students: blob.students, employers: [] };
+  const sub = base({ email: 'noa@ariel.ac.il', orgChoice: '', orgStatus: 'none' });
+  const ctx: MaContext = { lookup: resolveMaStudent(empty, 'noa@ariel.ac.il'), partners: [], orgs: [] };
+  expect(validateMaSubmission(sub, ctx)).toContain('מצב החיפוש');
+});
+
+test('"not yet" does NOT skip the CV — that is still the point of the form', () => {
+  const { sub, ctx } = notYet({ orgStatus: 'pending', hasFile: false, hasExistingCv: false });
+  expect(validateMaSubmission(sub, ctx)).toContain('קורות חיים');
+});
+
+test('"not yet" does not excuse an unanswered partner question either', () => {
+  const { sub, ctx } = notYet({ orgStatus: 'none', whyNotListed: 'רחוק', partnerMode: '' });
+  expect(validateMaSubmission(sub, ctx)).not.toBeNull();
+});
+
+test('a status the app never offers is refused rather than stored', () => {
+  const { sub, ctx } = notYet({ orgStatus: 'maybe' as any });
+  expect(validateMaSubmission(sub, ctx)).not.toBeNull();
+});
+
+test('THE LINE THE COORDINATOR READS: status first, then the reason, then their own words', () => {
+  expect(orgStatusLine({ orgStatus: 'pending', pendingOrgName: 'מכון אביב' }))
+    .toBe('בקשר עם מכון אביב — טרם סופי');
+  expect(orgStatusLine({ orgStatus: 'pending' })).toBe('בקשר עם ארגון — טרם סופי');
+  expect(orgStatusLine({ orgStatus: 'none', whyNotListed: 'מרחק נסיעה' }))
+    .toBe('אין ארגון כרגע · למה לא מהרשימה: מרחק נסיעה');
+  expect(orgStatusLine({ orgStatus: 'none', whyNotListed: 'רחוק', statusNote: 'אשמח לעזרה' }))
+    .toBe('אין ארגון כרגע · למה לא מהרשימה: רחוק · אשמח לעזרה');
+});
+
+test('the open box stands on its own — it is offered whatever was chosen above', () => {
+  // "מקום לסטטוס כללי שלא מוגבל לאחת מאלה שהעלתי": a student who picked פסגות may still
+  // have something to say, and it must reach him rather than being dropped as off-topic.
+  expect(orgStatusLine({ orgStatus: '', statusNote: 'אני בחופשת לידה עד דצמבר' }))
+    .toBe('אני בחופשת לידה עד דצמבר');
+  expect(orgStatusLine({})).toBe('');
+  expect(orgStatusLine({ orgStatus: 'none', whyNotListed: '   ' })).toBe('אין ארגון כרגע');
+});
+
+test('the confirmation tells the student which answer was recorded', () => {
+  expect(orgStatusHeadline('pending')).toContain('בקשר עם ארגון');
+  expect(orgStatusHeadline('none')).toContain('אין לך ארגון');
+  expect(orgStatusHeadline('')).toBe('');
 });

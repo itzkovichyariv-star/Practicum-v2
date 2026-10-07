@@ -5,8 +5,8 @@ import { openCv } from '../lib/cvUrl';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, normEmail, mutualNotice, partnerEmails, buildProposal,
-  submissionEmail, emailLooksComplete,
-  type MaContext, type PartnerMode, type MutualState,
+  submissionEmail, emailLooksComplete, orgStatusLine, orgStatusHeadline,
+  type MaContext, type PartnerMode, type MutualState, type OrgStatus,
 } from '../lib/maPracticum';
 
 /**
@@ -38,6 +38,11 @@ export default function MaPracticumForm() {
   const [file, setFile] = useState<File | null>(null);
   const [orgChoice, setOrgChoice] = useState('');
   const [proposing, setProposing] = useState(false);
+  // The "not yet" answer — see OrgStatus. Empty means the student picked or proposed one.
+  const [orgStatus, setOrgStatus] = useState<OrgStatus>('');
+  const [pendingOrgName, setPendingOrgName] = useState('');
+  const [whyNotListed, setWhyNotListed] = useState('');
+  const [statusNote, setStatusNote] = useState('');
   const [pName, setPName] = useState('');
   const [pContact, setPContact] = useState('');
   const [pRole, setPRole] = useState('');
@@ -53,6 +58,7 @@ export default function MaPracticumForm() {
   const [err, setErr] = useState<string | null>(null);
   /** Set when the row saved but the partner columns were not there to receive it. */
   const [partnerLost, setPartnerLost] = useState(false);
+  const [noteLost, setNoteLost] = useState(false);
   const errRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (err) errRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, [err]);
 
@@ -61,10 +67,14 @@ export default function MaPracticumForm() {
   const draft = useFormDraft(
     normEmail(email) ? `practicum_draft_ma_${normEmail(email)}` : null,
     'v1',
-    { orgChoice, proposing, pName, pContact, pRole, pEmail, pPhone, pLocation, pNotes, partnerMode, partner1, partner2, wantsSecond },
+    { orgChoice, proposing, orgStatus, pendingOrgName, whyNotListed, statusNote, pName, pContact, pRole, pEmail, pPhone, pLocation, pNotes, partnerMode, partner1, partner2, wantsSecond },
     (v) => {
       if (v.orgChoice) setOrgChoice(v.orgChoice as string);
       if (v.proposing) setProposing(v.proposing as boolean);
+      if (v.orgStatus) setOrgStatus(v.orgStatus as OrgStatus);
+      if (v.pendingOrgName) setPendingOrgName(v.pendingOrgName as string);
+      if (v.whyNotListed) setWhyNotListed(v.whyNotListed as string);
+      if (v.statusNote) setStatusNote(v.statusNote as string);
       if (v.pName) setPName(v.pName as string);
       if (v.pContact) setPContact(v.pContact as string);
       if (v.pRole) setPRole(v.pRole as string);
@@ -198,7 +208,7 @@ export default function MaPracticumForm() {
     setPartnerLost(false);
 
     const problem = validateMaSubmission({
-      email, orgChoice, proposing,
+      email, orgChoice, proposing, orgStatus, pendingOrgName, whyNotListed, statusNote,
       proposal: { name: pName, contactName: pContact, contactRole: pRole, email: pEmail, phone: pPhone },
       partnerMode, partnerNames, hasFile: !!file, hasExistingCv,
     }, ctx);
@@ -241,15 +251,29 @@ export default function MaPracticumForm() {
       partner_mode: partnerMode || null,
       partner_names: partnerMode === 'with' ? partnerNames : [],
     };
+    // orgStatusLine folds the three "not yet" fields into the one sentence the coordinator
+    // reads; the raw status is kept beside it so his screens can filter on it.
+    const note = orgStatusLine({ orgStatus, pendingOrgName, whyNotListed, statusNote });
+    const full = {
+      ...withPartner,
+      org_status: orgStatus || null,
+      student_note: note || null,
+    };
 
-    let { error: dbErr } = await supabase.from('cv_updates').insert(withPartner);
+    // A LADDER, not a single fallback: the partner columns are migrated and the status
+    // ones may not be yet, so a failure on the new pair must not also cost the partner
+    // answer. Each rung saves strictly more than the one below it, and whatever a rung
+    // could not keep is said out loud rather than silently dropped.
+    let { error: dbErr } = await supabase.from('cv_updates').insert(full);
     if (dbErr && isMissingColumn(dbErr)) {
-      // The migration has not been run. Save what the table CAN hold rather than losing
-      // the CV too — and say plainly that the partner answer did not persist, so it is
-      // never silently dropped.
-      const retry = await supabase.from('cv_updates').insert(core);
+      const retry = await supabase.from('cv_updates').insert(withPartner);
       dbErr = retry.error;
-      if (!dbErr) setPartnerLost(true);
+      if (!dbErr && note) setNoteLost(true);
+      if (dbErr && isMissingColumn(dbErr)) {
+        const bare = await supabase.from('cv_updates').insert(core);
+        dbErr = bare.error;
+        if (!dbErr) { setPartnerLost(true); if (note) setNoteLost(true); }
+      }
     }
     if (dbErr) { setStatus('error'); setErr('שמירת ההגשה נכשלה: ' + dbErr.message); return; }
 
@@ -285,9 +309,11 @@ export default function MaPracticumForm() {
           ההגשה נשמרה
         </h1>
         <p className="text-[15px] leading-[1.6] mb-2" style={{ color: 'var(--ink)', opacity: 0.85 }}>
-          {proposing
-            ? 'קורות החיים והצעת הארגון נשמרו.'
-            : `קורות החיים נשמרו, והבחירה נרשמה: ${orgChoice || '—'} · ${partnerSummary(partnerMode, partnerNames)}.`}
+          {orgStatus
+            ? `${orgStatusHeadline(orgStatus)}. קורות החיים נשמרו · ${partnerSummary(partnerMode, partnerNames)}.`
+            : proposing
+              ? `קורות החיים והצעת הארגון נשמרו${pName.trim() ? `: ${pName.trim()}` : ''}.`
+              : `קורות החיים נשמרו, והבחירה נרשמה: ${orgChoice || '—'} · ${partnerSummary(partnerMode, partnerNames)}.`}
         </p>
 
         {/* WHAT HAPPENS NEXT, and who does it. Yariv 2026-10-07: a student who chose an
@@ -297,10 +323,20 @@ export default function MaPracticumForm() {
             anything else is expected of them. */}
         <p className="text-[14px] leading-[1.7] rounded-xl px-4 py-3 mt-3 text-right" data-ma-next
           style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', color: '#065f46' }}>
-          {proposing
-            ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון שהצעת לשם אישורו. ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
-            : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
+          {orgStatus === 'pending'
+            ? 'קורות החיים שלך שמורים אצלנו. כשהארגון יסוכם — חזרו לקישור הזה והגישו שוב עם פרטי איש/אשת הקשר, וד"ר יריב איצקוביץ ייצור איתם קשר לאישור.'
+            : orgStatus === 'none'
+              ? 'ד"ר יריב איצקוביץ יחזור אליך כדי לחפש יחד ארגון מתאים. קורות החיים שלך כבר אצלנו, אין צורך לעשות דבר נוסף כרגע.'
+              : proposing
+                ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון שהצעת לשם אישורו. ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
+                : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
         </p>
+        {noteLost && (
+          <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4" data-ma-note-lost
+            style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
+            שימו לב: ההערה שכתבתם לא נשמרה (העמודה חסרה במסד). קורות החיים נשמרו — אנא העבירו את ההערה לרכז התכנית.
+          </p>
+        )}
         {partnerLost && (
           <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4"
             style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
@@ -464,7 +500,7 @@ export default function MaPracticumForm() {
           ) : (
             <div className="space-y-2.5">
               {orgs.map(o => {
-                const selected = !proposing && orgChoice === o.name;
+                const selected = !proposing && !orgStatus && orgChoice === o.name;
                 return (
                   <label key={o.name} data-ma-org={o.name}
                     className="block rounded-xl border p-4 cursor-pointer transition-colors"
@@ -474,7 +510,7 @@ export default function MaPracticumForm() {
                     }}>
                     <div className="flex items-start gap-3">
                       <input type="radio" name="ma-org" checked={selected}
-                        onChange={() => { setOrgChoice(o.name); setProposing(false); }}
+                        onChange={() => { setOrgChoice(o.name); setProposing(false); setOrgStatus(''); }}
                         style={{ accentColor: 'var(--accent)', width: 16, height: 16, marginTop: 3 }} />
                       <div className="flex-1 min-w-0">
                         <div className="text-[15px] font-semibold" style={{ color: selected ? 'var(--accent)' : 'var(--ink)' }}>{o.name}</div>
@@ -494,8 +530,8 @@ export default function MaPracticumForm() {
                   background: proposing ? 'rgba(122,30,43,0.05)' : 'transparent',
                 }}>
                 <div className="flex items-start gap-3">
-                  <input type="radio" name="ma-org" checked={proposing}
-                    onChange={() => { setProposing(true); setOrgChoice(''); }}
+                  <input type="radio" name="ma-org" checked={proposing && !orgStatus}
+                    onChange={() => { setProposing(true); setOrgChoice(''); setOrgStatus(''); }}
                     style={{ accentColor: 'var(--accent)', width: 16, height: 16, marginTop: 3 }} />
                   <div className="flex-1">
                     <div className="text-[15px] font-semibold" style={{ color: proposing ? 'var(--accent)' : 'var(--ink)' }}>אני מציע/ה ארגון אחר</div>
@@ -503,6 +539,35 @@ export default function MaPracticumForm() {
                   </div>
                 </div>
               </label>
+
+              {/* THE THIRD AND FOURTH ANSWERS. Yariv 2026-10-07: "אני בקשר עם ארגון ועדיין זה לא
+                  סופי … אין לי ארגון (אבל אז שיגיד מדוע לא בחר בפסגות)". Before these, a
+                  student mid-conversation with a company had to either invent a proposal or
+                  abandon the form, and the coordinator learned nothing from either. */}
+              {([
+                ['pending', 'אני בקשר עם ארגון — עדיין לא סופי', 'כשהארגון יאושר אעלה כאן את הפרטים'],
+                ['none', 'אין לי ארגון כרגע', 'נבקש רק לדעת למה הארגון שברשימה לא מתאים'],
+              ] as const).map(([value, title, hint]) => {
+                const selected = orgStatus === value;
+                return (
+                  <label key={value} data-ma-status={value}
+                    className="block rounded-xl border p-4 cursor-pointer transition-colors"
+                    style={{
+                      borderColor: selected ? 'var(--accent)' : 'var(--divider)',
+                      background: selected ? 'rgba(122,30,43,0.05)' : 'transparent',
+                    }}>
+                    <div className="flex items-start gap-3">
+                      <input type="radio" name="ma-org" checked={selected}
+                        onChange={() => { setOrgStatus(value); setOrgChoice(''); setProposing(false); }}
+                        style={{ accentColor: 'var(--accent)', width: 16, height: 16, marginTop: 3 }} />
+                      <div className="flex-1">
+                        <div className="text-[15px] font-semibold" style={{ color: selected ? 'var(--accent)' : 'var(--ink)' }}>{title}</div>
+                        <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{hint}</div>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
 
               {orgs.length === 0 && (
                 <div className="rounded-lg px-4 py-3 text-[13px] leading-[1.6]"
@@ -534,6 +599,48 @@ export default function MaPracticumForm() {
               </div>
             </div>
           )}
+
+          {/* What "not yet" needs to say. 'pending' asks only for a name, and does not
+              insist on one — a student who cannot name the company yet is still telling us
+              something true. 'none' asks the one question Yariv wants answered. */}
+          {orgStatus === 'pending' && (
+            <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-pending-panel
+              style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
+              <p className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
+                רשמנו שאת/ה באמצע תהליך. <strong>אין צורך בפרטים מלאים עכשיו</strong> — כשהארגון יסוכם,
+                חזרו לקישור הזה והגישו שוב עם פרטי איש/אשת הקשר.
+              </p>
+              <Field label="שם הארגון שאת/ה בקשר איתו (אם ידוע)" value={pendingOrgName}
+                onChange={setPendingOrgName} testid="ma-pending-org" />
+            </div>
+          )}
+
+          {orgStatus === 'none' && (
+            <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-none-panel
+              style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
+              <div>
+                <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
+                  {orgs.length ? `למה ${orgs.map(o => o.name).join(', ')} לא מתאים/ה לך? *` : 'מה מצב החיפוש שלך? *'}
+                </span>
+                <textarea value={whyNotListed} onChange={e => setWhyNotListed(e.target.value)} rows={3}
+                  data-ma-why-not placeholder="למשל: מרחק נסיעה, תחום שלא מתאים לי, התחייבות בעבודה"
+                  className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />
+                <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>
+                  זה לא מבחן — זה מה שמאפשר לרכז התכנית לחפש עבורך ארגון מתאים יותר.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* The open box, offered whatever was answered above: "מקום לסטטוס כללי שלא מוגבל
+              לאחת מאלה שהעלתי". Nothing about the choices above can anticipate every
+              situation, and a student with something to say needs somewhere to say it. */}
+          <div className="mt-4">
+            <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הערה לרכז התכנית (אופציונלי)</span>
+            <textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2}
+              data-ma-status-note placeholder="כל דבר שחשוב שנדע — מצב, אילוץ, שאלה"
+              className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />
+          </div>
         </div>
 
         {/* ── alone or with a partner ──────────────────────────────────── */}

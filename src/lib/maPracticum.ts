@@ -306,11 +306,36 @@ export function maOrgOptions(blob: Blob | null, courseId: string): MaOrgOption[]
 
 export type PartnerMode = 'alone' | 'with';
 
+/**
+ * WHERE THE STUDENT IS WITH AN ORGANIZATION, when the answer is not yet a name.
+ *
+ * Yariv 2026-10-07: "אני רוצה שתוסיף בקישור אפשרות לסטודנט לכתוב הערה בסגנון אני בקשר עם
+ * ארגון ועדיין זה לא סופי … אין לי ארגון (אבל אז שיגיד מדוע לא בחר בפסגות)".
+ *
+ * Until now the form had exactly two answers — a listed organization, or a proposal with
+ * full contact details — and a student still in conversation with somebody had to pick one
+ * of them or abandon the form. Both are wrong: a half-made arrangement is not a proposal,
+ * and leaving is not an answer.
+ *
+ *   'pending' — in touch with an organization, nothing settled. Details follow later.
+ *   'none'    — no organization, which raises the question the coordinator actually wants
+ *               answered: why not the one already on offer.
+ */
+export type OrgStatus = '' | 'pending' | 'none';
+
 export type MaSubmission = {
   email: string;
   orgChoice: string;
   proposing: boolean;
   proposal: { name: string; contactName: string; contactRole: string; email: string; phone: string };
+  /** Non-empty means the student answered "not yet", and orgChoice/proposing are unused. */
+  orgStatus?: OrgStatus;
+  /** Who they are talking to, when they know. Optional — a name they cannot give is not a blocker. */
+  pendingOrgName?: string;
+  /** Required for 'none': why not the organization already on the list. */
+  whyNotListed?: string;
+  /** Free text, offered whatever the answer — "סטטוס כללי שלא מוגבל לאחת מאלה שהעלתי". */
+  statusNote?: string;
   partnerMode: PartnerMode | '';
   partnerNames: string[];
   hasFile: boolean;
@@ -360,7 +385,17 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
 
   if (!s.hasFile && !s.hasExistingCv) return 'יש לצרף קובץ קורות חיים (PDF או Word)';
 
-  if (s.proposing) {
+  // "Not yet" is a real answer, and it short-circuits the organization rules below: there
+  // is no name to check against the list and no proposal to complete.
+  if (s.orgStatus) {
+    if (s.orgStatus === 'none' && !String(s.whyNotListed || '').trim()) {
+      const listed = ctx.orgs.map(o => o.name).join(', ');
+      return listed
+        ? `כדי שנוכל לעזור — כתבו למה ${listed} לא מתאים/ה לכם`
+        : 'כתבו בבקשה מה מצב החיפוש שלכם';
+    }
+    if (s.orgStatus !== 'pending' && s.orgStatus !== 'none') return 'בחירת הארגון אינה תקינה';
+  } else if (s.proposing) {
     const required: Array<[string, string]> = [
       [s.proposal.name, 'שם הארגון'],
       [s.proposal.contactName, 'שם איש/אשת הקשר'],
@@ -373,7 +408,7 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
     if (!EMAIL_RE.test(s.proposal.email.trim())) return 'אימייל איש/אשת הקשר אינו תקין';
     if (s.proposal.phone.replace(/\D/g, '').length < 9) return 'טלפון איש/אשת הקשר אינו תקין';
   } else if (!s.orgChoice.trim()) {
-    return 'יש לבחור ארגון מהרשימה, או לסמן «אני מציע/ה ארגון אחר»';
+    return 'יש לבחור ארגון מהרשימה, להציע ארגון, או לסמן שעדיין אין לכם ארגון סופי';
   } else if (!ctx.orgs.some(o => o.name === s.orgChoice)) {
     // A stale draft restored into a form whose org list has since changed.
     return 'הארגון שנבחר אינו ברשימה המוצעת לפרקטיקום שלך — בחרו שוב.';
@@ -472,4 +507,34 @@ export function partnerEmails(blob: Blob | null, student: any, names: string[]):
     .filter((s: any) => wanted.has(String(s?.name || '').trim()) && s?.id !== student.id)
     .map((s: any) => normEmail(s?.email))
     .filter(Boolean);
+}
+
+/**
+ * The "not yet" answer as one line the coordinator can read in a list.
+ *
+ * Three fields that may each be empty would otherwise reach his screen as three blanks; a
+ * sentence either says something or is absent. Order matters — the status comes first,
+ * because that is what he scans for.
+ */
+export function orgStatusLine(s: {
+  orgStatus?: OrgStatus; pendingOrgName?: string; whyNotListed?: string; statusNote?: string;
+}): string {
+  const t = (v?: string) => String(v || '').trim();
+  const parts: string[] = [];
+  if (s.orgStatus === 'pending') {
+    const who = t(s.pendingOrgName);
+    parts.push(who ? `בקשר עם ${who} — טרם סופי` : 'בקשר עם ארגון — טרם סופי');
+  } else if (s.orgStatus === 'none') {
+    parts.push('אין ארגון כרגע');
+    if (t(s.whyNotListed)) parts.push(`למה לא מהרשימה: ${t(s.whyNotListed)}`);
+  }
+  if (t(s.statusNote)) parts.push(t(s.statusNote));
+  return parts.join(' · ');
+}
+
+/** What the student is told their answer was, on the confirmation screen. */
+export function orgStatusHeadline(status: OrgStatus): string {
+  if (status === 'pending') return 'רשמנו שאת/ה בקשר עם ארגון שטרם סוכם';
+  if (status === 'none') return 'רשמנו שעדיין אין לך ארגון';
+  return '';
 }

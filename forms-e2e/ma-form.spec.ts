@@ -517,3 +517,76 @@ test('the coordinator mail carries the FILED address, not the typed one', async 
   expect(r.track).toBe('ma');
   expect(cap.inserts[0].email).toBe('avi@ariel.ac.il');
 });
+
+/**
+ * "NOT YET" in the browser. Yariv 2026-10-07: "אני בקשר עם ארגון ועדיין זה לא סופי … אין לי
+ * ארגון (אבל אז שיגיד מדוע לא בחר בפסגות) … ומקום לסטטוס כללי שלא מוגבל לאחת מאלה שהעלתי".
+ */
+test('IN TOUCH, NOT SETTLED: it submits, and the row carries no organization', async ({ page }) => {
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-status="pending"]').click();
+  await page.getByTestId('ma-pending-org').fill('מכון אביב');
+  await page.locator('[data-ma-status-note]').fill('מחכה לתשובה בשבוע הבא');
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  const row = cap.inserts[0];
+  expect(row.org_status).toBe('pending');
+  expect(row.org_pref_1).toBeNull();
+  expect(row.suggested_org).toBeNull();
+  expect(row.student_note).toBe('בקשר עם מכון אביב — טרם סופי · מחכה לתשובה בשבוע הבא');
+  // And the student is told what to do when it does settle.
+  await expect(page.locator('[data-ma-next]')).toContainText('חזרו לקישור הזה');
+});
+
+test('NO ORGANIZATION: the form will not submit until it knows why not פסגות', async ({ page }) => {
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-status="none"]').click();
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-error]')).toContainText('פסגות');
+  expect(cap.inserts).toHaveLength(0);
+
+  await page.locator('[data-ma-why-not]').fill('מרחק נסיעה');
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  expect(cap.inserts[0].org_status).toBe('none');
+  expect(cap.inserts[0].student_note).toBe('אין ארגון כרגע · למה לא מהרשימה: מרחק נסיעה');
+});
+
+test('the open box reaches the coordinator even when an organization WAS chosen', async ({ page }) => {
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await page.locator('[data-ma-status-note]').fill('אני בחופשת לידה עד דצמבר');
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  expect(cap.inserts[0].org_pref_1).toBe('פסגות');
+  expect(cap.inserts[0].org_status).toBeNull();
+  expect(cap.inserts[0].student_note).toBe('אני בחופשת לידה עד דצמבר');
+});
+
+test('the four answers are exclusive — choosing one clears the others', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await page.locator('[data-ma-propose]').click();
+  await expect(page.getByTestId('ma-p-name')).toBeVisible();
+  await page.locator('[data-ma-status="none"]').click();
+  // The proposal panel must close, or the student is filling in two answers at once.
+  await expect(page.getByTestId('ma-p-name')).toHaveCount(0);
+  await expect(page.locator('[data-ma-none-panel]')).toBeVisible();
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await expect(page.locator('[data-ma-none-panel]')).toHaveCount(0);
+});

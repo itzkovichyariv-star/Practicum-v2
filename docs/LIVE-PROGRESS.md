@@ -759,3 +759,32 @@ build clean. The full gate was **not** run — its numbered cells write to the l
      restore point, or stop pointing test runs at production.
 - **RULE, restated because I broke it:** the full gate must not be run against production. Point it at a throwaway
   project, or do not run it.
+
+## 2026-10-07 14:00 IL — /ma: "not yet" is now an answer (NOT deployed — awaiting his OK)
+Branch `claude/ma-org-status`, cut from main at `288e041c`. **He is deliberately holding the link until he approves
+the look** ("תראה לי איך זה יראה בטופס — אני עדיין לא שולח את הקישור רק אחרי שנאשר").
+
+- **The gap he found:** the form had exactly two answers — a listed organization, or a full proposal with contact
+  details. A student mid-conversation with a company fit neither, so they had to invent a proposal they could not
+  back up or abandon the form; either way the coordinator learned nothing. Yariv: "אני בקשר עם ארגון ועדיין זה לא
+  סופי … אין לי ארגון (אבל אז שיגיד מדוע לא בחר בפסגות) … ומקום לסטטוס כללי שלא מוגבל לאחת מאלה שהעלתי".
+- **Two new options beside the existing two**, mutually exclusive with them (`[data-ma-status]`):
+  - **אני בקשר עם ארגון — עדיין לא סופי.** Asks for the organization's name but does NOT require it — a student who
+    cannot name it yet is still saying something true, and insisting would push them back to inventing a proposal.
+    Confirmation tells them to return to the same link once it settles.
+  - **אין לי ארגון כרגע.** Requires the one question he wants answered, and the refusal NAMES the organization on
+    offer ("כדי שנוכל לעזור — כתבו למה פסגות לא מתאים/ה לכם"). With no organizations listed it degrades to
+    "מה מצב החיפוש שלך".
+- **An open note box, shown whatever was chosen** — including when פסגות was picked. That is the "סטטוס כללי" he
+  asked for, and a student who chose an organization may still have something to say.
+- **Storage:** `org_status` ('pending'|'none'|NULL) and `student_note` (the composed line from `orgStatusLine`).
+  Migration written: **`cv_updates_ma_status.sql`**, idempotent, with a CHECK constraint. The טפסים panel now names
+  both SQL files.
+- **A LADDER, not one fallback,** on insert: full → partner-only → bare. The partner columns are migrated and the new
+  pair may not be, so a failure on the new pair must not also cost the partner answer; whatever a rung could not keep
+  is said out loud (`[data-ma-note-lost]`), never dropped silently.
+- **Green:** unit **280** (11 new) · forms **26** (4 new) · `npx tsc --noEmit` clean · `npm run build` 8 pages.
+  Screenshots of both panels sent to him.
+- **STILL OPEN:** not committed to main, not deployed, link not sent. Needs, in order: his OK on the look → run
+  `cv_updates_ma_status.sql` → deploy. Also still open from earlier: delete the walkthrough row
+  `7b6c8fea-ad41-45fe-b7bd-c03851e0b649`, and `practicum_snapshots` still holds no genuine rollback point.
