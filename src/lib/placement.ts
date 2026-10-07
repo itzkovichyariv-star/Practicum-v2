@@ -97,7 +97,8 @@ const DEFAULT_REMINDER_EMAIL_SUBJECT = `תזכורת — מועמדות {student
  *   • the greeting uses the FIRST NAME only and asks after them — "שלום אורטל, מה
  *     שלומך?" rather than "שלום אורטל חוברה," 
  *   • "רק מזכיר בעדינות —" is gone; the mail opens on what was actually done
- *   • "לפני {daysWaiting} ימים" becomes "לפני מספר שבועות" — no day count is quoted
+ *   • "לפני {daysWaiting} ימים" becomes {waitedFor}, which says it the way a person
+ *     would — "לפני שבועיים", "לפני חודש" — instead of quoting a raw day count
  *   • the ask now comes BEFORE the one-click link, and the sign-off is "המון תודה"
  *
  * Dropping {daysWaiting} here is the reason RENDER-days-substituted moved to the
@@ -106,7 +107,7 @@ const DEFAULT_REMINDER_EMAIL_SUBJECT = `תזכורת — מועמדות {student
  * somewhere a day count is still quoted.
  */
 const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactFirstName}, מה שלומך?
-שלחנו אליכם את קורות החיים של {studentName} לפני מספר שבועות, במסגרת {courseName}.
+שלחנו אליכם את קורות החיים של {studentName} {waitedFor}, במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
 נשמח לדעת אם המועמדות רלוונטית עבורכם. גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
 לתשובה בלחיצה אחת: {responseLink}
@@ -114,16 +115,35 @@ const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactFirstName}, מה שלומ�
 המון תודה,
 {adminName}`;
 
-/** The wording this replaced. Kept so the migration can recognise a template nobody has
- *  edited and swap it, while leaving a hand-edited one alone. */
-const SUPERSEDED_REMINDER_EMAIL_BODY = `שלום {contactName},
+/**
+ * Every wording the reminder mail has shipped with, so the migration can recognise a
+ * template nobody has edited and move it forward, while leaving a hand-edited one alone.
+ *
+ * A LIST, not a single value: each revision leaves another stored copy out there, and one
+ * that is only ever compared against the immediately previous wording strands whoever
+ * happened to deploy in between. Append here when the wording changes again.
+ */
+const SUPERSEDED_REMINDER_EMAIL_BODIES = [
+  // Before 2026-09-15.
+  `שלום {contactName},
 רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים, במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
 לתשובה בלחיצה אחת: {responseLink}
 גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
 {contactBack}
 תודה רבה,
-{adminName}`;
+{adminName}`,
+  // 2026-09-15, the first pass: the new wording, but with "לפני מספר שבועות" as fixed
+  // text — which is what {waitedFor} replaced hours later.
+  `שלום {contactFirstName}, מה שלומך?
+שלחנו אליכם את קורות החיים של {studentName} לפני מספר שבועות, במסגרת {courseName}.
+קישור לקו"ח: {cvLink}
+נשמח לדעת אם המועמדות רלוונטית עבורכם. גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
+לתשובה בלחיצה אחת: {responseLink}
+{contactBack}
+המון תודה,
+{adminName}`,
+];
 
 const DEFAULT_EMAIL_BODY = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת קורס {courseName} באוניברסיטת אריאל.
@@ -371,7 +391,7 @@ export function migratePlacementData(data: PracticumData): PracticumData {
     // and is left alone, the same contract LINK-keeps-custom-wording already holds the
     // migration to. Without this the new wording would reach only a practicum whose
     // settings had never been saved, and his own, saved long ago, would keep the old one.
-    if (ps.reminderEmailBodyTemplate === SUPERSEDED_REMINDER_EMAIL_BODY) {
+    if (SUPERSEDED_REMINDER_EMAIL_BODIES.includes(ps.reminderEmailBodyTemplate)) {
       ps.reminderEmailBodyTemplate = DEFAULT_REMINDER_EMAIL_BODY;
       changed = true;
     }
@@ -733,6 +753,43 @@ export function rtlBody(body: string): string {
  * A one-word entry is returned unchanged, and an empty one stays empty rather than
  * becoming a bare "שלום ,".
  */
+/**
+ * How long ago the CV went out, in the words a person would use.
+ *
+ * "לפני מספר שבועות" was fixed text, and the reminder can fire from about fourteen days
+ * — so a reminder sent on day 15 claimed "a few weeks" and one sent on day 40 understated
+ * it just as badly. Yariv 2026-09-15: "תתאים את זה - מספר הימים."
+ *
+ * Under a week it counts days, because there the exact number is the point and it is
+ * still short enough to read as precise. Past that it rounds to the unit a reader
+ * actually thinks in, which is never "23 days":
+ *
+ *     1        אתמול
+ *     2        לפני יומיים
+ *     3–6      לפני X ימים
+ *     7–13     לפני שבוע
+ *     14–20    לפני שבועיים
+ *     21–27    לפני שלושה שבועות
+ *     28–44    לפני חודש
+ *     45+      לפני יותר מחודש
+ *
+ * Rounding DOWN at every boundary is deliberate: the sentence is addressed to someone who
+ * has not answered, and overstating the wait would be both wrong and pointed. With no
+ * number to work from it says "לאחרונה" rather than inventing an interval.
+ */
+export function waitedForPhrase(daysWaiting: number | string | null | undefined): string {
+  const d = Math.floor(Number(daysWaiting));
+  if (!Number.isFinite(d) || d <= 0) return 'לאחרונה';
+  if (d === 1) return 'אתמול';
+  if (d === 2) return 'לפני יומיים';
+  if (d < 7) return `לפני ${d} ימים`;
+  if (d < 14) return 'לפני שבוע';
+  if (d < 21) return 'לפני שבועיים';
+  if (d < 28) return 'לפני שלושה שבועות';
+  if (d < 45) return 'לפני חודש';
+  return 'לפני יותר מחודש';
+}
+
 export function firstNameOf(full: string | null | undefined): string {
   return String(full ?? '').trim().split(/\s+/)[0] || '';
 }
