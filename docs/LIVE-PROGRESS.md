@@ -845,3 +845,23 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
   per "אל תבדוק עם סטודנט אמיתי". Nothing submitted to the live project this round.
 - **STILL OPEN, unchanged:** his OK → SQL → deploy function + site → send the link. Plus delete row
   `7b6c8fea-…`, and `practicum_snapshots` still holds no real restore point.
+
+## 2026-10-07 14:45 IL — a defect the parallel merge left in the mail, found only by rendering it
+- **He asked "מה הניסוח", so I rendered all five mails from the real template** rather than quoting from memory —
+  and that is how the defect surfaced. **The release mail's body still read as a fresh proposal:** "אוהד שטראוס
+  הציע/ה ארגון מטעמו/ה … ההצעה כפופה לאישורך", when the whole point of that mail is that an EXISTING proposal has
+  just been released. The subject and headline were right, so nothing looked wrong from outside.
+  - Cause: when the two sessions' work was reconciled, their rewrite of the body paragraph (`isMa`/`person`) replaced
+    the branching I had put there. The `noOrg` and `chosenOrg` branches were lost the same way. Tests did not catch it
+    because they assert the payload the form SENDS, not the HTML the function renders.
+- **Fixed:** the body now branches five ways, and the chapter-mark header varies with it instead of saying
+  "הצעת ארגון — דרוש אישור" above a mail that needs no approval:
+  `הגשה — אין צורך בפעולה` · `אין ארגון — לתיאום מולך` · `אפשר לפנות לארגון` · `הצעת ארגון — לא לפנות עדיין` ·
+  `הצעת ארגון — דרוש אישור`.
+- **Also checked while in there:** my earlier edits referenced `who`/`whoLong`, which that same rewrite renamed to
+  `isMa`/`person`. Had any reference survived, the deployed function would have thrown a ReferenceError at runtime
+  and **no mail would have gone at all** — esbuild would not have caught it, since it is a name, not a syntax error.
+  None survived; verified by grep.
+- **Rendering the mail is now the only way to check it.** `scratchpad/mails.mjs` pulls the template and the subject
+  expression straight out of the function source, so the preview cannot drift from what ships. Five HTML files sent to him.
+- **Green:** unit **287** · tsc clean · function parses.

@@ -66,7 +66,13 @@ Deno.serve(async (req) => {
       <head><meta charset="UTF-8"></head>
       <body style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#3d0f14;background:#f4efe6;direction:rtl">
         <div style="border-bottom:2px solid #7a1e2b;padding-bottom:14px;margin-bottom:20px">
-          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#7a1e2b;margin-bottom:5px">פרקטיקום · הצעת ארגון — דרוש אישור</div>
+          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#7a1e2b;margin-bottom:5px">פרקטיקום · ${
+            record.chosenOrg ? 'הגשה — אין צורך בפעולה'
+            : record.noOrg ? 'אין ארגון — לתיאום מולך'
+            : record.isRelease ? 'אפשר לפנות לארגון'
+            : record.contactPermission && record.contactPermission !== 'now' ? 'הצעת ארגון — לא לפנות עדיין'
+            : 'הצעת ארגון — דרוש אישור'
+          }</div>
           <h1 style="font-family:Georgia,serif;font-size:24px;margin:0;color:#3d0f14">${
             record.chosenOrg ? `${candidateName} בחר/ה ב${record.chosenOrg}`
             : record.noOrg ? `${candidateName} — אין ארגון כרגע`
@@ -76,10 +82,17 @@ Deno.serve(async (req) => {
           <div style="font-size:12px;color:#888;margin-top:4px">${submittedAt}</div>
         </div>
         <p style="font-size:14px;line-height:1.6">
-          ${isMa
-            ? `${candidateName} הציע/ה ארגון מטעמו/ה לפרקטיקום. ההצעה פרטית לסטודנט/ית זה/זו וכפופה לאישורך.`
-            : 'מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה. ההצעה פרטית למועמד/ת זה/זו וכפופה לאישורך.'}
-          אם תאושר — הארגון יהפוך לבחירה הראשונה שלו/ה.
+          ${
+            record.chosenOrg
+              ? `${candidateName} בחר/ה ב${record.chosenOrg} מתוך הרשימה והגיש/ה קורות חיים. אין כאן מה לאשר — ההגשה ממתינה בכרטיס הסטודנט/ית כרגיל.`
+            : record.noOrg
+              ? `${candidateName} ציין/ה שאין ברשותו/ה ארגון כרגע, והתבקש/ה לפנות אליך לתיאום.`
+            : record.isRelease
+              ? `${candidateName} עדכן/ה שהתהליך מול הארגון הבשיל ו<strong>אפשר לפנות אליהם עכשיו</strong>. זו בדיוק הנקודה שביקשת לדעת עליה.`
+            : isMa
+              ? `${candidateName} הציע/ה ארגון מטעמו/ה לפרקטיקום. ההצעה פרטית לסטודנט/ית זה/זו וכפופה לאישורך. אם תאושר — הארגון יהפוך לבחירה הראשונה שלו/ה.`
+              : 'מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה. ההצעה פרטית למועמד/ת זה/זו וכפופה לאישורך. אם תאושר — הארגון יהפוך לבחירה הראשונה שלו/ה.'
+          }
         </p>
         ${record.permissionLine && !record.noOrg ? `
         <div style="margin:14px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:bold;${
