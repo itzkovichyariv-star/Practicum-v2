@@ -146,11 +146,29 @@ export function openIcsEvent(opts: {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+/** The Ariel mailbox the calendar should open in when nobody is signed in yet. */
+export const ARIEL_CALENDAR_ACCOUNT = 'yarivi@ariel.ac.il';
+
 /**
  * Returns an Outlook Web App (O365 / Ariel) compose-event URL.
- * Opens OWA in the browser at the correct date & time — no file download,
- * no login if already signed into the Ariel O365 account.
- * The compose form is pre-filled; closing it shows the calendar at that date.
+ *
+ * Two things this URL has to get right, both of which the old builder got wrong
+ * and both of which showed up as "clicking 📅 opens nothing":
+ *
+ *  1. `path=/calendar/action/compose` is REQUIRED. Without it OWA loads the
+ *     calendar shell and stops — the reported blank tab. `rru=addevent` alone
+ *     is not enough.
+ *  2. `/calendar/0/` pins the request to account **index 0** of the browser's
+ *     Outlook session — literally "whoever signed in first", which on a machine
+ *     with a personal Microsoft account is not the Ariel mailbox. Dropping the
+ *     index lets Outlook resolve the session itself.
+ *
+ * No query parameter can *force* a particular mailbox — Microsoft publishes no
+ * such switch. `login_hint` is the closest thing: when Outlook does bounce
+ * through sign-in it pre-fills that address, and it is ignored when a session
+ * already exists. So the account is a hint, never a guarantee — which is why
+ * every caller should go through `openCalendarEvent` below, whose .ics fallback
+ * lands in the right calendar regardless of which browser session is live.
  */
 export function outlookCalendarUrl(opts: {
   subject?: string;
@@ -160,6 +178,7 @@ export function outlookCalendarUrl(opts: {
   location?: string;
   attendeeEmail?: string;
   body?: string;
+  account?: string;     // mailbox to hint at sign-in; defaults to the Ariel account
 }): string {
   function addHour(t: string) {
     const [h, m] = t.split(':').map(Number);
@@ -167,11 +186,68 @@ export function outlookCalendarUrl(opts: {
   }
   const time    = opts.startTime ?? '08:00';
   const endTime = opts.endTime   ?? addHour(time);
-  const startdt = encodeURIComponent(`${opts.startDate}T${time}:00`);
-  const enddt   = encodeURIComponent(`${opts.startDate}T${endTime}:00`);
-  const subject = encodeURIComponent(opts.subject ?? '');
-  const body    = encodeURIComponent(opts.body ?? '');
-  const location = opts.location ? `&location=${encodeURIComponent(opts.location)}` : '';
-  const to = opts.attendeeEmail ? `&to=${encodeURIComponent(opts.attendeeEmail)}` : '';
-  return `https://outlook.office.com/calendar/0/deeplink/compose?rru=addevent&startdt=${startdt}&enddt=${enddt}&subject=${subject}&body=${body}${location}${to}`;
+  // encodeURIComponent, NOT URLSearchParams: the latter encodes a space as `+`, and
+  // Outlook's deeplink handler is on record mis-reading `+` in exactly these fields
+  // (it round-trips them back to spaces, and mangles `+` that was meant literally).
+  // `%20` is what the working examples use. `path` keeps its slashes unescaped for
+  // the same reason — that is the form Microsoft's own examples publish.
+  const enc = (s: string) => encodeURIComponent(s);
+  const parts = [
+    'path=/calendar/action/compose',
+    'rru=addevent',
+    `startdt=${enc(`${opts.startDate}T${time}:00`)}`,
+    `enddt=${enc(`${opts.startDate}T${endTime}:00`)}`,
+    `subject=${enc(opts.subject ?? '')}`,
+    `body=${enc(opts.body ?? '')}`,
+  ];
+  if (opts.location) parts.push(`location=${enc(opts.location)}`);
+  if (opts.attendeeEmail) parts.push(`to=${enc(opts.attendeeEmail)}`);
+  parts.push(`login_hint=${enc(opts.account || ARIEL_CALENDAR_ACCOUNT)}`);
+  return `https://outlook.office.com/calendar/deeplink/compose?${parts.join('&')}`;
+}
+
+/**
+ * Opens a prebuilt calendar URL from a row button, and says so when the browser
+ * blocks it. The row call sites only hold the URL, not the event fields, so
+ * there is nothing to build an .ics from — but a blocked popup must still not
+ * look like a dead button.
+ */
+export function openCalendarLink(url: string): void {
+  const win = typeof window !== 'undefined' ? window.open(url, '_blank') : null;
+  if (!win) alert('הדפדפן חסם את פתיחת היומן. אפשרו חלונות קופצים לאתר, או פתחו את ההרצאה ולחצו «פתח יומן אריאל».');
+}
+
+/**
+ * Opens an event in the Ariel Outlook calendar, and actually says something when
+ * it can't.
+ *
+ * `window.open(url, '_blank')` returns null when a popup blocker eats the call —
+ * the old call sites ignored that, so a blocked popup was indistinguishable from
+ * a dead button. Here a blocked popup falls back to `openIcsEvent`, which hands
+ * the browser a real .ics file: it opens in whatever calendar the user has and
+ * does not care which Microsoft account the browser session belongs to.
+ */
+export function openCalendarEvent(opts: {
+  subject: string;
+  startDate?: string;   // YYYY-MM-DD — required; the caller may not have one yet
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  attendeeEmail?: string;
+  body?: string;
+  account?: string;
+}): { ok: boolean; reason?: 'no-date' | 'fallback-ics' } {
+  if (!opts.startDate) return { ok: false, reason: 'no-date' };
+  const url = outlookCalendarUrl({ ...opts, startDate: opts.startDate });
+  const win = typeof window !== 'undefined' ? window.open(url, '_blank') : null;
+  if (win) return { ok: true };
+  openIcsEvent({
+    subject: opts.subject,
+    startDate: opts.startDate,
+    startTime: opts.startTime,
+    endTime: opts.endTime,
+    location: opts.location,
+    description: opts.body,
+  });
+  return { ok: true, reason: 'fallback-ics' };
 }

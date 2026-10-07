@@ -3,7 +3,7 @@ import { btnPrimary, btnSecondary, btnSmall } from '../lib/design';
 import type { Student, Candidate, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import type { PageProps } from './pageShared';
-import { sameContext, normalizeYear, groupByYearCourse } from './pageShared';
+import { sameContext, normalizeYear, groupByYearCourse, openCalendarLink } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { occupyAcceptedOrgSlot, releaseStudentSlots, setCourseCapacity } from '../lib/placement';
 import { showToast } from '../lib/toast';
@@ -275,7 +275,11 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   useEffect(() => {
     let alive = true;
     supabase.from('cv_updates')
-      .select('id, email, uploaded_at, seen_at, cv_file_path, org_pref_1, org_pref_2, org_pref_3')
+      // `*`, not a column list: the /ma form added partner_mode/partner_names, and a
+      // named column PostgREST cannot find fails the WHOLE query — which would have
+      // emptied this map, and with it every student's waiting-submission signal, on any
+      // deployment where the migration had not been run yet.
+      .select('*')
       .order('uploaded_at', { ascending: false })
       .limit(500)
       .then(({ data: rows }) => {
@@ -537,7 +541,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       if (x.id !== student.id) return x;
       const withCv = row.cv_file_path
         ? { ...x, cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } as Student : x;
-      return (submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv) as Student;
+      // The partner travels with the submission (master's practicum, /ma). 'alone' is a
+      // real answer, so it clears a previous pairing rather than being ignored.
+      const withPartner = row.partner_mode
+        ? { ...withCv, practicumPartners: row.partner_mode === 'with' ? (row.partner_names || []) : [] } as Student
+        : withCv;
+      return (submitted.length ? adoptSubmittedOrgs(withPartner, employers, submitted) : withPartner) as Student;
     });
     await persistAndRefresh(next, '✓ ההגשה נקלטה לכרטיס', undefined,
       { action: 'נקלטה הגשת קו״ח והעדפות', entity: 'סטודנט', target: student.name });
@@ -1728,7 +1737,7 @@ export function RowActions({
   }
   function cal() {
     if (onCalendar) { onCalendar(); return; }
-    if (calendarUrl) window.open(calendarUrl, '_blank');
+    if (calendarUrl) openCalendarLink(calendarUrl);
   }
   // Contact buttons: bumped from 28px → 32px for an easier mouse target.
   const btn = "w-8 h-8 rounded-full border grid place-items-center transition-colors hover:bg-[rgba(122,30,43,0.08)] shrink-0";

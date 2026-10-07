@@ -30,7 +30,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PageProps } from './pageShared';
-import { sameContext, outlookCalendarUrl, normalizeYear } from './pageShared';
+import { sameContext, outlookCalendarUrl, normalizeYear, openCalendarLink } from './pageShared';
 import { supabase } from '../lib/supabase';
 import type { Lecture, Trainer } from '../lib/supabase';
 import {
@@ -1309,7 +1309,7 @@ function DaySheet({
                       title="הוסף ליומן Outlook"
                       aria-label="הוסף ליומן Outlook"
                       data-outlook={e.id}
-                      onClick={() => window.open(e.calendarUrl, '_blank')}
+                      onClick={() => openCalendarLink(e.calendarUrl!)}
                       className="rounded-2xl border grid place-items-center shrink-0"
                       style={{ width: 44, minHeight: 44, borderColor: 'var(--divider)', color: 'var(--ink)', background: 'transparent', cursor: 'pointer', fontSize: 15 }}
                     >📅</button>

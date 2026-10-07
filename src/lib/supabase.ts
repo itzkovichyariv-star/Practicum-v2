@@ -181,6 +181,10 @@ export type Student = {
   submittedAt?: string | null;
   preferences?: StudentPreference[];
   legacyPreferences?: string[];
+  /** Who this student does the practicum WITH — names taken from the course's own student
+   *  list by the /ma form, so a pair can be matched from both sides. Empty/absent = alone.
+   *  Master's practicum only; the BA form never asks. */
+  practicumPartners?: string[];
 };
 export type { EmployerContact } from './employerContacts';
 
