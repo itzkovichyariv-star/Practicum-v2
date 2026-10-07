@@ -43,7 +43,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, sent: false, reason: 'no recipients' }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
     }
 
-    const candidateName: string  = record.candidateName || 'מועמד/ת';
+    // The /ma practicum (ייעוץ ארגוני, MA) has no second stage and its people are
+    // students, not candidates — so the same mail must not call them "מועמד/ת
+    // מהשלב השני". track: 'ma' comes from MaPracticumForm; /cv-update sends none
+    // and keeps the stage-2 wording, which is true there.
+    const isMa = record.track === 'ma';
+    const person = isMa ? 'סטודנט/ית' : 'מועמד/ת';
+    const candidateName: string  = record.candidateName || person;
     const candidateEmail: string = record.candidateEmail || '—';
     const o = record.suggestedOrg as Record<string, string>;
     const submittedAt = new Date().toLocaleString('he-IL');
@@ -63,12 +69,14 @@ Deno.serve(async (req) => {
           <div style="font-size:12px;color:#888;margin-top:4px">${submittedAt}</div>
         </div>
         <p style="font-size:14px;line-height:1.6">
-          מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה. ההצעה פרטית למועמד/ת זה/זו וכפופה לאישורך.
+          ${isMa
+            ? `${candidateName} הציע/ה ארגון מטעמו/ה לפרקטיקום. ההצעה פרטית לסטודנט/ית זה/זו וכפופה לאישורך.`
+            : 'מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה. ההצעה פרטית למועמד/ת זה/זו וכפופה לאישורך.'}
           אם תאושר — הארגון יהפוך לבחירה הראשונה שלו/ה.
         </p>
         <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
-          ${detailRow('מועמד/ת', candidateName)}
-          ${detailRow('מייל המועמד/ת', candidateEmail)}
+          ${detailRow(person, candidateName)}
+          ${detailRow(`מייל ה${person}`, candidateEmail)}
           <tr><td colspan="2" style="padding-top:10px"></td></tr>
           ${detailRow('שם הארגון', o.name)}
           ${detailRow('איש/אשת קשר', o.contactName)}
