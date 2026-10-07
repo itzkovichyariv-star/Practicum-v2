@@ -67,19 +67,52 @@ test('the Office viewer is gone from the app entirely', () => {
   }
 });
 
-test('nothing opens a CV with window.open any more', () => {
-  // window.open is what an installed PWA has nowhere to put: no tab bar, so iOS declines
-  // it silently. openCv hands the URL to a real anchor click instead.
-  expect(read('src/lib/cvUrl.ts')).not.toContain('window.open');
-  for (const f of ['src/components/StudentEditor.tsx', 'src/components/CvUpdateForm.tsx']) {
-    expect(read(f), f).not.toContain('window.open(viewableCvUrl');
+test('nothing holds a blank tab across an await — the shape that caused every blank page', () => {
+  // THE HAZARD, stated as itself. Rounds one to five all banned a NAME (the Office
+  // viewer, then window.open) and the blank page came back each time, because the fault
+  // was never the name: it is opening a tab BEFORE the file is known and pointing it
+  // somewhere after an await. The await spends the click, iOS refuses the navigation,
+  // and the held tab is the blank page. A direct window.open of a URL we already have,
+  // inside the click, is not that shape — and in the installed app it is the only thing
+  // left that can put a file on screen, so banning the name outright (as this test did
+  // until 2026-09-15) forbade the fix.
+  for (const f of ['src/lib/cvUrl.ts', 'src/components/SubmissionsInbox.tsx',
+                   'src/components/CandidatesPage.tsx', 'src/components/CandidateStrip.tsx',
+                   'src/components/StudentEditor.tsx', 'src/components/CvUpdateForm.tsx']) {
+    const src = read(f);
+    expect(src, f).not.toContain("window.open('about:blank'");
+    expect(src, f).not.toContain('window.open("about:blank"');
+    expect(src, f).not.toContain("window.open('', '_blank')");
+    expect(src, f).not.toContain('win.location.href');
   }
+  // And no CV path may rebuild the file as a blob to show it: that needs a fetch, and a
+  // fetch needs an await. It also handed the viewer the service worker's offline JSON.
+  expect(read('src/components/SubmissionsInbox.tsx')).not.toContain("new Blob([buf]");
 });
 
-test('every CV opener goes through openCv', () => {
-  expect(read('src/components/CandidatesPage.tsx')).toContain('openCv(fileRef)');
-  expect(read('src/components/CandidateStrip.tsx')).toContain('openCv(c.fileRef)');
+test('the installed app has a hand-off that cannot end in nothing', () => {
+  // A scripted anchor click aimed at a new tab is what iOS standalone drops silently.
+  // There, openCv asks for a window and, if the platform refuses one, navigates in
+  // place — so the file always arrives somewhere.
+  const src = read('src/lib/cvUrl.ts');
+  expect(src).toContain('isStandaloneApp');
+  expect(src).toContain('window.location.href = url');
+});
+
+test('every CV opener goes through the shared module', () => {
+  // A chip that ALREADY renders a real anchor opens the file with the browser's own
+  // navigation — the one hand-off no platform drops — and calls the shared module only
+  // to say what is wrong when the storage refuses the object. Cancelling that navigation
+  // with preventDefault to run a scripted open is what left the installed app opening
+  // nothing at all, so the two chips must not do it again.
+  for (const f of ['src/components/CandidatesPage.tsx', 'src/components/CandidateStrip.tsx']) {
+    const src = read(f);
+    expect(src, f).toContain('warnIfCvUnreadable');
+    expect(src, f).not.toContain('e.preventDefault(); void openCv');
+  }
+  // Buttons with no anchor of their own still hand off through openCv.
   expect(read('src/components/StudentEditor.tsx')).toContain('openCv(');
+  expect(read('src/components/SubmissionsInbox.tsx')).toContain('openCv(');
   // ...and the chips still carry a real href, so copy-link and middle-click keep working.
   expect(read('src/components/CandidatesPage.tsx')).toContain('resolveCvUrl(c.cvUrl)');
   expect(read('src/components/CandidateStrip.tsx')).toContain('resolveCvUrl(c.fileRef)');

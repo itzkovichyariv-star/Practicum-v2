@@ -3,10 +3,10 @@ import { btnPrimary } from '../lib/design';
 import type { Lecture } from '../lib/supabase';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear, outlookCalendarUrl } from './pageShared';
-import { saveSnapshot } from '../lib/dataApi';
+import { saveLecture, deleteLecture } from '../lib/lectureSave';
 import { showToast } from '../lib/toast';
-import * as ms from '../lib/msGraph';
 import LectureEditor from './LectureEditor';
+import { SEMESTERS, sameSemester, normalizeSemester } from '../lib/semester';
 import { RowActions, NeedsUpdate, RefreshButton, StatusDot, type DotStatus } from './StudentsPage';
 
 function hebMonth(d: Date) {
@@ -56,7 +56,7 @@ export default function LecturesPage({
     return scoped.filter(l => {
       if (filters.status && l.status !== filters.status) return false;
       if (filters.type && l.type !== filters.type) return false;
-      if (filters.semester && l.semester !== filters.semester) return false;
+      if (filters.semester && !sameSemester(l.semester, filters.semester)) return false;
       if (filters.hidePast && l.date) {
         const d = new Date(l.date);
         if (!isNaN(d.getTime()) && d < today) return false;
@@ -85,134 +85,37 @@ export default function LecturesPage({
     return !isNaN(d.getTime()) && d >= today && l.status !== 'בוטל';
   }).length;
 
-  async function persistAfterChange(next: Lecture[], action: string, activityTarget?: string) {
-    setSaving(true);
-    setSaveMsg(null);
-    const nextData = { ...data, lectures: next };
-    const actVerb = action.includes('נוצרה') ? 'נוסף' : action.includes('נמחקה') ? 'נמחק' : 'עודכן';
-    const res = await saveSnapshot(
-      nextData,
-      { name: userName },
-      activityTarget ? { action: actVerb, entity: 'הרצאה', target: activityTarget } : undefined
-    );
+  /** Report the outcome of a lectureSave call. Shared by save and delete so the two
+   *  cannot drift in what they tell the user. */
+  function report(res: { ok: true; message: string } | { ok: false; error: string }) {
     setSaving(false);
     if (!res.ok) {
       setSaveMsg('שגיאה: ' + (res.error || ''));
       showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
       return;
     }
-    setSaveMsg(action);
-    showToast(action + ' · נשמר בענן ☁️', 'success');
-    // mutate in place so UI refreshes on next render
-    (data.lectures as Lecture[]) = next;
+    setSaveMsg(res.message);
+    showToast(res.message + ' · נשמר בענן ☁️', 'success');
     onRefresh();
     setTimeout(() => setSaveMsg(null), 2500);
   }
 
-  async function syncToOutlook(lec: Lecture, mode: 'create' | 'update' | 'delete'): Promise<Lecture> {
-    if (!(await ms.isSignedIn())) return lec;
-    if (!lec.date) return lec;
-    try {
-      if (mode === 'delete') {
-        if (lec.graphEventId) await ms.deleteEvent(lec.graphEventId);
-        return lec;
-      }
-      const payload: ms.EventInput = {
-        subject: `${lec.type || 'הרצאה'}: ${lec.topic || lec.courseName || ''}`,
-        startDate: lec.date,
-        startTime: lec.startTime,
-        endTime: lec.endTime,
-        location: lec.link || lec.location || lec.institution,
-        body: [lec.topic, lec.courseName ? 'קורס: ' + lec.courseName : '', lec.lecturer ? 'מרצה: ' + lec.lecturer : '', lec.notes || ''].filter(Boolean).join('\n'),
-        attendeeEmails: lec.lecturerEmail ? [lec.lecturerEmail] : [],
-      };
-      if (mode === 'update' && lec.graphEventId) {
-        await ms.updateEvent(lec.graphEventId, payload);
-        return lec;
-      }
-      const created = await ms.createEvent(payload);
-      return created?.id ? { ...lec, graphEventId: created.id } : lec;
-    } catch (e) {
-      console.warn('Outlook sync failed:', e);
-      return lec;
-    }
-  }
-
+  // The write itself lives in src/lib/lectureSave.ts — Outlook sync, the
+  // fill-never-overwrite employer-contact rule and the CAS-guarded snapshot write, in
+  // one place, so the academic-year screen books a lecturer through exactly this path.
   async function handleSave(lec: Lecture) {
-    const idx = all.findIndex(l => l.id === lec.id);
-    const synced = await syncToOutlook(lec, idx >= 0 ? 'update' : 'create');
-    let next: Lecture[];
-    let action: string;
-    if (idx >= 0) {
-      next = [...all];
-      next[idx] = synced;
-      action = '✓ ההרצאה עודכנה';
-    } else {
-      next = [...all, synced];
-      action = '✓ הרצאה נוצרה';
-    }
     setEditing(null);
     setCreating(false);
-
-    // Sync employer contact data when lecturer name matches a known employer contact
-    const lecName = (synced.lecturer || '').trim().toLowerCase();
-    const allEmployers: any[] = data.employers || [];
-    let updatedEmployers = allEmployers;
-    if (lecName) {
-      const empIdx = allEmployers.findIndex((e: any) =>
-        (e.contactPerson || '').trim().toLowerCase() === lecName
-      );
-      if (empIdx >= 0) {
-        const emp = { ...allEmployers[empIdx] };
-        let changed = false;
-        if (synced.lecturerEmail && synced.lecturerEmail !== emp.contactEmail) {
-          emp.contactEmail = synced.lecturerEmail;
-          changed = true;
-        }
-        if (synced.lecturerPhone && synced.lecturerPhone !== emp.contactPhone) {
-          emp.contactPhone = synced.lecturerPhone;
-          changed = true;
-        }
-        if (changed) {
-          updatedEmployers = [...allEmployers];
-          updatedEmployers[empIdx] = emp;
-          (data.employers as any[]) = updatedEmployers;
-          action += ` · פרטי קשר של ${emp.name} עודכנו`;
-        }
-      }
-    }
-
-    const saveData = updatedEmployers !== allEmployers
-      ? { ...data, lectures: next, employers: updatedEmployers }
-      : { ...data, lectures: next };
-
     setSaving(true);
     setSaveMsg(null);
-    const actVerb = action.includes('נוצרה') ? 'נוסף' : 'עודכן';
-    const res = await saveSnapshot(
-      saveData,
-      { name: userName },
-      { action: actVerb, entity: 'הרצאה', target: synced.topic || synced.courseName || 'הרצאה' }
-    );
-    setSaving(false);
-    if (!res.ok) {
-      setSaveMsg('שגיאה: ' + (res.error || ''));
-      showToast('שגיאה בשמירה: ' + (res.error || ''), 'error');
-      return;
-    }
-    setSaveMsg(action);
-    showToast(action + ' · נשמר בענן ☁️', 'success');
-    (data.lectures as Lecture[]) = next;
-    onRefresh();
-    setTimeout(() => setSaveMsg(null), 2500);
+    report(await saveLecture(lec, data, userName));
   }
 
   async function handleDelete(id: string) {
-    const lec = all.find(l => l.id === id);
-    if (lec) await syncToOutlook(lec, 'delete');
-    const next = all.filter(l => l.id !== id);
     setEditing(null);
-    await persistAfterChange(next, '✓ ההרצאה נמחקה', lec?.topic || lec?.courseName || 'הרצאה');
+    setSaving(true);
+    setSaveMsg(null);
+    report(await deleteLecture(id, data, userName));
   }
 
   const presentStatuses = Array.from(new Set(scoped.map(l => l.status).filter(Boolean))) as string[];
@@ -288,7 +191,7 @@ export default function LecturesPage({
           label="סמסטר"
           value={filters.semester}
           onChange={v => setFilters(f => ({ ...f, semester: v }))}
-          options={['א׳', 'ב׳', 'קיץ']}
+          options={[...SEMESTERS]}
         />
         <label className="inline-flex items-center gap-2 mono text-[12px] uppercase tracking-[0.14em] font-semibold cursor-pointer" style={{ color: 'var(--ink)' }}>
           <input
@@ -325,6 +228,7 @@ export default function LecturesPage({
           defaultYear={context.year}
           typeOptions={Array.from(new Set(all.map(l => l.type).filter(Boolean))) as string[]}
           statusOptions={Array.from(new Set(all.map(l => l.status).filter(Boolean))) as string[]}
+          lectures={all}
           onSave={handleSave}
           onDelete={editing ? handleDelete : undefined}
           onClose={() => { setEditing(null); setCreating(false); }}
@@ -400,7 +304,7 @@ function LectureItem({ lec, now, onEdit }: { lec: Lecture; now: Date; onEdit: ()
           {/* Details line */}
           <div className="text-[12.5px] leading-snug" style={{ color: 'var(--text-soft)' }}>
             {[lec.courseName, lec.lecturer, lec.institution || lec.location].filter(Boolean).join(' · ')}
-            {lec.semester && ` · סמ׳ ${lec.semester}`}
+            {lec.semester && ` · סמ׳ ${normalizeSemester(lec.semester)}`}
           </div>
           {(!lec.lecturer || !lec.lecturerPhone || !lec.lecturerEmail) && (
             <div className="mt-1"><NeedsUpdate /></div>

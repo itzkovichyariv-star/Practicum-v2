@@ -13,24 +13,25 @@ import ExcelImport from './ExcelImport';
 import { openMailto } from '../lib/openMailto';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
-import { planDispatch, applyDispatch, unsendOrg, dropOrg, placeDirect } from '../lib/dispatch';
+import { planDispatch, applyDispatch, unsendOrg, dropOrg, placeDirect, splitSendable } from '../lib/dispatch';
 import { resolveCvUrl } from '../lib/cvUrl';
-import { placementStatus, isPlacementCourse, TURN_LABEL, TURN_COLOR,
+import { resolveEmployerByName, firstEmailOf, openWhatsApp, adoptSubmittedOrgs, promoteOrgToFirst,
+  releaseStudentSlotAt, orgKey } from '../lib/placement';
+import { placementStatus, isPlacementCourse, remindableChips, TURN_LABEL, TURN_COLOR,
   type PlacementStatus, type PlacementTurn, type CvSubmission, type PlacementAction } from '../lib/placementStatus';
 import type { Employer } from '../lib/supabase';
 
 // Resolve the hosting employer from a student's free-text acceptedOrg (exact → ci →
 // prefix, either direction) — same fuzzy match the editor uses — so the org-contact
 // icons find the employer even when the name drifts slightly.
-function resolveEmployerForOrg(orgName: string | undefined, employers: Employer[]): Employer | undefined {
-  if (!orgName) return undefined;
-  const norm = (s?: string) => (s || '').trim().toLowerCase();
-  const n = norm(orgName);
-  return employers.find(e => e.name === orgName)
-    || employers.find(e => norm(e.name) === n)
-    || employers.find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
-}
-const firstEmailOf = (s?: string) => (s || '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)?.[0] || '';
+// The SHARED resolver. This used to be a private copy whose normalisation was weaker
+// than orgKey's: it did not strip the invisible direction marks an Excel-pasted name
+// carries, and did not fold ״ to " — while `acceptedOrg` is written THROUGH
+// normalizeOrgName, which converts " to ״. So a student placed at ביה"ח שיבא never
+// matched the employer record, the row printed "אין פרטי קשר לארגון", and the call,
+// WhatsApp and mail icons for the host organization disappeared.
+const resolveEmployerForOrg = (orgName: string | undefined, employers: Employer[]): Employer | undefined =>
+  resolveEmployerByName(orgName, employers || []);
 
 type Filters = {
   search: string;
@@ -384,12 +385,20 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     if (action.id === 'remind') {
       const course = courses.find((c: any) => c.id === student.courseId);
       const st = statusById.get(student.id);
-      const target = (action as any).targetOrg
-        || st?.chips.find(c => c.tone === 'late')?.orgName
-        || st?.chips.find(c => c.tone === 'sent')?.orgName;
+      // The SAME list the confirmation dialog offers (remindableChips), so what the
+      // screen named is what gets reminded.
+      const target = (action as any).targetOrg || remindableChips(st?.chips || [])[0]?.orgName;
       if (!target) { showToast('אין ארגון בהמתנה לתזכורת', 'error'); return; }
-      const disp = ((data as any).dispatches || [])
-        .filter((d: any) => d.studentId === student.id && d.result === 'pending')
+      // The dispatch for THE ORGANIZATION BEING REMINDED, not the student's newest one.
+      // With two CVs out — 40 days at the late one, 2 days at the other — the reminder
+      // to the late employer said it had been waiting 2 days, understating exactly the
+      // number that justifies the reminder.
+      const targetChip = remindableChips(st?.chips || []).find(c => c.orgName === target);
+      const forTarget = ((data as any).dispatches || [])
+        .filter((d: any) => d.studentId === student.id && d.result === 'pending'
+          && (targetChip?.employerId ? d.employerId === targetChip.employerId : true));
+      const disp = (forTarget.length ? forTarget : ((data as any).dispatches || [])
+        .filter((d: any) => d.studentId === student.id && d.result === 'pending'))
         .sort((a: any, b: any) => String(b.sentAt).localeCompare(String(a.sentAt)))[0];
       const days = disp ? Math.max(0, Math.floor((Date.now() - new Date(disp.sentAt).getTime()) / 86400000)) : 0;
       const plan = planDispatch({
@@ -401,16 +410,14 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         allowResend: true, reminder: { daysWaiting: days },
       });
       if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
-      // Same refusal the send path makes: an empty compose window looks like it worked,
-      // and that is exactly how a reminder goes missing. Now that WhatsApp is offered
-      // here, the missing detail is usually a phone rather than an address.
-      const noContact = plan.entries.filter(e => e.missingContact).map(e => e.orgName);
-      if (noContact.length && noContact.length === plan.entries.length) {
-        showToast(`אין ${(action as any).channel === 'whatsapp' ? 'טלפון' : 'כתובת מייל'} ל‑${noContact.join(', ')} — הוסף/י פרטי קשר לארגון`, 'error');
-        return;
-      }
+      // An empty compose window looks like it worked, and that is exactly how a
+      // reminder goes missing. Per organization, not all-or-nothing: the old check only
+      // refused when EVERY entry lacked a contact, so one address-less organization in a
+      // batch still opened empty.
+      const { sendable, skipped: contactSkips } = splitSendable(plan);
+      if (!sendable.length) { showToast(`לא נשלח — ${contactSkips.join(', ')}`, 'error'); return; }
       const opened: any[] = [];
-      for (const e of plan.entries) {
+      for (const e of sendable) {
         const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
         if (ok) opened.push(e);
       }
@@ -433,15 +440,13 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       });
       if (plan.blockedReason) { showToast(plan.blockedReason, 'error'); return; }
       // Refuse rather than open a compose window with no recipient — an empty window
-      // looks like it worked and is exactly how a send goes missing.
-      const noContact = plan.entries.filter(e => e.missingContact).map(e => e.orgName);
-      if (noContact.length && noContact.length === plan.entries.length) {
-        showToast(`אין ${(action as any).channel === 'whatsapp' ? 'טלפון' : 'כתובת מייל'} ל‑${noContact.join(', ')} — הוסף/י פרטי קשר לארגון`, 'error');
-        return;
-      }
-      const opened = [];
-      const skipped = [...plan.skipped];
-      for (const e of plan.entries) {
+      // looks like it worked and is exactly how a send goes missing. Per organization:
+      // the old check only refused when EVERY entry lacked a contact.
+      const { sendable, skipped: contactSkips } = splitSendable(plan);
+      if (!sendable.length) { showToast(`לא נשלח — ${contactSkips.join(', ')}`, 'error'); return; }
+      const opened: typeof sendable = [];
+      const skipped = [...contactSkips];
+      for (const e of sendable) {
         const ok = e.channel === 'whatsapp' ? !!window.open(e.url, '_blank') : openMailto(e.url);
         if (!ok) { skipped.push(`${e.orgName} (חלון נחסם — שלח/י בנפרד)`); continue; }
         opened.push(e);
@@ -469,12 +474,18 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       return;
     }
     if (action.id === 'unsend') {
-      const orgName = (action as any).targetOrg as string | undefined;
-      if (!orgName) { showToast('לא זוהה הארגון לשחרור — נסה/י מתוך הכרטיס', 'error'); return; }
-      const res = unsendOrg({
-        student, employers, dispatches: (data as any).dispatches || [],
-        orgName, userName, mode: 'never_sent',
-      });
+      // EVERY organization the send covered, not just the first. The bar reads "קו״ח
+      // ל‑A, B" and its button says "לא נשלח — בטל" without naming one, but it undid
+      // only A: B kept its reserved place and its pending dispatch while the row looked
+      // resolved, and the toast named only A.
+      const orgNames = ((action as any).targetOrgs as string[] | undefined)?.filter(Boolean)
+        || [(action as any).targetOrg].filter(Boolean) as string[];
+      if (!orgNames.length) { showToast('לא זוהה הארגון לשחרור — נסה/י מתוך הכרטיס', 'error'); return; }
+      let res = { student, employers, dispatches: (data as any).dispatches || [] };
+      for (const orgName of orgNames) {
+        res = unsendOrg({ ...res, orgName, userName, mode: 'never_sent' });
+      }
+      const orgName = orgNames.join(', ');
       const nextStudents = all.map(x => x.id === student.id ? res.student : x);
       setSaving(true);
       const saved = await saveSnapshot(
@@ -483,7 +494,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         { action: 'בוטלה שליחת קו״ח', entity: 'סטודנט', target: student.name },
       );
       setSaving(false);
-      if (saved.ok) { setRowSend(null); onRefresh(); showToast(`↩︎ ${orgName} חזר לרשימה — המקום שוחרר`, 'success'); }
+      if (saved.ok) {
+        setRowSend(null); onRefresh();
+        showToast(orgNames.length > 1
+          ? `↩︎ ${orgName} חזרו לרשימה — המקומות שוחררו`
+          : `↩︎ ${orgName} חזר לרשימה — המקום שוחרר`, 'success');
+      }
       else showToast('שגיאה בשמירה: ' + (saved.error || ''), 'error');
       return;
     }
@@ -512,13 +528,17 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
     const email = String(student.email || '').trim().toLowerCase();
     const row = subs.unseen.get(email);
     if (!row) { showToast('ההגשה כבר נקלטה', 'info'); return; }
-    const next = all.map(x => x.id === student.id ? {
-      ...x,
-      ...(row.cv_file_path ? { cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } : {}),
-      ...(row.org_pref_1 ? { firstChoiceOrg: row.org_pref_1 } : {}),
-      ...(row.org_pref_2 ? { secondChoiceOrg: row.org_pref_2 } : {}),
-      ...(row.org_pref_3 ? { thirdChoiceOrg: row.org_pref_3 } : {}),
-    } as Student : x);
+    // Through adoptSubmittedOrgs, not the legacy fields: the submitted list LEADS the
+    // ranking, as the confirmation promises, instead of being appended below the
+    // organizations already there. An organization the student did not resubmit is kept
+    // — it may be holding a reserved place.
+    const submitted = [row.org_pref_1, row.org_pref_2, row.org_pref_3].filter(Boolean) as string[];
+    const next = all.map(x => {
+      if (x.id !== student.id) return x;
+      const withCv = row.cv_file_path
+        ? { ...x, cvUpdatedUrl: `storage://candidate-uploads/${row.cv_file_path}` } as Student : x;
+      return (submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv) as Student;
+    });
     await persistAndRefresh(next, '✓ ההגשה נקלטה לכרטיס', undefined,
       { action: 'נקלטה הגשת קו״ח והעדפות', entity: 'סטודנט', target: student.name });
     await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', row.id);
@@ -550,11 +570,28 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
 
     // Occupy a vacancy slot at the org when acceptedOrg is newly set (the unified
     // capacity ledger — replaces the old bare filledPositions++).
-    const orgJustSet = s.acceptedOrg && !previous?.acceptedOrg;
-    if (orgJustSet) {
-      const empIdx = employers.findIndex(e => e.name === s.acceptedOrg);
+    // Through the shared resolver. The gate was a strict `===` while the function it
+    // guards resolves fuzzily, and `acceptedOrg` is written through normalizeOrgName
+    // (" → ״) while the employer record keeps whatever was typed — so for those students
+    // the gate simply never fired: they were saved as placed, NO vacancy was occupied,
+    // and the organization went on offering that place to everyone else, silently.
+    // …and a CHANGE is handled too. This used to fire only on the transition from
+    // empty, so correcting the hosting organization from A to B occupied nothing at B
+    // and released nothing at A: A went on counting a place as filled by a student who
+    // is no longer there, permanently, because a typed field was corrected.
+    const prevOrg = String(previous?.acceptedOrg || '').trim();
+    const nextOrg = String(s.acceptedOrg || '').trim();
+    const orgChanged = !!nextOrg && orgKey(prevOrg) !== orgKey(nextOrg);
+    if (orgChanged) {
+      const empIdx = resolveEmployerByName(s.acceptedOrg, employers)
+        ? employers.findIndex(e => e.id === resolveEmployerByName(s.acceptedOrg, employers)!.id) : -1;
       if (empIdx >= 0) {
-        const updatedEmps = occupyAcceptedOrgSlot(s, employers, { actorId: userName });
+        // Release the place at the organization being left BEFORE occupying the new one,
+        // so a correction cannot cost an organization a place it still has free.
+        const freed = prevOrg
+          ? releaseStudentSlotAt(s, employers, prevOrg, { actorId: userName, reason: 'accepted-org-changed' })
+          : employers;
+        const updatedEmps = occupyAcceptedOrgSlot(s, freed, { actorId: userName });
         setSaving(true); setSaveMsg(null);
         const res = await saveSnapshot(
           { ...data, students: next, employers: updatedEmps },
@@ -934,7 +971,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <div className="mt-3 text-[14px]" style={{ color: 'var(--text-soft)' }}>נסה להסיר סינון או להוסיף חדש.</div>
           </div>
         ) : context.courseId === '__all__' ? (
-          groupByYearCourse(filtered, courses, context).map(group => (
+          groupByYearCourse<Student>(filtered, courses, context).map(group => (
             <div key={`${group.year}||${group.courseId}`}>
               <GroupHeader year={group.year} courseName={group.courseName} count={group.items.length} showYear={group.showYear} />
               <ul>
@@ -1024,7 +1061,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               // slotId === null, so undoing from it freed the preference but left the
               // place reserved.
               const fresh = (data.students || []).find((x: Student) => x.id === b.studentId);
-              if (fresh) runPlacementAction(fresh, { id: 'unsend', targetOrg: b.orgNames[0] } as any);
+              if (fresh) runPlacementAction(fresh, { id: 'unsend', targetOrgs: b.orgNames } as any);
             }}
             style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
               border: '1px solid #b45309', background: 'transparent', color: '#b45309', cursor: 'pointer' }}>
@@ -1310,8 +1347,11 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             // seen_at is RLS-blocked).
             const empWithPlace = ctx.courseId ? setCourseCapacity(emp, ctx.courseId, 1) : emp;
             const updatedEmps = [...employers, empWithPlace];
+            // promoteOrgToFirst, not a raw write to firstChoiceOrg: the approved
+            // organization goes to the TOP of the ranking and the choice that was
+            // there moves down, instead of being overwritten and lost.
             const updatedStudents = (data.students || []).map((s: Student) => s.id === ctx.studentId
-              ? { ...s, firstChoiceOrg: ctx.firstChoiceOrgName, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student
+              ? promoteOrgToFirst(s, updatedEmps, ctx.firstChoiceOrgName, empWithPlace.id) as Student
               : s);
             const dismissed = ctx.suggestionId
               ? Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), ctx.suggestionId]))
@@ -1393,12 +1433,15 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
   // icon buttons (identical style + size), so the two contact rows read as one system.
   const canDial = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)')?.matches || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
   const doCall = (phone: string, label: string) => { const tel = phone.replace(/[^\d+]/g, ''); if (canDial) { window.location.href = `tel:${tel}`; } else if (navigator.clipboard?.writeText) { navigator.clipboard.writeText(phone).then(() => showToast(`📞 ${label}: ${phone} · הועתק`, 'success'), () => showToast(`📞 ${phone}`, 'info')); } else { showToast(`📞 ${phone}`, 'info'); } };
-  const toWa = (phone: string) => { let n = phone.replace(/[^\d]/g, ''); if (n.startsWith('0')) n = '972' + n.slice(1); return n; };
+  // openWhatsApp normalises AND checks the number can be dialed, then says so plainly
+  // when it cannot. The hand-rolled version here turned a 00972 number into 972972… and
+  // sent a number with a missing digit to WhatsApp's "not on WhatsApp" page, which reads
+  // as "they are not on WhatsApp" rather than "this number is wrong".
   const stuCall = (e: any) => { e.stopPropagation(); if (s.phone) doCall(s.phone, s.name || ''); };
-  const stuWa = (e: any) => { e.stopPropagation(); if (s.phone) window.open(`https://wa.me/${toWa(s.phone)}`, '_blank'); };
+  const stuWa = (e: any) => { e.stopPropagation(); if (s.phone) openWhatsApp(s.phone, { name: s.name || '' }); };
   const stuMail = (e: any) => { e.stopPropagation(); if (s.email) openMailto(`mailto:${s.email}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
   const orgCall = (e: any) => { e.stopPropagation(); if (hostPhone) doCall(hostPhone, hostEmp?.name || ''); };
-  const orgWa = (e: any) => { e.stopPropagation(); if (hostPhone) window.open(`https://wa.me/${toWa(hostPhone)}?text=${encodeURIComponent(`שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — `)}`, '_blank'); };
+  const orgWa = (e: any) => { e.stopPropagation(); if (hostPhone) openWhatsApp(hostPhone, { name: hostEmp?.name || '', message: `שלום, בנוגע ל${s.name || ''} המתמחה אצלכם בפרקטיקום — ` }); };
   const orgMail = (e: any) => { e.stopPropagation(); if (hostEmail) openMailto(`mailto:${hostEmail}?subject=${encodeURIComponent(`פרקטיקום — ${s.name || ''}`)}`); };
   const hired = !!s.hired;
   const completed = !!s.practicumCompleted;

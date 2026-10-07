@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { dialPhone } from '../lib/dial';
 import { btnPrimary, btnSecondary, btnSmall, btnTab } from '../lib/design';
 import type { Employer, EmployerApprovalRequest, Student } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
@@ -6,10 +7,11 @@ import type { PageProps } from './pageShared';
 import { normalizeYear } from './pageShared';
 import { saveSnapshot, randomId } from '../lib/dataApi';
 import { showToast } from '../lib/toast';
+import { employerContacts } from '../lib/employerContacts';
 import EmployerEditor from './EmployerEditor';
 import { NeedsUpdate, RefreshButton } from './StudentsPage';
 import ExcelImport from './ExcelImport';
-import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, setCourseCapacity } from '../lib/placement';
+import { buildWhatsAppUrl, buildMailtoUrl, renderTemplate, openVacancies, totalVacancies, openWhatsApp, countSlotsByStatus, setCourseCapacity, promoteOrgToFirst } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { orgAvailability, ORG_PURPLE, employerStatus, STATUS_COLORS, applyEmployerStatus, type ManualStatusKey } from '../lib/orgAvailability';
 
@@ -193,8 +195,10 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
     // open vacancy in THEIR list (their first-priority org). Coordinator adjusts later.
     const empWithPlace = student?.courseId ? setCourseCapacity(emp, student.courseId, 1) : emp;
     const updatedEmps = [...all, empWithPlace];
+    // promoteOrgToFirst, not a raw write: the approved organization leads the ranking
+    // and the choice that was first moves down, rather than being overwritten.
     const updatedStudents = student
-      ? students.map(s => s.id === student.id ? { ...s, firstChoiceOrg: o.name, firstChoiceResult: s.firstChoiceResult || 'pending' } as Student : s)
+      ? students.map(s => s.id === student.id ? promoteOrgToFirst(s, updatedEmps, o.name, empWithPlace.id) as Student : s)
       : students;
     const dismissed = Array.from(new Set([...(((data as any).dismissedSuggestionIds as string[]) || []), sug.id]));
     setSaving(true);
@@ -272,7 +276,13 @@ export default function EmployersPage({ data, context, userName, onRefresh }: Pa
         if (posFilter === 'none' && av.total > 0) continue;
         if (statusFilter !== 'all' && employerStatus(e, scope, STATUS_CTX).key !== statusFilter) continue;
         if (q) {
-          const hay = [e.name, e.contactPerson, e.contactEmail, e.location].filter(Boolean).join(' ').toLowerCase();
+          // contactPhone included: the global search matches a number, and typing the
+          // same number here returned nothing. Every contact, not just the active one:
+          // a stand-in is most often looked up by the name of the person they replaced,
+          // or the other way round.
+          const hay = [e.name, e.contactPerson, e.contactEmail, e.contactPhone, e.location,
+            ...employerContacts(e).flatMap(c => [c.name, c.role, c.phone, c.email]),
+          ].filter(Boolean).join(' ').toLowerCase();
           if (!hay.includes(q)) continue;
         }
         out.push({ emp: e, courseId: cid, year: normalizeYear((courses.find((c: any) => c.id === cid) || {}).year || '') });
@@ -741,7 +751,7 @@ function EmployerCard({ emp, hiredCount, hiredNames, linkedCourses, privateFor, 
     : `0 0 0 2.5px ${st.color}30`;                        // others: a clean ring
   const hasFooter = linkedCourses.length > 0 || hiredCount > 0;
 
-  function callEmployer() { if (emp.contactPhone) window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`; }
+  function callEmployer() { dialPhone(emp.contactPhone, emp.name); }
   function whatsappEmployer() {
     openWhatsApp(emp.contactPhone || '', { name: emp.name });
   }
@@ -882,8 +892,7 @@ function EmployerRow({ emp, hiredCount, hiredNames, linkedCourses, privateFor, i
   const statusChip = cardStatusChip(st, yearAv);
 
   function callEmployer() {
-    if (!emp.contactPhone) return;
-    window.location.href = `tel:${emp.contactPhone.replace(/[^\d+]/g, '')}`;
+    dialPhone(emp.contactPhone, emp.name);
   }
   function whatsappEmployer() {
     openWhatsApp(emp.contactPhone || '', { name: emp.name });
@@ -1196,7 +1205,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                           const st = decisionData.student;
                           const scope = decisionData.decision === 'student-only' ? 'פרטית עבורך' : 'לכל הקורס';
                           const msg = renderTemplate(placementSettings.studentNotifyApprovedTemplateWhatsApp || '', { studentName: st.name, employerName: req.draft.name || '', scope, adminName: userName });
-                          if (st.phone) window.open(buildWhatsAppUrl(st.phone, msg), '_blank');
+                          if (!st.phone) { showToast(`אין טלפון ל‑${st.name} — לא ניתן להודיע ב‑WhatsApp`, 'error'); return; }
+                          openWhatsApp(st.phone, { name: st.name, message: msg });
                         }} style={{ ...btnSmall(), background: '#25D366', color: 'white', borderColor: '#25D366' }}>
                           📱 הודע לסטודנט (WhatsApp)
                         </button>
@@ -1205,7 +1215,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                           const scope = decisionData.decision === 'student-only' ? 'פרטית עבורך' : 'לכל הקורס';
                           const subject = renderTemplate(placementSettings.studentNotifyApprovedTemplateEmailSubject || '', { employerName: req.draft.name || '' });
                           const body = renderTemplate(placementSettings.studentNotifyApprovedTemplateEmailBody || '', { studentName: st.name, employerName: req.draft.name || '', scope, adminName: userName });
-                          if (st.email) window.open(buildMailtoUrl(st.email, subject, body), '_blank');
+                          if (!st.email) { showToast(`אין כתובת מייל ל‑${st.name} — לא ניתן להודיע במייל`, 'error'); return; }
+                          openMailto(buildMailtoUrl(st.email, subject, body));
                         }} style={{ ...btnSmall(), background: '#2563eb', color: 'white', borderColor: '#2563eb' }}>
                           ✉ הודע לסטודנט (Email)
                         </button>
@@ -1216,7 +1227,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                         <button onClick={() => {
                           const st = decisionData.student;
                           const msg = renderTemplate(placementSettings.studentNotifyRejectedTemplateWhatsApp || '', { studentName: st.name, employerName: req.draft.name || '', adminName: userName });
-                          if (st.phone) window.open(buildWhatsAppUrl(st.phone, msg), '_blank');
+                          if (!st.phone) { showToast(`אין טלפון ל‑${st.name} — לא ניתן להודיע ב‑WhatsApp`, 'error'); return; }
+                          openWhatsApp(st.phone, { name: st.name, message: msg });
                         }} style={{ ...btnSmall(), background: '#25D366', color: 'white', borderColor: '#25D366' }}>
                           📱 הודע לסטודנט (WhatsApp)
                         </button>
@@ -1224,7 +1236,8 @@ function ApprovalQueueSection({ requests, employers, students, courses, placemen
                           const st = decisionData.student;
                           const subject = renderTemplate(placementSettings.studentNotifyRejectedTemplateEmailSubject || '', { employerName: req.draft.name || '' });
                           const body = renderTemplate(placementSettings.studentNotifyRejectedTemplateEmailBody || '', { studentName: st.name, employerName: req.draft.name || '', adminName: userName });
-                          if (st.email) window.open(buildMailtoUrl(st.email, subject, body), '_blank');
+                          if (!st.email) { showToast(`אין כתובת מייל ל‑${st.name} — לא ניתן להודיע במייל`, 'error'); return; }
+                          openMailto(buildMailtoUrl(st.email, subject, body));
                         }} style={{ ...btnSmall(), background: '#2563eb', color: 'white', borderColor: '#2563eb' }}>
                           ✉ הודע לסטודנט (Email)
                         </button>

@@ -106,10 +106,23 @@ export async function openCv(value: string | null | undefined): Promise<CvProbe>
   // costing the coordinator the file.
   handOff(url);
 
+  return warnIfCvUnreadable(raw);
+}
+
+/**
+ * Probe a stored CV and tell the coordinator if the storage itself refused it.
+ *
+ * Split out of openCv so a REAL anchor — the browser's own navigation, which is the most
+ * reliable hand-off there is — can keep the diagnosis without also handing the file over
+ * a second time. A chip with a live `href` calls this from its click and lets the
+ * browser do the opening.
+ */
+export async function warnIfCvUnreadable(value: string | null | undefined): Promise<CvProbe> {
+  const raw = (value || '').trim();
   const probe = await probeCvUrl(raw);
   // `unreachable` means the probe could not READ an answer — CORS on a HEAD, a captive
   // network — and says nothing about the file. Only a real HTTP answer is worth raising.
-  if (!probe.ok && probe.reason !== 'unreachable') {
+  if (!probe.ok && probe.reason !== 'unreachable' && probe.reason !== 'no-reference') {
     const why = probe.reason === 'not-found'
       ? 'הקובץ לא נמצא באחסון — הנתיב השמור מצביע על קובץ שאינו קיים, בדרך כלל העלאה שנכשלה או קובץ שנמחק.'
       : `האחסון החזיר שגיאה ${probe.status}. אם זה 400, ה־bucket כנראה אינו ציבורי.`;
@@ -118,6 +131,23 @@ export async function openCv(value: string | null | undefined): Promise<CvProbe>
     } catch { /* no alert here */ }
   }
   return probe;
+}
+
+/**
+ * Is this the INSTALLED app rather than a browser tab?
+ *
+ * It decides the hand-off, so it is deliberately generous: `display-mode: standalone`
+ * covers an installed PWA everywhere, and iOS Safari's own non-standard
+ * `navigator.standalone` covers the versions that answer the media query wrongly.
+ */
+export function isStandaloneApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if ((window.navigator as any)?.standalone === true) return true;
+    return !!window.matchMedia?.('(display-mode: standalone)')?.matches
+      || !!window.matchMedia?.('(display-mode: fullscreen)')?.matches
+      || !!window.matchMedia?.('(display-mode: minimal-ui)')?.matches;
+  } catch { return false; }
 }
 
 /**
@@ -130,7 +160,25 @@ export async function openCv(value: string | null | undefined): Promise<CvProbe>
  * is the whole of this fix.
  */
 function handOff(url: string) {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+
+  // THE INSTALLED APP IS THE CASE THAT KEEPS FAILING (Yariv 2026-09-15: "the CV does
+  // not open, but copying the link works" — the sixth report of this one bug). There is
+  // no tab bar to put a `target="_blank"` document in, and iOS drops a SCRIPTED anchor
+  // click aimed at one without an error, which is precisely "nothing happens". So here
+  // the hand-off is allowed to end in a navigation that cannot be dropped: ask for a
+  // window, and if the platform refuses one, go to the file in place — iOS presents an
+  // off-origin page with its own Done control back to the app. Never silently nothing.
+  if (isStandaloneApp()) {
+    let opened: Window | null = null;
+    try { opened = window.open(url, '_blank'); } catch { opened = null; }
+    if (opened) { try { (opened as any).opener = null; } catch { /* cross-origin */ } return; }
+    try { window.location.href = url; } catch { /* nothing left to try */ }
+    return;
+  }
+
+  // In a browser tab a real anchor click is the navigation every popup blocker agrees
+  // about, and it keeps the file in a NEW tab so the app is not navigated away from.
   const a = document.createElement('a');
   a.href = url;
   a.target = '_blank';

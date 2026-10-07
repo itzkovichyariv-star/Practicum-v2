@@ -50,6 +50,23 @@ if (!skipBuildProbe && !offlineOnly) {
   }
 }
 
+// 1a². TYPES. The project had no tsconfig.json at all until 2026-09-15, so NOTHING
+//      checked types anywhere — and the first run of `tsc` found forty errors, among
+//      them a call that silently resolved to a same-named local function and would have
+//      messaged the wrong person, a dashboard row that filtered by `undefined`, and
+//      three settings fields that were used everywhere and declared nowhere. It costs a
+//      few seconds and it runs before anything opens a browser.
+{
+  console.log('\n━━━ typecheck (tsc --noEmit) ━━━');
+  const code = await new Promise((res) =>
+    spawn('npx', ['tsc', '--noEmit'], { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32' }).on('exit', res));
+  if (code !== 0) {
+    console.error('\n❌ DEPLOY GATE FAILED — the types do not check out. Do NOT deploy.');
+    process.exit(1);
+  }
+  console.log('✅ typecheck passed');
+}
+
 // 1b. Static lints first — they need no browser, take milliseconds, and catch whole
 //     CLASSES of bug rather than one instance. Any scripts/audit/lint-*.mjs is picked up,
 //     so adding one needs no wiring here.
@@ -82,6 +99,18 @@ const OFFLINE_CHECKS = [
   'interview-cancel-check.mjs',
   'placement-headline-check.mjs',
   'cv-open-check.mjs',
+  // A student the org already took can be marked placed from the card, with no CV sent
+  // through the app (2026-10-04: "הכפתור לא לחיץ").
+  'accept-direct-check.mjs',
+  // Every typed time (lectures, placement interview, interview slots) is saved as typed,
+  // under a clock frozen at the midnight the damaged lectures were written (2026-09-22).
+  'lecture-time-check.mjs',
+  // THE calendar — one screen, month ⇄ year. Its verdict on a date ("אין לימודים /
+  // תקופת בחינות") is computed in a lib the unit tests already pin; this proves the
+  // verdict reaches the SCREEN, at the 430px Yariv works at, with the academic fills
+  // under his event markers, the day sheet answering "is there teaching / is there a
+  // guest / who is the lecturer", and the date bookable from it.
+  'calendar-check.mjs',
   // Runs a dev server of its own: everything above proves dist/, and dist/ is not what
   // `npm run dev` builds. A module Babel rejects and esbuild elides passes all of them.
   'dev-render-check.mjs',

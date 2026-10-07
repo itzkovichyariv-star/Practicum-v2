@@ -319,10 +319,18 @@ audit.recordCell({ id: 'STRIP-collapsed-by-default', tableRef: 'page design 2026
   expected: 'a row with organizations hides its ranking until opened',
   observed: `chips closed=${compact.chipsClosed}, open=${compact.chipsOpen}, height ${compact.before}→${compact.after}px`,
   pass: compact.chipsClosed === 0 && compact.chipsOpen > 0 && compact.after > compact.before });
-audit.recordCell({ id: 'STRIP-total-height-reduced', tableRef: 'the 4,163px measurement that prompted the redesign',
-  expected: 'the whole cohort fits in well under the 4,163px it took before',
-  observed: `${compact.rows} rows, ${compact.total}px (${(compact.total / 812).toFixed(1)} screens)`,
-  pass: compact.rows > 0 && compact.total < 3400 });
+// PER ROW, not per cohort. This asserted a fixed 3,400px total against the sum of every
+// row on screen — but that total is a measurement of HOW MANY STUDENTS ARE ENROLLED, and
+// the design cannot control that. The 4,163px it was derived from was ELEVEN students
+// (378px each); the same page with sixteen students came to 4,175px and failed the gate
+// while each row had in fact shrunk to 261px. Enrolling a student is not a regression.
+// The budget is the same one, expressed as what the redesign actually governs: the
+// original 3,400px over those eleven rows, i.e. 309px a row.
+const perRow = compact.rows ? Math.round(compact.total / compact.rows) : 0;
+audit.recordCell({ id: 'STRIP-row-height-reduced', tableRef: 'the 4,163px / 11 students measurement that prompted the redesign',
+  expected: 'a row costs well under the 378px it did before (budget: 309px)',
+  observed: `${compact.rows} rows, ${perRow}px each, ${compact.total}px total (${(compact.total / 812).toFixed(1)} screens)`,
+  pass: compact.rows > 0 && perRow < 309 });
 // The expanded state is where a nowrap, non-shrinking button pushed the row 90px past
 // the viewport — the redesign must not reintroduce sideways scroll.
 audit.recordCell({ id: 'STRIP-expanded-no-side-scroll', tableRef: 'regression 2026-08-10',

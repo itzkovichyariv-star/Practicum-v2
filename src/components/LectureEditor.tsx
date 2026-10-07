@@ -1,13 +1,35 @@
 import { useState, type FormEvent } from 'react';
+import { openMailto } from '../lib/openMailto';
+import { dialPhone } from '../lib/dial';
+import { SEMESTERS, normalizeSemester } from '../lib/semester';
 import type { Lecture, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openCalendarEvent } from './pageShared';
 import { getSession } from '../lib/session';
+import {
+  parseTime, checkTimeRange, suggestEndTime, usualDurationMinutes, formatDuration, timeOrEmpty,
+} from '../lib/timeInput';
 import Modal from './Modal';
+import { buildAcademicDayMap, dayBlockers } from '../lib/academicCalendar';
+
+/* The academic year is static data — read it once for every editor. */
+const ACADEMIC_DAYS = buildAcademicDayMap();
+
+/**
+ * Why a date cannot host a lecture, or null. Yariv 2026-10-02: a guest lecture on a
+ * shut day is a conflict "וצריך להתריע עליה כבר בנסיון לשמור אותה" — so the editor
+ * says it the moment the date is chosen, and asks before saving it anyway.
+ */
+export function blockedReason(date: string | undefined, status?: string): string | null {
+  const iso = (date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || (status || '').trim() === 'בוטל') return null;
+  const b = dayBlockers(ACADEMIC_DAYS.get(iso) ?? []).find((x) => x.level === 'blocked');
+  return b ? b.reason : null;
+}
+import TimeInput from './TimeInput';
 
 const DEFAULT_TYPES = ['הרצאה', 'סדנה', 'סימולציה', 'מפגש', 'ייעוץ'];
 const DEFAULT_STATUSES = ['מאושר', 'ממתין לאישור', 'בקשה נשלחה', 'שינוי מתבצע', 'בוטל'];
-const SEMESTERS = ['א׳', 'ב׳', 'קיץ'];
 const DELIVERY_MODES = ['פרונטלי', 'זום', 'היברידי'];
 
 type Props = {
@@ -16,15 +38,22 @@ type Props = {
   years: string[];
   defaultCourseId?: string;
   defaultYear?: string;
+  /** Pre-fill the date of a NEW lecture (ignored when editing an existing one).
+   *  Set by the academic-year screen, which books a date first and the rest after —
+   *  so "add a lecture on this day" opens this same editor, already on that day,
+   *  rather than a second form that would have to be kept in step with this one. */
+  defaultDate?: string;
   typeOptions?: string[];     // merged presets + existing data
   statusOptions?: string[];   // merged presets + existing data
+  /** Every lecture — read only for the course's usual length, to suggest an end time. */
+  lectures?: Lecture[];
   onSave: (l: Lecture) => void;
   onDelete?: (id: string) => void;
   onClose: () => void;
 };
 
 export default function LectureEditor({
-  lecture, courses, years, defaultCourseId, defaultYear, typeOptions, statusOptions, onSave, onDelete, onClose,
+  lecture, courses, years, defaultCourseId, defaultYear, defaultDate, typeOptions, statusOptions, lectures, onSave, onDelete, onClose,
 }: Props) {
   const types = Array.from(new Set([...(typeOptions || []), ...DEFAULT_TYPES])).filter(Boolean);
   const statuses = Array.from(new Set([...(statusOptions || []), ...DEFAULT_STATUSES])).filter(Boolean);
@@ -33,10 +62,10 @@ export default function LectureEditor({
     id: lecture?.id || randomId('lec'),
     type: lecture?.type || 'הרצאה',
     status: lecture?.status || 'ממתין לאישור',
-    semester: lecture?.semester || 'ב׳',
+    semester: normalizeSemester(lecture?.semester) || 'ב׳',
     courseId: lecture?.courseId || (defaultCourseId !== '__all__' ? defaultCourseId : ''),
     year: lecture?.year || (defaultYear !== '__all__' ? defaultYear : ''),
-    date: lecture?.date || '',
+    date: lecture?.date || defaultDate || '',
     startTime: lecture?.startTime || '',
     endTime: lecture?.endTime || '',
     topic: lecture?.topic || '',
@@ -54,6 +83,21 @@ export default function LectureEditor({
     setForm(f => ({ ...f, [key]: v }));
   }
 
+  // The two time fields hold the text as typed; parseTime reads it (src/lib/timeInput.ts).
+  const [timeFocus, setTimeFocus] = useState<'start' | 'end' | null>(null);
+  const [showTimeErrors, setShowTimeErrors] = useState(false);
+  const startParsed = parseTime(form.startTime);
+  const endParsed = parseTime(form.endTime);
+  const startValue = startParsed.ok ? startParsed.value : '';
+  const range = checkTimeRange(form.startTime, form.endTime);
+  const usual = usualDurationMinutes(lectures || [], form.courseId);
+  // Only a start → offer an end. Offered, never filled in: a time nobody typed is what
+  // this editor used to save. Not while the start is still being typed ("1" is not 01:00).
+  const endSuggestion = startValue && endParsed.ok && !endParsed.value && timeFocus !== 'start'
+    ? suggestEndTime(startValue, usual.minutes)
+    : null;
+  const rangeVisible = !range.ok && (showTimeErrors || timeFocus === null);
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const missing: string[] = [];
@@ -64,23 +108,29 @@ export default function LectureEditor({
       alert('שדות חובה חסרים:\n• ' + missing.join('\n• '));
       return;
     }
+    // Read the times again here, not only on blur: Enter inside a time field submits
+    // before it was ever left. A time is saved as typed (normalised) or not at all.
+    const start = parseTime(form.startTime);
+    const end = parseTime(form.endTime);
+    if (!start.ok || !end.ok || !checkTimeRange(form.startTime, form.endTime).ok) {
+      setShowTimeErrors(true);
+      document.getElementById(!start.ok ? 'lecture-start-time' : 'lecture-end-time')?.focus();
+      return;
+    }
+    const blocked = blockedReason(form.date, form.status);
+    if (blocked && !confirm(`⚠ התאריך הזה חסום: ${blocked}.\nהרצאה ביום כזה תסומן בלוח כ"להזיז".\n\nלשמור בכל זאת?`)) return;
     const selectedCourse = courses.find(c => c.id === form.courseId);
     const toSave: Lecture = {
       ...form,
+      startTime: start.value,
+      endTime: end.value,
       courseName: selectedCourse?.name || form.courseName,
     };
     onSave(toSave);
   }
 
   function openCall() {
-    if (!form.lecturerPhone) { alert('לא הוזן טלפון של המרצה'); return; }
-    window.location.href = `tel:${form.lecturerPhone.replace(/[^\d+]/g, '')}`;
-  }
-
-  function addHour(time: string): string {
-    const [h, m] = time.split(':').map(Number);
-    const nh = (h + 1) % 24;
-    return `${String(nh).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
+    dialPhone(form.lecturerPhone, form.lecturer);
   }
 
   function openWhatsApp() {
@@ -100,14 +150,13 @@ export default function LectureEditor({
 אנא אשר את הפרטים להלן:
 קורס: ${course?.name || ''}
 נושא: ${form.topic || ''}
-תאריך: ${form.date || ''}  שעה: ${form.startTime || ''}
+תאריך: ${form.date || ''}  שעה: ${timeOrEmpty(form.startTime)}
 מיקום: ${form.location || form.link || ''}
 
 תודה,
 ד״ר יריב איצקוביץ
 `);
-    const url = `mailto:${encodeURIComponent(form.lecturerEmail)}?subject=${subject}&body=${body}`;
-    window.location.href = url;
+    openMailto(`mailto:${encodeURIComponent(form.lecturerEmail)}?subject=${subject}&body=${body}`);
   }
 
   function addToOutlookCalendar() {
@@ -117,8 +166,9 @@ export default function LectureEditor({
     const res = openCalendarEvent({
       subject: `${form.type || 'הרצאה'}: ${form.topic || course?.name || ''}`,
       startDate: form.date,
-      startTime: form.startTime,
-      endTime: form.endTime,
+      // The fields hold typed text ("1700"); the link needs HH:MM, or nothing.
+      startTime: timeOrEmpty(form.startTime) || undefined,
+      endTime: timeOrEmpty(form.endTime) || undefined,
       location: form.link || form.location || form.institution || '',
       body: [
         form.topic,
@@ -167,13 +217,64 @@ export default function LectureEditor({
               <Select value={form.year||''} onChange={v=>update('year',v)} options={years} placeholder="בחר שנה" />
             </Field>
 
-            <Field label="סמסטר"><Select value={form.semester||''} onChange={v=>update('semester',v)} options={SEMESTERS}/></Field>
+            <Field label="סמסטר"><Select value={form.semester||''} onChange={v=>update('semester',v)} options={[...SEMESTERS]}/></Field>
             <Field label="מוסד"><Input value={form.institution||''} onChange={v=>update('institution',v)} placeholder="אוניברסיטת אריאל"/></Field>
 
-            <Field label="תאריך"><Input type="date" value={form.date||''} onChange={v=>update('date',v)}/></Field>
+            <Field label="תאריך">
+              <Input type="date" value={form.date||''} onChange={v=>update('date',v)}/>
+              {blockedReason(form.date, form.status) && (
+                <div data-date-blocked role="alert" className="mt-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-semibold"
+                  style={{ background: '#FDECEA', color: '#B71C1C', border: '1px solid #D32F2F' }}>
+                  ⚠ תאריך חסום: {blockedReason(form.date, form.status)}. הרצאה ביום כזה תסומן בלוח "להזיז".
+                </div>
+              )}
+            </Field>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="שעת התחלה"><Input type="time" value={form.startTime||''} onChange={v=>update('startTime',v)}/></Field>
-              <Field label="שעת סיום"><Input type="time" value={form.endTime||''} onChange={v=>update('endTime',v)}/></Field>
+              <Field label="שעת התחלה">
+                <TimeInput id="lecture-start-time" name="lecture-start" value={form.startTime} onChange={v=>update('startTime',v)}
+                  showError={showTimeErrors} onFocus={()=>setTimeFocus('start')} onBlur={()=>setTimeFocus(null)}
+                  style={{ padding: '12px 16px', fontSize: '14.5px' }}/>
+              </Field>
+              <Field label="שעת סיום">
+                <TimeInput id="lecture-end-time" name="lecture-end" value={form.endTime} onChange={v=>update('endTime',v)}
+                  showError={showTimeErrors} onFocus={()=>setTimeFocus('end')} onBlur={()=>setTimeFocus(null)}
+                  placeholder="למשל 20:00"
+                  style={{ padding: '12px 16px', fontSize: '14.5px' }}/>
+              </Field>
+              {endSuggestion && (
+                <div data-end-suggestion className="col-span-full flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] leading-snug"
+                  style={{ color: 'var(--text-soft)' }}>
+                  {endSuggestion.ok ? (
+                    <>
+                      <button type="button" onClick={() => update('endTime', endSuggestion.value)}
+                        className="mono text-[12px] font-semibold px-2.5 py-1 rounded-full"
+                        style={{ color: 'var(--accent)', border: '1px solid var(--accent)', background: 'transparent', cursor: 'pointer' }}>
+                        סיום ב‑<span dir="ltr">{endSuggestion.value}</span>
+                      </button>
+                      <span>
+                        {usual.fromCourse
+                          ? `לפי אורך ההרצאה הרגיל בקורס (${formatDuration(usual.minutes)})`
+                          : `${formatDuration(usual.minutes)} אחרי ההתחלה`}
+                      </span>
+                    </>
+                  ) : (
+                    <span>{formatDuration(usual.minutes)} אחרי <span dir="ltr">{startValue}</span> זה כבר אחרי חצות — הקלד/י שעת סיום.</span>
+                  )}
+                </div>
+              )}
+              {rangeVisible && !range.ok && (
+                <div role="alert" data-time-range-error className="col-span-full flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] leading-snug"
+                  style={{ color: 'var(--tl-red)' }}>
+                  <span>{range.error}. הרצאה מסתיימת באותו יום שבו התחילה — ההרצאה לא תישמר כך.</span>
+                  {range.fix && (
+                    <button type="button" onClick={() => update('endTime', range.fix)}
+                      className="mono text-[12px] font-semibold px-2.5 py-1 rounded-full"
+                      style={{ color: 'var(--accent)', border: '1px solid var(--accent)', background: 'transparent', cursor: 'pointer' }}>
+                      התכוונת ל‑<span dir="ltr">{range.fix}</span>?
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="col-span-full">

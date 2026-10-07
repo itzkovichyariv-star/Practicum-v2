@@ -351,7 +351,8 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
   // carries no {daysWaiting}, so composing it would prove nothing about the substitution.
   const shipped: any = migratePlacementData({} as any).placementSettings;
   const composed = renderTemplate(shipped.reminderEmailBodyTemplate, {
-    contactName: 'איש קשר', studentName: 'סטודנטית', positionTitle: 'ארגון', adminName: 'יריב',
+    contactName: 'אורטל חוברה', contactFirstName: 'אורטל',
+    studentName: 'סטודנטית', positionTitle: 'ארגון', adminName: 'יריב',
     courseName: 'פרקטיקום', cvLink: 'https://x/cv.pdf', employerName: 'ארגון',
     daysWaiting: '8', responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
     // The real send path supplies this (dispatch.ts builds it from the settings), so
@@ -362,8 +363,25 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     true, !/\{\w+\}/.test(composed));
   rule('RENDER-link-is-a-url', 'the answer link is a URL, not the word',
     true, composed.includes('https://practicum.yarivitzkovich.org/r?t=d1'));
-  rule('RENDER-days-substituted', 'the reminder says a number of days',
-    true, composed.includes('8') && !composed.includes('{daysWaiting}'));
+  // Yariv replaced the mail's wording on 2026-09-15 and it no longer quotes a day count
+  // ("לפני מספר שבועות"), so this asserts the channel that still does. The rule exists
+  // because v1.39 shipped the literal "לפני {daysWaiting} ימים" to real employers, and
+  // that has to stay guarded somewhere a number is actually substituted.
+  const composedWa = renderTemplate(shipped.reminderWhatsappTemplate, {
+    contactName: 'איש קשר', contactFirstName: 'איש', studentName: 'סטודנטית',
+    positionTitle: 'ארגון', adminName: 'יריב', courseName: 'פרקטיקום',
+    cvLink: 'https://x/cv.pdf', employerName: 'ארגון', daysWaiting: '8',
+    responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
+    contactBack: 'אם הקישור לא נפתח — אפשר פשוט לחזור אליי במייל x@y.',
+  });
+  rule('RENDER-days-substituted', 'the WhatsApp reminder says a number of days',
+    true, composedWa.includes('8') && !composedWa.includes('{daysWaiting}'));
+  rule('RENDER-wa-no-placeholder-left', 'nothing reaches the employer as {…} there either',
+    true, !/\{\w+\}/.test(composedWa));
+  rule('RENDER-mail-greets-by-first-name', 'the mail opens "שלום אורטל, מה שלומך?" — first name, and it asks',
+    true, composed.startsWith('שלום אורטל, מה שלומך?'));
+  rule('RENDER-mail-quotes-no-day-count', 'the mail says "לפני מספר שבועות", per 2026-09-15',
+    true, composed.includes('לפני מספר שבועות') && !composed.includes('{daysWaiting}'));
   rule('RENDER-unknown-stays-visible', 'a typo in a template is visible, not silently blanked',
     '{notARealKey}', renderTemplate('{notARealKey}', { studentName: 'x' }));
   rule('RENDER-legacy-key-still-blanks', 'an omitted original key renders empty as before',

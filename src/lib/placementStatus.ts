@@ -22,7 +22,8 @@
  * come from buildUnifiedOrgList().
  */
 
-import { buildUnifiedOrgList, countSlotsByStatus, type UnifiedOrgPref } from './placement';
+import { buildUnifiedOrgList, countSlotsByStatus, orgKey, resolveEmployerFor,
+  submissionHasUnappliedOrgs, submissionHasNewCv, type UnifiedOrgPref } from './placement';
 
 /** The DEFAULT days of employer silence before the ball comes back to us, for a course
  *  that does not set its own `reviewAgingThresholdDays`.
@@ -76,6 +77,9 @@ export type PlacementKey =
 export type PlacementChip = {
   rank: number;
   orgName: string;
+  /** The employer the preference is linked to, so the strip reaches the same record the
+   *  capacity verdict was made from — the name alone can drift from it. */
+  employerId?: string | null;
   suggested: boolean;
   tone: 'plain' | 'sent' | 'late' | 'dead' | 'pass';
   suffix: string;
@@ -96,6 +100,15 @@ export type PlacementActionId =
  *  a warning saying clicking will do..."). The copy is derived from what the real
  *  handlers do — see the brief's table — never from what they sound like they do. */
 export type PlacementAction = {
+  /** Stamped by the caller: the organization this action acts on (the ✕ and ↻ set it
+   *  from the clicked chip; the dialog sets it from the selection). It was passed
+   *  everywhere and declared nowhere, so nothing checked that it survived the trip —
+   *  which is exactly how the ✕ and ↻ lost their argument on the last step. */
+  targetOrg?: string;
+  /** Several of them, for a send or an undo that covers more than one. */
+  targetOrgs?: string[];
+  /** Which channel the coordinator chose in the confirmation. */
+  channel?: 'whatsapp' | 'email';
   id: PlacementActionId;
   label: string;
   /** One word for the collapsed row. The full label + employer name stay in the
@@ -219,16 +232,18 @@ export function orgsLead(orgNames: (string | null | undefined)[]): string {
   return `${names[0]} ועוד ${names.length - 1}`;
 }
 
-const norm = (s: any) => String(s ?? '').trim().toLowerCase();
+const norm = (s: any) => orgKey(s);
 
 /** An org the student brought themselves: private to them, and the coordinator's move is
  *  a conversation + approval (= placement), NOT a CV send. OrgHub models this as
  *  `place_direct`; the strip has to speak the same way (Yariv 2026-08-09). */
 function isSuggestedOrg(pref: UnifiedOrgPref, employers: any[], studentId: string): boolean {
-  const emp = pref.employerId
-    ? (employers || []).find((e: any) => e?.id === pref.employerId)
-    : (employers || []).find((e: any) => norm(e?.name) === norm(pref.orgName));
-  return !!emp && emp.restrictedToStudentId === studentId;
+  // Through the shared resolver: this used to be a private id-then-name lookup with no
+  // prefix fallback, so the SAME preference could resolve to an employer for its
+  // capacity chip and to nothing here — and an organization the student brought was
+  // then offered "שלח קו״ח" instead of "אשר השמה".
+  const emp = resolveEmployerFor(pref, employers || []);
+  return !!emp && (emp as any).restrictedToStudentId === studentId;
 }
 
 /**
@@ -242,20 +257,14 @@ function isSuggestedOrg(pref: UnifiedOrgPref, employers: any[], studentId: strin
  */
 function pendingHasNewOrgs(pending: CvSubmission | null, student: any): boolean {
   if (!pending) return false;
-  const sub = [pending.org_pref_1, pending.org_pref_2, pending.org_pref_3].map(norm).filter(Boolean);
-  if (sub.length === 0) return false;
-  const rec = [student?.firstChoiceOrg, student?.secondChoiceOrg, student?.thirdChoiceOrg].map(norm).filter(Boolean);
-  return sub.some(o => !rec.includes(o));
+  return submissionHasUnappliedOrgs([pending.org_pref_1, pending.org_pref_2, pending.org_pref_3], student);
 }
 
-/** A newer CV file than the one on the record — compared by filename, the way
- *  StudentEditor's own pending check does it. */
+/** A newer CV file than the one on the record — the same helper the card's pending
+ *  banner uses, so the strip and the card can never disagree about it. */
 function pendingHasNewCv(pending: CvSubmission | null, student: any): boolean {
   if (!pending) return false;
-  const incoming = String(pending.cv_file_path || '').split('/').pop() || '';
-  if (!incoming) return false;
-  const current = String(student?.cvUpdatedUrl || '').split('/').pop() || '';
-  return incoming !== current;
+  return submissionHasNewCv(pending.cv_file_path, student);
 }
 
 const ACTIONS: Record<PlacementActionId, Omit<PlacementAction, 'label'> & { label: string }> = {
@@ -346,11 +355,23 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const suggestedNames = new Set(suggested.map(p => norm(p.orgName)));
   const isSug = (p: UnifiedOrgPref) => suggestedNames.has(norm(p.orgName));
 
-  const sent = list.filter(p => p.status === 'under_review');
-  const tentative = list.filter(p => p.status === 'tentative');
+  // A FAILED INTERVIEW CLOSES AN ORGANIZATION. The card has always offered
+  // "תוצאת ראיון: לא עבר", and nothing read it: the classifier looked only for
+  // 'passed'. So recording that the student did not pass left the row saying "קו״ח
+  // נשלחו · ממתין לתשובת המעסיק", and after the silence threshold it started asking to
+  // remind an employer who had already said no. It is a closed organization now, like a
+  // rejection — the difference being that the PLACE may still be held, which the chip
+  // says so it can be released.
+  const failedInterview = (p: UnifiedOrgPref) =>
+    p.interviewResult === 'failed' && p.status !== 'rejected' && p.status !== 'withdrawn' && p.status !== 'placed';
+  const sent = list.filter(p => p.status === 'under_review' && !failedInterview(p));
+  const tentative = list.filter(p => p.status === 'tentative' && !failedInterview(p));
   const tentativeList = tentative.filter(p => !isSug(p));
   const tentativeSuggested = tentative.filter(p => isSug(p));
-  const rejected = list.filter(p => p.status === 'rejected' || p.status === 'withdrawn');
+  const rejected = [
+    ...list.filter(p => p.status === 'rejected' || p.status === 'withdrawn'),
+    ...list.filter(failedInterview),
+  ];
   const passed = list.filter(p => p.interviewResult === 'passed' && p.status !== 'rejected');
 
   /** The pending dispatch for this preference, newest first. */
@@ -384,11 +405,13 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
 
   // Who is holding this employer's places for THIS course, and is one free?
   const capacityOf = (p: UnifiedOrgPref): { free: boolean; reason: string } => {
-    const emp = (employers || []).find((e: any) => e?.id === p.employerId)
-      || (employers || []).find((e: any) => norm(e?.name) === norm(p.orgName));
+    const emp = resolveEmployerFor(p, employers);
     if (!emp) return { free: false, reason: 'לא זוהה מעסיק' };
-    // A place already reserved for THIS student is free to use for this student.
-    if (p.slotId) return { free: true, reason: '' };
+    // A place already reserved for THIS student is free to use for this student — when
+    // the employer still has it. A slot id left behind by a repair or a capacity change
+    // used to read as "has a place" without anyone looking; the planner looked, found
+    // nothing, and refused the send this chip had just offered.
+    if (p.slotId && ((emp as any).vacancySlots || []).some((sl: any) => sl?.id === p.slotId)) return { free: true, reason: '' };
     const cap = countSlotsByStatus(emp, student.courseId);
     if (cap.total === 0) return { free: false, reason: 'לא הוגדרו מקומות בקורס' };
     if (cap.available > 0) return { free: true, reason: '' };
@@ -408,7 +431,8 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   const chipFor = (p: UnifiedOrgPref, tone: PlacementChip['tone'], suffix = ''): PlacementChip => {
     const cap = capacityOf(p);
     return {
-      rank: p.rank, orgName: p.orgName, suggested: isSug(p), tone,
+      rank: p.rank, orgName: p.orgName, employerId: resolveEmployerFor(p, employers)?.id ?? null,
+      suggested: isSug(p), tone,
       // A not-yet-sent chip always says where it stands, in every state — "טרם נשלח" when
       // there is a place, and WHY when there is not. This used to be set only in the
       // already-sent branch, so before any CV went out a full organization looked exactly
@@ -455,7 +479,8 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
         ? 'רשימת העדפות התקבלה — יש לקלוט לכרטיס'
         : 'קו״ח מעודכנים התקבלו — יש לקלוט לכרטיס',
       sub: newOrgs ? `${orgs.length} ארגונים בהגשה · טרם נקלטו` : 'ההגשה טרם נקלטה',
-      chips: orgs.map((o, i) => ({ rank: i + 1, orgName: o, suggested: false, tone: 'plain' as const, suffix: '' })),
+      chips: orgs.map((o, i) => ({ rank: i + 1, orgName: o, suggested: false, tone: 'plain' as const,
+        suffix: '', available: false, blockedReason: '', recommended: false })),
       age: `הוגשה ${agoPhrase(d)}`,
       action: act('adopt'),
     };
@@ -470,7 +495,8 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       headline: 'הצעת ארגון חדש — יש לבדוק ולאשר את הארגון',
       sub: withCvNote([pendingEmp.contactPerson && `איש קשר: ${pendingEmp.contactPerson}`, 'הוצע ע״י הסטודנט/ית']
         .filter(Boolean).join(' · ')),
-      chips: [{ rank: 1, orgName: pendingEmp.name, suggested: true, tone: 'plain', suffix: '' }],
+      chips: [{ rank: 1, orgName: pendingEmp.name, suggested: true, tone: 'plain', suffix: '',
+        available: false, blockedReason: '', recommended: false }],
       age: waitPhrase(waitDays),
       action: act('approve_org'),
     };
@@ -622,7 +648,7 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
   // ── 5. an org the student brought — talk and approve, never "send CV" ───────
   if (tentativeSuggested.length > 0) {
     const s0 = tentativeSuggested[0];
-    const emp = (employers || []).find((e: any) => e?.id === s0.employerId || norm(e?.name) === norm(s0.orgName));
+    const emp = resolveEmployerFor(s0, employers || []);
     const alsoList = tentativeList.length;
     return {
       key: 'suggested_org', turn: 'ours',
@@ -688,7 +714,9 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
       key: 'exhausted', turn: 'ours',
       headline: `נדחה/תה ${placesPhrase(rejected.length)} — יש להציע ארגונים חדשים`,
       sub: withCvNote('לא נותרו ארגונים פעילים בדירוג'),
-      chips: rejected.map(p => chipFor(p, 'dead', p.status === 'withdrawn' ? 'בוטל' : 'נדחה')),
+      chips: rejected.map(p => chipFor(p, 'dead',
+        failedInterview(p) ? (p.slotId ? 'לא עבר ראיון · המקום עדיין תפוס' : 'לא עבר ראיון')
+          : p.status === 'withdrawn' ? 'בוטל' : 'נדחה')),
       age: '', action: act('add_orgs'),
     };
   }
@@ -727,6 +755,22 @@ export function placementStatus(input: PlacementInput): PlacementStatus | null {
  * So: an action that already names its target keeps it. Selection fills in only when
  * it does not.
  */
+/**
+ * The organizations a REMINDER can go to: the CV is out and the employer has not
+ * answered. Late first, then merely sent — the order the coordinator would chase in.
+ *
+ * Yariv 2026-09-15, on עיריית אריאל: the confirmation offered "אין מייל לארגון" and
+ * "אין טלפון לארגון" with both buttons dead, while the employers page showed a phone
+ * AND an email for that organization. Nothing was wrong with the employer. The strip
+ * built its target list only for send_cv/place_direct rows, so on a REMIND row the list
+ * was empty, the dialog had no organization to look up, and it reported the empty
+ * lookup as the employer having no contact details. One definition, used by the strip
+ * and by the row's handler, is what stops the two from disagreeing again.
+ */
+export function remindableChips(chips: PlacementChip[]): PlacementChip[] {
+  return [...(chips || []).filter(c => c.tone === 'late'), ...(chips || []).filter(c => c.tone === 'sent')];
+}
+
 export function resolveActionTargets(
   action: { targetOrg?: string },
   chosen: { orgName: string }[],

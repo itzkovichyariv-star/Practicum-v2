@@ -1,7 +1,84 @@
-import { useEffect, useMemo, useState } from 'react';
+/**
+ * לוח שנה — THE calendar. One screen, two views, no second calendar anywhere.
+ *
+ * Yariv 2026-09-23, on finding two of them side by side:
+ *   "זה מה שצריך לוח מאוחד עם האירועים ובכל מקרה אין לי אפשרות בחירה על המסך."
+ * לוח אקדמי was shipped as a SECOND calendar an hour after this one already drew
+ * lectures, interviews, free interview slots and preparations. It has been folded into
+ * this file and deleted; `page === 'academic'` no longer exists.
+ *
+ * WHAT MERGED, and how the two layers were reconciled:
+ *
+ *   THE MONTH VIEW keeps everything it had — its month navigation, its course/year
+ *   filters, its event chips, its month list — and gains the university's year UNDER
+ *   them: the Ariel document's own gold (semester boundaries, exam windows) and cream
+ *   (no-teaching days, special arrangements, make-up days) painted into the cell, with
+ *   the event chips redrawn on a near-white underlay so a wine/green/blue/brown marker
+ *   stays legible on a pale fill instead of sinking into it.
+ *
+ *   THE YEAR VIEW is the twelve-month Ariel poster, unchanged: white paper, black ink,
+ *   fixed hexes in both themes, the lectures on it as rings and bars. It replaces the
+ *   month view rather than sitting beside it — never both at once — and opens on
+ *   whatever month the month view was showing.
+ *
+ *   ONE DAY SURFACE. The old hover/pinned popover is gone. A tap on any day — including
+ *   an empty one, because "can I put a lecturer here?" is a question about empty days —
+ *   opens the sheet that leads with the verdict, then the day's lectures, then its
+ *   interviews / slots / preparations, then the university's entry for it, then the
+ *   button that books it through src/lib/lectureSave.ts, the single lecture-write path.
+ */
+
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PageProps } from './pageShared';
-import { sameContext, outlookCalendarUrl, openCalendarLink } from './pageShared';
+import { sameContext, outlookCalendarUrl, normalizeYear, openCalendarLink } from './pageShared';
 import { supabase } from '../lib/supabase';
+import type { Lecture, Trainer } from '../lib/supabase';
+import {
+  ACADEMIC_WEEKDAY_LABELS,
+  ARIEL_PAPER,
+  DAY_VERDICT_LABEL,
+  academicCourseKeysFor,
+  buildAcademicDayMap,
+  buildAcademicMonths,
+  academicItemsOutsideGrid,
+  dayVerdict,
+  initialMonthKey,
+  isTeachingSession,
+  todayIso,
+  type AcademicDayItem,
+  type AcademicMonth,
+} from '../lib/academicCalendar';
+import {
+  buildLectureDayMap,
+  buildLectureMarkIndex,
+  daySchedulingReport,
+  findLectureConflicts,
+  lectureColor,
+  lecturerContact,
+  undatedLectures,
+  type LecturerContact,
+  type LectureDayItem,
+  type LectureDayMark,
+} from '../lib/lectureCalendar';
+import { saveLecture, deleteLecture } from '../lib/lectureSave';
+import { saveSnapshot } from '../lib/dataApi';
+import { syncGoogleNow, syncGoogleSoon } from '../lib/gcalSync';
+import {
+  CHIP_STYLE,
+  COURSE_STYLE,
+  DAY_FILL,
+  buildTodoMap,
+  cellModel,
+  lectureOverlaps,
+  sessionConflicts,
+  type CellChip,
+  type CellModel,
+  type DoneMap,
+  TODO_LEAD_DAYS,
+  type TodoItem,
+} from '../lib/calendarCell';
+import { showToast } from '../lib/toast';
+import LectureEditor from './LectureEditor';
 
 type CalEvent = {
   date: Date;
@@ -18,11 +95,21 @@ type SlotRow = {
   capacity: number; booked_count: number; course_name?: string; note?: string;
 };
 
-const HEB_DAYS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+type CalendarView = 'month' | 'year';
+
+const HEB_DAYS = ACADEMIC_WEEKDAY_LABELS;
 const HEB_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
-// Minimal hardcoded Jewish holidays (מועדים) for 2025–2027 Gregorian approximation
-// Full integration with Hebcal API will be added later. For now, a calm subset.
+
+/**
+ * Jewish holidays, as a FALLBACK layer only.
+ *
+ * The Ariel dataset (src/lib/academic-calendar-2026-27.json) already carries every
+ * holiday that closes the university, with its real title and its real span — but it
+ * covers תשפ״ז only, and the month view navigates to any month there is. Outside that
+ * window this subset is all there is, so it stays; inside it, it steps aside. See
+ * `cellBackground` for the precedence rule.
+ */
 const HEB_HOLIDAYS: Record<string, string> = {
   // 2025 / תשפ״ה
   '2025-09-23': 'ראש השנה', '2025-09-24': 'ראש השנה ב׳',
@@ -49,12 +136,29 @@ function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function CalendarPage({ data, context, onNavigate }: PageProps) {
+/** "ג׳ · 8 בדצמבר 2026" — read out loud, which is how a date gets confirmed on a call. */
+function longHebrewDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${ACADEMIC_WEEKDAY_LABELS[d.getUTCDay()]}׳ · ${d.getUTCDate()} ב${HEB_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+export default function CalendarPage({ data, context, onNavigate, userName, onRefresh }: PageProps) {
   const now = new Date();
+  const today = todayIso();
+  const [view, setView] = useState<CalendarView>('month');
   const [cursor, setCursor] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
-  const [pinnedDay, setPinnedDay] = useState<string | null>(null);
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const [slots, setSlots] = useState<SlotRow[]>([]);
   const [pendingSubs, setPendingSubs] = useState<Array<{ id: string; name: string; email?: string; date: string; time: string }>>([]);
+  const [editing, setEditing] = useState<Lecture | null>(null);
+  const [creatingOn, setCreatingOn] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const monthRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  /* The academic year is static — derive it once, not on every render. */
+  const academicDayMap = useMemo(() => buildAcademicDayMap(), []);
+  const posterMonths = useMemo(() => buildAcademicMonths(academicDayMap), [academicDayMap]);
+  const outside = useMemo(() => academicItemsOutsideGrid(), []);
 
   // Load interview slots + pending submissions (candidates who booked but haven't been
   // accepted into the candidates table yet) from the public tables.
@@ -75,35 +179,123 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
     })();
   }, []);
 
-  // ESC closes the pinned popover; click-outside also closes
+  /* ESC closes the day sheet — it is a modal surface and has to behave like one. */
   useEffect(() => {
-    if (!pinnedDay) return;
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setPinnedDay(null); }
-    function onClick(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      if (!t.closest('[data-day-cell]')) setPinnedDay(null);
-    }
+    if (!openDay) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenDay(null); };
     window.addEventListener('keydown', onKey);
-    window.addEventListener('click', onClick);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('click', onClick);
-    };
-  }, [pinnedDay]);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openDay]);
 
-  const lectures = data.lectures || [];
+  const courses = data.courses || [];
   const candidates = data.candidates || [];
+  const students = data.students || [];
+  const yearFilterActive = context.year !== '__all__';
+
+  /**
+   * WHICH LECTURES — and why the YEAR filter does not reach them.
+   *
+   * This screen's job is to decide whether a date is free. A lecture hidden behind a
+   * year filter is a lecture that gets double-booked, and hiding it would make the grid
+   * disagree with the day sheet, the poster and the conflict banner — all of which have
+   * to tell the truth about an occupied date. So lectures are COURSE-filtered only, in
+   * every one of those four places, and the screen says so under the header.
+   *
+   * The year filter still scopes the cohort-shaped events — interviews, interview slots
+   * and student preparations — where "which year am I looking at" is exactly what it
+   * means. And in the year view it is doubly moot: the poster IS שנה״ל תשפ״ז, so a
+   * top-bar year of תשפ״ו would blank a grid whose own title says otherwise.
+   */
+  const lectures = useMemo(
+    () => (data.lectures || []).filter(l => sameContext(l, { courseId: context.courseId, year: '__all__' }, courses)),
+    [data.lectures, context.courseId, courses],
+  );
+
+  const lectureDayMap = useMemo(() => buildLectureDayMap(lectures, userName), [lectures, userName]);
+  /**
+   * The top bar's COURSE filter, resolved against the ACADEMIC dataset's own course
+   * list (semA / skA / prA / …). `null` means "do not filter teaching": either nothing
+   * is selected, or the selection names a course this dataset has never heard of — and
+   * filtering teaching down to nothing would read as "no class that day", which is the
+   * exact wrong answer on the screen whose job is to say whether a date is free.
+   */
+  const academicCourseKeys = useMemo(() => {
+    if (context.courseId === '__all__') return null;
+    const keys = academicCourseKeysFor(context.courseId);
+    return keys.length > 0 ? keys : null;
+  }, [context.courseId]);
+
+  const trainers = (data.trainers || []) as Trainer[];
+  const lectureMarks = useMemo(() => buildLectureMarkIndex(lectureDayMap), [lectureDayMap]);
+  const conflicts = useMemo(
+    () => findLectureConflicts(lectureDayMap, academicDayMap),
+    [lectureDayMap, academicDayMap],
+  );
+  const undated = useMemo(() => undatedLectures(lectures), [lectures]);
+
+  /* לתאם — the lead-time reminders and what he has already closed. */
+  const todoMap = useMemo(() => buildTodoMap(academicDayMap, lectureDayMap, today), [academicDayMap, lectureDayMap, today]);
+  const [doneLocal, setDoneLocal] = useState<DoneMap | null>(null);
+  const done: DoneMap = doneLocal ?? ((data.calendarDone || {}) as DoneMap);
+  useEffect(() => { setDoneLocal(null); }, [data.calendarDone]);
+  /** A class of his standing on a shut day — the university's slot, his absence. */
+  const classConflicts = useMemo(() => sessionConflicts(academicDayMap), [academicDayMap]);
+  /** Two live lectures in the same hours (Yariv 3.10, on 1.12: "פספס את זה שיש 2 ארועים
+   *  באותה שעה") — listed with the things to move, until one of them is cancelled. */
+  const overlapRows = useMemo(
+    () => [...lectureDayMap].sort(([a], [b]) => a.localeCompare(b))
+      .flatMap(([iso, items]) => lectureOverlaps(items).map(([a, b]) => ({ iso, a, b }))),
+    [lectureDayMap],
+  );
+
+  async function markTodo(t: TodoItem, status: 'done' | 'not_needed' | null) {
+    const next: DoneMap = { ...done };
+    if (status) next[t.key] = { status, by: userName || '', at: new Date().toISOString() };
+    else delete next[t.key];
+    setDoneLocal(next);
+    const res = await saveSnapshot(
+      (cloud) => {
+        const merged = { ...((cloud.calendarDone || {}) as DoneMap) };
+        if (status) merged[t.key] = next[t.key];
+        else delete merged[t.key];
+        return { data: { ...cloud, calendarDone: merged } };
+      },
+      { name: userName || '' },
+      { action: status ? (status === 'done' ? 'סימן תואם' : 'סימן לא צריך') : 'ביטל סימון', entity: 'לוח שנה', target: t.what },
+    );
+    if (!res.ok) { setDoneLocal(null); showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
+    showToast(status ? '✓ סומן — הוסר מהלוח' : 'הסימון בוטל', 'success');
+    syncGoogleSoon({ ...data, calendarDone: next });
+    onRefresh();
+  }
+
+  /** Lectures that actually land inside תשפ״ז — the poster's headline must count what
+   *  is on screen, not what is in the database. */
+  const inGrid = useMemo(() => {
+    let approved = 0, pending = 0, cancelled = 0, total = 0;
+    const from = posterMonths[0]?.key ?? '', to = posterMonths[posterMonths.length - 1]?.key ?? '';
+    for (const [iso, items] of lectureDayMap) {
+      const mk = iso.slice(0, 7);
+      if (mk < from || mk > to) continue;
+      for (const it of items) {
+        total++;
+        if (it.state === 'approved') approved++;
+        else if (it.state === 'pending') pending++;
+        else cancelled++;
+      }
+    }
+    return { total, approved, pending, cancelled };
+  }, [lectureDayMap, posterMonths]);
+
   // Interview Zoom link for a given ISO day: the day's own link, else the permanent
   // default room. Same resolution as RegistrationForm/notify-submission, so the invite
   // Yariv sends a candidate carries the SAME link they saw on screen and in their email.
   const zoomFor = (isoDate: string): string =>
     String((data.interviewZoomLinks || {})[String(isoDate).slice(0, 10)] || data.interviewZoomLinkDefault || '').trim();
-  const students = data.students || [];
 
   const events = useMemo<CalEvent[]>(() => {
     const list: CalEvent[] = [];
-    const courses = data.courses || [];
-    lectures.filter(l => sameContext(l, context, courses)).forEach(l => {
+    lectures.forEach(l => {
       if (!l.date) return;
       const d = new Date(l.date);
       if (isNaN(d.getTime())) return;
@@ -202,7 +394,7 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
       });
     });
     return list;
-  }, [lectures, candidates, students, slots, pendingSubs, context, onNavigate]);
+  }, [lectures, candidates, students, slots, pendingSubs, context, courses, onNavigate]);
 
   const eventsByDay = useMemo(() => {
     const m: Record<string, CalEvent[]> = {};
@@ -228,232 +420,1047 @@ export default function CalendarPage({ data, context, onNavigate }: PageProps) {
     .filter(e => e.date.getFullYear() === year && e.date.getMonth() === month)
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
+  /** What the month's pills count: cells that must move, and לתאם still open. */
+  const monthAlerts = useMemo(() => {
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    let move = 0, todo = 0;
+    for (const c of classConflicts) if (c.iso.startsWith(prefix)) move++;
+    for (const c of conflicts) if (c.iso.startsWith(prefix)) move++;
+    for (const o of overlapRows) if (o.iso.startsWith(prefix)) move++;
+    for (const [iso, list] of todoMap) if (iso.startsWith(prefix)) todo += list.filter((t) => !done[t.key]).length;
+    return { move, todo };
+  }, [year, month, classConflicts, conflicts, overlapRows, todoMap, done]);
+
+  /** "Google must reflect the calendar as it is now" — the full reconcile, on demand. */
+  const [gsync, setGsync] = useState<'idle' | 'busy'>('idle');
+  async function syncNow() {
+    if (gsync === 'busy') return;
+    setGsync('busy');
+    const r = await syncGoogleNow({ ...data, calendarDone: done });
+    setGsync('idle');
+    if (!r.ok) { showToast('הסנכרון לגוגל נכשל: ' + r.error, 'error'); return; }
+    if (!r.configured) { showToast('הסנכרון לגוגל עוד לא הוגדר (חסרים מפתחות בשרת)', 'error'); return; }
+    showToast(`✓ גוגל מעודכן · ${r.created} נוספו · ${r.updated} עודכנו · ${r.deleted} הוסרו`, 'success');
+  }
+
+  /** One day's model — the SAME for the month grid and the year view. */
+  function modelFor(key: string): CellModel {
+    const academic = academicDayMap.get(key) ?? [];
+    return cellModel({
+      academic,
+      lectures: lectureDayMap.get(key) ?? [],
+      todos: todoMap.get(key) ?? [],
+      done,
+      other: (eventsByDay[key] || [])
+        .filter((e) => e.type !== 'lecture')
+        .map((e) => ({ type: e.type as 'interview' | 'slot' | 'prep', title: e.title })),
+      /* The Jewish-holiday fallback speaks only where the Ariel data is silent. */
+      holiday: academic.length === 0 ? HEB_HOLIDAYS[key] : undefined,
+    });
+  }
+
   function goPrev() { setCursor(new Date(year, month - 1, 1)); }
   function goNext() { setCursor(new Date(year, month + 1, 1)); }
   function goToday() { setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); }
 
-  return (
-    <main className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-14 pb-28">
+  /** The month the poster should land on: whatever the month view is showing, when the
+   *  year has a grid for it; the first month of תשפ״ז otherwise. */
+  const posterMonthKey = useMemo(
+    () => initialMonthKey(posterMonths, `${year}-${String(month + 1).padStart(2, '0')}-01`),
+    [posterMonths, year, month],
+  );
 
-      <section className="pt-4 pb-14 border-b mb-10" style={{ borderColor: 'var(--divider)' }}>
+  /** Switch to the poster and put the month that was on screen at the top of it. */
+  function showYear() {
+    setView('year');
+    requestAnimationFrame(() => {
+      monthRefs.current[posterMonthKey]?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    });
+  }
+
+  /** Back to the month grid, on a given month. */
+  function showMonth(key?: string) {
+    if (key) {
+      const [y, m] = key.split('-').map(Number);
+      setCursor(new Date(y, m - 1, 1));
+    }
+    setView('month');
+  }
+
+  /* ── the write path: the SAME one the lectures list uses ──────────────────
+     src/lib/lectureSave.ts, which carries the Outlook sync, the
+     fill-never-overwrite employer-contact rule and the CAS-guarded snapshot write.
+     Booking a lecturer from here is not a second flow; it is that flow, reached
+     from a date. */
+  async function handleSave(lec: Lecture) {
+    setEditing(null);
+    setCreatingOn(null);
+    setSaving(true);
+    const res = await saveLecture(lec, data, userName);
+    setSaving(false);
+    if (!res.ok) { showToast('שגיאה בשמירה: ' + (res.error || ''), 'error'); return; }
+    showToast(res.message + ' · נשמר בענן ☁️', 'success');
+    onRefresh();
+  }
+
+  async function handleDelete(id: string) {
+    setEditing(null);
+    setSaving(true);
+    const res = await deleteLecture(id, data, userName);
+    setSaving(false);
+    if (!res.ok) { showToast('שגיאה במחיקה: ' + (res.error || ''), 'error'); return; }
+    showToast(res.message + ' · נשמר בענן ☁️', 'success');
+    onRefresh();
+  }
+
+  const years = useMemo(() => {
+    const set = new Set<string>();
+    courses.forEach((c) => c.year && set.add(normalizeYear(c.year)));
+    (data.lectures || []).forEach((l) => l.year && set.add(normalizeYear(l.year)));
+    (data.academicYears || []).forEach((y) => set.add(normalizeYear(y)));
+    return Array.from(set).sort().reverse();
+  }, [courses, data.lectures, data.academicYears]);
+
+  return (
+    <main className="max-w-[1200px] mx-auto px-2 sm:px-10 pt-14 pb-28" data-calendar-page data-calendar-view={view}>
+
+      <section className="pt-4 pb-10 border-b mb-8" style={{ borderColor: 'var(--divider)' }}>
         <div className="chapter-mark mb-6">VI · לוח שנה</div>
-        <div className="flex items-end justify-between gap-10 flex-wrap">
+        <div className="flex items-end justify-between gap-6 flex-wrap">
           <div>
             <h1 className="serif text-[30px] sm:text-[44px] leading-[1.08] tracking-tight mb-3" style={{ color: 'var(--ink)' }}>
-              {HEB_MONTHS[month]} <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>{year}</em>
+              {view === 'month' ? (
+                <>{HEB_MONTHS[month]} <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>{year}</em></>
+              ) : (
+                <>שנה״ל <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>תשפ״ז</em></>
+              )}
             </h1>
             <p className="text-[15px] sm:text-[17.5px] max-w-[620px] leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
-              {monthUpcoming.length === 0
-                ? 'אין אירועים מתוכננים לחודש זה בהקשר הנוכחי.'
-                : `${monthUpcoming.length} אירועים השבוע/חודש · הרצאות, ראיונות, והכנות`}
+              {view === 'month'
+                ? (monthUpcoming.length === 0
+                  ? 'אין אירועים מתוכננים לחודש זה בהקשר הנוכחי. לחיצה על יום פותחת את מה שקורה בו ומאפשרת לקבוע בו הרצאה.'
+                  : `${monthUpcoming.length} אירועים החודש · הרצאות, ראיונות, מועדים והכנות. לחיצה על יום פותחת את מה שקורה בו.`)
+                : 'אוקטובר 2026 – ספטמבר 2027, לוח אוניברסיטת אריאל עם לוח ההרצאות עליו. לחיצה על יום פותחת את מה שקורה בו.'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* ── The view toggle. Month ⇄ the year poster, never both at once. ── */}
+          <div className="flex items-center gap-2 rounded-full p-1" data-view-switch
+            style={{ border: '1px solid var(--divider)' }}>
+            <ViewBtn active={view === 'month'} onClick={() => showMonth()} testId="month">חודש</ViewBtn>
+            <ViewBtn active={view === 'year'} onClick={showYear} testId="year">שנה תשפ״ז</ViewBtn>
+          </div>
+        </div>
+
+        {view === 'month' && (
+          <div className="flex items-center gap-2 mt-6 flex-wrap">
             <NavBtn onClick={goPrev}>← חודש קודם</NavBtn>
             <NavBtn onClick={goToday} primary>היום</NavBtn>
             <NavBtn onClick={goNext}>חודש הבא →</NavBtn>
+            <NavBtn onClick={syncNow}>{gsync === 'busy' ? '…מסנכרן' : '↻ סנכרן לגוגל'}</NavBtn>
+            {monthAlerts.move > 0 && (
+              <span data-month-pill="move" className="rounded-full px-3 py-1 text-[12.5px] font-bold"
+                style={{ background: CHIP_STYLE.move.bg, color: CHIP_STYLE.move.fg }}>
+                ⚠ {monthAlerts.move} להזיז
+              </span>
+            )}
+            {monthAlerts.todo > 0 && (
+              <span data-month-pill="todo" className="rounded-full px-3 py-1 text-[12.5px] font-bold"
+                style={{ background: CHIP_STYLE.todo.bg, color: CHIP_STYLE.todo.fg }}>
+                {monthAlerts.todo} לתאם
+              </span>
+            )}
           </div>
-        </div>
-      </section>
+        )}
 
-      {/* Legend */}
-      <div className="flex flex-wrap items-center gap-5 mb-6 mono text-[11px] uppercase tracking-[0.14em] font-semibold" style={{ color: 'var(--text-soft)' }}>
-        <LegendDot color="var(--accent)" label="הרצאה" />
-        <LegendDot color="#0a6e44" label="ראיון" />
-        <LegendDot color="#4a6b8a" label="מועד פנוי" />
-        <LegendDot color="#7a5a1e" label="הכנה" />
-        <span className="opacity-60">· חגים יהודיים מודגשים ברקע אפור</span>
-      </div>
+        {view === 'year' && (
+          <div className="flex flex-wrap gap-x-8 gap-y-3 mt-7">
+            <Stat label="הרצאות בשנה" value={inGrid.total} />
+            <Stat label="מאושרות" value={inGrid.approved} color={lectureColor('approved')} />
+            <Stat label="טרם אושרו" value={inGrid.pending} color={lectureColor('pending')} />
+          </div>
+        )}
 
-      {/* Month grid */}
-      <section className="mb-16">
-        <div className="grid grid-cols-7 gap-0 border rounded-xl"
-          style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.25)' }}>
-          {HEB_DAYS.map(d => (
-            <div key={d} className="py-3 text-center mono text-[11.5px] uppercase tracking-[0.16em] font-semibold border-b"
-              style={{ color: 'var(--ink)', borderColor: 'var(--divider)', background: 'rgba(122,30,43,0.04)' }}>
-              {d}
-            </div>
-          ))}
-          {cells.map((day, i) => {
-            if (day === null) {
-              return <div key={i} className="h-28 border-t border-l"
-                style={{ borderColor: 'var(--divider)' }}/>;
-            }
-            const cellDate = new Date(year, month, day);
-            const key = dayKey(cellDate);
-            const dayEvents = eventsByDay[key] || [];
-            const holiday = HEB_HOLIDAYS[key];
-            const isToday = key === dayKey(now);
-            const hasEvents = dayEvents.length > 0;
-            const isPinned = pinnedDay === key;
-            const popoverOpen = isPinned; // stays open when pinned; hover-only via CSS group-hover
-            return (
-              <div
-                key={i}
-                data-day-cell
-                onClick={() => hasEvents && setPinnedDay(isPinned ? null : key)}
-                className={`h-28 border-t border-l p-2 overflow-visible flex flex-col gap-1 relative group ${hasEvents ? 'cursor-pointer' : ''}`}
-                style={{
-                  borderColor: 'var(--divider)',
-                  background: isToday ? 'rgba(122, 30, 43, 0.1)' : holiday ? 'rgba(26, 22, 18, 0.04)' : 'transparent',
-                  boxShadow: isToday ? 'inset 0 0 0 2px var(--accent)' : undefined,
-                  zIndex: popoverOpen ? 30 : undefined,
-                }}
-              >
-                <div className="flex items-baseline justify-between">
-                  {isToday ? (
-                    <span
-                      className="serif text-[18px] leading-none rounded-full flex items-center justify-center"
-                      style={{ width: 30, height: 30, background: 'var(--accent)', color: 'var(--bg)' }}
-                    >
-                      {day}
-                    </span>
-                  ) : (
-                    <span
-                      className="serif leading-none"
-                      style={{
-                        color: hasEvents ? 'var(--accent)' : 'var(--ink)',
-                        fontSize: hasEvents ? '22px' : '20px',
-                        fontWeight: hasEvents ? 600 : 400,
-                      }}
-                    >
-                      {day}
-                    </span>
-                  )}
-                  {holiday && <span className="mono text-[9px] uppercase tracking-[0.1em] opacity-70 truncate max-w-[70%]" title={holiday} style={{ color: 'var(--text-soft)' }}>{holiday}</span>}
-                </div>
-                {isToday && (
-                  <span className="absolute bottom-1.5 right-2 mono text-[9px] uppercase tracking-[0.15em] font-bold"
-                    style={{ color: 'var(--accent)' }}>היום</span>
-                )}
-
-                {/* Inline preview — first 2 events */}
-                <div className="flex flex-col gap-0.5 overflow-hidden">
-                  {dayEvents.slice(0, 2).map(e => (
-                    <span
-                      key={e.id}
-                      className="text-right text-[10.5px] truncate rounded px-1.5 py-0.5"
-                      style={{
-                        background: eventColor(e.type) + '22',
-                        color: eventColor(e.type),
-                        borderRight: `2px solid ${eventColor(e.type)}`,
-                      }}
-                    >
-                      {e.title}
-                    </span>
-                  ))}
-                  {dayEvents.length > 2 && (
-                    <span className="text-[10px] mono tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>
-                      +{dayEvents.length - 2} נוספים
-                    </span>
-                  )}
-                </div>
-
-                {/* Hover / pinned popover — full details */}
-                {hasEvents && (
-                  <div
-                    className={`absolute top-full left-0 right-0 mt-1 ${isPinned ? '' : 'invisible group-hover:visible'} rounded-xl shadow-lg border p-3 flex flex-col gap-2 z-50`}
-                    style={{
-                      background: 'var(--bg)',
-                      borderColor: 'var(--divider)',
-                      boxShadow: '0 12px 40px rgba(26, 22, 18, 0.2)',
-                      minWidth: 240,
-                    }}
-                    onClick={(ev) => ev.stopPropagation()}
-                  >
-                    <div className="flex items-baseline justify-between gap-2 pb-1.5 mb-1 border-b" style={{ borderColor: 'var(--divider)' }}>
-                      <div className="serif text-[18px]" style={{ color: 'var(--ink)' }}>
-                        {day} {HEB_MONTHS[month]}
-                      </div>
-                      <div className="mono text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
-                        {dayEvents.length} אירועים
-                      </div>
-                    </div>
-                    {dayEvents.map(e => (
-                      <div
-                        key={e.id}
-                        className="text-right rounded-md p-2 flex items-start gap-2 hover:bg-[rgba(122,30,43,0.06)] transition-colors"
-                        style={{ borderRight: `3px solid ${eventColor(e.type)}` }}
-                      >
-                        <button onClick={e.onClick} className="flex-1 text-right">
-                          <div className="text-[13px] leading-[1.3]" style={{ color: 'var(--ink)' }}>{e.title}</div>
-                          <div className="mono text-[10px] uppercase tracking-[0.12em] mt-0.5" style={{ color: eventColor(e.type) }}>
-                            {e.type === 'lecture' ? 'הרצאה' : e.type === 'interview' ? 'ראיון' : 'הכנה'}
-                            {e.status && ` · ${e.status}`}
-                          </div>
-                        </button>
-                        {e.calendarUrl && (
-                          <button
-                            type="button"
-                            title="הוסף ליומן Outlook"
-                            onClick={(ev) => { ev.stopPropagation(); openCalendarLink(e.calendarUrl!); }}
-                            className="w-7 h-7 rounded-full border grid place-items-center shrink-0 hover:bg-[rgba(122,30,43,0.1)]"
-                            style={{ borderColor: 'var(--divider)', color: 'var(--ink)', fontSize: 12 }}
-                          >📅</button>
-                        )}
-                      </div>
-                    ))}
-                    {isPinned && (
-                      <button
-                        onClick={() => setPinnedDay(null)}
-                        className="mono text-[10px] uppercase tracking-[0.14em] text-center py-1 mt-1 hover:opacity-70"
-                        style={{ color: 'var(--text-soft)' }}
-                      >
-                        סגור
-                      </button>
-                    )}
-                  </div>
-                )}
+        {/* What is NOT on screen, said out loud rather than left to be discovered. */}
+        {(yearFilterActive || undated.length > 0 || context.courseId !== '__all__') && (
+          <div className="mt-6 text-[12.5px] leading-[1.7]" style={{ color: 'var(--text-soft)' }}>
+            {context.courseId !== '__all__' && <div data-scope-note>מסונן לקורס: <strong>{context.courseId}</strong></div>}
+            {yearFilterActive && (
+              <div data-year-note>
+                מסנן השנה בסרגל העליון ({context.year}) חל על הראיונות, המועדים וההכנות.
+                ההרצאות מוצגות במלואן — בלוח, בכרטיס היום, בתצוגת השנה ובהתראת ההתנגשויות — כדי שלא תיקבע הרצאה על תאריך תפוס.
               </div>
-            );
-          })}
-        </div>
+            )}
+            {undated.length > 0 && <div data-undated-note>{undated.length} הרצאות ללא תאריך אינן מופיעות בלוח.</div>}
+          </div>
+        )}
       </section>
 
-      {/* Upcoming list */}
-      <section>
-        <div className="flex items-baseline justify-between gap-10 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
-          <h2 className="serif text-[30px] tracking-tight leading-[1.15]" style={{ color: 'var(--ink)' }}>אירועי החודש</h2>
-          <span className="mono text-[12px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-soft)' }}>
-            {monthUpcoming.length} אירועים
-          </span>
-        </div>
-        {monthUpcoming.length === 0 ? (
-          <div className="py-12 text-center text-[15px]" style={{ color: 'var(--text-soft)' }}>
-            אין אירועים בחודש זה.
+      {/* ── Conflicts: lectures already standing on a day the university has closed ── */}
+      {(conflicts.length > 0 || classConflicts.length > 0 || overlapRows.length > 0) && (
+        <section
+          data-conflict-banner
+          className="mb-8 rounded-2xl p-4 sm:p-5"
+          style={{ background: 'rgba(224,102,102,0.10)', border: '1px solid rgba(224,102,102,0.55)' }}
+        >
+          <div className="serif text-[19px] mb-2" style={{ color: 'var(--ink)' }}>
+            {conflicts.length + classConflicts.length + overlapRows.length === 1
+              ? 'דבר אחד שצריך להזיז'
+              : `${conflicts.length + classConflicts.length + overlapRows.length} דברים שצריך להזיז`}
           </div>
-        ) : (
-          <ul>
-            {monthUpcoming.map(e => (
-              <li key={e.id} className="py-4 border-b flex items-baseline gap-5" style={{ borderColor: 'var(--divider)' }}>
-                <div className="w-20 text-right">
-                  <div className="serif text-[24px] leading-none" style={{ color: 'var(--ink)' }}>
-                    {String(e.date.getDate()).padStart(2, '0')}
-                  </div>
-                  <div className="mono text-[10px] uppercase tracking-[0.16em] mt-1" style={{ color: 'var(--text-soft)' }}>
-                    {HEB_DAYS[e.date.getDay()]}
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="text-[15px]" style={{ color: 'var(--ink)' }}>{e.title}</div>
-                  <div className="mono text-[10.5px] uppercase tracking-[0.14em] mt-1" style={{ color: eventColor(e.type) }}>
-                    {e.type === 'lecture' ? 'הרצאה' : e.type === 'interview' ? 'ראיון' : 'הכנה'}
-                    {e.status && ` · ${e.status}`}
-                  </div>
-                </div>
-                <button onClick={e.onClick}
-                  className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
-                  style={{ color: 'var(--accent)' }}>
-                  פתח ←
+          <ul className="flex flex-col gap-2">
+            {classConflicts.map((c) => (
+              <li key={'class' + c.iso + c.title} data-class-conflict={c.iso}>
+                <button
+                  onClick={() => { showMonth(c.iso.slice(0, 7)); setOpenDay(c.iso); }}
+                  className="w-full text-right rounded-xl px-3 py-2"
+                  style={{ minHeight: 44, background: 'transparent', border: '1px solid var(--divider)', cursor: 'pointer' }}
+                >
+                  <span className="text-[14px]" style={{ color: 'var(--ink)' }}>שיעור {c.title}</span>
+                  <span className="mono text-[11px] mx-2" dir="ltr" style={{ color: 'var(--text-soft)' }}>{c.iso}</span>
+                  <span className="block text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{c.reason} — צריך להזיז את השיעור</span>
+                </button>
+              </li>
+            ))}
+            {overlapRows.map((o) => (
+              <li key={'overlap' + o.iso + o.a.id + o.b.id} data-overlap-conflict={o.iso}>
+                <button
+                  onClick={() => { showMonth(o.iso.slice(0, 7)); setOpenDay(o.iso); }}
+                  className="w-full text-right rounded-xl px-3 py-2"
+                  style={{ minHeight: 44, background: 'transparent', border: '1px solid var(--divider)', cursor: 'pointer' }}
+                >
+                  <span className="text-[14px]" style={{ color: 'var(--ink)' }}>{o.a.title} · {o.b.title}</span>
+                  <span className="mono text-[11px] mx-2" dir="ltr" style={{ color: 'var(--text-soft)' }}>{o.iso}</span>
+                  <span className="block text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                    שתי הרצאות באותן שעות ({o.a.time} · {o.b.time}) — יש לבחור אחת ולבטל את השנייה
+                  </span>
+                </button>
+              </li>
+            ))}
+            {conflicts.map((c) => (
+              <li key={c.lectureId + c.iso}>
+                <button
+                  onClick={() => { showMonth(c.iso.slice(0, 7)); setOpenDay(c.iso); }}
+                  className="w-full text-right rounded-xl px-3 py-2"
+                  style={{ minHeight: 44, background: 'transparent', border: '1px solid var(--divider)', cursor: 'pointer' }}
+                >
+                  <span className="text-[14px]" style={{ color: 'var(--ink)' }}>{c.title}</span>
+                  <span className="mono text-[11px] mx-2" dir="ltr" style={{ color: 'var(--text-soft)' }}>{c.iso}</span>
+                  <span className="block text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{c.blocker.reason}</span>
                 </button>
               </li>
             ))}
           </ul>
-        )}
+        </section>
+      )}
+
+      {/* ══════════════════════ MONTH VIEW ══════════════════════ */}
+      {view === 'month' && (
+        <section className="mb-12" data-month-grid={`${year}-${String(month + 1).padStart(2, '0')}`}>
+          {/* Ariel's paper: white sheet, separate rounded days, black serif dates — the
+              printed calendar he called elegant. Fixed colours in both themes. */}
+          <div className="grid grid-cols-7 gap-[2px] sm:gap-1.5 rounded-2xl p-1 sm:p-2.5"
+            data-ariel-sheet
+            style={{ background: ARIEL_PAPER.paper, border: `1px solid ${ARIEL_PAPER.edge}`, boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
+            {HEB_DAYS.map(d => (
+              <div key={d} className="serif text-center text-[13px] sm:text-[15px] pb-1" style={{ color: ARIEL_PAPER.muted }}>
+                {d}
+              </div>
+            ))}
+            {cells.map((day, i) => {
+              if (day === null) return <div key={i} aria-hidden="true" />;
+              const key = dayKey(new Date(year, month, day));
+              return (
+                <DayCell key={i} iso={key} day={day} model={modelFor(key)}
+                  verdict={dayVerdict(academicDayMap.get(key) ?? [])}
+                  lectures={lectureMarks.get(key)?.total ?? 0}
+                  isToday={key === today} isOpen={openDay === key} onOpen={setOpenDay} />
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ══════════════════════ YEAR VIEW — the Ariel poster ══════════════════════
+           Fixed white/black in both themes. This is the university's printed table,
+           reproduced; it does not follow the app's day/night switch. */}
+      {view === 'year' && (
+        <>
+          <nav className="flex flex-wrap gap-2 mb-6" aria-label="קפיצה לחודש">
+            {posterMonths.map((m) => (
+              <button
+                key={m.key}
+                data-month-chip={m.key}
+                onClick={() => monthRefs.current[m.key]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="mono text-[12px] font-semibold rounded-full px-3"
+                style={{
+                  minHeight: 44, minWidth: 56,
+                  border: '1px solid var(--divider)',
+                  background: 'transparent',
+                  color: 'var(--ink)',
+                  cursor: 'pointer',
+                }}
+              >
+                {m.shortLabel}
+              </button>
+            ))}
+          </nav>
+
+          <div className="flex flex-col gap-5 mb-10" data-year-poster>
+            {posterMonths.map((m) => (
+              <section
+                key={m.key}
+                data-paper
+                ref={(el) => { monthRefs.current[m.key] = el; }}
+                className="rounded-2xl"
+                style={{
+                  background: ARIEL_PAPER.paper,
+                  color: ARIEL_PAPER.ink,
+                  border: `1px solid ${ARIEL_PAPER.edge}`,
+                  padding: '14px 6px 10px',
+                  boxShadow: '0 18px 48px rgba(0,0,0,0.10)',
+                  scrollMarginTop: 'calc(var(--header-h, 108px) + 12px)',
+                }}
+              >
+                <PosterMonth
+                  month={m}
+                  academicDayMap={academicDayMap}
+                  lectureMarks={lectureMarks}
+                  modelFor={modelFor}
+                  today={today}
+                  openDay={openDay}
+                  onOpenDay={setOpenDay}
+                />
+              </section>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ══════════════════════ ONE LEGEND ══════════════════════
+           The month view's event chips, the poster's lecture states and the
+           university's own categories, in one place. Two legends for one calendar was
+           part of what made it read as two calendars. */}
+      <section className="mb-12" data-legend>
+        <h2 className="serif text-[22px] tracking-tight mb-3 pb-2 border-b" style={{ color: 'var(--ink)', borderColor: 'var(--divider)' }}>
+          מקרא
+        </h2>
+        <ul className="flex flex-wrap gap-x-5 gap-y-2.5 mb-3 text-[13px]" style={{ color: 'var(--ink)' }}>
+          {(Object.keys(COURSE_STYLE) as (keyof typeof COURSE_STYLE)[]).map((k) => (
+            <li key={k} className="inline-flex items-center gap-2">
+              <span data-legend-swatch={k} className="inline-block rounded-[3px]"
+                style={{ width: 22, height: 14, background: COURSE_STYLE[k].tint, borderRight: `3px solid ${COURSE_STYLE[k].strong}`, outline: `1px solid ${ARIEL_PAPER.rule}` }} />
+              {COURSE_STYLE[k].label}
+            </li>
+          ))}
+          <li className="inline-flex items-center gap-2">
+            <span data-legend-swatch="off" className="inline-block rounded-[3px]" style={{ width: 22, height: 14, background: DAY_FILL.off, outline: `1px solid ${ARIEL_PAPER.rule}` }} />
+            אין לימודים — שם החופשה כתוב ביום
+          </li>
+          <li className="inline-flex items-center gap-2">
+            <span data-legend-swatch="exam" className="inline-block rounded-[3px]" style={{ width: 22, height: 14, background: DAY_FILL.exam, outline: `1px solid ${ARIEL_PAPER.rule}` }} />
+            מועדי בחינות א׳ / ב׳
+          </li>
+          <li className="inline-flex items-center gap-2">
+            <span data-legend-swatch="edge" className="inline-block rounded-[3px]" style={{ width: 22, height: 14, background: '#fff', borderTop: `5px solid ${DAY_FILL.exam}`, outline: `1px solid ${ARIEL_PAPER.rule}` }} />
+            תחילת / סוף סמסטר
+          </li>
+        </ul>
+        <ul className="flex flex-wrap gap-x-5 gap-y-2.5 text-[13px]" style={{ color: 'var(--ink)' }}>
+          {(['approved', 'todo', 'notApproved', 'move'] as const).map((k) => (
+            <li key={k} className="inline-flex items-center gap-2">
+              <span data-legend-swatch={k} className="rounded px-1.5 text-[11px] font-bold" style={{ background: CHIP_STYLE[k].bg, color: CHIP_STYLE[k].fg }}>
+                {CHIP_STYLE[k].text}
+              </span>
+              {k === 'approved' ? 'הרצאת אורח מאושרת'
+                : k === 'todo' ? `משהו לתאם — מופיע ${TODO_LEAD_DAYS} יום לפני`
+                : k === 'notApproved' ? 'הרצאת אורח שעדיין לא אושרה'
+                : 'שיעור או הרצאה ביום שאין בו לימודים'}
+            </li>
+          ))}
+          <li className="inline-flex items-center gap-2"><span className="text-[16px]">🎭</span>סימולציה</li>
+          <li className="inline-flex items-center gap-2"><span className="text-[14px]">⏱</span>יום מיוחד — שינוי בשעות</li>
+          <li className="inline-flex items-center gap-2"><span className="text-[14px]">↻</span>יום השלמה — מתכונת של יום אחר</li>
+        </ul>
+        <p className="mt-3 text-[12.5px]" data-precedence-note style={{ color: 'var(--text-soft)' }}>
+          צבע היום = מה קורה בו · המילה בתחתית = מה צריך לדעת או לעשות · לחיצה על יום פותחת את כל הפרטים.
+        </p>
       </section>
 
+      {/* ── Month list — the month view's own agenda, unchanged ── */}
+      {view === 'month' && (
+        <section>
+          <div className="flex items-baseline justify-between gap-10 mb-8 pb-5 border-b" style={{ borderColor: 'var(--divider)' }}>
+            <h2 className="serif text-[30px] tracking-tight leading-[1.15]" style={{ color: 'var(--ink)' }}>אירועי החודש</h2>
+            <span className="mono text-[12px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-soft)' }}>
+              {monthUpcoming.length} אירועים
+            </span>
+          </div>
+          {monthUpcoming.length === 0 ? (
+            <div className="py-12 text-center text-[15px]" style={{ color: 'var(--text-soft)' }}>
+              אין אירועים בחודש זה.
+            </div>
+          ) : (
+            <ul>
+              {monthUpcoming.map(e => (
+                <li key={e.id} className="py-4 border-b flex items-baseline gap-5" style={{ borderColor: 'var(--divider)' }}>
+                  <div className="w-20 text-right">
+                    <div className="serif text-[24px] leading-none" style={{ color: 'var(--ink)' }}>
+                      {String(e.date.getDate()).padStart(2, '0')}
+                    </div>
+                    <div className="mono text-[10px] uppercase tracking-[0.16em] mt-1" style={{ color: 'var(--text-soft)' }}>
+                      {HEB_DAYS[e.date.getDay()]}
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[15px]" style={{ color: 'var(--ink)' }}>{e.title}</div>
+                    <div className="mono text-[10.5px] uppercase tracking-[0.14em] mt-1" style={{ color: eventColor(e.type) }}>
+                      {EVENT_TYPE_LABEL[e.type]}
+                      {e.status && ` · ${e.status}`}
+                    </div>
+                  </div>
+                  <button onClick={() => setOpenDay(dayKey(e.date))}
+                    className="mono text-[11px] uppercase tracking-[0.14em] font-semibold hover:opacity-70"
+                    style={{ color: 'var(--accent)' }}>
+                    פתח ←
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* ── The day sheet — the ONE thing a day tap opens, in either view ── */}
+      {openDay && (
+        <DaySheet
+          iso={openDay}
+          academic={academicDayMap.get(openDay) ?? []}
+          academicCourseKeys={academicCourseKeys}
+          lectures={lectureDayMap.get(openDay) ?? []}
+          other={(eventsByDay[openDay] ?? []).filter(e => e.type !== 'lecture')}
+          trainers={trainers}
+          todos={todoMap.get(openDay) ?? []}
+          done={done}
+          onMarkTodo={markTodo}
+          onClose={() => setOpenDay(null)}
+          onEditLecture={(l) => setEditing(l)}
+          onAddLecture={() => setCreatingOn(openDay)}
+          onOpenTrainers={() => { setOpenDay(null); onNavigate('trainers'); }}
+        />
+      )}
+
+      {/* ── The app's own lecture editor, reached from a date ── */}
+      {(editing || creatingOn) && (
+        <LectureEditor
+          lecture={editing}
+          courses={courses}
+          years={years}
+          defaultCourseId={context.courseId}
+          defaultYear={context.year}
+          defaultDate={creatingOn ?? undefined}
+          typeOptions={Array.from(new Set((data.lectures || []).map((l) => l.type).filter(Boolean))) as string[]}
+          statusOptions={Array.from(new Set((data.lectures || []).map((l) => l.status).filter(Boolean))) as string[]}
+          lectures={data.lectures || []}
+          onSave={handleSave}
+          onDelete={editing ? handleDelete : undefined}
+          onClose={() => { setEditing(null); setCreatingOn(null); }}
+        />
+      )}
+
+      {saving && (
+        <div className="fixed bottom-4 right-4 mono text-[11px] uppercase tracking-[0.14em] px-3 py-2 rounded-full z-[80]"
+          style={{ background: 'var(--accent)', color: 'white' }}>
+          שומר…
+        </div>
+      )}
     </main>
+  );
+}
+
+/* ══════════════════════ one poster month ══════════════════════ */
+
+function PosterMonth({
+  month, academicDayMap, lectureMarks, modelFor, today, openDay, onOpenDay,
+}: {
+  month: AcademicMonth;
+  academicDayMap: Map<string, AcademicDayItem[]>;
+  lectureMarks: Map<string, LectureDayMark>;
+  modelFor: (iso: string) => CellModel;
+  today: string;
+  openDay: string | null;
+  onOpenDay: (iso: string) => void;
+}) {
+  /* The year is twelve of the SAME month grids — one look, one set of words
+     (Yariv 2026-10-02: the year view had kept the old colours and layout). */
+  return (
+    <div data-month={month.key}>
+      <div className="serif text-[20px] text-center mb-2.5" style={{ color: ARIEL_PAPER.ink }}>
+        {month.label}
+      </div>
+      <div className="grid grid-cols-7 gap-[2px] sm:gap-1.5">
+        {ACADEMIC_WEEKDAY_LABELS.map((d) => (
+          <div key={d} className="serif text-center text-[13px] pb-1" style={{ color: ARIEL_PAPER.muted }}>
+            {d}
+          </div>
+        ))}
+        {month.cells.map((cell) => {
+          if (!cell.inMonth) return <div key={cell.iso} aria-hidden="true" />;
+          return (
+            <DayCell key={cell.iso} iso={cell.iso} day={cell.day} model={modelFor(cell.iso)}
+              verdict={dayVerdict(academicDayMap.get(cell.iso) ?? [])}
+              lectures={lectureMarks.get(cell.iso)?.total ?? 0}
+              isToday={cell.iso === today} isOpen={cell.iso === openDay} onOpen={onOpenDay}
+              poster />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One day, as the month grid and the year view both draw it. The fill is the kind of
+ * day, the label names it, one word at the bottom says what to know or do, and a red
+ * ring means "move it". Sized for a 375px phone: nothing in it may clip.
+ */
+function DayCell({
+  iso, day, model, verdict, lectures, isToday, isOpen, onOpen, poster,
+}: {
+  iso: string; day: number; model: CellModel; verdict: string; lectures: number;
+  isToday: boolean; isOpen: boolean; onOpen: (iso: string) => void; poster?: boolean;
+}) {
+  const cs = model.course ? COURSE_STYLE[model.course] : null;
+  const fill = model.fill === 'course' && cs ? cs.tint
+    : model.fill === 'off' ? DAY_FILL.off
+    : model.fill === 'exam' ? DAY_FILL.exam
+    : ARIEL_PAPER.paper;
+  const rings = [
+    model.conflict ? 'inset 0 0 0 3px #D32F2F' : '',
+    isOpen ? '0 0 0 2px #1A1A1A' : isToday ? '0 0 0 2px var(--accent)' : '',
+  ].filter(Boolean).join(', ');
+  const [first, ...rest] = model.chips;
+  return (
+    <div
+      {...(poster ? { 'data-academic-day': iso } : { 'data-day-cell': iso })}
+      data-verdict={verdict}
+      data-lectures={lectures}
+      data-fill={model.fill}
+      data-course={model.course ?? ''}
+      data-conflict={model.conflict ? '1' : '0'}
+      data-overlap={model.overlap ? '1' : '0'}
+      data-chips={model.chips.map((c) => c.kind).join(',')}
+      role="button"
+      tabIndex={0}
+      aria-label={[longHebrewDate(iso), model.label, ...model.chips.map((c) => `${c.text}${c.detail ? ` — ${c.detail}` : ''}`)]
+        .filter(Boolean).join(' · ')}
+      onClick={() => onOpen(iso)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(iso); } }}
+      className="relative flex flex-col cursor-pointer overflow-hidden rounded-[6px] sm:rounded-lg p-[2px] sm:p-1.5 min-h-[76px] sm:min-h-[108px] min-w-0"
+      style={{
+        background: fill,
+        color: ARIEL_PAPER.ink,
+        border: `1px solid ${ARIEL_PAPER.rule}`,
+        borderRight: cs ? `3px solid ${cs.strong}` : undefined,
+        borderTop: model.semesterEdge ? `5px solid ${DAY_FILL.exam}` : undefined,
+        boxShadow: rings || undefined,
+      }}
+    >
+      <div className="flex items-start justify-between gap-0.5">
+        <span
+          className="serif leading-none shrink-0 text-[16px] sm:text-[20px]"
+          style={isToday
+            ? { background: 'var(--accent)', color: '#fff', borderRadius: 999, padding: '2px 4px' }
+            : { color: ARIEL_PAPER.ink }}
+        >
+          {day}
+        </span>
+        {model.special && (
+          <span data-special={model.special} className="text-[11px] sm:text-[14px] leading-none"
+            style={{ color: ARIEL_PAPER.muted }}
+            title={model.special === '↻' ? 'יום השלמה — מתכונת של יום אחר' : 'יום מיוחד — שינוי בשעות'}>
+            {model.special}
+          </span>
+        )}
+      </div>
+
+      {model.label && (
+        <div data-cell-label className="font-bold leading-[1.12] mt-0.5 text-[min(8.5px,2.1vw)] sm:text-[13px] tracking-[-0.3px] sm:tracking-normal">
+          {model.label}
+        </div>
+      )}
+      {model.simulation && (
+        <div data-simulation className="leading-none mt-0.5 text-[15px] sm:text-[20px]" aria-label="סימולציה" title="סימולציה">🎭</div>
+      )}
+
+      <div className="mt-auto flex flex-col gap-0.5 pt-0.5">
+        {first && <Chip chip={first} />}
+        {rest.slice(0, 2).map((c, j) => <Chip key={j} chip={c} desktopOnly />)}
+        {rest.length > 0 && (
+          <span data-more-chips={rest.length} className="sm:hidden text-center text-[9px] font-bold leading-none"
+            dir="ltr" style={{ color: ARIEL_PAPER.muted }}>
+            +{rest.length}
+          </span>
+        )}
+        {rest.length > 2 && (
+          <span className="hidden sm:block text-[10.5px] font-bold" style={{ color: ARIEL_PAPER.muted }}>
+            +{rest.length - 2} נוספים
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════ the day sheet ══════════════════════ */
+
+const VERDICT_STYLE: Record<string, { bg: string; border: string }> = {
+  blocked: { bg: 'rgba(224,102,102,0.14)', border: 'rgba(224,102,102,0.65)' },
+  caution: { bg: 'rgba(246,178,107,0.16)', border: 'rgba(246,178,107,0.75)' },
+  open: { bg: 'rgba(147,196,125,0.16)', border: 'rgba(147,196,125,0.75)' },
+};
+
+const EVENT_TYPE_LABEL: Record<CalEvent['type'], string> = {
+  lecture: 'הרצאה', interview: 'ראיון', prep: 'הכנה', slot: 'מועד פנוי',
+};
+
+function DaySheet({
+  iso, academic, academicCourseKeys, lectures, other, trainers, todos, done, onMarkTodo,
+  onClose, onEditLecture, onAddLecture, onOpenTrainers,
+}: {
+  todos: TodoItem[];
+  done: DoneMap;
+  onMarkTodo: (t: TodoItem, status: 'done' | 'not_needed' | null) => void;
+  iso: string;
+  academic: AcademicDayItem[];
+  /** Academic course keys the top-bar filter resolved to, or null for "all". */
+  academicCourseKeys: string[] | null;
+  lectures: LectureDayItem[];
+  other: CalEvent[];
+  trainers: Trainer[];
+  onClose: () => void;
+  onEditLecture: (l: Lecture) => void;
+  onAddLecture: () => void;
+  onOpenTrainers: () => void;
+}) {
+  const report = daySchedulingReport(iso, academic, lectures);
+  const verdict = dayVerdict(academic);
+  const style = VERDICT_STYLE[verdict];
+
+  /* THE THREE QUESTIONS a day tap has to answer, in the order he asks them:
+     is there teaching, is there a guest lecture, and who is the lecturer. */
+  const allSessions = academic.filter(isTeachingSession);
+  const sessions = academicCourseKeys
+    ? allSessions.filter((s) => !s.course || academicCourseKeys.includes(s.course))
+    : allSessions;
+  const hiddenSessions = allSessions.length - sessions.length;
+  const universityItems = academic.filter((it) => !isTeachingSession(it) && it.kind !== 'reminder' && it.kind !== 'makeup_todo');
+  const guestLectures = lectures.filter((l) => l.isGuest);
+  const ownLectures = lectures.filter((l) => !l.isGuest);
+  const overlaps = lectureOverlaps(lectures);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[70]" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={onClose} />
+      {/* A bottom sheet, because this is used one-handed on a phone: everything that
+          can be tapped sits in the lower half of the screen, where the thumb is. */}
+      <div
+        data-day-sheet={iso}
+        role="dialog"
+        aria-label={longHebrewDate(iso)}
+        className="fixed left-0 right-0 bottom-0 z-[75] rounded-t-3xl overflow-y-auto"
+        style={{
+          background: 'var(--bg)',
+          borderTop: '1px solid var(--divider)',
+          boxShadow: '0 -18px 60px rgba(0,0,0,0.30)',
+          maxHeight: '82vh',
+          padding: '14px 16px calc(20px + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        <div className="mx-auto rounded-full mb-3" style={{ width: 44, height: 4, background: 'var(--divider)' }} />
+
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <h2 className="serif text-[24px] leading-tight" style={{ color: 'var(--ink)' }}>
+            {longHebrewDate(iso)}
+          </h2>
+          <button
+            onClick={onClose}
+            aria-label="סגור"
+            className="rounded-full shrink-0 grid place-items-center"
+            style={{ width: 44, height: 44, border: '1px solid var(--divider)', color: 'var(--ink)', background: 'transparent', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* ── THE ANSWER. This is the reason the sheet exists: whether a lecturer can
+               be put here, said in words, before anything else on it. ── */}
+        <div
+          data-day-verdict={verdict}
+          className="rounded-2xl p-3.5 mb-5"
+          style={{ background: style.bg, border: `1px solid ${style.border}` }}
+        >
+          <div className="serif text-[18px] mb-1" style={{ color: 'var(--ink)' }}>
+            {DAY_VERDICT_LABEL[verdict]}
+          </div>
+          {report.blockers.length === 0 ? (
+            <div className="text-[13px]" style={{ color: 'var(--ink)', opacity: 0.8 }}>
+              לוח האוניברסיטה אינו מציב מגבלה על תאריך זה.
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {report.blockers.map((b, i) => (
+                <li key={i} data-blocker={b.level} className="text-[13px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.9 }}>
+                  {b.level === 'blocked' ? '⛔ ' : '⚠️ '}{b.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+          {report.conflicting.length > 0 && (
+            <div data-day-conflict className="mt-2.5 pt-2.5 text-[13px] font-semibold border-t"
+              style={{ color: 'var(--ink)', borderColor: style.border }}>
+              {report.conflicting.length === 1
+                ? 'הרצאה שכבר קבועה כאן נמצאת בתאריך שאינו מתאים.'
+                : `${report.conflicting.length} הרצאות שכבר קבועות כאן נמצאות בתאריך שאינו מתאים.`}
+            </div>
+          )}
+        </div>
+
+        {/* ── לתאם: WHAT has to be coordinated, and the two ways to close it. Closed
+               ones stay listed, greyed, so a mark made by mistake can be undone. ── */}
+        {todos.length > 0 && (
+          <section className="mb-5" data-day-todos={todos.length}>
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+              לתאם
+            </div>
+            <ul className="flex flex-col gap-2.5">
+              {todos.map((t) => {
+                const mark = done[t.key];
+                return (
+                  <li key={t.key} data-todo={t.key} data-todo-done={mark ? mark.status : ''}
+                    className="rounded-2xl p-3"
+                    style={{ border: `1px solid ${mark ? 'var(--divider)' : CHIP_STYLE.todo.bg}`, opacity: mark ? 0.7 : 1 }}>
+                    <div className="text-[14px] leading-[1.5]" style={{ color: 'var(--ink)', textDecoration: mark ? 'line-through' : undefined }}>
+                      {t.what}
+                    </div>
+                    {t.eventIso && (
+                      <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>האירוע עצמו: {longHebrewDate(t.eventIso)}</div>
+                    )}
+                    {t.lecture && (t.lecture.lecturerPhone || t.lecture.lecturerEmail) && !mark && (
+                      <div className="flex gap-2 mt-2">
+                        {t.lecture.lecturerPhone && (
+                          <a href={`tel:${t.lecture.lecturerPhone}`} className="rounded-full px-3 text-[12.5px] grid place-items-center"
+                            style={{ minHeight: 40, border: '1px solid var(--divider)', color: 'var(--ink)' }}>📞 התקשר</a>
+                        )}
+                        {t.lecture.lecturerEmail && (
+                          <a href={`mailto:${t.lecture.lecturerEmail}`} className="rounded-full px-3 text-[12.5px] grid place-items-center"
+                            style={{ minHeight: 40, border: '1px solid var(--divider)', color: 'var(--ink)' }}>✉ מייל</a>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-2.5">
+                      {mark ? (
+                        <>
+                          <span className="text-[12.5px]" style={{ color: 'var(--text-soft)' }}>
+                            {mark.status === 'done' ? '✓ תואם' : 'סומן: לא צריך יותר'}{mark.by ? ` · ${mark.by}` : ''}
+                          </span>
+                          <button data-todo-undo onClick={() => onMarkTodo(t, null)} className="rounded-full px-3 text-[12.5px]"
+                            style={{ minHeight: 40, border: '1px solid var(--divider)', background: 'transparent', color: 'var(--ink)', cursor: 'pointer' }}>
+                            בטל סימון
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button data-todo-done-btn onClick={() => onMarkTodo(t, 'done')} className="rounded-full px-4 text-[13px] font-semibold"
+                            style={{ minHeight: 44, background: CHIP_STYLE.approved.bg, color: '#fff', border: 'none', cursor: 'pointer' }}>
+                            ✓ תואם
+                          </button>
+                          <button data-todo-not-needed onClick={() => onMarkTodo(t, 'not_needed')} className="rounded-full px-4 text-[13px]"
+                            style={{ minHeight: 44, background: 'transparent', color: 'var(--ink)', border: '1px solid var(--divider)', cursor: 'pointer' }}>
+                            לא צריך יותר
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {/* ── 1. IS THERE TEACHING, AND IN WHICH COURSE.
+               "הקשה עליו צריכה להראות גם אם יש לימודים וקורס מסויים" — so the courses
+               that actually MEET that day are named, with the session number and the
+               hour, before anything about a guest. A day with no class of his says so
+               in words: silence here would read as missing data. ── */}
+        <section className="mb-5" data-day-teaching={sessions.length}>
+          <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+            לימודים ביום זה {sessions.length > 0 && `(${sessions.length})`}
+          </div>
+          {sessions.length === 0 ? (
+            <div className="text-[13.5px]" style={{ color: 'var(--text-soft)' }}>
+              {report.blocked ? 'אין לימודים ביום זה.' : 'אין מפגש קורס ביום זה.'}
+              {hiddenSessions > 0 && ` (${hiddenSessions} מפגשים בקורסים אחרים הוסתרו על ידי מסנן הקורס.)`}
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {sessions.map((s, i) => (
+                <li key={i} data-day-session={s.course || s.category}
+                  className="rounded-2xl p-3"
+                  style={{ border: '1px solid var(--divider)', borderRight: `4px solid ${s.hex}`, background: 'var(--surface-1, transparent)' }}>
+                  <div className="flex items-baseline justify-between gap-2 flex-wrap">
+                    <span className="text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>
+                      {s.courseTitle || s.categoryLabel}
+                    </span>
+                    {s.time && <span className="mono text-[12px]" dir="ltr" style={{ color: 'var(--ink)' }}>{s.time}</span>}
+                  </div>
+                  <div className="text-[12.5px] mt-1 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
+                    {[s.session ? `מפגש ${s.session}` : '', s.categoryLabel, s.code].filter(Boolean).join(' · ')}
+                  </div>
+                  <div className="text-[12.5px] mt-1 leading-[1.6]" style={{ color: 'var(--ink)', opacity: 0.85 }}>{s.title}</div>
+                  {s.note && <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>{s.note}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ── 2. IS THERE A GUEST LECTURE — and 3. WHO IS GIVING IT.
+               "ואם אפשר שתהיה מחוברת לפרטי המרצה שקיימים כבר": the lecturer's name is
+               not dead text. It resolves to the app's own trainer record when one
+               exists, and to the lecture's own contact fields when it does not, with
+               tap-to-call and tap-to-mail because he is holding a phone. ── */}
+        {overlaps.length > 0 && (
+          <div data-day-overlap={overlaps.length} role="alert"
+            className="mb-4 rounded-[10px] px-3.5 py-2.5 text-[13.5px] leading-[1.6]"
+            style={{ background: '#FDECEA', color: '#8A1C1C', border: '1px solid #F5C2C0' }}>
+            <b>⚠ {overlaps.length === 1 ? 'שתי הרצאות באותן שעות' : `${overlaps.length} חפיפות בשעות`} — יש לבחור אחת.</b>
+            {overlaps.map(([a, b], k) => (
+              <div key={k}>{a.time} {a.title} · {b.time} {b.title}</div>
+            ))}
+            <div className="text-[12px] opacity-80">כשאחת מהן תסומן "בוטל" האזהרה תיעלם.</div>
+          </div>
+        )}
+
+        <section className="mb-5" data-day-guests={guestLectures.length}>
+          <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+            הרצאות אורח ביום זה {guestLectures.length > 0 && `(${guestLectures.length})`}
+          </div>
+          {guestLectures.length === 0 ? (
+            <div className="text-[13.5px]" style={{ color: 'var(--text-soft)' }}>אין הרצאת אורח ביום זה.</div>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {guestLectures.map((l) => (
+                <li key={l.id}>
+                  <LectureRow l={l} onEdit={onEditLecture} guest />
+                  <LecturerCard
+                    contact={lecturerContact(l.lecture, trainers)}
+                    onOpenTrainers={onOpenTrainers}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ── His own entries on the day — kept apart from the guests, never dropped. ── */}
+        {ownLectures.length > 0 && (
+          <section className="mb-5" data-day-own={ownLectures.length}>
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+              מפגשים נוספים שלך ({ownLectures.length})
+            </div>
+            <ul className="flex flex-col gap-2">
+              {ownLectures.map((l) => <li key={l.id}><LectureRow l={l} onEdit={onEditLecture} /></li>)}
+            </ul>
+          </section>
+        )}
+
+        {/* ── Everything ELSE the calendar knows about the day: the interviews, the
+               free interview slots and the student preparations it has always drawn. ── */}
+        {other.length > 0 && (
+          <section className="mb-5">
+            <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+              ראיונות, מועדים והכנות ({other.length})
+            </div>
+            <ul className="flex flex-col gap-2">
+              {other.map((e) => (
+                <li key={e.id} className="flex items-stretch gap-2">
+                  <button
+                    data-day-event={e.type}
+                    onClick={e.onClick}
+                    className="flex-1 text-right rounded-2xl p-3"
+                    style={{
+                      minHeight: 44,
+                      background: 'var(--surface-1, transparent)',
+                      border: '1px solid var(--divider)',
+                      borderRight: `4px solid ${eventColor(e.type)}`,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div className="text-[14.5px] leading-[1.4]" style={{ color: 'var(--ink)' }}>{e.title}</div>
+                    <div className="mono text-[10.5px] uppercase tracking-[0.12em] mt-1" style={{ color: eventColor(e.type) }}>
+                      {EVENT_TYPE_LABEL[e.type]}{e.status && ` · ${e.status}`}
+                    </div>
+                  </button>
+                  {e.calendarUrl && (
+                    <button
+                      type="button"
+                      title="הוסף ליומן Outlook"
+                      aria-label="הוסף ליומן Outlook"
+                      data-outlook={e.id}
+                      onClick={() => openCalendarLink(e.calendarUrl!)}
+                      className="rounded-2xl border grid place-items-center shrink-0"
+                      style={{ width: 44, minHeight: 44, borderColor: 'var(--divider)', color: 'var(--ink)', background: 'transparent', cursor: 'pointer', fontSize: 15 }}
+                    >📅</button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* ── What the university says about this day, beyond the teaching itself. ── */}
+        <section className="mb-5">
+          <div className="mono text-[11px] uppercase tracking-[0.14em] mb-2.5" style={{ color: 'var(--text-soft)' }}>
+            לוח אקדמי
+          </div>
+          {universityItems.length === 0 ? (
+            <div className="text-[13.5px]" style={{ color: 'var(--text-soft)' }}>אין רישום נוסף בלוח האקדמי ליום זה.</div>
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {universityItems.map((it, i) => (
+                <li key={i} data-day-academic={it.category} className="flex items-start gap-2.5">
+                  <span className="inline-block rounded-[3px] shrink-0 mt-1"
+                    style={{ width: 14, height: 14, background: it.hex, border: `1px solid ${ARIEL_PAPER.edge}` }} />
+                  <div className="min-w-0">
+                    <div className="text-[14px] leading-[1.45]" style={{ color: 'var(--ink)' }}>{it.title}</div>
+                    <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>
+                      {[it.categoryLabel, it.time, it.session ? `מפגש ${it.session}` : '', it.courseTitle]
+                        .filter(Boolean).join(' · ')}
+                    </div>
+                    {it.note && <div className="text-[12px] mt-1" style={{ color: 'var(--text-soft)', opacity: 0.85 }}>{it.note}</div>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ── Book the date. The same editor the lectures screen opens, already on this
+               day. On a blocked day the button still works — Yariv is the one who
+               decides, and a make-up arrangement is a real thing — but it says what it
+               is doing. ── */}
+        <button
+          data-add-lecture={iso}
+          onClick={onAddLecture}
+          className="w-full rounded-full font-semibold text-[13.5px]"
+          style={{
+            minHeight: 48,
+            background: report.blocked ? 'transparent' : 'var(--accent)',
+            color: report.blocked ? 'var(--accent)' : 'white',
+            border: '1px solid var(--accent)',
+            cursor: 'pointer',
+          }}
+        >
+          {report.blocked ? '+ קבע הרצאה בכל זאת בתאריך זה' : '+ קבע הרצאה בתאריך זה'}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** One lecture on the day sheet. Opens the app's own editor — the single write path. */
+function LectureRow({ l, onEdit, guest }: { l: LectureDayItem; onEdit: (x: Lecture) => void; guest?: boolean }) {
+  return (
+    <button
+      data-day-lecture={l.id}
+      data-lecture-state={l.state}
+      data-lecture-kind={guest ? 'guest' : 'own'}
+      onClick={() => onEdit(l.lecture)}
+      className="w-full text-right rounded-2xl p-3"
+      style={{
+        minHeight: 44,
+        background: 'var(--surface-1, transparent)',
+        border: '1px solid var(--divider)',
+        borderRight: `4px solid ${lectureColor(l.state)}`,
+        cursor: 'pointer',
+        opacity: l.state === 'cancelled' ? 0.55 : 1,
+      }}
+    >
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <span className="text-[15px] font-semibold"
+          style={{ color: 'var(--ink)', textDecoration: l.state === 'cancelled' ? 'line-through' : 'none' }}>
+          {l.title}
+        </span>
+        {l.time && <span className="mono text-[12px]" dir="ltr" style={{ color: 'var(--ink)' }}>{l.time}</span>}
+      </div>
+      <div className="text-[12.5px] mt-1 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
+        {[guest && l.lecturer ? `מרצה אורח: ${l.lecturer}` : l.lecturer, l.courseName, l.type,
+          l.semester ? `סמ׳ ${l.semester}` : '', l.location].filter(Boolean).join(' · ')}
+      </div>
+      <span
+        className="inline-block mono text-[10.5px] font-bold uppercase tracking-[0.1em] rounded-full px-2.5 py-1 mt-2"
+        style={{ background: lectureColor(l.state), color: 'white' }}
+      >
+        {l.statusLabel}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The lecturer's existing details, attached to the lecture that names them.
+ *
+ * Rendered only when there is something real to show. A card that says "no details"
+ * implies a record exists and is empty; nothing at all is the truthful state, and the
+ * lecture row above still carries the name.
+ */
+function LecturerCard({ contact, onOpenTrainers }: { contact: LecturerContact | null; onOpenTrainers: () => void }) {
+  if (!contact) return null;
+  return (
+    <div
+      data-lecturer-card={contact.source}
+      className="rounded-2xl mt-1.5 mr-3 p-3"
+      style={{ border: '1px dashed var(--divider)', background: 'var(--accent-soft, transparent)' }}
+    >
+      <div className="flex items-baseline justify-between gap-2 flex-wrap mb-2">
+        <span className="text-[14px] font-semibold" style={{ color: 'var(--ink)' }}>{contact.name}</span>
+        <span className="mono text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--text-soft)' }}>
+          {contact.source === 'trainer' ? 'מתוך כרטיס המנחים/מרצים' : 'מתוך פרטי ההרצאה'}
+        </span>
+      </div>
+      {(contact.role || contact.organization) && (
+        <div className="text-[12.5px] mb-2" style={{ color: 'var(--text-soft)' }}>
+          {[contact.role, contact.organization].filter(Boolean).join(' · ')}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {contact.phone && (
+          <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} data-lecturer-phone
+            className="mono text-[12px] rounded-full px-3 inline-flex items-center gap-1.5"
+            dir="ltr"
+            style={{ minHeight: 44, border: '1px solid var(--divider)', color: 'var(--ink)', textDecoration: 'none' }}>
+            📞 {contact.phone}
+          </a>
+        )}
+        {contact.email && (
+          <a href={`mailto:${contact.email}`} data-lecturer-email
+            className="mono text-[12px] rounded-full px-3 inline-flex items-center gap-1.5"
+            dir="ltr"
+            style={{ minHeight: 44, border: '1px solid var(--divider)', color: 'var(--ink)', textDecoration: 'none' }}>
+            ✉️ {contact.email}
+          </a>
+        )}
+        {contact.source === 'trainer' && (
+          <button type="button" onClick={onOpenTrainers} data-lecturer-open-record
+            className="mono text-[12px] font-semibold rounded-full px-3"
+            style={{ minHeight: 44, border: '1px solid var(--accent)', color: 'var(--accent)', background: 'transparent', cursor: 'pointer' }}>
+            פתח כרטיס ←
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -467,20 +1474,60 @@ function eventColor(type: string): string {
   }
 }
 
-function LegendDot({ color, label }: { color: string; label: string }) {
+/** One status word on a cell. The phone shows the first only; the desktop adds what it is about. */
+function Chip({ chip, desktopOnly }: { chip: CellChip; desktopOnly?: boolean }) {
+  const st = CHIP_STYLE[chip.kind];
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-      {label}
+    <span
+      data-chip={chip.kind}
+      title={chip.detail ?? undefined}
+      className={`${desktopOnly ? 'hidden sm:block' : 'block'} rounded text-center sm:text-right font-bold leading-[1.35] truncate px-0 sm:px-1.5 text-[9.5px] sm:text-[11px] tracking-[-0.2px] sm:tracking-normal`}
+      style={{ background: st.bg, color: st.fg }}
+    >
+      {chip.text}
+      {chip.detail && <span className="hidden sm:inline font-semibold"> · {chip.detail}</span>}
     </span>
+  );
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div>
+      <div className="mono text-[11px] uppercase tracking-[0.16em] font-medium mb-1" style={{ color: 'var(--text-soft)' }}>
+        {label}
+      </div>
+      <div className="serif text-[30px] leading-none tracking-tight" style={{ color: color ?? 'var(--ink)' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ViewBtn({ children, onClick, active, testId }: { children: any; onClick: () => void; active: boolean; testId: string }) {
+  return (
+    <button
+      onClick={onClick}
+      data-view-btn={testId}
+      aria-pressed={active}
+      className="mono text-[11.5px] uppercase tracking-[0.14em] font-semibold px-4 rounded-full transition-colors"
+      style={{
+        minHeight: 44,
+        color: active ? 'var(--bg)' : 'var(--ink)',
+        background: active ? 'var(--accent)' : 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+      }}>
+      {children}
+    </button>
   );
 }
 
 function NavBtn({ children, onClick, primary }: { children: any; onClick: () => void; primary?: boolean }) {
   return (
     <button onClick={onClick}
-      className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold px-4 py-1.5 rounded-full border transition-colors"
+      className="mono text-[11.5px] uppercase tracking-[0.15em] font-semibold px-4 rounded-full border transition-colors"
       style={{
+        minHeight: 44,
         color: primary ? 'var(--bg)' : 'var(--accent)',
         background: primary ? 'var(--accent)' : 'transparent',
         borderColor: 'var(--accent)',

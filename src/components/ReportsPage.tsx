@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react';
+import { saveFile, isStandaloneApp } from '../lib/saveFile';
+import { tablePdf } from '../lib/pdfTable';
+import { openPrintable, printableTableHtml } from '../lib/printDoc';
 import { btnTab, btnSecondary } from '../lib/design';
 import type { PageProps } from './pageShared';
 import { sameContext, normalizeYear } from './pageShared';
@@ -27,9 +30,11 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
   const [active, setActive] = useState<ReportKey>('yoy');
 
   const courses = data.courses || [];
-  const students   = (data.students   || []).filter((s: any) => sameContext(s, context, courses));
-  const candidates = (data.candidates || []).filter((c: any) => sameContext(c, context, courses));
-  const lectures   = (data.lectures   || []).filter((l: any) => sameContext(l, context, courses));
+  // Annotated: `data` is `any`, so filtering it produced `any`, and everything derived
+  // from it degraded to `unknown` — which is why the year pivot could not be indexed.
+  const students: any[]   = (data.students   || []).filter((s: any) => sameContext(s, context, courses));
+  const candidates: any[] = (data.candidates || []).filter((c: any) => sameContext(c, context, courses));
+  const lectures: any[]   = (data.lectures   || []).filter((l: any) => sameContext(l, context, courses));
 
   const allEmployers: Employer[] = data.employers || [];
   const allStudents: Student[]   = data.students  || [];
@@ -129,7 +134,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
 
         const lastYear = orgYears[orgYears.length - 1] ?? '';
 
-        const sorted = Object.entries(pivot)
+        const sorted = (Object.entries(pivot) as Array<[string, Record<string, number>]>)
           .map(([org, byYear]) => {
             const total  = Object.values(byYear).reduce((s, v) => s + v, 0);
             const inLast = byYear[lastYear] || 0;
@@ -406,16 +411,36 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
     };
   }, [report]);
 
+  /** "הכפתור לא מגיב" (2026-10-06): on his phone the app is installed, and nothing there
+   *  can print a web page — not this one, not a page it opens. A FILE it can: the report is
+   *  drawn into a real PDF (lib/pdfTable.ts) and handed to the share sheet, which has Print
+   *  and Save to Files. On a computer, "הדפס" still opens the printable page. */
+  function reportPdf(): { blob: Blob; name: string } | null {
+    if (!compactReport) return null;
+    const title = REPORTS.find(r => r.key === active)?.title || 'דוח';
+    const sub = `${compactReport.rows.length} שורות · הופק ${new Date().toLocaleDateString('he-IL')}`;
+    return { blob: tablePdf(title, sub, compactReport.headers, compactReport.rows),
+             name: `${title}-${new Date().toISOString().slice(0, 10)}.pdf` };
+  }
+  function printReport() {
+    if (!compactReport) return;
+    if (isStandaloneApp()) { const p = reportPdf(); if (p) saveFile(p.blob, p.name); return; }
+    const title = REPORTS.find(r => r.key === active)?.title || 'דוח';
+    openPrintable(title, printableTableHtml(title, compactReport.headers, compactReport.rows,
+      `${compactReport.rows.length} שורות · הופק ${new Date().toLocaleDateString('he-IL')}`));
+  }
+  function downloadPdf() {
+    const p = reportPdf();
+    if (p) saveFile(p.blob, p.name);
+  }
+
   function downloadCsv() {
     if (!compactReport) return;
     const { headers, rows } = compactReport;
     const csv = [headers, ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`))]
       .map(r => r.join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${active}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+    saveFile(blob, `${active}-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   return (
@@ -446,7 +471,8 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
         {active !== 'timeline' && active !== 'placement_dispatches' && (
           <div className="flex gap-3 mt-5">
             <button onClick={downloadCsv} style={btnSecondary()}>📊 הורד CSV</button>
-            <button onClick={() => window.print()} style={btnSecondary()}>🖨 הדפס / PDF</button>
+            <button data-report-print onClick={printReport} style={btnSecondary()}>🖨 הדפס</button>
+            <button data-report-pdf onClick={downloadPdf} style={btnSecondary()}>⬇ הורד PDF</button>
             {compactReport && (
               <span className="mr-auto mono text-[12px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-soft)' }}>
                 {compactReport.rows.length} שורות · {compactReport.headers.length} עמודות
@@ -475,7 +501,7 @@ export default function ReportsPage({ data, context }: PageProps & { data: any }
                     <th key={i}
                       className="mono text-[11.5px] uppercase tracking-[0.12em] font-semibold text-right px-4 py-3 whitespace-nowrap"
                       style={{ color: 'var(--ink)', borderBottom: '1px solid var(--divider)' }}>
-                      {h}
+                      {String(h)}
                     </th>
                   ))}
                 </tr>

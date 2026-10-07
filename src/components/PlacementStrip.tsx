@@ -16,9 +16,10 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { dialPhone } from '../lib/dial';
 import type { PlacementStatus, PlacementChip, PlacementAction } from '../lib/placementStatus';
-import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets } from '../lib/placementStatus';
-import { openWhatsApp } from '../lib/placement';
+import { TURN_LABEL, TURN_COLOR, actionsForChip, ACTION_BY_ID, resolveActionTargets, remindableChips } from '../lib/placementStatus';
+import { openWhatsApp, resolveEmployerFor } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { PhoneIcon, WhatsAppIcon, MailIcon } from './icons';
 
@@ -93,7 +94,7 @@ function EmployerDetails({ emp, orgName, onClose }: { emp: any | null; orgName: 
           {(phone || email) && (
             <div style={{ display: 'flex', gap: 8, marginTop: 11 }}>
               {phone && <button type="button" title={`התקשר ל${emp.contactPerson || emp.name}`} style={btn}
-                onClick={() => { window.location.href = `tel:${phone.replace(/[^\d+]/g, '')}`; }}><PhoneIcon size={15} /></button>}
+                onClick={() => dialPhone(phone)}><PhoneIcon size={15} /></button>}
               {phone && <button type="button" title="WhatsApp — הודעה חופשית" style={btn}
                 onClick={() => openWhatsApp(phone, { name: emp.name })}><WhatsAppIcon size={15} /></button>}
               {email && <button type="button" title="מייל — הודעה חופשית" style={btn}
@@ -317,6 +318,13 @@ export default function PlacementStrip({ status, employers, onAction }: {
     const base = prev.length ? prev : (chosen ? [chosen.orgName] : []);
     return base.includes(name) ? base.filter(n => n !== name) : [...base, name];
   });
+  // A reminder acts on an organization that is ALREADY waiting for an answer, which is
+  // never in `targets` (those are the places still free to send to). Without this the
+  // remind dialog had no organization at all and blamed the employer for it.
+  const remindTargets = status.action?.id === 'remind' ? remindableChips(status.chips) : [];
+  const [remindPick, setRemindPick] = useState<string | null>(null);
+  const remindChosen = remindTargets.filter(c => c.orgName === remindPick).slice(0, 1);
+  const remindList = remindChosen.length ? remindChosen : remindTargets.slice(0, 1);
   // An org the student brought can be approved straight into a placement OR sent a CV;
   // an org from the shared list only ever gets a CV, and reaches placement through a
   // passed interview (Yariv 2026-08-09). Selecting a list org must therefore never leave
@@ -332,12 +340,13 @@ export default function PlacementStrip({ status, employers, onAction }: {
   const tone = TURN_COLOR[status.turn];
   const tinted = status.turn === 'ours';
 
-  const norm = (s: any) => String(s ?? '').trim().toLowerCase();
-  const findEmp = (name: string) =>
-    (employers || []).find((e: any) => e?.name === name)
-    || (employers || []).find((e: any) => norm(e?.name) === norm(name))
-    || (employers || []).find((e: any) => { const n = norm(e?.name); return !!n && (n.startsWith(norm(name)) || norm(name).startsWith(n)); })
-    || null;
+  // Through the chip's own link first, then by name — the same resolution the capacity
+  // verdict and the planner make, so the contact the dialog shows is the one the send
+  // will open against.
+  const findEmp = (name: string) => {
+    const chip = status.chips.find(c => c.orgName === name);
+    return resolveEmployerFor({ employerId: chip?.employerId ?? null, orgName: name }, employers || []) || null;
+  };
 
   return (
     <div
@@ -540,9 +549,12 @@ export default function PlacementStrip({ status, employers, onAction }: {
           // The dialog names — and can change — what the action will act on, so it needs
           // the same selection state the row holds. A chip-stamped action (the ✕ and ↻)
           // carries its own targetOrg and the picker is not offered for it.
-          targets={confirm.targetOrg ? [] : targets}
-          chosenList={confirm.targetOrg ? [] : chosenList}
-          onToggle={toggle}
+          // A chip-stamped action (the ✕ and ↻) carries its own targetOrg and gets no
+          // picker. A reminder picks from the organizations already awaiting a reply;
+          // everything else picks from the places still free to send to.
+          targets={confirm.targetOrg ? [] : confirm.id === 'remind' ? remindTargets : targets}
+          chosenList={confirm.targetOrg ? [] : confirm.id === 'remind' ? remindList : chosenList}
+          onToggle={confirm.id === 'remind' ? (name: string) => setRemindPick(name) : toggle}
           findEmp={findEmp}
           onCancel={() => setConfirm(null)}
           onConfirm={(channel) => {
@@ -550,7 +562,7 @@ export default function PlacementStrip({ status, employers, onAction }: {
             // An action that already names its target (the ✕ and ↻ stamp the clicked
             // chip onto it) keeps it; the ticked selection fills in only when it does
             // not. Overwriting unconditionally is what made those two buttons no-ops.
-            onAction({ ...a, ...resolveActionTargets(a as any, chosenList), channel } as PlacementAction);
+            onAction({ ...a, ...resolveActionTargets(a as any, a.id === 'remind' ? remindList : chosenList), channel } as PlacementAction);
           }}
         />
       )}

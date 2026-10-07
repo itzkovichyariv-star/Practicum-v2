@@ -18,7 +18,7 @@ import ExcelImport from './ExcelImport';
 //   - Resend HTML (Edge Function) — auto-send when course.autoSendAcceptance=true
 import { openMailto } from '../lib/openMailto';
 import { sendAcceptanceEmail } from '../lib/emailApi';
-import { resolveCvUrl, openCv } from '../lib/cvUrl';
+import { resolveCvUrl, warnIfCvUnreadable } from '../lib/cvUrl';
 import CandidateStrip from './CandidateStrip';
 import type { CandidateAction } from '../lib/candidateStatus';
 
@@ -112,7 +112,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
   const EMAIL_TEMPLATES = {
     acceptance: {
       subject: 'ברכות — התקבלת לתכנית הפרקטיקום',
-      body: `שלום {{שם}},
+      body: `ברכות, {{שם_פרטי}}!
 
 ברכות חמות! אנו שמחים לבשר כי עברת בהצלחה את ראיון הקבלה לתכנית הפרקטיקום במשאבי אנוש, אוניברסיטת אריאל.
 
@@ -177,6 +177,10 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     setEmailConfirm({ type, recipients, subject: EMAIL_TEMPLATES[type].subject, body });
   }
 
+  // Yariv is CC'd on every acceptance/rejection draft — the same address the
+  // notify-acceptance / notify-rejection Edge Functions CC on the automatic path.
+  const supervisorCc = String((data as any).supervisorEmail || 'itzkovichyariv@gmail.com').trim();
+
   // Build a personalized mailto: for ONE recipient (TO, not BCC) — name and
   // their own /cv-update + /organizations links prefilled.
   function buildDraftUrl(r: { name: string; email: string }, subject: string, body: string): string {
@@ -185,11 +189,15 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
     // organizations page identifies the student from ?email= and shows ONLY their
     // own course's approved orgs. A bare /organizations link shows them nothing.
     const orgsLink = `${window.location.origin}/organizations?email=${encodeURIComponent(r.email)}`;
+    const firstName = (r.name || '').trim().split(/\s+/)[0] || '';
     const personalBody = body
+      .replace(/\{\{שם_פרטי\}\}/g, firstName)
       .replace(/\{\{שם\}\}/g, r.name || '')
       .replace(/\{\{קישור_קוח\}\}/g, cvLink)
       .replace(/\{\{קישור_ארגונים\}\}/g, orgsLink);
-    return `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(personalBody)}`;
+    const cc = supervisorCc && supervisorCc.toLowerCase() !== (r.email || '').trim().toLowerCase()
+      ? `&cc=${encodeURIComponent(supervisorCc)}` : '';
+    return `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subject)}${cc}&body=${encodeURIComponent(personalBody)}`;
   }
 
   function sendConfirmedEmail() {
@@ -1181,7 +1189,7 @@ export default function CandidatesPage({ data, context, userName, onRefresh }: P
               />
             </label>
             <div className="mono text-[10.5px] mb-3" style={{ color: 'var(--text-soft)' }}>
-              {'ⓘ ניתן לערוך נושא ותוכן. {{שם}} ו{{קישור_קוח}} מוחלפים פר נמען בשמו ובקישור האישי שלו.'}
+              {'ⓘ ניתן לערוך נושא ותוכן. {{שם_פרטי}}, {{שם}} ו{{קישור_קוח}} מוחלפים פר נמען בשמו ובקישור האישי שלו. עותק (CC) נשלח למנחה התכנית.'}
             </div>
             {emailConfirm.type === 'acceptance' && emailConfirm.body.includes('⚠️ תאריך טרם נקבע') && (
               <div className="mono text-[11px] mb-4 px-3 py-2 rounded-lg" style={{ background: 'rgba(200,100,0,0.08)', border: '1px solid rgba(200,100,0,0.25)', color: '#b85c00' }}>
@@ -1555,13 +1563,14 @@ function FileChip({ label, url, fileRef, onOpen, openTitle }: {
       </span>
     );
   }
-  // The href stays real — copy-link, middle-click and "open in new tab" all still work,
-  // and it is what the chip degrades to if the script never runs. The CLICK goes through
-  // openCv, which checks the object resolves and, when it does not, replaces what used
-  // to be a blank tab with what actually went wrong.
+  // The href is real AND it is what opens the file: the browser's own navigation is the
+  // one hand-off no platform drops, and cancelling it to run a scripted open is what
+  // left the installed app opening nothing at all (Yariv 2026-09-15). The click only
+  // stops the row underneath from opening, and starts the probe that says what is wrong
+  // when the storage refuses the object.
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
-      onClick={e => { e.stopPropagation(); if (fileRef) { e.preventDefault(); void openCv(fileRef); } }}
+      onClick={e => { e.stopPropagation(); if (fileRef) void warnIfCvUnreadable(fileRef); }}
       className={`${base} hover:opacity-75`} title={`פתח ${label}`}
       style={{ color: 'var(--accent)', background: 'rgba(122,30,43,0.08)' }}>
       {label} ✓

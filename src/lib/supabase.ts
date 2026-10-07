@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { EmployerContact } from './employerContacts';
 
 const SUPABASE_URL = 'https://vpqgmcmavnszcnakhiat.supabase.co';
 const SUPABASE_ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
@@ -102,6 +103,14 @@ export type PlacementSettings = {
   defaultPreferenceCount: number;
   defaultAgingThresholdDays: number;
   whatsappTemplate: string;
+  /** The reminder wording. These have had defaults and a migration since the reminder
+   *  shipped, and were simply never declared here — so getDefaultPlacementSettings
+   *  returned three properties its own return type forbade, and nothing noticed because
+   *  the project had no tsconfig. A settings object built to the DECLARED type would
+   *  have rendered an empty reminder, silently. */
+  reminderWhatsappTemplate?: string;
+  reminderEmailSubjectTemplate?: string;
+  reminderEmailBodyTemplate?: string;
   emailSubjectTemplate: string;
   emailBodyTemplate: string;
   whatsappWithdrawalTemplate: string;
@@ -173,8 +182,20 @@ export type Student = {
   preferences?: StudentPreference[];
   legacyPreferences?: string[];
 };
+export type { EmployerContact } from './employerContacts';
+
 export type Employer = {
-  id: string; name: string; contactPerson?: string; contactPhone?: string; contactEmail?: string;
+  id: string; name: string;
+  /** The ACTIVE contact, mirrored from `contacts[activeContactId]` — see
+   *  lib/employerContacts.ts. Everything that writes to or about an employer reads
+   *  these three, which is why switching the active person routes the whole app to
+   *  them without any caller changing. */
+  contactPerson?: string; contactPhone?: string; contactEmail?: string;
+  /** Everyone at this employer we can reach. Absent on records saved before the list
+   *  existed, in which case the three fields above are the one contact. */
+  contacts?: EmployerContact[];
+  /** Which of them is active. Absent means the first. */
+  activeContactId?: string | null;
   /** New: master record linked to multiple courses. Replaces courseId+year. */
   courseIds?: string[];
   /** @deprecated use courseIds */
@@ -308,6 +329,9 @@ export type PracticumData = {
   dispatches?: Dispatch[];
   employerApprovalRequests?: EmployerApprovalRequest[];
   placementSettings?: PlacementSettings;
+  // The calendar's לתאם items he has closed: key (see lib/calendarCell.ts) → who/when,
+  // and whether it was coordinated or simply no longer needed.
+  calendarDone?: Record<string, { status: 'done' | 'not_needed'; by: string; at: string }>;
 };
 
 export type CloudSnapshot = {

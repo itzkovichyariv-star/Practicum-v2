@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { dialPhone } from '../lib/dial';
 import type { Trainer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
@@ -51,8 +52,7 @@ export default function TrainerEditor({
   }
 
   function openCall() {
-    if (!form.phone) { alert('לא הוזן טלפון'); return; }
-    window.location.href = `tel:${form.phone.replace(/[^\d+]/g, '')}`;
+    dialPhone(form.phone, form.name);
   }
 
   function openWhatsApp() {

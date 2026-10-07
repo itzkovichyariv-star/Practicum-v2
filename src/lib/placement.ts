@@ -90,7 +90,33 @@ const DEFAULT_REMINDER_WHATSAPP = `שלום {contactName},
 
 const DEFAULT_REMINDER_EMAIL_SUBJECT = `תזכורת — מועמדות {studentName} ל{positionTitle}`;
 
-const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactName},
+/**
+ * The wording Yariv dictated on 2026-09-15, replacing the one above it.
+ *
+ * Four deliberate changes, all his:
+ *   • the greeting uses the FIRST NAME only and asks after them — "שלום אורטל, מה
+ *     שלומך?" rather than "שלום אורטל חוברה," 
+ *   • "רק מזכיר בעדינות —" is gone; the mail opens on what was actually done
+ *   • "לפני {daysWaiting} ימים" becomes "לפני מספר שבועות" — no day count is quoted
+ *   • the ask now comes BEFORE the one-click link, and the sign-off is "המון תודה"
+ *
+ * Dropping {daysWaiting} here is the reason RENDER-days-substituted moved to the
+ * WhatsApp reminder in the gate: the rule exists because v1.39 shipped the literal
+ * "לפני {daysWaiting} ימים" to real employers, and that protection has to keep running
+ * somewhere a day count is still quoted.
+ */
+const DEFAULT_REMINDER_EMAIL_BODY = `שלום {contactFirstName}, מה שלומך?
+שלחנו אליכם את קורות החיים של {studentName} לפני מספר שבועות, במסגרת {courseName}.
+קישור לקו"ח: {cvLink}
+נשמח לדעת אם המועמדות רלוונטית עבורכם. גם תשובה שלילית עוזרת לנו להתקדם עם הסטודנט/ית.
+לתשובה בלחיצה אחת: {responseLink}
+{contactBack}
+המון תודה,
+{adminName}`;
+
+/** The wording this replaced. Kept so the migration can recognise a template nobody has
+ *  edited and swap it, while leaving a hand-edited one alone. */
+const SUPERSEDED_REMINDER_EMAIL_BODY = `שלום {contactName},
 רק מזכיר בעדינות — שלחנו אליכם את קורות החיים של {studentName} לפני {daysWaiting} ימים, במסגרת {courseName}.
 קישור לקו"ח: {cvLink}
 לתשובה בלחיצה אחת: {responseLink}
@@ -334,9 +360,19 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       const tpl = ps[key];
       if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{responseLink}')) continue;
       const lines = tpl.split('\n');
-      const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
+      const at = lines.findIndex((l: string) => /^\s*(המון\s+)?תודה/.test(l));
       lines.splice(at === -1 ? lines.length : at, 0, line);
       ps[key] = lines.join('\n');
+      changed = true;
+    }
+
+    // The reminder wording Yariv replaced on 2026-09-15. A template is only swapped when
+    // it is EXACTLY the one that shipped — anything hand-edited is somebody's own words
+    // and is left alone, the same contract LINK-keeps-custom-wording already holds the
+    // migration to. Without this the new wording would reach only a practicum whose
+    // settings had never been saved, and his own, saved long ago, would keep the old one.
+    if (ps.reminderEmailBodyTemplate === SUPERSEDED_REMINDER_EMAIL_BODY) {
+      ps.reminderEmailBodyTemplate = DEFAULT_REMINDER_EMAIL_BODY;
       changed = true;
     }
 
@@ -348,7 +384,7 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       const tpl = ps[key];
       if (typeof tpl !== 'string' || !tpl.trim() || tpl.includes('{contactBack}')) continue;
       const lines = tpl.split('\n');
-      const at = lines.findIndex((l: string) => /^\s*תודה/.test(l));
+      const at = lines.findIndex((l: string) => /^\s*(המון\s+)?תודה/.test(l));
       lines.splice(at === -1 ? lines.length : at, 0, line);
       ps[key] = lines.join('\n');
       changed = true;
@@ -540,6 +576,16 @@ export function openWhatsApp(rawPhone: string, opts: { message?: string; name?: 
   return true;
 }
 
+/**
+ * The first real address in a contact field. Employers are typed in by hand and the
+ * field really does hold "a@x.com/ b@y.com" or stray "mailto:" text (StudentEditor has
+ * defended against this since 2026-07). A mailto: built from the raw field opens with a
+ * malformed To that the coordinator then confirms as sent.
+ */
+export function firstEmailOf(s?: string | null): string {
+  return String(s || '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)?.[0] || '';
+}
+
 export function buildWhatsAppUrl(rawPhone: string, message: string): string {
   return `https://wa.me/${normalizeIsraeliPhone(rawPhone)}?text=${encodeURIComponent(message)}`;
 }
@@ -552,7 +598,7 @@ export function buildWhatsAppUrl(rawPhone: string, message: string): string {
 // everywhere — until the coordinator resolves it (accept → placed, reject →
 // released). Guards: the student must exist and have a course, must not already be
 // placed, and may hold only ONE org at a time. Pure: returns a new data blob.
-export function studentCurrentPlacement(data: any, email: string): { orgName: string; status: VacancySlotStatus | 'placed' } | null {
+export function studentCurrentPlacement(data: any, email: string): { orgName: string; status: VacancySlot['status'] | 'placed' } | null {
   const e = String(email || '').trim().toLowerCase();
   const student = (data?.students || []).find((s: any) => String(s.email || '').trim().toLowerCase() === e);
   if (!student) return null;
@@ -654,8 +700,45 @@ export function studentSetRequests(
   return { ok: true, data: { ...data, students: nextStudents }, employerName: emp.name, requests: next };
 }
 
+/**
+ * Lay a Hebrew message out right-to-left in the recipient's mail client.
+ *
+ * A mailto: body is PLAIN TEXT and carries no direction of its own, so the client
+ * guesses one per line from the first strong character it finds. Every line that opens
+ * with a Latin word or a URL — `קישור לקו"ח: https://…` is the one Yariv saw — is then
+ * laid out left-to-right, and the Hebrew in it lands on the wrong side of the line while
+ * the rest of the message sits right-aligned around it.
+ *
+ * U+200F RIGHT-TO-LEFT MARK is a strong RTL character with no width and no glyph. One at
+ * the head of each line makes that line's base direction RTL whatever follows, so the
+ * text reads from the right and a URL inside it still runs left-to-right as a unit —
+ * which is exactly how it should look. Nothing is added to the words themselves, so the
+ * message is unchanged as text: it is the same wording, laid out the right way round.
+ */
+export function rtlBody(body: string): string {
+  const RLM = '\u200f';
+  return String(body ?? '')
+    .split('\n')
+    .map(line => (line.trim() && !line.startsWith(RLM) ? RLM + line : line))
+    .join('\n');
+}
+
+/**
+ * The name to greet someone by: the first word of what is stored.
+ *
+ * The contact field holds a full name ("אורטל חוברה"), and a reminder that opens with
+ * both names reads like a letter from an institution rather than from a person Yariv has
+ * already been in touch with. Yariv 2026-09-15: "רק שם פרטי של הלקוח".
+ *
+ * A one-word entry is returned unchanged, and an empty one stays empty rather than
+ * becoming a bare "שלום ,".
+ */
+export function firstNameOf(full: string | null | undefined): string {
+  return String(full ?? '').trim().split(/\s+/)[0] || '';
+}
+
 export function buildMailtoUrl(email: string, subject: string, body: string): string {
-  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${encodeURIComponent(String(email || '').trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(rtlBody(body))}`;
 }
 
 /**
@@ -688,22 +771,64 @@ export type UnifiedOrgPref = {
   slotId: string | null;
 };
 
-const eqName = (a?: string | null, b?: string | null) =>
-  String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase() && !!String(a || '').trim();
+/**
+ * The key two organization names are compared by. Case and surrounding whitespace never
+ * meant a different employer; neither do the invisible direction marks (U+200E/U+200F,
+ * U+202A–U+202E, U+2066–U+2069) that arrive with a name pasted from Excel or WhatsApp —
+ * a name carrying one looks identical on screen and failed every comparison. Straight
+ * and curly quotes fold together, the way normalizeOrgName folds them for display.
+ */
+export function orgKey(s: any): string {
+  return String(s ?? '')
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
+    .replace(/["״“”]/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 
-// Resolve an org name to an employer id the SAME fuzzy way the rest of the app does
-// (exact → case-insensitive → prefix, either direction), so a free-text choice like
-// "Icon Group" resolves to the employer "Icon Group/I digital". Matches
-// StudentEditor.resolveEmployerForOrg / OrgHub.resolveEmployer.
-function resolveEmployerIdByName(orgName: string, employers: any[]): string | null {
-  const norm = (s?: string) => String(s || '').trim().toLowerCase();
-  const n = norm(orgName);
-  if (!n) return null;
+const eqName = (a?: string | null, b?: string | null) => !!orgKey(a) && orgKey(a) === orgKey(b);
+
+/**
+ * Resolve an org name to an employer the SAME fuzzy way everywhere (exact → normalised →
+ * prefix, either direction), so a free-text choice like "Icon Group" resolves to the
+ * employer "Icon Group/I digital". ONE implementation: the card, the row, the planner
+ * and the editor each carried their own copy of these three lines until 2026-09-14.
+ */
+export function resolveEmployerByName<T extends { id: string; name?: string }>(
+  orgName: string | null | undefined,
+  employers: T[],
+): T | undefined {
+  const n = orgKey(orgName);
+  if (!n) return undefined;
   const list = employers || [];
-  const e = list.find((x: any) => x?.name === orgName)
-    || list.find((x: any) => norm(x?.name) === n)
-    || list.find((x: any) => { const en = norm(x?.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
-  return e ? e.id : null;
+  return list.find(x => !!x && x.name === orgName)
+    || list.find(x => orgKey(x?.name) === n)
+    || list.find(x => { const en = orgKey(x?.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+}
+
+/**
+ * The employer a ranked preference points at. The id is the link the preference was
+ * built with, so it wins; the name is the fallback for a preference that never resolved
+ * (a free-text choice) or whose employer was deleted and re-created under the same name.
+ *
+ * Yariv 2026-09-14: the students-list row said UCL Group was open and showed יובל ליבנה's
+ * number, and sending נטע's CV there over WhatsApp came back "לא זוהה מעסיק". The row had
+ * found the employer by id; the planner looked it up again by name alone, and the name on
+ * the preference no longer matched the employer's. Every reader of a preference resolves
+ * through here now, so what the screen offers is what the send acts on.
+ */
+export function resolveEmployerFor<T extends { id: string; name?: string }>(
+  pref: { employerId?: string | null; orgName?: string | null } | null | undefined,
+  employers: T[],
+): T | undefined {
+  if (!pref) return undefined;
+  const byId = pref.employerId ? (employers || []).find(x => x?.id === pref.employerId) : undefined;
+  return byId || resolveEmployerByName(pref.orgName, employers);
+}
+
+function resolveEmployerIdByName(orgName: string, employers: any[]): string | null {
+  return resolveEmployerByName(orgName, employers)?.id ?? null;
 }
 
 /** The legacy choice fields as an ordered [{orgName, interviewResult}] list. */
@@ -761,6 +886,67 @@ export function buildUnifiedOrgList(student: any, employers: any[] = []): Unifie
     }));
 
   return [...fromPrefs, ...fromLegacy].map((p, i) => ({ ...p, rank: i + 1 }));
+}
+
+/**
+ * Fold a newly submitted organization list into the student's ranking.
+ *
+ * The two paths that adopt a submission — the row's "קלוט לכרטיס" and the card's pending
+ * banner — both wrote `firstChoiceOrg/second/third` DIRECTLY. Everything downstream
+ * reads `buildUnifiedOrgList`, which puts the structured `preferences[]` first and only
+ * APPENDS legacy names that are not already represented. So for any student who had ever
+ * had a CV sent (anyone with a materialised preference), the freshly submitted list
+ * landed BELOW the old ranking, with the old organizations still ranked ahead of it and
+ * still recommended for sending — while the confirmation had promised the list would be
+ * copied onto the card.
+ *
+ * Here the submission LEADS, in the order the student gave it, and an organization that
+ * is already in the ranking keeps everything it has earned — its interview result, its
+ * status, and the place it holds. An organization the student did NOT resubmit is kept
+ * after them rather than dropped: it may be holding a reserved place, and silently
+ * dropping it would leak that place and lose the interview result with it.
+ */
+export function adoptSubmittedOrgs<T extends Record<string, any>>(
+  student: T, employers: any[], submitted: Array<string | null | undefined>,
+): T {
+  const current = buildUnifiedOrgList(student, employers);
+  const wanted = (submitted || []).map(n => String(n ?? '').trim()).filter(Boolean);
+  const used = new Set<number>();
+  const lead: UnifiedOrgPref[] = [];
+  for (const name of wanted) {
+    const idx = current.findIndex((p, i) => !used.has(i) && eqName(p.orgName, name));
+    if (idx >= 0) { used.add(idx); lead.push(current[idx]); continue; }
+    if (lead.some(p => eqName(p.orgName, name))) continue; // the same name twice in one submission
+    lead.push({ rank: 0, orgName: name, employerId: resolveEmployerIdByName(name, employers),
+      interviewResult: 'pending', status: 'tentative', slotId: null });
+  }
+  const rest = current.filter((_, i) => !used.has(i));
+  return applyUnifiedList(student, [...lead, ...rest].map((p, i) => ({ ...p, rank: i + 1 })));
+}
+
+/**
+ * Put one organization at the top of the ranking without losing what is there.
+ *
+ * Approving an organization the student proposed used to write `firstChoiceOrg` raw,
+ * which OVERWROTE the existing first choice — for a student whose list had not been
+ * materialised that choice was simply gone — while the toast said the organization had
+ * been set as the first choice. For a materialised student the opposite happened: the
+ * structured list won, the approved organization was appended LAST, and the same toast
+ * was still wrong.
+ */
+export function promoteOrgToFirst<T extends Record<string, any>>(
+  student: T, employers: any[], orgName: string, employerId?: string | null,
+): T {
+  const name = String(orgName || '').trim();
+  if (!name) return student;
+  const current = buildUnifiedOrgList(student, employers);
+  const existing = current.find(p => eqName(p.orgName, name));
+  const head: UnifiedOrgPref = existing
+    ? { ...existing, employerId: existing.employerId || employerId || resolveEmployerIdByName(name, employers) }
+    : { rank: 0, orgName: name, employerId: employerId || resolveEmployerIdByName(name, employers),
+        interviewResult: 'pending', status: 'tentative', slotId: null };
+  const rest = current.filter(p => !eqName(p.orgName, name));
+  return applyUnifiedList(student, [head, ...rest].map((p, i) => ({ ...p, rank: i + 1 })));
 }
 
 /**
@@ -837,7 +1023,11 @@ export function buildPlacementPreferences(
     const orgName = (rawName || '').trim();
     if (!orgName) continue;
 
-    const empIdx = emps.findIndex(e => (e.name || '').trim().toLowerCase() === orgName.toLowerCase());
+    // orgKey, not a bare lowercase compare: the same organization written with a
+    // straight quote in the employer record and a Hebrew ״ in the student's choice is
+    // one organization, and so is one carrying a pasted direction mark.
+    const resolved = resolveEmployerByName(orgName, emps);
+    const empIdx = resolved ? emps.findIndex(e => e.id === resolved.id) : -1;
     if (empIdx < 0) { unresolved.push({ orgName, reason: 'לא נמצא ברשימת הארגונים' }); continue; }
 
     const emp = emps[empIdx];
@@ -960,6 +1150,46 @@ export function addPlacementPreference(
 // occupies one vacancy at that org (→ placed), instead of the old bare
 // filledPositions++. Idempotent — if the student already holds a slot there it
 // just ensures it's marked placed. Returns a fresh employers array.
+/**
+ * Free the place a student holds at ONE organization.
+ *
+ * The counterpart to occupyAcceptedOrgSlot, and the thing that was missing: changing
+ * "ארגון מאכסן בפועל" from A to B occupied nothing at B (a strict name compare in the
+ * gate, fixed 2026-09-15) and released nothing at A — so A went on counting a place as
+ * filled by a student who is no longer there, for good. A correction to a typed field
+ * should not cost an organization a place.
+ *
+ * Only slots this student holds are touched, and a slot already `available` is left
+ * alone, so calling it twice is safe.
+ */
+export function releaseStudentSlotAt(
+  student: Student,
+  employers: Employer[],
+  orgName: string,
+  opts: { actorId: string; now?: string; reason?: string },
+): Employer[] {
+  const name = String(orgName || '').trim();
+  if (!name) return employers;
+  const now = opts.now || new Date().toISOString();
+  const resolved = resolveEmployerByName(name, employers);
+  if (!resolved) return employers;
+  let touched = false;
+  const out = employers.map(e => {
+    if (e.id !== resolved.id) return e;
+    const slots = ((e as any).vacancySlots || []).map((sl: any) => {
+      if (sl?.studentId !== student.id || sl?.status === 'available') return sl;
+      touched = true;
+      return {
+        ...sl, status: 'available', studentId: null, prefRank: null,
+        history: [...(sl.history || []), { at: now, from: sl.status, to: 'available',
+          by: 'admin', actorId: opts.actorId, reason: opts.reason || 'accepted-org-changed' }],
+      };
+    });
+    return reconcileEmployerCapacity({ ...(e as any), vacancySlots: slots });
+  });
+  return touched ? out : employers;
+}
+
 export function occupyAcceptedOrgSlot(
   student: Student,
   employers: Employer[],
@@ -969,7 +1199,12 @@ export function occupyAcceptedOrgSlot(
   if (!orgName) return employers;
   const now = opts.now || new Date().toISOString();
   const emps = employers.map(e => ({ ...e }));
-  const idx = emps.findIndex(e => (e.name || '').trim().toLowerCase() === orgName.toLowerCase());
+  // Was a bare lowercase compare, and `acceptedOrg` is written THROUGH normalizeOrgName
+  // (" → ״) while the employer record keeps whatever was typed. On a mismatch this
+  // returned the employers UNTOUCHED and silently: the student read as placed while the
+  // organization went on advertising a free place it did not have.
+  const resolved = resolveEmployerByName(orgName, emps);
+  const idx = resolved ? emps.findIndex(e => e.id === resolved.id) : -1;
   if (idx < 0) return employers;
   const emp: any = emps[idx];
 
@@ -1178,4 +1413,47 @@ export function countSlotsByStatus(
     under_review: filtered.filter((s: any) => s.status === 'under_review').length,
     placed: filtered.filter((s: any) => s.status === 'placed').length,
   };
+}
+
+/**
+ * Has this submission brought organizations the record has not taken in yet?
+ *
+ * This is the "still pending" test, and it is a MEMBERSHIP test on purpose.
+ *
+ * Two ways a field-by-field equality comparison gets it wrong, both found live:
+ *
+ *   An empty form read as a difference. A CV-only re-upload leaves all three org fields
+ *   blank, and comparing blank against a live ranking says "a list is waiting" — which
+ *   is how הדר עוזירי (2026-08-09) was reported as having an unadopted list weeks after
+ *   hers had been adopted. Only positions the student actually filled can count.
+ *
+ *   An adopted submission read as unadopted. `adoptSubmittedOrgs` keeps an organization
+ *   the student did NOT resubmit, because it may be holding a reserved place — so after
+ *   a correct adopt the record legitimately carries MORE organizations than the
+ *   submission does. Equality can never be reached again, and the banner nags forever
+ *   (gate cell 53, 2026-09-15). Adopted means every organization the student named is
+ *   now on the record, not that the two lists are identical.
+ *
+ * Compared through `orgKey`, so an invisible RTL mark in a submitted name is not a
+ * difference either.
+ */
+export function submissionHasUnappliedOrgs(
+  submitted: Array<string | null | undefined>,
+  student: { firstChoiceOrg?: string | null; secondChoiceOrg?: string | null; thirdChoiceOrg?: string | null } | null | undefined,
+): boolean {
+  const sub = (submitted || []).map(orgKey).filter(Boolean);
+  if (!sub.length) return false;
+  const rec = [student?.firstChoiceOrg, student?.secondChoiceOrg, student?.thirdChoiceOrg].map(orgKey).filter(Boolean);
+  return sub.some(o => !rec.includes(o));
+}
+
+/** A newer CV file than the one on the record, compared by filename. A submission with
+ *  no file at all carries no new CV — it cannot be "newer" than what is there. */
+export function submissionHasNewCv(
+  cvFilePath: string | null | undefined,
+  student: { cvUpdatedUrl?: string | null } | null | undefined,
+): boolean {
+  const incoming = String(cvFilePath || '').split('/').pop() || '';
+  if (!incoming) return false;
+  return incoming !== (String(student?.cvUpdatedUrl || '').split('/').pop() || '');
 }

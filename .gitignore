@@ -1,4 +1,9 @@
-node_modules/
+# No trailing slash, deliberately: a pattern ending in "/" matches DIRECTORIES only, and
+# a git worktree shares one install by symlinking node_modules at the worktree root
+# (`ln -s ../practicum-v2/node_modules .`). Git sees a symlink, not a directory, so
+# "node_modules/" left it untracked-but-visible in every `git status` run from a
+# worktree. Without the slash both spellings are ignored.
+node_modules
 dist/
 .astro/
 .env

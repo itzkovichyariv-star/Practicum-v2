@@ -1,17 +1,27 @@
 import { useState, useEffect, type FormEvent } from 'react';
+import { dialPhone } from '../lib/dial';
 import { btnSmall, btnSecondary } from '../lib/design';
 import type { Student, Course, Employer, Dispatch, EmployerApprovalRequest, PlacementSettings, PracticumData } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { randomId, ensureFeedbackToken, buildFeedbackUrl } from '../lib/dataApi';
 import { orgAvailability } from '../lib/orgAvailability';
-import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName } from '../lib/placement';
+// `openWhatsApp` is ALSO the name of a local zero-argument helper in this file that
+// messages the STUDENT. Importing the shared one under its own name shadowed nothing at
+// the call site and silently resolved to the local one — it would have opened WhatsApp
+// with the student instead of the interview organization. Aliased, and caught by the
+// typechecker the moment there was one.
+import { buildWhatsAppUrl, buildMailtoUrl, normalizeOrgName, resolveEmployerByName,
+  openWhatsApp as openWhatsAppTo, adoptSubmittedOrgs,
+  submissionHasUnappliedOrgs, submissionHasNewCv } from '../lib/placement';
 import { openMailto } from '../lib/openMailto';
 import { resolveCvUrl, openCv } from '../lib/cvUrl';
 import { showToast } from '../lib/toast';
+import { parseTime } from '../lib/timeInput';
 import EvaluationForm from './EvaluationForm';
 import { QuestionnaireView } from './CandidateEditor';
 import Modal from './Modal';
 import OrgHub from './OrgHub';
+import TimeInput from './TimeInput';
 import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 
 type PlacementExtras = {
@@ -52,8 +62,8 @@ export default function StudentEditor({
     phone: student?.phone || '',
     email: student?.email || '',
     city: student?.city || '',
-    courseId: student?.courseId || (defaultCourseId !== '__all__' ? defaultCourseId : ''),
-    year: student?.year || (defaultYear !== '__all__' ? defaultYear : ''),
+    courseId: student?.courseId || (defaultCourseId && defaultCourseId !== '__all__' ? defaultCourseId : ''),
+    year: student?.year || (defaultYear && defaultYear !== '__all__' ? defaultYear : ''),
     acceptedOrg: student?.acceptedOrg || '',
     hired: student?.hired || false,
     preparation: student?.preparation || { passed: false, date: '' },
@@ -93,6 +103,21 @@ export default function StudentEditor({
   });
   // ── Pending CV update detection ──────────────────────────────────────
   type SuggestedOrg = { name?: string; contactName?: string; contactRole?: string; email?: string; phone?: string; location?: string; notes?: string };
+  // A submission adopted into the FORM but not yet saved. `seen_at` is written only
+  // after onSave, so closing the card without saving leaves the submission pending
+  // rather than silently consumed.
+  const [pendingCvSeenOnSave, setPendingCvSeenOnSave] = useState<string | null>(null);
+  // The placement-interview time as TYPED. `form` only ever receives a readable HH:MM:
+  // OrgHub's placement actions and the feedback autosaves persist `form` directly, so it
+  // must never carry "25:00" or a half-typed "1". While the text is unreadable, `form`
+  // keeps the stored time, and שמור refuses the typed one with its reason.
+  const [ivTimeText, setIvTimeText] = useState(student?.placementInterviewTime || '');
+  const [showTimeError, setShowTimeError] = useState(false);
+  function typeIvTime(v: string) {
+    setIvTimeText(v);
+    const r = parseTime(v);
+    setForm(f => ({ ...f, placementInterviewTime: r.ok ? r.value : (student?.placementInterviewTime || '') }));
+  }
   const [pendingCv, setPendingCv] = useState<{ id: string; cv_file_path: string; uploaded_at: string; org_pref_1?: string | null; org_pref_2?: string | null; org_pref_3?: string | null; suggested_org?: SuggestedOrg | null } | null>(null);
   const [cvApplied, setCvApplied] = useState(false);
   const [suggestionDecided, setSuggestionDecided] = useState<null | 'approved' | 'rejected'>(null);
@@ -116,20 +141,19 @@ export default function StudentEditor({
       .order('uploaded_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
-        // "Pending" = the latest submission differs from what's currently on the
-        // student record — in EITHER the CV file OR the org preferences. An org-only
+        // "Pending" = the latest submission brings something the record has not taken
+        // in — a newer CV file, or an organization not yet on the ranking. An org-only
         // update deliberately reuses the current CV path (cv_updates needs one), so a
-        // file-only guard would hide it; comparing orgs too surfaces it. Once the
-        // coordinator adopts (fields match the row), it stops nagging — which is what
-        // carries the guard even though anon can't write cv_updates.seen_at (RLS).
+        // file-only guard would hide it; checking orgs too surfaces it. Adopting makes
+        // both false, which is what stops the nagging even though anon cannot write
+        // cv_updates.seen_at (RLS) — so the test has to mean "already taken in", not
+        // "identical to the record". The strip asks the same question; one helper now
+        // answers it for both, because two copies of it had already drifted apart.
         const row = data?.[0];
         if (!row) return;
-        const currentFile = (student?.cvUpdatedUrl || '').split('/').pop();
-        const same = (a?: string | null, b?: string | null) => (a || '').trim() === (b || '').trim();
-        const cvChanged = row.cv_file_path.split('/').pop() !== currentFile;
-        const orgsChanged = !same(row.org_pref_1, student?.firstChoiceOrg)
-          || !same(row.org_pref_2, student?.secondChoiceOrg)
-          || !same(row.org_pref_3, (student as any)?.thirdChoiceOrg);
+        const cvChanged = submissionHasNewCv(row.cv_file_path, student);
+        const orgsChanged = submissionHasUnappliedOrgs(
+          [row.org_pref_1, row.org_pref_2, row.org_pref_3], student as any);
         if (cvChanged || orgsChanged) setPendingCv(row);
       });
   }, [student?.email, student?.cvUpdatedUrl, student?.firstChoiceOrg, student?.secondChoiceOrg, (student as any)?.thirdChoiceOrg]);
@@ -282,14 +306,21 @@ export default function StudentEditor({
     // the "היסטוריית הגשות קודמות" button + the /organizations request history. Only
     // overwrite an org rank the submission actually specifies (a CV-only re-upload
     // keeps the current preferences).
-    setForm(f => ({
-      ...f,
-      cvUpdatedUrl: storageUrl,
-      ...(pendingCv.org_pref_1 ? { firstChoiceOrg: pendingCv.org_pref_1 } : {}),
-      ...(pendingCv.org_pref_2 ? { secondChoiceOrg: pendingCv.org_pref_2 } : {}),
-      ...(pendingCv.org_pref_3 ? { thirdChoiceOrg: pendingCv.org_pref_3 } : {}),
-    }));
-    await supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', pendingCv.id);
+    // Through adoptSubmittedOrgs: the submitted list LEADS the ranking, as the banner
+    // promises, instead of being appended below what is already there — and an
+    // organization the student did not resubmit is kept, because it may hold a place.
+    const submitted = [pendingCv.org_pref_1, pendingCv.org_pref_2, pendingCv.org_pref_3].filter(Boolean) as string[];
+    setForm(f => {
+      const withCv = { ...f, cvUpdatedUrl: storageUrl };
+      return submitted.length ? adoptSubmittedOrgs(withCv, employers, submitted) : withCv;
+    });
+    // `seen_at` is NOT written here. It used to be, and it is a database write while the
+    // student record only changed in local form state: closing the card without pressing
+    // שמור left the submission marked seen — gone from the banner, gone from the list's
+    // unseen map, gone from the strip — with the CV and the preference list never
+    // adopted. The row's own adopt has always done it in the safe order (persist, then
+    // mark seen); the card now marks it seen on SAVE, in handleSubmit.
+    setPendingCvSeenOnSave(pendingCv.id);
     setPendingCv(null);
     setCvApplied(true);
   }
@@ -414,14 +445,31 @@ export default function StudentEditor({
       return;
     }
 
+    // The interview time is saved as typed (normalised to HH:MM) or not at all. The field
+    // sits in an accordion that may be closed, so the reason is also said out loud here.
+    const ivTime = parseTime(ivTimeText);
+    if (!ivTime.ok) {
+      setShowTimeError(true);
+      alert(`שעת ראיון השיבוץ לא נשמרה: ${ivTime.error}`);
+      return;
+    }
+
     // Merge over the original student so placement fields the form doesn't track
     // (preferences, submissionStatus, vacancy data, …) are never clobbered on save.
-    let saved: Student = { ...((student || {}) as Student), ...form };
+    let saved: Student = { ...((student || {}) as Student), ...form, placementInterviewTime: ivTime.value };
     // Auto-stamp placedAt the first time acceptedOrg is recorded
     if (saved.acceptedOrg && !student?.acceptedOrg && !saved.placedAt) {
       saved = { ...saved, placedAt: new Date().toISOString().slice(0, 10) };
     }
     onSave(saved);
+    // Now that the record is on its way to being persisted, the submission it came from
+    // can be marked seen. Doing it at adopt time — before any save — is how a submission
+    // could be consumed while the CV and the preference list were never adopted.
+    if (pendingCvSeenOnSave) {
+      const id = pendingCvSeenOnSave;
+      setPendingCvSeenOnSave(null);
+      void supabase.from('cv_updates').update({ seen_at: new Date().toISOString() }).eq('id', id);
+    }
   }
 
   function openOutlookCompose() {
@@ -432,9 +480,7 @@ export default function StudentEditor({
   }
 
   function openCall() {
-    if (!form.phone) { alert('לא הוזן טלפון'); return; }
-    // tel: opens the phone app on mobile / default dialer on desktop (Teams/FaceTime/etc)
-    window.location.href = `tel:${form.phone.replace(/[^\d+]/g, '')}`;
+    dialPhone(form.phone, form.name);
   }
 
   function openWhatsApp() {
@@ -503,12 +549,7 @@ export default function StudentEditor({
   // "Icon Group/I digital"), which silently broke feedback sending. Match
   // exact → case-insensitive → prefix (either direction) so near-misses resolve.
   function resolveEmployerForOrg(orgName?: string) {
-    if (!orgName) return undefined;
-    const norm = (s?: string) => (s || '').trim().toLowerCase();
-    const n = norm(orgName);
-    return employers.find(e => e.name === orgName)
-      || employers.find(e => norm(e.name) === n)
-      || employers.find(e => { const en = norm(e.name); return !!en && (en.startsWith(n) || n.startsWith(en)); });
+    return resolveEmployerByName(orgName, employers);
   }
   // Pull the first valid email out of a possibly-messy contact field (some
   // employers store "a@x.com/ b@y.com" or stray "mailto:" text).
@@ -551,7 +592,7 @@ export default function StudentEditor({
       return;
     }
     // In-gesture (url came back synchronously) so the mail client actually opens.
-    window.open(`mailto:${empEmail}?subject=${subject}&body=${body}`, '_blank');
+    openMailto(`mailto:${empEmail}?subject=${subject}&body=${body}`);
   }
 
   async function handleSendFeedbackWhatsApp() {
@@ -1020,7 +1061,11 @@ export default function StudentEditor({
           <Accordion title="ראיון שיבוץ (רחל)"
             hint={form.feedbackSubmittedAt ? '✓ מעסיק מילא משוב' : (form.placementInterviewDate ? `ראיון ${form.placementInterviewDate}` : undefined)}>
             <Field label="תאריך ראיון שיבוץ"><Input type="date" value={form.placementInterviewDate||''} onChange={v=>update('placementInterviewDate',v)}/></Field>
-            <Field label="שעת ראיון שיבוץ"><Input type="time" value={form.placementInterviewTime||''} onChange={v=>update('placementInterviewTime',v)}/></Field>
+            <Field label="שעת ראיון שיבוץ">
+              <TimeInput id="placement-interview-time" name="placement-interview-time" value={ivTimeText}
+                onChange={typeIvTime} showError={showTimeError}
+                style={{ padding: '12px 16px', fontSize: '14.5px' }}/>
+            </Field>
             <div className="col-span-full">
               <Field label="ארגון לראיון שיבוץ">
                 <Select value={form.placementInterviewOrg||''} onChange={v=>update('placementInterviewOrg',v)}
@@ -1054,14 +1099,15 @@ export default function StudentEditor({
                   onClick={() => {
                     const orgName = form.placementInterviewOrg || form.acceptedOrg;
                     if (!orgName) { alert('לא הוגדר ארגון לראיון שיבוץ'); return; }
-                    const emp = employers.find(e => e.name === orgName);
-                    if (!emp?.contactPhone) {
-                      alert(`לא נמצא טלפון לארגון "${orgName}" — הוסף טלפון בדף המעסיקים`);
-                      return;
-                    }
-                    let n = emp.contactPhone.replace(/[^\d]/g, '');
-                    if (n.startsWith('0')) n = '972' + n.slice(1);
-                    window.open(`https://wa.me/${n}`, '_blank');
+                    // Through the shared resolver: a strict name match failed whenever
+                    // the interview organization was typed free-text, or the student's
+                    // name went through normalizeOrgName (" → ״) while the employer
+                    // record kept a straight quote — and the coordinator was told the
+                    // organization had no phone when the employers page showed one.
+                    const emp = resolveEmployerByName(orgName, employers);
+                    if (!emp) { alert(`הארגון "${orgName}" לא נמצא ברשימת המעסיקים — בדוק/י את השם בדף המעסיקים`); return; }
+                    if (!emp.contactPhone) { alert(`לא נמצא טלפון לארגון "${emp.name}" — הוסף טלפון בדף המעסיקים`); return; }
+                    openWhatsAppTo(emp.contactPhone, { name: emp.name });
                   }}
                   title="פתח WhatsApp עם ארגון הראיון לבקשת משוב"
                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}

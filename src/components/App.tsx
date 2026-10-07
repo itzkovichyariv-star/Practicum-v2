@@ -87,7 +87,13 @@ export default function App() {
   const realtimeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [page, setPage] = useState<Page>(() => {
     if (typeof localStorage === 'undefined') return 'dashboard';
-    return (localStorage.getItem(PAGE_STORAGE) as Page) || 'dashboard';
+    const saved = localStorage.getItem(PAGE_STORAGE);
+    // 'academic' was a SECOND calendar, shipped in v1.43.0 and folded back into
+    // 'calendar' an hour later. Anyone whose last screen was that one would otherwise
+    // resume onto a page that no longer renders anything at all, so the stored value is
+    // migrated here rather than left to fail silently.
+    if (saved === 'academic') return 'calendar';
+    return (saved as Page) || 'dashboard';
   });
 
   // Resume session on page load
@@ -346,7 +352,7 @@ export default function App() {
     return (
       <Loader
         text={loadError}
-        action={<button onClick={refresh} style={{ ...btnPrimary(), marginTop: '24px' }}>נסה שוב</button>}
+        action={<button onClick={() => { void refresh(); }} style={{ ...btnPrimary(), marginTop: '24px' }}>נסה שוב</button>}
       />
     );
   }
