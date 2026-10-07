@@ -476,6 +476,9 @@ test('a PROPOSED organization: approved by Yariv BY NAME, and an update follows 
   const next = page.locator('[data-ma-next]');
   await expect(next).toBeVisible();
   await expect(next).toContainText('ד"ר יריב איצקוביץ');
+  // Yariv 2026-10-07: "הוא יקבל הודעה שאומרת לו שאני אצור קשר עם הארגון לאישור" — the
+  // student is told WHO makes the approach, not only that an approval exists.
+  await expect(next).toContainText('יצור קשר עם הארגון');
   await expect(next).toContainText('עדכון במייל');
   await expect(next).toContainText('להתחיל את הפרקטיקום');
 });
