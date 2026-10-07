@@ -14,11 +14,13 @@
 --                  NULL      — the student picked or proposed an organization, as before,
 --                              and every row written by the BA form
 --   contact_permission : 'now'   — he may approach the organization today
---                        'wait'  — not before contact_after
 --                        'later' — still being settled; the student will come back and
 --                                  release him with one click
 --                        NULL    — no organization of the student's own on this row
---   contact_after      : the date from which he may approach them, with 'wait' only
+--
+--   There was a third value, 'wait', carrying a date. Yariv struck it 2026-10-07:
+--   "לא צריך תאריך שיוגדר זה במילא לא ראלי" — a date a student guesses at is a date
+--   nobody honours, and it only invited him to diarise a fiction.
 --   student_note : one readable Hebrew line composed by the form (orgStatusLine) —
 --                  the status, the organization named if any, the reason, and whatever
 --                  the student wrote in the open box. Free text BY DESIGN: the open box
@@ -28,7 +30,6 @@
 ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS org_status         text;
 ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS student_note       text;
 ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS contact_permission text;
-ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS contact_after      date;
 
 -- A typo in the app must not become a third state nobody handles.
 ALTER TABLE cv_updates DROP CONSTRAINT IF EXISTS cv_updates_org_status_check;
@@ -37,13 +38,13 @@ ALTER TABLE cv_updates ADD  CONSTRAINT cv_updates_org_status_check
 
 ALTER TABLE cv_updates DROP CONSTRAINT IF EXISTS cv_updates_contact_permission_check;
 ALTER TABLE cv_updates ADD  CONSTRAINT cv_updates_contact_permission_check
-  CHECK (contact_permission IS NULL OR contact_permission IN ('now', 'wait', 'later'));
+  CHECK (contact_permission IS NULL OR contact_permission IN ('now', 'later'));
 
--- Verify (expect four rows):
+-- Verify (expect three rows):
 --   select column_name, data_type from information_schema.columns
 --   where table_name = 'cv_updates'
---     and column_name in ('org_status', 'student_note', 'contact_permission', 'contact_after');
+--     and column_name in ('org_status', 'student_note', 'contact_permission');
 --
 -- Whom may I approach today?
---   select name, email, suggested_org->>'name' as org, contact_permission, contact_after, student_note
+--   select name, email, suggested_org->>'name' as org, contact_permission, student_note
 --   from cv_updates where contact_permission = 'now' order by uploaded_at desc;

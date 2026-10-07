@@ -7,7 +7,7 @@
 //                        (פסגות and the like) accepted them, and the coordinator
 //                        moved the card to 'שובץ'.
 //   kind: 'org-approved' the student proposed their OWN organization and
-//                        ד"ר יריב איצקוביץ approved it, so they may start.
+//                        the practicum supervisor approved it, so they may start.
 //
 // Wording is deliberately close to notify-acceptance: the student has already
 // had one email in this voice, and this is the next step of the same process.
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
 
     const lead = kind === 'placed'
       ? `${org} אישרו את מועמדותך, והשיבוץ שלך לפרקטיקום נרשם במערכת. מכאן הפרקטיקום שלך מתקיים ב${org}.`
-      : `ד"ר יריב איצקוביץ בחן את הארגון שהצעת — ${org} — ואישר אותו. מעתה זהו הארגון שבו תבצע/י את הפרקטיקום, ותוכל/י להתחיל.`;
+      : `מנחה התכנית בחן את הארגון שהצעת — ${org} — ואישר אותו. מעתה זהו הארגון שבו תבצע/י את הפרקטיקום, ותוכל/י להתחיל.`;
 
     const nextLine = kind === 'placed'
       ? 'הארגון יצור איתך קשר להמשך התהליך ולתיאום תחילת הפרקטיקום. אם לא תישמע/י מהם בימים הקרובים — אנא עדכן/י אותנו.'

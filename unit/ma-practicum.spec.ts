@@ -507,8 +507,14 @@ test('NOT YET: the same details are requested but not enforced', () => {
   // produces an invented number — worse than a blank, because a blank is visible.
   const later = own({ contactPermission: 'later' });
   expect(validateMaSubmission(later.sub, later.ctx)).toBeNull();
-  const wait = own({ contactPermission: 'wait', contactAfter: '2026-11-15' });
-  expect(validateMaSubmission(wait.sub, wait.ctx)).toBeNull();
+});
+
+test('THE DATE IS GONE — "not before the 15th" is no longer an answer the form accepts', () => {
+  // Yariv 2026-10-07: "לא צריך תאריך שיוגדר זה במילא לא ראלי". A date a student guesses
+  // at is a date nobody honours, and it only invited him to diarise a fiction.
+  const wait = own({ contactPermission: 'wait' as any });
+  expect(validateMaSubmission(wait.sub, wait.ctx)).toContain('מועד הפנייה');
+  expect(contactPermissionLine('wait' as any)).toBe('');
 });
 
 test('but a detail that IS given must be a real one, whatever the timing', () => {
@@ -524,12 +530,6 @@ test('but a detail that IS given must be a real one, whatever the timing', () =>
   expect(validateMaSubmission(badPhone.sub, badPhone.ctx)).toContain('טלפון');
 });
 
-test('"wait" without a date is not an answer — he cannot diarise "soon"', () => {
-  const noDate = own({ contactPermission: 'wait' });
-  expect(validateMaSubmission(noDate.sub, noDate.ctx)).toContain('תאריך');
-  const junk = own({ contactPermission: 'wait', contactAfter: 'בקרוב' });
-  expect(validateMaSubmission(junk.sub, junk.ctx)).toContain('תאריך');
-});
 
 test('the timing question itself cannot be skipped', () => {
   const none = own({ contactPermission: '' });
@@ -553,24 +553,18 @@ test('an organization with no name is not an organization', () => {
   expect(validateMaSubmission(anon.sub, anon.ctx)).toContain('שם הארגון');
 });
 
-test('NO ORGANIZATION: the form insists on the one question Yariv wants answered', () => {
+test('NO ORGANIZATION: nothing further is asked — the explanation belongs with him', () => {
+  // Yariv struck the "why not the listed organization" box 2026-10-07: "אפשר להסיר שיפנו
+  // אלי להסבר". A reason typed to get past a form is not a reason he can act on.
   const { sub, ctx } = notYet({ orgStatus: 'none' });
-  expect(validateMaSubmission(sub, ctx)).toContain('פסגות');
-  const ok = notYet({ orgStatus: 'none', whyNotListed: 'מרחק נסיעה' });
-  expect(validateMaSubmission(ok.sub, ok.ctx)).toBeNull();
+  expect(validateMaSubmission(sub, ctx)).toBeNull();
 });
 
-test('with nothing on the list, "why not them" degrades to "how is the search going"', () => {
-  const empty: Blob = { courses: blob.courses, students: blob.students, employers: [] };
-  const sub = base({ email: 'noa@ariel.ac.il', orgChoice: '', orgStatus: 'none' });
-  const ctx: MaContext = { lookup: resolveMaStudent(empty, 'noa@ariel.ac.il'), partners: [], orgs: [] };
-  expect(validateMaSubmission(sub, ctx)).toContain('מצב החיפוש');
-});
 
 test('neither answer skips the CV — that is still the point of the form', () => {
   const a = own({ contactPermission: 'later', hasFile: false, hasExistingCv: false });
   expect(validateMaSubmission(a.sub, a.ctx)).toContain('קורות חיים');
-  const b = notYet({ orgStatus: 'none', whyNotListed: 'רחוק', hasFile: false, hasExistingCv: false });
+  const b = notYet({ orgStatus: 'none', hasFile: false, hasExistingCv: false });
   expect(validateMaSubmission(b.sub, b.ctx)).toContain('קורות חיים');
 });
 
@@ -584,15 +578,12 @@ test('a status or a permission the app never offers is refused rather than store
 test('THE LINE HE ACTS ON: the permission leads, then the organization', () => {
   expect(orgStatusLine({ proposing: true, orgName: 'מכון אביב', contactPermission: 'now' }))
     .toBe('אפשר לפנות לארגון עכשיו · מכון אביב');
-  expect(orgStatusLine({ proposing: true, orgName: 'מכון אביב', contactPermission: 'wait', contactAfter: '2026-11-15' }))
-    .toBe('לא לפנות עד 15/11/2026 · מכון אביב');
-  expect(orgStatusLine({ orgStatus: 'none', whyNotListed: 'מרחק נסיעה' }))
-    .toBe('אין ארגון כרגע · למה לא מהרשימה: מרחק נסיעה');
+  expect(orgStatusLine({ proposing: true, orgName: 'מכון אביב', contactPermission: 'later' }))
+    .toContain('מכון אביב');
+  expect(orgStatusLine({ orgStatus: 'none' })).toBe('אין ארגון כרגע');
 });
 
-test('the date reads as a person writes it, and a missing one does not print "undefined"', () => {
-  expect(contactPermissionLine('wait', '2026-11-15')).toBe('לא לפנות עד 15/11/2026');
-  expect(contactPermissionLine('wait', '')).toBe('לא לפנות עדיין');
+test('the permission reads as a sentence, and an empty one prints nothing', () => {
   expect(contactPermissionLine('now')).toBe('אפשר לפנות לארגון עכשיו');
   expect(contactPermissionLine('later')).toContain('יעדכן');
   expect(contactPermissionLine('')).toBe('');
@@ -601,7 +592,7 @@ test('the date reads as a person writes it, and a missing one does not print "un
 test('the open box stands on its own — offered whatever was chosen above', () => {
   expect(orgStatusLine({ statusNote: 'אני בחופשת לידה עד דצמבר' })).toBe('אני בחופשת לידה עד דצמבר');
   expect(orgStatusLine({})).toBe('');
-  expect(orgStatusLine({ orgStatus: 'none', whyNotListed: '   ' })).toBe('אין ארגון כרגע');
+  expect(orgStatusLine({ orgStatus: 'none' })).toBe('אין ארגון כרגע');
 });
 
 test("THE FOUR ANSWERS become the labelled block he reads before phoning", () => {
@@ -615,7 +606,6 @@ test("THE FOUR ANSWERS become the labelled block he reads before phoning", () =>
 test('org_status is DERIVED, so the stored status cannot drift from the permission', () => {
   expect(derivedOrgStatus({ orgStatus: 'none' })).toBe('none');
   expect(derivedOrgStatus({ proposing: true, contactPermission: 'now' })).toBeNull();
-  expect(derivedOrgStatus({ proposing: true, contactPermission: 'wait' })).toBe('pending');
   expect(derivedOrgStatus({ proposing: true, contactPermission: 'later' })).toBe('pending');
   expect(derivedOrgStatus({})).toBeNull();
 });

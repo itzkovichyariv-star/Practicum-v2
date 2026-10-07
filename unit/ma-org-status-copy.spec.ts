@@ -25,13 +25,13 @@ test('NO ORGANIZATION: go to the practicum supervisor, and the door stays open',
   // "באין ארגון כרגע צריך להיות כתוב אנא פנה למנחה הפרקטיקום לתיאום ובתוספת אפשר לחזור
   //  בכל רגע נתון ולהוסיף ארגון"
   const panel = between(form, 'data-ma-none-panel', 'data-ma-status-note');
-  expect(panel).toContain('מנחה הפרקטיקום');
+  expect(panel).toContain('מנחה התכנית');
   expect(panel).toContain('לתיאום');
   expect(panel).toContain('בכל רגע נתון');
   expect(panel).toContain('להוסיף ארגון');
   // And the confirmation screen says the same, rather than something else.
   const next = between(form, 'data-ma-next', 'data-ma-note-lost');
-  expect(next).toContain('מנחה הפרקטיקום');
+  expect(next).toContain('מנחה התכנית');
   expect(next).toContain('בכל רגע נתון');
   expect(next).toContain('להוסיף ארגון');
 });
@@ -44,8 +44,8 @@ test('HOLD: come back and update the form when the organization may be approache
   const hold = between(form, 'data-ma-hold-note', '</div>');
   expect(hold).toContain('חזרו ועדכנו את הטופס');
   expect(hold).toContain('כאשר ניתן יהיה לפנות לארגון');
-  // It is shown for BOTH of the two "not yet" answers, not only one of them.
-  expect(form).toContain("(contactPermission === 'wait' || contactPermission === 'later')");
+  // Only one "not yet" answer remains — the dated one was struck.
+  expect(form).toContain("contactPermission === 'later'");
   // And again on the confirmation screen they are left looking at.
   const next = between(form, 'data-ma-next', 'data-ma-note-lost');
   expect(next).toContain('חזרו ועדכנו את הטופס');
@@ -83,13 +83,15 @@ test('THE FOUR EXPLANATION QUESTIONS are on screen, in his ordering', () => {
   expect(panel).toMatch(/משפחה/);
 });
 
-test('THE TIMING QUESTION offers all three answers, and a real date', () => {
-  // "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי אוכל לפנות"
+test('THE TIMING QUESTION is now two answers, with no date to invent', () => {
+  // "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי אוכל לפנות" — then,
+  // 2026-10-07: "לא צריך תאריך שיוגדר זה במילא לא ראלי". A date a student guesses at is
+  // a date nobody honours, so the middle option and its picker are gone.
   const perm = between(form, 'data-ma-permission', 'data-ma-hold-note');
   expect(perm).toContain('data-ma-permission-opt={value}');
-  for (const v of ['now', 'wait', 'later']) expect(perm).toContain(`'${v}'`);
-  expect(perm).toContain('data-ma-contact-after');
-  expect(perm).toContain('type="date"');     // "בקרוב" cannot be diarised
+  for (const v of ['now', 'later']) expect(perm).toContain(`'${v}'`);
+  expect(perm).not.toContain('data-ma-contact-after');
+  expect(form).not.toContain('type="date"');
 });
 
 test('RELEASE: one click, and the mail it sends', () => {
@@ -97,7 +99,7 @@ test('RELEASE: one click, and the mail it sends', () => {
   //  הודעה שאומרת סטודנט x עדכן שניתן לפנות לארגון"
   expect(form).toContain('data-ma-release-go');
   expect(form).toContain('isRelease');
-  expect(form).toContain("notifyCoordinator(org, 'now', '', true)");
+  expect(form).toContain("notifyCoordinator(org, 'now', true)");
 });
 
 test('ADMIN: the permission and the note reach the student card', () => {

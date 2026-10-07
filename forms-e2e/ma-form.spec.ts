@@ -149,16 +149,15 @@ function parseContainsList(raw: string): string[] {
  * and quietly diverging.
  */
 async function fillOwnOrg(page: Page, opts: {
-  name?: string; permission?: 'now' | 'wait' | 'later'; after?: string; contact?: boolean;
+  name?: string; permission?: 'now' | 'later'; contact?: boolean;
 } = {}) {
-  const { name = 'חברת ביטוח כלשהי', permission = 'now', after = '', contact = true } = opts;
+  const { name = 'חברת ביטוח כלשהי', permission = 'now', contact = true } = opts;
   await page.locator('[data-ma-propose]').click();
   await page.getByTestId('ma-p-name').fill(name);
   await page.getByTestId('ma-p-offer').fill('ליווי תהליכי פיתוח ארגוני');
   await page.getByTestId('ma-p-agreed').fill('דיברנו והם מעוניינים');
   await page.getByTestId('ma-p-relationship').fill('מכר של המשפחה');
   await page.locator(`[data-ma-permission-opt="${permission}"] input`).click();
-  if (permission === 'wait') await page.locator('[data-ma-contact-after]').fill(after || '2026-11-15');
   if (contact) {
     await page.getByTestId('ma-p-contact').fill('שרה כהן');
     await page.getByTestId('ma-p-role').fill('מנהלת משאבי אנוש');
@@ -487,7 +486,7 @@ test('a CHOSEN organization: the student is told the organization will contact t
   await expect(next).not.toContainText('יאושר');
 });
 
-test('a PROPOSED organization: approved by Yariv BY NAME, and an update follows by email', async ({ page }) => {
+test('a PROPOSED organization: who approaches it is named, and an update follows by email', async ({ page }) => {
   await stubSupabase(page);
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
@@ -498,10 +497,10 @@ test('a PROPOSED organization: approved by Yariv BY NAME, and an update follows 
 
   const next = page.locator('[data-ma-next]');
   await expect(next).toBeVisible();
-  await expect(next).toContainText('ד"ר יריב איצקוביץ');
   // Yariv 2026-10-07: "הוא יקבל הודעה שאומרת לו שאני אצור קשר עם הארגון לאישור" — the
-  // student is told WHO makes the approach, not only that an approval exists.
-  await expect(next).toContainText('יצור קשר עם הארגון');
+  // student is told WHO makes the approach, not only that an approval exists. One name
+  // throughout, at his word: "מנחה התכנית במקום ד״ר איצקוביץ … לאחד את הנוסח".
+  await expect(next).toContainText('מנחה התכנית יצור קשר עם הארגון');
   await expect(next).toContainText('עדכון במייל');
   await expect(next).toContainText('להתחיל את הפרקטיקום');
 });
@@ -562,26 +561,14 @@ test('CALL THEM NOW: the row carries the organization and the permission', async
   expect(row.student_note).toBe('אפשר לפנות לארגון עכשיו · מכון אביב');
 });
 
-test('WAIT UNTIL: the date is required, and it reaches the row', async ({ page }) => {
-  const cap = await stubSupabase(page);
+test('THE DATE IS GONE: there is no middle option left to pick', async ({ page }) => {
+  // Yariv 2026-10-07: "לא צריך תאריך שיוגדר זה במילא לא ראלי".
+  await stubSupabase(page);
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
-  await attachCv(page);
-  await fillOwnOrg(page, { name: 'מכון אביב', permission: 'wait', after: '' });
-  await page.locator('[data-ma-mode="alone"]').click();
-  // A date is not optional here: he cannot diarise "soon".
-  await page.locator('[data-ma-contact-after]').fill('');
-  await page.locator('[data-ma-submit]').click();
-  await expect(page.locator('[data-ma-error]')).toContainText('תאריך');
-  expect(cap.inserts).toHaveLength(0);
-
-  await page.locator('[data-ma-contact-after]').fill('2026-11-15');
-  await page.locator('[data-ma-submit]').click();
-  await expect(page.locator('[data-ma-done]')).toBeVisible();
-  expect(cap.inserts[0].contact_permission).toBe('wait');
-  expect(cap.inserts[0].contact_after).toBe('2026-11-15');
-  expect(cap.inserts[0].org_status).toBe('pending');
-  expect(cap.inserts[0].student_note).toContain('לא לפנות עד 15/11/2026');
+  await page.locator('[data-ma-propose]').click();
+  await expect(page.locator('[data-ma-permission-opt]')).toHaveCount(2);
+  await expect(page.locator('[data-ma-contact-after]')).toHaveCount(0);
 });
 
 test('STILL TALKING: contact details are requested, not demanded', async ({ page }) => {
@@ -627,22 +614,21 @@ test("THE STUDENT'S OWN ACCOUNT is required whatever the timing", async ({ page 
   await expect(page.locator('[data-ma-error]')).toContainText('מה הארגון מציע');
 });
 
-test('NO ORGANIZATION: the form will not submit until it knows why not פסגות', async ({ page }) => {
+test('NO ORGANIZATION: it submits straight away, asking nothing further', async ({ page }) => {
+  // The "why not the listed organization" box was struck 2026-10-07 — "אפשר להסיר שיפנו
+  // אלי להסבר". A reason typed to get past a form is not a reason he can act on.
   const cap = await stubSupabase(page);
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
   await attachCv(page);
   await page.locator('[data-ma-status="none"]').click();
+  await expect(page.locator('[data-ma-why-not]')).toHaveCount(0);
   await page.locator('[data-ma-mode="alone"]').click();
   await page.locator('[data-ma-submit]').click();
-  await expect(page.locator('[data-ma-error]')).toContainText('פסגות');
-  expect(cap.inserts).toHaveLength(0);
 
-  await page.locator('[data-ma-why-not]').fill('מרחק נסיעה');
-  await page.locator('[data-ma-submit]').click();
   await expect(page.locator('[data-ma-done]')).toBeVisible();
   expect(cap.inserts[0].org_status).toBe('none');
-  expect(cap.inserts[0].student_note).toBe('אין ארגון כרגע · למה לא מהרשימה: מרחק נסיעה');
+  expect(cap.inserts[0].student_note).toBe('אין ארגון כרגע');
 });
 
 test('the open box reaches the coordinator even when an organization WAS chosen', async ({ page }) => {
@@ -687,7 +673,7 @@ const HELD_BACK = [{
   id: 'row-held', uploaded_at: '2026-10-01T09:00:00Z',
   cv_file_path: 'cv-updates/ma-noa-1.pdf', org_pref_1: null,
   partner_mode: 'alone', partner_names: [],
-  contact_permission: 'later', contact_after: null,
+  contact_permission: 'later',
   suggested_org: {
     name: 'מכון אביב', contactName: 'שרה כהן', contactRole: 'מנהלת',
     email: 'sara@aviv.co.il', phone: '0501234567', location: '', notes: 'מה הארגון מציע: ליווי',
@@ -709,7 +695,6 @@ test('A RETURNING STUDENT is offered the release, and one click sends it', async
   // The row says he may call now, and keeps everything the student already gave.
   const row = cap.inserts[0];
   expect(row.contact_permission).toBe('now');
-  expect(row.contact_after).toBeNull();
   expect(row.org_status).toBeNull();
   expect(row.suggested_org.name).toBe('מכון אביב');
   expect(row.cv_file_path).toBe('cv-updates/ma-noa-1.pdf');   // no re-upload asked of them
@@ -757,7 +742,6 @@ for (const [label, fill] of [
   ['brought their own', async (page: Page) => { await fillOwnOrg(page, { name: 'מכון אביב' }); }],
   ['has none yet', async (page: Page) => {
     await page.locator('[data-ma-status="none"]').click();
-    await page.locator('[data-ma-why-not]').fill('מרחק נסיעה');
   }],
 ] as const) {
   test(`SUMMARY: a student who ${label} is told he was updated — and he really was`, async ({ page }) => {
@@ -770,7 +754,7 @@ for (const [label, fill] of [
     await page.locator('[data-ma-submit]').click();
 
     await expect(page.locator('[data-ma-summary]')).toContainText('הפרטים נשמרו');
-    await expect(page.locator('[data-ma-summary]')).toContainText('ד״ר יריב איצקוביץ עודכן בסטטוס');
+    await expect(page.locator('[data-ma-summary]')).toContainText('מנחה התכנית עודכן בסטטוס');
     // The promise is only honest if a mail actually went.
     expect(cap.notifies, 'the confirmation claims he was updated').toHaveLength(1);
     expect(cap.notifies[0].record.track).toBe('ma');
@@ -786,17 +770,15 @@ test('NO ORGANIZATION: sent to the supervisor, and told they may come back', asy
   await attachCv(page);
   await page.locator('[data-ma-status="none"]').click();
   // Said before submitting, while they are still deciding...
-  await expect(page.locator('[data-ma-none-panel]')).toContainText('אנא פנו למנחה הפרקטיקום לתיאום');
-  await page.locator('[data-ma-why-not]').fill('מרחק נסיעה');
+  await expect(page.locator('[data-ma-none-panel]')).toContainText('אנא פנו למנחה התכנית לתיאום');
   await page.locator('[data-ma-mode="alone"]').click();
   await page.locator('[data-ma-submit]').click();
 
   // ...and again on the screen they are left looking at.
   const next = page.locator('[data-ma-next]');
-  await expect(next).toContainText('אנא פנו למנחה הפרקטיקום לתיאום');
+  await expect(next).toContainText('אנא פנו למנחה התכנית לתיאום');
   await expect(next).toContainText('בכל רגע נתון ולהוסיף ארגון');
   expect(cap.notifies[0].record.noOrg).toBe(true);
-  expect(cap.notifies[0].record.whyNotListed).toBe('מרחק נסיעה');
 });
 
 test('NOT YET: the student is told to come back and update when it is possible', async ({ page }) => {

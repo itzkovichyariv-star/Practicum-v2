@@ -876,3 +876,22 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
   past both of us.
 - **Green after the merge:** unit **304** · forms **38** · tsc clean · build 8 pages · function parses · all five
   mails re-rendered and read correctly.
+
+## 2026-10-07 14:50 IL — three removals at his word: the reason box, the date, and three of his four names
+- **"למה פסגות לא מתאים/ה לך?" is GONE.** Yariv: "אפשר להסיר שיפנו אלי להסבר". `אין לי ארגון כרגע` now asks
+  nothing at all — it only says where to take it: "אנא פנו למנחה התכנית לתיאום. קורות החיים שלכם נשמרים כאן ממילא,
+  ואפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון." A reason typed to get past a form was never a reason he could
+  act on; the conversation is the point. `whyNotListed` removed from the type, the validation, the UI and the mail.
+- **The dated option is GONE.** "לא צריך תאריך שיוגדר זה במילא לא ראלי" — and he is right: a date a student guesses
+  at is a date nobody honours, and it only invited him to diarise a fiction. `ContactPermission` is now `now | later`,
+  the date picker and `contact_after` are removed everywhere, and the migration drops the column and tightens its
+  CHECK. The timing question is two answers: call them, or do not call them yet.
+- **ONE NAME.** The form had been calling him four things — רכז התכנית, מנחה התכנית, מנחה הפרקטיקום, ד״ר יריב
+  איצקוביץ — which reads as four different people. All 11 occurrences in /ma, plus the approval mail in
+  `notify-placement`, are now **מנחה התכנית**, at his word ("אם אתה רוצה מנחה התכנית במקום ד״ר איצקוביץ ולאחד את
+  הנוסח של השם שלי זה סבבה"). `placement-email.spec` now pins it from both ends AND asserts the old forms are absent,
+  so the drift cannot come back.
+  - NOT changed: `/register`, `/cv-update` and the candidate mails still say ד״ר יריב איצקוביץ in places. Out of
+    scope for this branch and established copy — worth asking him whether he wants those unified too.
+- **Green:** unit **303** · forms **38** · tsc clean · build 8 pages · both functions parse.
+- **STILL OPEN:** his OK → SQL (now three columns, not four) → deploy functions + site → send the link.

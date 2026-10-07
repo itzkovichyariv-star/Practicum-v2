@@ -41,11 +41,9 @@ export default function MaPracticumForm() {
   const [proposing, setProposing] = useState(false);
   // The "not yet" answer — see OrgStatus. Empty means the student picked or proposed one.
   const [orgStatus, setOrgStatus] = useState<OrgStatus>('');
-  const [whyNotListed, setWhyNotListed] = useState('');
   const [statusNote, setStatusNote] = useState('');
   // May he call them, and when — the question behind the whole "not final yet" case.
   const [contactPermission, setContactPermission] = useState<ContactPermission>('');
-  const [contactAfter, setContactAfter] = useState('');
   // What the student knows and he cannot guess, in his own ordering.
   const [orgOffer, setOrgOffer] = useState('');
   const [agreedWith, setAgreedWith] = useState('');
@@ -77,15 +75,13 @@ export default function MaPracticumForm() {
   const draft = useFormDraft(
     normEmail(email) ? `practicum_draft_ma_${normEmail(email)}` : null,
     'v1',
-    { orgChoice, proposing, orgStatus, whyNotListed, statusNote, contactPermission, contactAfter, orgOffer, agreedWith, relationship, howFound, pName, pContact, pRole, pEmail, pPhone, pLocation, pNotes, partnerMode, partner1, partner2, wantsSecond },
+    { orgChoice, proposing, orgStatus, statusNote, contactPermission, orgOffer, agreedWith, relationship, howFound, pName, pContact, pRole, pEmail, pPhone, pLocation, pNotes, partnerMode, partner1, partner2, wantsSecond },
     (v) => {
       if (v.orgChoice) setOrgChoice(v.orgChoice as string);
       if (v.proposing) setProposing(v.proposing as boolean);
       if (v.orgStatus) setOrgStatus(v.orgStatus as OrgStatus);
-      if (v.whyNotListed) setWhyNotListed(v.whyNotListed as string);
       if (v.statusNote) setStatusNote(v.statusNote as string);
       if (v.contactPermission) setContactPermission(v.contactPermission as ContactPermission);
-      if (v.contactAfter) setContactAfter(v.contactAfter as string);
       if (v.orgOffer) setOrgOffer(v.orgOffer as string);
       if (v.agreedWith) setAgreedWith(v.agreedWith as string);
       if (v.relationship) setRelationship(v.relationship as string);
@@ -224,8 +220,8 @@ export default function MaPracticumForm() {
     setPartnerLost(false);
 
     const problem = validateMaSubmission({
-      email, orgChoice, proposing, orgStatus, whyNotListed, statusNote,
-      contactPermission, contactAfter, orgOffer, agreedWith, relationship, howFound,
+      email, orgChoice, proposing, orgStatus, statusNote,
+      contactPermission, orgOffer, agreedWith, relationship, howFound,
       proposal: { name: pName, contactName: pContact, contactRole: pRole, email: pEmail, phone: pPhone },
       partnerMode, partnerNames, hasFile: !!file, hasExistingCv,
     }, ctx);
@@ -276,14 +272,13 @@ export default function MaPracticumForm() {
     // permission and its date are kept beside it as fields, so his screens can sort on
     // "whom may I call today" rather than parsing a sentence.
     const note = orgStatusLine({
-      orgStatus, proposing, orgName: pName, contactPermission, contactAfter, whyNotListed, statusNote,
+      orgStatus, proposing, orgName: pName, contactPermission, statusNote,
     });
     const full = {
       ...withPartner,
       org_status: derivedOrgStatus({ orgStatus, proposing, contactPermission }),
       student_note: note || null,
       contact_permission: proposing ? (contactPermission || null) : null,
-      contact_after: proposing && contactPermission === 'wait' ? (contactAfter || null) : null,
     };
 
     // A LADDER, not a single fallback: the partner columns are migrated and the status
@@ -306,7 +301,7 @@ export default function MaPracticumForm() {
     // HE IS TOLD ABOUT EVERY SUBMISSION, because the confirmation now promises he was —
     // "הפרטים נשמרו וד״ר איצקוביץ עודכן בסטטוס" (Yariv 2026-10-07). A promise the form
     // makes to fifteen students has to be true for all three answers, not just a proposal.
-    if (proposal) void notifyCoordinator(proposal, contactPermission, contactAfter, false);
+    if (proposal) void notifyCoordinator(proposal, contactPermission, false);
     else if (orgStatus === 'none') void notifyNoOrg();
     else void notifyChosen(orgChoice);
 
@@ -328,9 +323,8 @@ export default function MaPracticumForm() {
   const heldBack = useMemo(() => {
     const last = myHistory[0];
     if (!last) return null;
-    const perm = String(last.contact_permission || '');
-    if (perm !== 'wait' && perm !== 'later') return null;
-    return { id: last.id, org: String(last.suggested_org?.name || '').trim(), perm, after: last.contact_after || '' };
+    if (String(last.contact_permission || '') !== 'later') return null;
+    return { id: last.id, org: String(last.suggested_org?.name || '').trim() };
   }, [myHistory]);
 
   if (status === 'done') {
@@ -352,7 +346,7 @@ export default function MaPracticumForm() {
             וד״ר איצקוביץ עודכן בסטטוס". It has to be TRUE in every case, which is why the
             form now mails him on every submission and not only on a proposal. */}
         <p className="text-[15px] leading-[1.6] font-semibold" data-ma-summary style={{ color: 'var(--ink)' }}>
-          הפרטים נשמרו, וד״ר יריב איצקוביץ עודכן בסטטוס.
+          הפרטים נשמרו, ומנחה התכנית עודכן בסטטוס.
         </p>
 
         {/* WHAT HAPPENS NEXT, and who does it. Yariv 2026-10-07: a student who chose an
@@ -363,17 +357,17 @@ export default function MaPracticumForm() {
         <p className="text-[14px] leading-[1.7] rounded-xl px-4 py-3 mt-3 text-right" data-ma-next
           style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', color: '#065f46' }}>
           {orgStatus === 'none'
-            ? 'אנא פנו למנחה הפרקטיקום לתיאום. אפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון.'
+            ? 'אנא פנו למנחה התכנית לתיאום. אפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון.'
             : proposing
               ? (contactPermission === 'now'
-                  ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון לשם אישורו. אין צורך לפנות אליהם בעצמך — ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
+                  ? 'מנחה התכנית יצור קשר עם הארגון לשם אישורו. אין צורך לפנות אליהם בעצמך — ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
                   : 'חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון. עד אז לא ניצור איתם קשר.')
               : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
         </p>
         {noteLost && (
           <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4" data-ma-note-lost
             style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
-            שימו לב: ההערה שכתבתם לא נשמרה (העמודה חסרה במסד). קורות החיים נשמרו — אנא העבירו את ההערה לרכז התכנית.
+            שימו לב: ההערה שכתבתם לא נשמרה (העמודה חסרה במסד). קורות החיים נשמרו — אנא העבירו את ההערה למנחה התכנית.
           </p>
         )}
         {partnerLost && (
@@ -434,12 +428,11 @@ export default function MaPracticumForm() {
       partner_names: last?.partner_names || [],
       org_status: null,
       contact_permission: 'now',
-      contact_after: null,
       student_note: orgStatusLine({ proposing: true, orgName: org?.name, contactPermission: 'now' }),
     };
     const { error } = await supabase.from('cv_updates').insert(row);
     if (error) { setReleasing(false); setErr('העדכון נכשל: ' + error.message); return; }
-    void notifyCoordinator(org, 'now', '', true);
+    void notifyCoordinator(org, 'now', true);
     setReleasedOrg(org?.name || 'הארגון');
     setReleasing(false);
   }
@@ -452,7 +445,7 @@ export default function MaPracticumForm() {
    * organization reaches him as "call them now" or "do not call until the 15th", and the
    * difference is the whole message.
    */
-  async function notifyCoordinator(org: any, perm: ContactPermission, after: string, isRelease: boolean) {
+  async function notifyCoordinator(org: any, perm: ContactPermission, isRelease: boolean) {
     try {
       const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
       await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
@@ -468,8 +461,7 @@ export default function MaPracticumForm() {
             candidateEmail: filedEmail,
             suggestedOrg: org,
             contactPermission: perm || null,
-            contactAfter: perm === 'wait' ? (after || null) : null,
-            permissionLine: contactPermissionLine(perm || '', after),
+            permissionLine: contactPermissionLine(perm || ''),
           },
         }),
       });
@@ -512,7 +504,6 @@ export default function MaPracticumForm() {
             track: 'ma', noOrg: true,
             candidateName: me?.name || null,
             candidateEmail: filedEmail,
-            whyNotListed: whyNotListed.trim(),
             partnerSummary: partnerSummary(partnerMode, partnerNames),
             statusNote: statusNote.trim(),
           },
@@ -551,10 +542,9 @@ export default function MaPracticumForm() {
         <div className="rounded-xl px-4 py-4 mb-6 text-[13.5px] leading-[1.65]" data-ma-release
           style={{ background: 'rgba(180,83,9,0.09)', border: '1px solid #b45309', color: '#7c4a0b' }}>
           <div className="mb-2.5">
-            בהגשה הקודמת ציינת ש{heldBack.perm === 'wait' ? 'עדיין לא' : 'עדיין בתהליך ולא'} ניתן לפנות
-            {heldBack.org ? <> ל<strong>{heldBack.org}</strong></> : ' לארגון'}
-            {heldBack.perm === 'wait' && heldBack.after ? ` (עד ${String(heldBack.after).slice(8, 10)}/${String(heldBack.after).slice(5, 7)})` : ''}.
-            <br />אם כבר אפשר — לחיצה אחת, ורכז התכנית יקבל על כך הודעה.
+            בהגשה הקודמת ציינת שעדיין לא ניתן לפנות
+            {heldBack.org ? <> ל<strong>{heldBack.org}</strong></> : ' לארגון'}.
+            <br />אם כבר אפשר — לחיצה אחת, ומנחה התכנית יקבל על כך הודעה.
           </div>
           <button type="button" onClick={release} disabled={releasing} data-ma-release-go
             className="rounded-lg px-4 py-2 text-[14px] font-semibold"
@@ -566,7 +556,7 @@ export default function MaPracticumForm() {
       {releasedOrg && (
         <div className="rounded-xl px-4 py-4 mb-6 text-[13.5px] leading-[1.65]" data-ma-released
           style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.35)', color: '#065f46' }}>
-          ✓ עודכן. רכז התכנית קיבל הודעה שניתן לפנות ל<strong>{releasedOrg}</strong>, והוא ייצור איתם קשר.
+          ✓ עודכן. מנחה התכנית קיבל הודעה שניתן לפנות ל<strong>{releasedOrg}</strong>, והוא ייצור איתם קשר.
           אין צורך לשלוח את הטופס שוב.
         </div>
       )}
@@ -757,7 +747,7 @@ export default function MaPracticumForm() {
             <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-propose-panel
               style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
               <p className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
-                <strong>רכז התכנית ייצור קשר עם הארגון לצורך האישור</strong> — ואין צורך לפנות אליהם בעצמך.
+                <strong>מנחה התכנית ייצור קשר עם הארגון לצורך האישור</strong> — ואין צורך לפנות אליהם בעצמך.
                 אם ההצעה תאושר, הארגון יהפוך ל<strong>בחירה הראשונה שלך</strong>.
                 גם אם עדיין לא סוכם דבר — מלאו מה שידוע, ולמטה ציינו מתי אפשר לפנות.
               </p>
@@ -782,8 +772,7 @@ export default function MaPracticumForm() {
                 <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>מתי אפשר לפנות לארגון? *</span>
                 <div className="flex flex-col gap-2">
                   {([
-                    ['now', 'אפשר לפנות עכשיו', 'סוכם ביניכם שהרכז ייצור קשר'],
-                    ['wait', 'נא להמתין — אפשר לפנות החל מתאריך', 'אנחנו באמצע שיחה ואני צריך/ה עוד כמה ימים'],
+                    ['now', 'אפשר לפנות עכשיו', 'סוכם ביניכם שמנחה התכנית ייצור קשר'],
                     ['later', 'עדיין בתהליך — אעדכן כשאפשר', 'תוכלו לחזור לקישור הזה ולעדכן בלחיצה אחת'],
                   ] as const).map(([value, title, hint]) => {
                     const selected = contactPermission === value;
@@ -801,11 +790,6 @@ export default function MaPracticumForm() {
                           <div className="flex-1">
                             <div className="text-[14px] font-semibold" style={{ color: selected ? 'var(--accent)' : 'var(--ink)' }}>{title}</div>
                             <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{hint}</div>
-                            {value === 'wait' && selected && (
-                              <input type="date" value={contactAfter} onChange={e => setContactAfter(e.target.value)}
-                                data-ma-contact-after className="input mt-2"
-                                style={{ padding: '8px 12px', fontSize: '14px' }} />
-                            )}
                           </div>
                         </div>
                       </label>
@@ -819,7 +803,7 @@ export default function MaPracticumForm() {
                   הטופס כאשר ניתן יהיה לפנות לארגון". A student who learns this only after
                   submitting has already chosen without knowing what releases the call —
                   and a student who thinks we will chase it ourselves never comes back. */}
-              {(contactPermission === 'wait' || contactPermission === 'later') && (
+              {contactPermission === 'later' && (
                 <div className="rounded-lg px-3 py-2.5 text-[12.5px] leading-[1.6]" data-ma-hold-note
                   style={{ background: 'rgba(122,30,43,0.06)', border: '1px solid rgba(122,30,43,0.2)' }}>
                   <strong>חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון.</strong> עד אז לא ניצור איתם קשר.
@@ -854,20 +838,16 @@ export default function MaPracticumForm() {
               insist on one — a student who cannot name the company yet is still telling us
               something true. 'none' asks the one question Yariv wants answered. */}
           {orgStatus === 'none' && (
-            <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-none-panel
+            <div className="mt-3 rounded-xl border p-4" data-ma-none-panel
               style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
-              <div>
-                <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
-                  {orgs.length ? `למה ${orgs.map(o => o.name).join(', ')} לא מתאים/ה לך? *` : 'מה מצב החיפוש שלך? *'}
-                </span>
-                <textarea value={whyNotListed} onChange={e => setWhyNotListed(e.target.value)} rows={3}
-                  data-ma-why-not placeholder="למשל: מרחק נסיעה, תחום שלא מתאים לי, התחייבות בעבודה"
-                  className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />
-                <div className="text-[12px] mt-1.5 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
-                  זה לא מבחן — זה מה שמאפשר לרכז התכנית לחפש עבורך ארגון מתאים יותר.
-                  <br /><strong>אנא פנו למנחה הפרקטיקום לתיאום</strong>, ואפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון.
-                </div>
-              </div>
+              {/* No question here. Yariv struck the "why not the listed organization" box
+                  2026-10-07 — "אפשר להסיר שיפנו אלי להסבר" — because the explanation
+                  belongs in a conversation with him, not in a box a student fills in to
+                  get past a form. All that is left is where to take it. */}
+              <p className="text-[13px] leading-[1.65]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
+                <strong>אנא פנו למנחה התכנית לתיאום.</strong> קורות החיים שלכם נשמרים כאן ממילא,
+                ואפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון.
+              </p>
             </div>
           )}
 
@@ -875,7 +855,7 @@ export default function MaPracticumForm() {
               לאחת מאלה שהעלתי". Nothing about the choices above can anticipate every
               situation, and a student with something to say needs somewhere to say it. */}
           <div className="mt-4">
-            <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הערה לרכז התכנית (אופציונלי)</span>
+            <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הערה למנחה התכנית (אופציונלי)</span>
             <textarea value={statusNote} onChange={e => setStatusNote(e.target.value)} rows={2}
               data-ma-status-note placeholder="כל דבר שחשוב שנדע — מצב, אילוץ, שאלה"
               className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />

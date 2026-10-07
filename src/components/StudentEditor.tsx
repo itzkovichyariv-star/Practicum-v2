@@ -867,7 +867,7 @@ export default function StudentEditor({
                       style={{ background: 'rgba(146,64,14,0.07)', border: '1px solid rgba(146,64,14,0.25)', color: '#92400e' }}>
                       <div className="font-bold">
                         {pendingCv.contact_permission
-                          ? `✦ ${contactPermissionLine(pendingCv.contact_permission as ContactPermission, pendingCv.contact_after || '')}`
+                          ? `✦ ${contactPermissionLine(pendingCv.contact_permission as ContactPermission)}`
                           : `✦ ${orgStatusHeadline(pendingCv.org_status as OrgStatus)}`}
                       </div>
                       {pendingCv.student_note && (
@@ -1094,7 +1094,7 @@ export default function StudentEditor({
                           {/* The permission reads as a line in the history, so the moment
                               the student released us has a timestamp on the card. */}
                           {row.contact_permission ? (
-                            <span data-history-status>{`· ${contactPermissionLine(row.contact_permission as ContactPermission, row.contact_after || '')}`}</span>
+                            <span data-history-status>{`· ${contactPermissionLine(row.contact_permission as ContactPermission)}`}</span>
                           ) : row.org_status === 'none' ? (
                             <span data-history-status>· אין ארגון כרגע</span>
                           ) : null}

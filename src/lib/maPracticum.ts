@@ -333,8 +333,13 @@ export type OrgStatus = '' | 'pending' | 'none';
  * It also removes an option rather than adding one: "I propose an organization" and "I am
  * in touch with one" turned out to be the same answer with different timing, so they are
  * now one choice carrying this question.
+ *
+ * There were three answers for a while, the middle one being "not before <date>". Yariv
+ * struck it 2026-10-07: "לא צריך תאריך שיוגדר זה במילא לא ראלי". He is right — a date a
+ * student guesses at is a date nobody honours, and it only invited him to diarise a
+ * fiction. Two answers: call them, or do not call them yet.
  */
-export type ContactPermission = '' | 'now' | 'wait' | 'later';
+export type ContactPermission = '' | 'now' | 'later';
 
 export type MaSubmission = {
   email: string;
@@ -353,12 +358,8 @@ export type MaSubmission = {
   relationship?: string;  // אופי הקשר — משפחה, מכר, מעסיק קודם
   howFound?: string;      // איך הגעת לארגון — the one he called least important
   contactPermission?: ContactPermission;
-  /** Required with 'wait': the date from which he may approach them. */
-  contactAfter?: string;
   /** Only 'none' now — "I have no organization". 'pending' is derived from the permission. */
   orgStatus?: OrgStatus;
-  /** Required for 'none': why not the organization already on the list. */
-  whyNotListed?: string;
   /** Free text, offered whatever the answer — "סטטוס כללי שלא מוגבל לאחת מאלה שהעלתי". */
   statusNote?: string;
   partnerMode: PartnerMode | '';
@@ -413,12 +414,9 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
   // "I have no organization" short-circuits the rules below: there is no name to check
   // against the list and no contact to reach.
   if (s.orgStatus === 'none') {
-    if (!String(s.whyNotListed || '').trim()) {
-      const listed = ctx.orgs.map(o => o.name).join(', ');
-      return listed
-        ? `כדי שנוכל לעזור — כתבו למה ${listed} לא מתאים/ה לכם`
-        : 'כתבו בבקשה מה מצב החיפוש שלכם';
-    }
+    // Nothing more is asked. Yariv struck the "why not the listed organization" box
+    // 2026-10-07 — "אפשר להסיר שיפנו אלי להסבר" — because the explanation belongs in a
+    // conversation with him, not in a text box a student fills in to get past a form.
   } else if (s.orgStatus) {
     return 'בחירת הארגון אינה תקינה';
   } else if (s.proposing) {
@@ -435,13 +433,7 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
     if (missingAlways) return `כדי שנוכל לפנות לארגון יש למלא: ${missingAlways[1]}`;
 
     if (!s.contactPermission) return 'יש לציין מתי אפשר לפנות לארגון';
-    if (!['now', 'wait', 'later'].includes(s.contactPermission)) return 'בחירת מועד הפנייה אינה תקינה';
-
-    if (s.contactPermission === 'wait') {
-      const d = String(s.contactAfter || '').trim();
-      if (!d) return 'יש לציין מאיזה תאריך אפשר לפנות לארגון';
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return 'התאריך אינו תקין';
-    }
+    if (!['now', 'later'].includes(s.contactPermission)) return 'בחירת מועד הפנייה אינה תקינה';
 
     // CONTACT DETAILS ARE REQUIRED ONLY TO CALL TODAY.
     //
@@ -567,19 +559,14 @@ export function partnerEmails(blob: Blob | null, student: any, names: string[]):
 }
 
 /**
- * THE DATE HE MAY CALL, as a sentence rather than a code.
+ * WHETHER HE MAY CALL, as a sentence rather than a code.
  *
- * This is the line that decides whether he picks up the phone, so it says the permission
- * first and the date second — "לא לפנות עד 15/11" is scanned in the order it is read.
+ * This is the line that decides whether he picks up the phone, so it leads with the
+ * permission rather than with the organization's name.
  */
-export function contactPermissionLine(p: ContactPermission, after?: string): string {
+export function contactPermissionLine(p: ContactPermission): string {
   if (p === 'now') return 'אפשר לפנות לארגון עכשיו';
   if (p === 'later') return 'עדיין בתהליך — הסטודנט/ית יעדכן/תעדכן מתי אפשר לפנות';
-  if (p === 'wait') {
-    const d = String(after || '').trim();
-    const nice = /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : d;
-    return nice ? `לא לפנות עד ${nice}` : 'לא לפנות עדיין';
-  }
   return '';
 }
 
@@ -627,16 +614,14 @@ export function derivedOrgStatus(s: {
  */
 export function orgStatusLine(s: {
   orgStatus?: OrgStatus; proposing?: boolean; orgName?: string;
-  contactPermission?: ContactPermission; contactAfter?: string;
-  whyNotListed?: string; statusNote?: string;
+  contactPermission?: ContactPermission; statusNote?: string;
 }): string {
   const t = (v?: string) => String(v || '').trim();
   const parts: string[] = [];
   if (s.orgStatus === 'none') {
     parts.push('אין ארגון כרגע');
-    if (t(s.whyNotListed)) parts.push(`למה לא מהרשימה: ${t(s.whyNotListed)}`);
   } else if (s.proposing) {
-    const when = contactPermissionLine(s.contactPermission || '', s.contactAfter);
+    const when = contactPermissionLine(s.contactPermission || '');
     if (when) parts.push(when);
     if (t(s.orgName)) parts.push(t(s.orgName));
   }
