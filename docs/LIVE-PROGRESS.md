@@ -895,3 +895,10 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
     scope for this branch and established copy — worth asking him whether he wants those unified too.
 - **Green:** unit **303** · forms **38** · tsc clean · build 8 pages · both functions parse.
 - **STILL OPEN:** his OK → SQL (now three columns, not four) → deploy functions + site → send the link.
+
+## 2026-10-08 — v1.43.1+build.140 IS LIVE (deploy was never logged)
+- Found on reload: PR #62 was merged and `npm run deploy` ran (2026-10-07 ~15:00 IL). Cloudflare Pages production deployment
+  **592db43f** from `b2fa920` — confirmed live: production `sw.js` serves `v1.43.1+build.140.b2fa9205`.
+- The predeploy stamp (`version.ts`, `sw.js`) was left uncommitted and the deploy was not logged; both committed now.
+- **NOT verified from here:** whether `cv_updates_ma_status.sql` was run, whether the `notify-org-suggestion` /
+  `notify-placement` functions were deployed, and whether the /ma link was sent. Check these before assuming the /ma flow works end to end.
