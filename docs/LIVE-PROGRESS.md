@@ -865,3 +865,14 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
 - **Rendering the mail is now the only way to check it.** `scratchpad/mails.mjs` pulls the template and the subject
   expression straight out of the function source, so the preview cannot drift from what ships. Five HTML files sent to him.
 - **Green:** unit **287** · tsc clean · function parses.
+
+## 2026-10-07 14:45 IL — merged with the parallel session; both of us had found the same mail defect
+- Both sessions independently caught that the mail still introduced the organization in cases where it should not.
+  **Resolution: their body wording kept** (it names the organization in the release case and says the approval is
+  still his — better than mine), **my header branch kept** (they had four cases; a proposal he must NOT act on yet
+  was missing, so "פרקטיקום · הצעת ארגון — לא לפנות עדיין" is restored).
+- Their `unit/org-alert-mail.spec.ts` + `unit/ma-org-status-copy.spec.ts` close the gap I had named: the tests now
+  assert the HTML the function RENDERS, not only the payload the form sends. That is the class of defect that got
+  past both of us.
+- **Green after the merge:** unit **304** · forms **38** · tsc clean · build 8 pages · function parses · all five
+  mails re-rendered and read correctly.
