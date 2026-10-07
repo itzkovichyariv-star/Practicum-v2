@@ -1,0 +1,208 @@
+# Nightly backup of everything Practicum keeps — the Supabase database AND the
+# Storage bucket that holds the CVs — encrypted, into a place that is not Supabase.
+#
+# WHY THIS EXISTS
+# ---------------
+#   Every student, employer, placement, dispatch and feedback in this system lives
+#   in ONE Supabase project (`vpqgmcmavnszcnakhiat`), and every CV lives in ONE
+#   bucket in that same project. `practicum_snapshots` keeps a version history, but
+#   it is a table in the same database: a dropped table, a bad SQL Editor paste, a
+#   billing lapse or a lost account takes the history with the data.
+#
+#   The 2026-06-11 incident (a status reverted and re-accepted by accident) was
+#   recoverable because the snapshot history happened to hold the earlier state.
+#   That is not a backup — it is a table that survived because nothing had happened
+#   to the database itself. This workflow is the copy that lives somewhere else.
+#
+# WHAT IT NEEDS (repository secrets — Settings → Secrets and variables → Actions)
+# ------------------------------------------------------------------------------
+#   SUPABASE_DB_URL       the Postgres connection string.
+#                         Supabase dashboard → Project Settings → Database →
+#                         Connection string → URI, and pick **Session pooler**.
+#                         Not the Transaction pooler (port 6543 — pg_dump cannot use
+#                         it) and not the Direct connection (IPv6 only; GitHub
+#                         runners are IPv4, so it times out with no useful error).
+#
+#   SUPABASE_SERVICE_KEY  the SERVICE ROLE key (Project Settings → API).
+#                         Storage is walked with this key so RLS cannot silently
+#                         hide objects from the backup. The publishable key would
+#                         produce a partial copy that reports success.
+#
+#   BACKUP_PASSPHRASE     any long random string. The archive is encrypted with it
+#                         before it leaves this job. KEEP IT SOMEWHERE THAT IS NOT
+#                         THIS REPOSITORY — a password manager. Without it the
+#                         backups are unreadable, including by you.
+#
+# WHERE THE BACKUP GOES
+# ---------------------
+#   A GitHub Actions artifact on this repository, kept 90 days. That is off
+#   Supabase, which is the point: the two systems now have to fail together to lose
+#   the data. It is deliberately not a commit — a nightly encrypted blob in git
+#   history would grow the clone forever and could never be removed.
+#
+#   The first step REFUSES TO RUN while this repository is public. Artifacts on a
+#   public repository are downloadable, and this archive is students' personal data.
+#   Making the repository private is step one of the security plan anyway; until
+#   that is done, this workflow fails loudly rather than publishing a copy of the
+#   database to the internet.
+#
+# HOW TO RESTORE
+# --------------
+#   1. Download the artifact from the run, unzip it.
+#   2. gpg --batch --output backup.tar.gz --decrypt backup.tar.gz.gpg
+#   3. tar xzf backup.tar.gz
+#   4. Database:  psql "$SUPABASE_DB_URL" -f practicum-db.sql
+#      Storage:   the files sit under storage/ in their original paths; re-upload
+#                 with the Supabase CLI or the dashboard. storage/_manifest.json
+#                 lists what the bucket held, so a missing file can be told apart
+#                 from a file that never existed.
+#
+#   Restoring the database over a live one REPLACES it. Take a fresh backup first.
+
+name: Nightly backup
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # 01:00 UTC daily — after the working day in Israel
+  workflow_dispatch:
+
+concurrency:
+  group: practicum-backup
+  cancel-in-progress: false   # never interrupt a backup; queue instead
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    name: Dump, download, encrypt, upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Refuse to back up into a public repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # `github.event.repository` is not populated on a schedule trigger, so ask
+          # the API rather than trusting the event payload.
+          VIS=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                 -H "Accept: application/vnd.github+json" \
+                 "https://api.github.com/repos/${GITHUB_REPOSITORY}" | jq -r '.visibility // "unknown"')
+          if [ "$VIS" != "private" ]; then
+            echo "::error::This repository is '$VIS'. Actions artifacts on a non-private repository are downloadable, and this backup contains students' personal data and their CVs. Make the repository private (Settings → General → Danger Zone → Change visibility), then re-run."
+            exit 1
+          fi
+          echo "Repository is private. Proceeding."
+
+      - name: Check the secrets are present
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          MISSING=""
+          [ -z "$DB_URL" ]      && MISSING="$MISSING SUPABASE_DB_URL"
+          [ -z "$SERVICE_KEY" ] && MISSING="$MISSING SUPABASE_SERVICE_KEY"
+          [ -z "$PASSPHRASE" ]  && MISSING="$MISSING BACKUP_PASSPHRASE"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Missing repository secret(s):$MISSING — see the header of this workflow file for where each one comes from."
+            exit 1
+          fi
+          case "$DB_URL" in
+            *:6543/*)
+              echo "::error::SUPABASE_DB_URL points at port 6543 (Transaction pooler). pg_dump cannot use it. Use the Session pooler URI (port 5432) from Project Settings → Database → Connection string."
+              exit 1 ;;
+          esac
+          echo "All three secrets are set."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pg_dump 17
+        run: |
+          # The runner's default client can be older than the server, and pg_dump
+          # refuses to dump a newer server. Pin the client to 17 from PGDG.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -sS -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Dump the database
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backup
+          pg_dump "$SUPABASE_DB_URL" \
+            --no-owner --no-privileges --no-comments \
+            --schema=public --schema=storage \
+            -f backup/practicum-db.sql
+          ls -lh backup/practicum-db.sql
+
+      - name: Download the Storage bucket (the CVs)
+        env:
+          SUPABASE_URL: https://vpqgmcmavnszcnakhiat.supabase.co
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/backup-storage.mjs candidate-uploads backup/storage
+
+      - name: Sanity-check the dump before trusting it
+        run: |
+          # A backup that succeeds and contains nothing is worse than one that fails,
+          # because nobody looks at it again until the day it is needed. Same idea as
+          # the REGRESSION_FLOOR guard in src/lib/dataApi.ts: refuse a result that is
+          # implausibly small rather than record it as a success.
+          SIZE=$(stat -c%s backup/practicum-db.sql)
+          echo "Dump size: $SIZE bytes"
+          if [ "$SIZE" -lt 10240 ]; then
+            echo "::error::The dump is only $SIZE bytes. Something went wrong — not uploading it as a backup."
+            exit 1
+          fi
+          for T in practicum_data candidate_submissions cv_updates practicum_snapshots; do
+            if ! grep -q "$T" backup/practicum-db.sql; then
+              echo "::error::Table '$T' does not appear in the dump. Refusing to record an incomplete backup."
+              exit 1
+            fi
+          done
+          echo "Dump contains every expected table."
+
+      - name: Encrypt
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          STAMP=$(date -u +%Y-%m-%d)
+          tar czf "practicum-backup-$STAMP.tar.gz" -C backup .
+          # Passphrase via a file, not the command line, so it never appears in the
+          # process list of a shared runner.
+          umask 077
+          printf '%s' "$BACKUP_PASSPHRASE" > /tmp/bp
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+              --passphrase-file /tmp/bp \
+              -o "practicum-backup-$STAMP.tar.gz.gpg" \
+              "practicum-backup-$STAMP.tar.gz"
+          shred -u /tmp/bp
+          rm -f "practicum-backup-$STAMP.tar.gz"
+          ls -lh "practicum-backup-$STAMP.tar.gz.gpg"
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: practicum-backup-${{ env.STAMP }}
+          path: practicum-backup-${{ env.STAMP }}.tar.gz.gpg
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: How to read it back
+        run: |
+          echo "Backup practicum-backup-${STAMP}.tar.gz.gpg is attached to this run, kept 90 days."
+          echo "To restore:"
+          echo "  gpg --batch --output backup.tar.gz --decrypt practicum-backup-${STAMP}.tar.gz.gpg"
+          echo "  tar xzf backup.tar.gz"
+          echo "  psql \"\$SUPABASE_DB_URL\" -f practicum-db.sql     # replaces the live database"
+          echo "  storage/ holds the CVs in their original paths; storage/_manifest.json lists them."
