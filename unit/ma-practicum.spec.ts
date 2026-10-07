@@ -187,42 +187,28 @@ test('ONE IDENTITY PER PERSON: a name match is filed under the address on the ca
 });
 
 /**
- * The coordinator's preview. Yariv 2026-10-07: "אני רוצה לעבור את כל התהליך אחר כך נסיר
- * אותי אז כן תתן לי אפשרות לבחור שותף וכו" — so the preview has to reach the END of the
- * form, not merely be let in, and that means a partner list and an organization list.
+ * THE PREVIEW IS GONE, and that is the point.
+ *
+ * It existed so Yariv could walk the form before anyone else did — "אני רוצה לעבור את כל
+ * התהליך אחר כך נסיר אותי". He walked it on 2026-10-07 against the live project (CV
+ * uploaded, organization proposed, row written, notification mail sent) and then said
+ * "ואז תסיר את השם שלי ואשלח לסטודנטים". These tests pin the removal, because this file
+ * ships inside a public browser bundle: an address left in the array is published with it.
  */
-test('THE PREVIEW WALKS THE WHOLE FORM — partners and organizations included', () => {
-  const r = resolveMaStudent(blob, PREVIEW_EMAILS[0], '', COURSE);
-  expect(r.ok).toBe(true);
-  if (!r.ok) return;
-  expect(r.identifiedBy).toBe('preview');
-  expect(r.student.id).toBe('__preview__');
-  // The year is what scopes a cohort, so an empty one would silently empty the picker.
-  expect(partnerOptions(blob, r.student).map(p => p.name))
-    .toEqual(['אבי לוי', 'דנה מזרחי', 'נועה כהן']);
-  expect(maOrgOptions(blob, r.courseId).map(o => o.name)).toEqual(['פסגות']);
-  expect(validateMaSubmission(
-    base({ email: PREVIEW_EMAILS[0], orgChoice: 'פסגות', partnerMode: 'with', partnerNames: ['אבי לוי'] }),
-    { lookup: r, partners: partnerOptions(blob, r.student), orgs: maOrgOptions(blob, r.courseId) },
-  )).toBeNull();
+test('NO ADDRESS SHIPS WITH THE FORM — the preview list is empty', () => {
+  expect(PREVIEW_EMAILS).toEqual([]);
 });
 
-test('the preview takes the cohort\'s year when the course row carries none', () => {
-  const noYear: Blob = {
-    courses: [{ id: COURSE, name: 'פרקטיקום תואר שני', type: 'practicum' }],
-    employers: blob.employers,
-    students: blob.students,
-  };
-  const r = resolveMaStudent(noYear, PREVIEW_EMAILS[0], '', COURSE);
-  expect(r.ok).toBe(true);
-  if (r.ok) expect(partnerOptions(noYear, r.student).length).toBeGreaterThan(0);
-});
-
-test('the preview is NOT a student — no cohort can pick it as a partner', () => {
-  // The whole reason it lives in code and not in a students row.
-  for (const em of PREVIEW_EMAILS) {
-    expect((blob.students || []).some((st: any) => st.email === em)).toBe(false);
+test("the coordinator's own addresses now take the ordinary path, like anyone else's", () => {
+  for (const em of ['yarivi@ariel.ac.il', 'itzkovichyariv@gmail.com']) {
+    const r = resolveMaStudent(blob, em, '', COURSE);
+    expect(r.ok, `${em} must no longer be let in without a name`).toBe(false);
+    // 'unknown-email' is what opens the name field — not a dead end, just no shortcut.
+    if (!r.ok) expect(r.reason).toBe('unknown-email');
   }
+});
+
+test('the preview was never a student, so removing it leaves no trace in any cohort', () => {
   expect(partnerOptions(blob, (blob.students || [])[0]).map(p => p.name))
     .not.toContain('תצוגה מקדימה (רכז/ת)');
 });
