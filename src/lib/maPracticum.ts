@@ -87,6 +87,32 @@ function nameKey(v?: string | null): string {
   return normName(v).split(' ').filter(Boolean).sort().join(' ');
 }
 
+/**
+ * Which PERSON a student row belongs to.
+ *
+ * The live data carries one person on several course rows — the יעוץ ארגוני cohort sits on
+ * ariel-counseling-a, ariel-counseling-b AND counseling-practicum-tashpaz, three rows per
+ * student, same address on each. So rows are not people, and anything that counts rows and
+ * calls the result "two students" is wrong about all fifteen of them.
+ *
+ * The address is the identity because that is what the rest of the app pairs on. A row with
+ * no address can only be itself.
+ */
+function identityKey(s: any): string {
+  return normEmail(s?.email) || `id:${String(s?.id || '')}`;
+}
+
+/**
+ * Of one person's several rows, the one this link is about.
+ *
+ * The row decides which organizations are offered and whose names the partner picker
+ * carries, so taking whichever row happened to be first would show a יעוץ ארגוני student the
+ * wrong course's organizations — quite possibly none at all.
+ */
+function preferRow(rows: any[], targetCourseId: string): any {
+  return rows.find((r: any) => r?.courseId === targetCourseId) || rows[0];
+}
+
 function identified(blob: Blob, student: any, identifiedBy: IdentifiedBy): StudentLookup {
   const course = (blob.courses || []).find((c: any) => c?.id === student.courseId);
   return {
@@ -128,8 +154,11 @@ export function resolveMaStudent(
   if (!blob) return { ok: false, reason: 'not-loaded' };
 
   const students = blob.students || [];
-  const byEmail = students.find((s: any) => normEmail(s?.email) === em);
-  if (byEmail) return identified(blob, byEmail, 'email');
+  const target = previewCourseId || MA_COURSE_ID;
+
+  // All of this person's rows, then the one for this link — not merely the first found.
+  const byEmail = students.filter((s: any) => normEmail(s?.email) === em);
+  if (byEmail.length) return identified(blob, preferRow(byEmail, target), 'email');
 
   // The coordinator's own preview, before any name is asked for: he is not on the student
   // list and never should be, so neither key can ever find him.
@@ -164,11 +193,14 @@ export function resolveMaStudent(
     const want = nameKey(typed);
     hits = named.filter((s: any) => nameKey(s.name) === want);
   }
-
   if (!hits.length) return { ok: false, reason: 'unknown-name' };
+
+  // COUNT PEOPLE, NOT ROWS. Counting rows reported "יש יותר מסטודנט/ית אחד/ת בשם הזה"
+  // for every one of the fifteen, because each of them is carried on three course rows.
+  const people = new Set(hits.map(identityKey));
   // Two students really do share a name: say so rather than guessing which one gets the CV.
-  if (hits.length > 1) return { ok: false, reason: 'ambiguous-name' };
-  return identified(blob, hits[0], 'name');
+  if (people.size > 1) return { ok: false, reason: 'ambiguous-name' };
+  return identified(blob, preferRow(hits, target), 'name');
 }
 
 /**
