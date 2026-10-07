@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, mutualNotice, partnerEmails, buildProposal, sameYear,
-  submissionEmail, normName, PREVIEW_EMAILS, MA_COURSE_ID,
+  submissionEmail, normName, PREVIEW_EMAILS, MA_COURSE_ID, orgStatusLine, orgStatusHeadline,
+  contactPermissionLine, proposalContext, derivedOrgStatus,
   type Blob, type MaContext, type MaSubmission,
 } from '../src/lib/maPracticum';
 import { promoteOrgToFirst, setCourseCapacity, countSlotsByStatus } from '../src/lib/placement';
@@ -296,14 +297,19 @@ test('an organization that is not on the student\'s own list is refused', () => 
 });
 
 test('a proposal needs the contact details that make it reachable', () => {
+  // Reachability is now conditional on the timing — see the permission tests below — so
+  // this pins the "call them now" case, which is the one that must be complete.
   const p = { name: 'חברה חדשה', contactName: 'שרה', contactRole: 'מנהלת HR', email: 'sara@x.co.il', phone: '0501234567' };
-  const ok = base({ orgChoice: '', proposing: true, proposal: p });
-  expect(validateMaSubmission(ok, ctxFor('noa@ariel.ac.il'))).toBeNull();
-  expect(validateMaSubmission(base({ orgChoice: '', proposing: true, proposal: { ...p, contactRole: '' } }), ctxFor('noa@ariel.ac.il')))
+  const own = (over: Partial<MaSubmission> = {}) => base({
+    orgChoice: '', proposing: true, proposal: p, contactPermission: 'now',
+    orgOffer: 'ליווי', agreedWith: 'מעוניינים', relationship: 'מכר', ...over,
+  });
+  expect(validateMaSubmission(own(), ctxFor('noa@ariel.ac.il'))).toBeNull();
+  expect(validateMaSubmission(own({ proposal: { ...p, contactRole: '' } }), ctxFor('noa@ariel.ac.il')))
     .toContain('תפקיד');
-  expect(validateMaSubmission(base({ orgChoice: '', proposing: true, proposal: { ...p, email: 'not-an-email' } }), ctxFor('noa@ariel.ac.il')))
+  expect(validateMaSubmission(own({ proposal: { ...p, email: 'not-an-email' } }), ctxFor('noa@ariel.ac.il')))
     .toContain('אימייל');
-  expect(validateMaSubmission(base({ orgChoice: '', proposing: true, proposal: { ...p, phone: '123' } }), ctxFor('noa@ariel.ac.il')))
+  expect(validateMaSubmission(own({ proposal: { ...p, phone: '123' } }), ctxFor('noa@ariel.ac.il')))
     .toContain('טלפון');
 });
 
@@ -460,4 +466,151 @@ test('two people who really share a name are still refused, duplicates or not', 
 test('a duplicated person is filed under their one address, once', () => {
   const r = resolveMaStudent(MULTI, 'shira.alon.private@gmail.com', 'שירה אלון');
   expect(submissionEmail(r, 'shira.alon.private@gmail.com')).toBe('shira@ariel.ac.il');
+});
+
+
+/**
+ * "NOT YET" IS AN ANSWER — and the question behind it is WHEN MAY HE CALL.
+ *
+ * Yariv 2026-10-07: "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי אוכל
+ * לפנות". A status describes the student; a permission describes what HE may do, which is
+ * the only part he can act on — so "I propose an organization" and "I am in touch with
+ * one" collapsed into a single option carrying this question.
+ */
+const own = (over: Partial<MaSubmission> = {}) => ({
+  sub: base({
+    email: 'noa@ariel.ac.il', orgChoice: '', proposing: true,
+    proposal: { name: 'מכון אביב', contactName: '', contactRole: '', email: '', phone: '' },
+    orgOffer: 'ליווי תהליכי פיתוח ארגוני', agreedWith: 'דיברנו והם מעוניינים',
+    relationship: 'מכר של אבא שלי',
+    ...over,
+  }),
+  ctx: { ...ctxFor('noa@ariel.ac.il'), orgs: maOrgOptions(blob, COURSE) } as MaContext,
+});
+const notYet = (over: Partial<MaSubmission> = {}) => ({
+  sub: base({ email: 'noa@ariel.ac.il', orgChoice: '', ...over }),
+  ctx: { ...ctxFor('noa@ariel.ac.il'), orgs: maOrgOptions(blob, COURSE) } as MaContext,
+});
+
+test('CALL THEM NOW: every contact detail is required, because he is about to dial', () => {
+  const bare = own({ contactPermission: 'now' });
+  expect(validateMaSubmission(bare.sub, bare.ctx)).toContain('שם איש/אשת הקשר');
+  const full = own({
+    contactPermission: 'now',
+    proposal: { name: 'מכון אביב', contactName: 'שרה כהן', contactRole: 'מנהלת', email: 's@a.co.il', phone: '0501234567' },
+  });
+  expect(validateMaSubmission(full.sub, full.ctx)).toBeNull();
+});
+
+test('NOT YET: the same details are requested but not enforced', () => {
+  // A student mid-conversation often does not have the direct line, and demanding it
+  // produces an invented number — worse than a blank, because a blank is visible.
+  const later = own({ contactPermission: 'later' });
+  expect(validateMaSubmission(later.sub, later.ctx)).toBeNull();
+});
+
+test('THE DATE IS GONE — "not before the 15th" is no longer an answer the form accepts', () => {
+  // Yariv 2026-10-07: "לא צריך תאריך שיוגדר זה במילא לא ראלי". A date a student guesses
+  // at is a date nobody honours, and it only invited him to diarise a fiction.
+  const wait = own({ contactPermission: 'wait' as any });
+  expect(validateMaSubmission(wait.sub, wait.ctx)).toContain('מועד הפנייה');
+  expect(contactPermissionLine('wait' as any)).toBe('');
+});
+
+test('but a detail that IS given must be a real one, whatever the timing', () => {
+  const bad = own({
+    contactPermission: 'later',
+    proposal: { name: 'מכון אביב', contactName: 'שרה', contactRole: '', email: 'not-an-address', phone: '' },
+  });
+  expect(validateMaSubmission(bad.sub, bad.ctx)).toContain('אימייל');
+  const badPhone = own({
+    contactPermission: 'later',
+    proposal: { name: 'מכון אביב', contactName: '', contactRole: '', email: '', phone: '12' },
+  });
+  expect(validateMaSubmission(badPhone.sub, badPhone.ctx)).toContain('טלפון');
+});
+
+
+test('the timing question itself cannot be skipped', () => {
+  const none = own({ contactPermission: '' });
+  expect(validateMaSubmission(none.sub, none.ctx)).toContain('מתי אפשר לפנות');
+});
+
+test("THE STUDENT'S OWN ACCOUNT is required whatever the timing", () => {
+  // These are what he reads before he picks up the phone, and a student who cannot answer
+  // them does not really have an organization yet.
+  for (const [field, word] of [['orgOffer', 'מה הארגון מציע'], ['agreedWith', 'מה סוכם'], ['relationship', 'אופי הקשר']] as const) {
+    const miss = own({ contactPermission: 'later', [field]: '' } as any);
+    expect(validateMaSubmission(miss.sub, miss.ctx), `${field} must be required`).toContain(word);
+  }
+  // "How did you get to them" is the one he called least important, so it stays optional.
+  const noHow = own({ contactPermission: 'later', howFound: '' });
+  expect(validateMaSubmission(noHow.sub, noHow.ctx)).toBeNull();
+});
+
+test('an organization with no name is not an organization', () => {
+  const anon = own({ contactPermission: 'later', proposal: { name: '', contactName: '', contactRole: '', email: '', phone: '' } });
+  expect(validateMaSubmission(anon.sub, anon.ctx)).toContain('שם הארגון');
+});
+
+test('NO ORGANIZATION: nothing further is asked — the explanation belongs with him', () => {
+  // Yariv struck the "why not the listed organization" box 2026-10-07: "אפשר להסיר שיפנו
+  // אלי להסבר". A reason typed to get past a form is not a reason he can act on.
+  const { sub, ctx } = notYet({ orgStatus: 'none' });
+  expect(validateMaSubmission(sub, ctx)).toBeNull();
+});
+
+
+test('neither answer skips the CV — that is still the point of the form', () => {
+  const a = own({ contactPermission: 'later', hasFile: false, hasExistingCv: false });
+  expect(validateMaSubmission(a.sub, a.ctx)).toContain('קורות חיים');
+  const b = notYet({ orgStatus: 'none', hasFile: false, hasExistingCv: false });
+  expect(validateMaSubmission(b.sub, b.ctx)).toContain('קורות חיים');
+});
+
+test('a status or a permission the app never offers is refused rather than stored', () => {
+  const s1 = notYet({ orgStatus: 'maybe' as any });
+  expect(validateMaSubmission(s1.sub, s1.ctx)).not.toBeNull();
+  const s2 = own({ contactPermission: 'whenever' as any });
+  expect(validateMaSubmission(s2.sub, s2.ctx)).not.toBeNull();
+});
+
+test('THE LINE HE ACTS ON: the permission leads, then the organization', () => {
+  expect(orgStatusLine({ proposing: true, orgName: 'מכון אביב', contactPermission: 'now' }))
+    .toBe('אפשר לפנות לארגון עכשיו · מכון אביב');
+  expect(orgStatusLine({ proposing: true, orgName: 'מכון אביב', contactPermission: 'later' }))
+    .toContain('מכון אביב');
+  expect(orgStatusLine({ orgStatus: 'none' })).toBe('אין ארגון כרגע');
+});
+
+test('the permission reads as a sentence, and an empty one prints nothing', () => {
+  expect(contactPermissionLine('now')).toBe('אפשר לפנות לארגון עכשיו');
+  expect(contactPermissionLine('later')).toContain('יעדכן');
+  expect(contactPermissionLine('')).toBe('');
+});
+
+test('the open box stands on its own — offered whatever was chosen above', () => {
+  expect(orgStatusLine({ statusNote: 'אני בחופשת לידה עד דצמבר' })).toBe('אני בחופשת לידה עד דצמבר');
+  expect(orgStatusLine({})).toBe('');
+  expect(orgStatusLine({ orgStatus: 'none' })).toBe('אין ארגון כרגע');
+});
+
+test("THE FOUR ANSWERS become the labelled block he reads before phoning", () => {
+  expect(proposalContext({ orgOffer: 'ליווי', agreedWith: 'מעוניינים', relationship: 'מכר', howFound: 'דרך אבא' }))
+    .toBe('מה הארגון מציע: ליווי\nמה סוכם עם איש/אשת הקשר: מעוניינים\nאופי הקשר: מכר\nאיך הגיע/ה לארגון: דרך אבא');
+  // An unanswered optional question leaves no empty heading behind.
+  expect(proposalContext({ orgOffer: 'ליווי' })).toBe('מה הארגון מציע: ליווי');
+  expect(proposalContext({})).toBe('');
+});
+
+test('org_status is DERIVED, so the stored status cannot drift from the permission', () => {
+  expect(derivedOrgStatus({ orgStatus: 'none' })).toBe('none');
+  expect(derivedOrgStatus({ proposing: true, contactPermission: 'now' })).toBeNull();
+  expect(derivedOrgStatus({ proposing: true, contactPermission: 'later' })).toBe('pending');
+  expect(derivedOrgStatus({})).toBeNull();
+});
+
+test('the confirmation tells the student which answer was recorded', () => {
+  expect(orgStatusHeadline('none')).toContain('אין לך ארגון');
+  expect(orgStatusHeadline('')).toBe('');
 });

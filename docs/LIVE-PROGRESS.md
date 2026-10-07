@@ -723,3 +723,175 @@ build clean. The full gate was **not** run — its numbered cells write to the l
      student identified by name — is exactly what this form was built for, and the mail was quoting an address
      matching no row he could open.
 - **Green on the merged result:** unit **269** · forms **22** · `npx tsc --noEmit` clean · `npm run build` 8 pages.
+
+## 2026-10-07 13:45 IL — LIVE and verified in production; edge functions deployed; and I ran the gate I should not have
+- **Production is v1.43.1+build.140.288e041c**, deployed by the parallel session once PRs #60/#61 merged my
+  `668f09cd` into main. **Verified against the live site, not assumed:**
+  - `yarivi@ariel.ac.il` gets no coordinator box and the ordinary name field — **his address is out**. The deployed
+    bundle `/_astro/MaPracticumForm.DRuvIWls.js` contains **neither** of his addresses (grep: 0 and 0).
+  - **Name identification works in production:** "אוהד שטראוס" typed against a personal address resolves to his card
+    and states "ההגשה תירשם על הכתובת שרשומה אצלנו". This was the bug that refused all 15.
+  - פסגות offered with 8 places; partner picker shows 14 (the cohort minus self), no preview entry.
+  - Both "what happens next" strings are in the deployed bundle — "ד\"ר יריב איצקוביץ יצור קשר עם הארגון שהצעת"
+    for a proposal, and the organization-will-contact-you line for a chosen org. No schema warning.
+- **Edge functions deployed:** `notify-org-suggestion` (the student/second-stage wording) and `notify-placement`
+  (new on the branch, called by `emailApi.ts`, and it had never been deployed). A live probe with `track:'ma'`
+  returned a Resend id, so the corrected mail really sends.
+- **🟠 MY MISTAKE — I started the full gate against production.** It is the documented hazard from 2026-09-23 and I
+  ran it anyway, then killed it mid-run when I realised the deploy had already happened and the gate could no longer
+  gate anything. I had exported first, so nothing was unrecoverable.
+  - It wrote **13 test rows**, which evicted 13 rows from the 50-row cap. **No genuine data was lost: all 13 evicted
+    rows were themselves `יריב בדיקה` test rows** from earlier runs this morning.
+  - Leftover processes cleaned up; `practicum_data` re-checked afterwards and intact — 88 students · 28 employers ·
+    16 candidates · 43 lectures · 7 courses · 13 trainers, no leftover E2E records.
+- **🔴 THE REAL FINDING, bigger than my 13 rows: `practicum_snapshots` holds NO genuine rollback points at all.**
+  All 50 rows, before my run and after, are `יריב בדיקה` and synthetic `מעסיק — ארגון-תשובה …` rows created today
+  between 08:01 and 10:44 UTC. Test runs have consumed the entire history. **Yariv currently has no restore point
+  for real data.** The snapshot UI (ניהול → גרסאות) would offer him nothing but test states.
+- **Pre-run export kept OUTSIDE the repo** at `~/practicum-backups/practicum_snapshots-20261007-133232.json`
+  (50 rows, 19MB, full `data` column). It was first written to `backups/` inside the checkout, which is NOT
+  gitignored — 19MB of student data one `git add -A` away from being committed. Moved out; if anyone re-adds a
+  `backups/` dir here, gitignore it first.
+- **STILL OPEN for Yariv (SQL only — RLS refuses anon writes, silently returning 200/0 rows):**
+  1. Delete the walkthrough row: `delete from cv_updates where id = '7b6c8fea-ad41-45fe-b7bd-c03851e0b649';`
+     and its object `cv-updates/ma-yarivi-1791366330797.pdf` from Storage.
+  2. Decide what to do about having no real snapshots. Options: take a manual save in the app to create a genuine
+     restore point, or stop pointing test runs at production.
+- **RULE, restated because I broke it:** the full gate must not be run against production. Point it at a throwaway
+  project, or do not run it.
+
+## 2026-10-07 14:00 IL — /ma: "not yet" is now an answer (NOT deployed — awaiting his OK)
+Branch `claude/ma-org-status`, cut from main at `288e041c`. **He is deliberately holding the link until he approves
+the look** ("תראה לי איך זה יראה בטופס — אני עדיין לא שולח את הקישור רק אחרי שנאשר").
+
+- **The gap he found:** the form had exactly two answers — a listed organization, or a full proposal with contact
+  details. A student mid-conversation with a company fit neither, so they had to invent a proposal they could not
+  back up or abandon the form; either way the coordinator learned nothing. Yariv: "אני בקשר עם ארגון ועדיין זה לא
+  סופי … אין לי ארגון (אבל אז שיגיד מדוע לא בחר בפסגות) … ומקום לסטטוס כללי שלא מוגבל לאחת מאלה שהעלתי".
+- **Two new options beside the existing two**, mutually exclusive with them (`[data-ma-status]`):
+  - **אני בקשר עם ארגון — עדיין לא סופי.** Asks for the organization's name but does NOT require it — a student who
+    cannot name it yet is still saying something true, and insisting would push them back to inventing a proposal.
+    Confirmation tells them to return to the same link once it settles.
+  - **אין לי ארגון כרגע.** Requires the one question he wants answered, and the refusal NAMES the organization on
+    offer ("כדי שנוכל לעזור — כתבו למה פסגות לא מתאים/ה לכם"). With no organizations listed it degrades to
+    "מה מצב החיפוש שלך".
+- **An open note box, shown whatever was chosen** — including when פסגות was picked. That is the "סטטוס כללי" he
+  asked for, and a student who chose an organization may still have something to say.
+- **Storage:** `org_status` ('pending'|'none'|NULL) and `student_note` (the composed line from `orgStatusLine`).
+  Migration written: **`cv_updates_ma_status.sql`**, idempotent, with a CHECK constraint. The טפסים panel now names
+  both SQL files.
+- **A LADDER, not one fallback,** on insert: full → partner-only → bare. The partner columns are migrated and the new
+  pair may not be, so a failure on the new pair must not also cost the partner answer; whatever a rung could not keep
+  is said out loud (`[data-ma-note-lost]`), never dropped silently.
+- **Green:** unit **280** (11 new) · forms **26** (4 new) · `npx tsc --noEmit` clean · `npm run build` 8 pages.
+  Screenshots of both panels sent to him.
+- **STILL OPEN:** not committed to main, not deployed, link not sent. Needs, in order: his OK on the look → run
+  `cv_updates_ma_status.sql` → deploy. Also still open from earlier: delete the walkthrough row
+  `7b6c8fea-ad41-45fe-b7bd-c03851e0b649`, and `practicum_snapshots` still holds no genuine rollback point.
+
+## 2026-10-07 14:25 IL — /ma: the question is not "what is your status", it is "WHEN MAY I CALL"
+Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding the link until he has seen it.
+
+- **The reframe that drove this round.** Yariv: "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי
+  אוכל לפנות". What I had built described the STUDENT ("not final yet"); what he needs described is what HE may do.
+  Once the question is "may I call, and when", **"אני מציע ארגון" and "אני בקשר עם ארגון" turn out to be the same
+  answer with different timing** — so they are now ONE option, `ארגון משלי`, and the form asks the timing inside it.
+  Three options instead of four, and the contact details are collected in both cases, which is what he asked for.
+- **`ContactPermission`** — `now` (he may call today) · `wait` + `contact_after` (a real date; "soon" cannot be
+  diarised, so a missing or malformed date is refused) · `later` (the student will come back and release him).
+- **Contact details required to call TODAY, requested otherwise.** A student mid-conversation often has no direct
+  line yet and demanding one produces an invented number — worse than a blank, because a blank is visible. The panel
+  heading says which of the two it currently is. Anything that IS given must still be well formed, whatever the timing.
+- **The four questions, in his ordering** ("איך הגיע יותר חשוב מה הארגון מציע ומה סיכמת עם איש אשת הקשר ומה אופי
+  הקשר"): מה הארגון מציע * · מה סוכם עם איש/אשת הקשר * · אופי הקשר * · איך הגעת (optional — the one he called least
+  important). Required whatever the timing: they are what he reads before phoning, and a student who cannot answer
+  them does not really have an organization yet. They travel as a LABELLED block into `suggested_org.notes`, so the
+  existing approve-and-promote path carries them into the employer record unchanged.
+- **THE RELEASE, which he asked for in so many words** ("שהסטודנט יכנס לקישור בפעם הבאה … יוכל לשנות לאפשר לפנות
+  לארגון ואני אקבל הודעה שאומרת סטודנט x עדכן שניתן לפנות לארגון"): a returning student whose last submission
+  withheld permission sees a prompt above everything else and **one button**. It writes a row carrying forward their
+  CV, organization and partner answer — no re-upload, no retyping — and mails him. **A release with no way to call
+  them is not a release:** if the contact details are missing the button opens the panel prefilled on "call now"
+  instead of writing "go ahead" over four empty fields.
+- **New mail shapes** in `notify-org-suggestion`: the permission is a coloured band at the top (green for "call now",
+  amber otherwise) because it is the thing he acts on; the subject says which of the four this is; and
+  **"אין לי ארגון" now mails him too**, with the why-not — it used to sit unseen.
+- **A bug I made and caught:** I first put the release's `useMemo` *after* the `status === 'done'` early return. React
+  then rendered fewer hooks on the done screen and the component died silently — insert succeeded, confirmation never
+  appeared, no console error. Moved above the return. Worth remembering: a hook behind an early return fails without
+  saying so.
+- **Green:** unit **287** · forms **33** (incl. three for the release) · `npx tsc --noEmit` clean · `npm run build`
+  8 pages · edge function parses under esbuild. Driven in a real browser against live Supabase — **nothing submitted**,
+  per "אל תבדוק עם סטודנט אמיתי".
+- **Migration grew:** `cv_updates_ma_status.sql` now adds `org_status`, `student_note`, `contact_permission`,
+  `contact_after`, both CHECK constraints, and carries the "whom may I call today" query.
+- **STILL OPEN:** his OK → run the SQL → deploy `notify-org-suggestion` → deploy the site → send the link. Plus the
+  standing two: delete row `7b6c8fea-ad41-45fe-b7bd-c03851e0b649`, and `practicum_snapshots` holds no real restore point.
+
+## 2026-10-07 14:30 IL — the confirmation now makes a promise, so the form had to start keeping it
+- **Yariv:** "בכל מקרה צריך להיות כפתור שלח והודעה מסכמת לאחר שליחה שאומרת הפרטים נשמרו וד״ר איצקוביץ עודכן בסטטוס".
+  That sentence now appears on every confirmation (`[data-ma-summary]`) — **and it is a promise to fifteen students,
+  so the form MAILS HIM ON EVERY SUBMISSION**, not only on a proposal. A student who simply picked פסגות used to
+  generate no mail at all; saying "he was updated" would have been false. New `notifyChosen` + a `chosenOrg` shape in
+  the edge function, deliberately the quietest of the four ("הגשה רגילה — אפשר לאמץ אותה מכרטיס הסטודנט/ית כרגיל").
+- **אין לי ארגון**, in his words: "אנא פנו למנחה הפרקטיקום לתיאום. אפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון."
+  Said twice — inside the panel while they are still deciding, and again on the screen they are left looking at.
+- **ארגון משלי + לא לפנות עדיין:** "חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון. עד אז לא ניצור איתם קשר."
+  The second half is mine: a student who withholds permission needs to know nothing happens behind their back.
+- Both mails now carry the partner answer too, so his inbox says who the practicum is with.
+- **Green:** unit **287** · forms **38** (three of them a loop over the three answers, asserting the summary text AND
+  that a mail really went — the promise is only honest if it did) · tsc clean · build 8 pages · function parses.
+- Confirmation screens captured through the stubbed harness rather than a live submission (`test-results/confirm-*.png`),
+  per "אל תבדוק עם סטודנט אמיתי". Nothing submitted to the live project this round.
+- **STILL OPEN, unchanged:** his OK → SQL → deploy function + site → send the link. Plus delete row
+  `7b6c8fea-…`, and `practicum_snapshots` still holds no real restore point.
+
+## 2026-10-07 14:45 IL — a defect the parallel merge left in the mail, found only by rendering it
+- **He asked "מה הניסוח", so I rendered all five mails from the real template** rather than quoting from memory —
+  and that is how the defect surfaced. **The release mail's body still read as a fresh proposal:** "אוהד שטראוס
+  הציע/ה ארגון מטעמו/ה … ההצעה כפופה לאישורך", when the whole point of that mail is that an EXISTING proposal has
+  just been released. The subject and headline were right, so nothing looked wrong from outside.
+  - Cause: when the two sessions' work was reconciled, their rewrite of the body paragraph (`isMa`/`person`) replaced
+    the branching I had put there. The `noOrg` and `chosenOrg` branches were lost the same way. Tests did not catch it
+    because they assert the payload the form SENDS, not the HTML the function renders.
+- **Fixed:** the body now branches five ways, and the chapter-mark header varies with it instead of saying
+  "הצעת ארגון — דרוש אישור" above a mail that needs no approval:
+  `הגשה — אין צורך בפעולה` · `אין ארגון — לתיאום מולך` · `אפשר לפנות לארגון` · `הצעת ארגון — לא לפנות עדיין` ·
+  `הצעת ארגון — דרוש אישור`.
+- **Also checked while in there:** my earlier edits referenced `who`/`whoLong`, which that same rewrite renamed to
+  `isMa`/`person`. Had any reference survived, the deployed function would have thrown a ReferenceError at runtime
+  and **no mail would have gone at all** — esbuild would not have caught it, since it is a name, not a syntax error.
+  None survived; verified by grep.
+- **Rendering the mail is now the only way to check it.** `scratchpad/mails.mjs` pulls the template and the subject
+  expression straight out of the function source, so the preview cannot drift from what ships. Five HTML files sent to him.
+- **Green:** unit **287** · tsc clean · function parses.
+
+## 2026-10-07 14:45 IL — merged with the parallel session; both of us had found the same mail defect
+- Both sessions independently caught that the mail still introduced the organization in cases where it should not.
+  **Resolution: their body wording kept** (it names the organization in the release case and says the approval is
+  still his — better than mine), **my header branch kept** (they had four cases; a proposal he must NOT act on yet
+  was missing, so "פרקטיקום · הצעת ארגון — לא לפנות עדיין" is restored).
+- Their `unit/org-alert-mail.spec.ts` + `unit/ma-org-status-copy.spec.ts` close the gap I had named: the tests now
+  assert the HTML the function RENDERS, not only the payload the form sends. That is the class of defect that got
+  past both of us.
+- **Green after the merge:** unit **304** · forms **38** · tsc clean · build 8 pages · function parses · all five
+  mails re-rendered and read correctly.
+
+## 2026-10-07 14:50 IL — three removals at his word: the reason box, the date, and three of his four names
+- **"למה פסגות לא מתאים/ה לך?" is GONE.** Yariv: "אפשר להסיר שיפנו אלי להסבר". `אין לי ארגון כרגע` now asks
+  nothing at all — it only says where to take it: "אנא פנו למנחה התכנית לתיאום. קורות החיים שלכם נשמרים כאן ממילא,
+  ואפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון." A reason typed to get past a form was never a reason he could
+  act on; the conversation is the point. `whyNotListed` removed from the type, the validation, the UI and the mail.
+- **The dated option is GONE.** "לא צריך תאריך שיוגדר זה במילא לא ראלי" — and he is right: a date a student guesses
+  at is a date nobody honours, and it only invited him to diarise a fiction. `ContactPermission` is now `now | later`,
+  the date picker and `contact_after` are removed everywhere, and the migration drops the column and tightens its
+  CHECK. The timing question is two answers: call them, or do not call them yet.
+- **ONE NAME.** The form had been calling him four things — רכז התכנית, מנחה התכנית, מנחה הפרקטיקום, ד״ר יריב
+  איצקוביץ — which reads as four different people. All 11 occurrences in /ma, plus the approval mail in
+  `notify-placement`, are now **מנחה התכנית**, at his word ("אם אתה רוצה מנחה התכנית במקום ד״ר איצקוביץ ולאחד את
+  הנוסח של השם שלי זה סבבה"). `placement-email.spec` now pins it from both ends AND asserts the old forms are absent,
+  so the drift cannot come back.
+  - NOT changed: `/register`, `/cv-update` and the candidate mails still say ד״ר יריב איצקוביץ in places. Out of
+    scope for this branch and established copy — worth asking him whether he wants those unified too.
+- **Green:** unit **303** · forms **38** · tsc clean · build 8 pages · both functions parse.
+- **STILL OPEN:** his OK → SQL (now three columns, not four) → deploy functions + site → send the link.

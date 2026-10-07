@@ -23,7 +23,9 @@ Deno.serve(async (req) => {
 
   try {
     const { record } = await req.json();
-    if (!record?.suggestedOrg) {
+    // "I have no organization" carries no organization by definition, and Yariv asked to
+    // hear about those too — so it is a valid payload, not a malformed one.
+    if (!record?.suggestedOrg && !record?.noOrg && !record?.chosenOrg) {
       return new Response(JSON.stringify({ ok: false, error: 'no suggestedOrg' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
     }
 
@@ -51,7 +53,7 @@ Deno.serve(async (req) => {
     const person = isMa ? 'סטודנט/ית' : 'מועמד/ת';
     const candidateName: string  = record.candidateName || person;
     const candidateEmail: string = record.candidateEmail || '—';
-    const o = record.suggestedOrg as Record<string, string>;
+    const o = (record.suggestedOrg || {}) as Record<string, string>;
     const submittedAt = new Date().toLocaleString('he-IL');
 
     function detailRow(label: string, value?: string) {
@@ -64,16 +66,51 @@ Deno.serve(async (req) => {
       <head><meta charset="UTF-8"></head>
       <body style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;color:#3d0f14;background:#f4efe6;direction:rtl">
         <div style="border-bottom:2px solid #7a1e2b;padding-bottom:14px;margin-bottom:20px">
-          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#7a1e2b;margin-bottom:5px">פרקטיקום · הצעת ארגון — דרוש אישור</div>
-          <h1 style="font-family:Georgia,serif;font-size:24px;margin:0;color:#3d0f14">${candidateName} הציע/ה ארגון</h1>
+          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#7a1e2b;margin-bottom:5px">${
+            record.chosenOrg ? 'פרקטיקום · הגשה חדשה'
+            : record.noOrg ? 'פרקטיקום · אין ארגון כרגע'
+            : record.isRelease ? 'פרקטיקום · ניתן לפנות לארגון'
+            : record.contactPermission && record.contactPermission !== 'now' ? 'פרקטיקום · הצעת ארגון — לא לפנות עדיין'
+            : 'פרקטיקום · הצעת ארגון — דרוש אישור'
+          }</div>
+          <h1 style="font-family:Georgia,serif;font-size:24px;margin:0;color:#3d0f14">${
+            record.chosenOrg ? `${candidateName} בחר/ה ב${record.chosenOrg}`
+            : record.noOrg ? `${candidateName} — אין ארגון כרגע`
+            : record.isRelease ? `${candidateName} עדכן/ה: אפשר לפנות`
+            : `${candidateName} הציע/ה ארגון`
+          }</h1>
           <div style="font-size:12px;color:#888;margin-top:4px">${submittedAt}</div>
         </div>
         <p style="font-size:14px;line-height:1.6">
-          ${isMa
-            ? `${candidateName} הציע/ה ארגון מטעמו/ה לפרקטיקום. ההצעה פרטית לסטודנט/ית זה/זו וכפופה לאישורך.`
-            : 'מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה. ההצעה פרטית למועמד/ת זה/זו וכפופה לאישורך.'}
-          אם תאושר — הארגון יהפוך לבחירה הראשונה שלו/ה.
+          ${record.chosenOrg
+            ? `${candidateName} הגיש/ה את הטופס ובחר/ה ב${record.chosenOrg} מהרשימה. אין כאן הצעה לאשר — הארגון כבר מאושר.`
+            : record.noOrg
+              ? `${candidateName} מילא/ה את הטופס ואין לו/ה ארגון כרגע. קורות החיים נשמרו, והסטודנט/ית הופנה/תה אליך לתיאום.`
+              : record.isRelease
+                ? `${candidateName} סיכם/ה את התהליך מול ${o.name || 'הארגון'} ומעדכן/ת שמעתה אפשר לפנות אליהם. פרטי איש/אשת הקשר מופיעים כאן, והאישור עצמו עדיין שלך.`
+                : `${isMa
+                    ? `${candidateName} הציע/ה ארגון מטעמו/ה לפרקטיקום. ההצעה פרטית לסטודנט/ית זה/זו וכפופה לאישורך.`
+                    : 'מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה. ההצעה פרטית למועמד/ת זה/זו וכפופה לאישורך.'}
+                  אם תאושר — הארגון יהפוך לבחירה הראשונה שלו/ה.`}
         </p>
+        ${record.permissionLine && !record.noOrg ? `
+        <div style="margin:14px 0;padding:11px 14px;border-radius:8px;font-size:14px;font-weight:bold;${
+          record.contactPermission === 'now'
+            ? 'background:#e8f5ef;border:1px solid #0a7d5a;color:#065f46'
+            : 'background:#fdf3e3;border:1px solid #b45309;color:#92400e'
+        }">${record.permissionLine}</div>` : ''}
+        ${record.noOrg && record.whyNotListed ? `
+        <div style="margin:14px 0;padding:11px 14px;border-radius:8px;font-size:14px;background:#fdf3e3;border:1px solid #b45309;color:#92400e">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">למה לא הארגון שברשימה</div>
+          ${record.whyNotListed}
+        </div>` : ''}
+        ${record.partnerSummary ? `
+        <div style="margin:14px 0;font-size:14px"><span style="color:#888;font-size:12px;text-transform:uppercase;letter-spacing:.08em">פרקטיקום</span> &nbsp;${record.partnerSummary}</div>` : ''}
+        ${record.statusNote ? `
+        <div style="margin:14px 0;padding:11px 14px;border-radius:8px;font-size:13px;background:#fff;border:1px solid #e8e0d5">
+          <div style="color:#888;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">הערת הסטודנט/ית</div>
+          ${record.statusNote}
+        </div>` : ''}
         <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
           ${detailRow(person, candidateName)}
           ${detailRow(`מייל ה${person}`, candidateEmail)}
@@ -87,7 +124,11 @@ Deno.serve(async (req) => {
         </table>
         ${o.notes ? `<div style="background:#fff;border-radius:8px;padding:12px 14px;font-size:13px;border:1px solid #e8e0d5"><div style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px">פרטים / הקשר</div>${o.notes}</div>` : ''}
         <div style="margin-top:22px;font-size:13px;color:#666;line-height:1.6">
-          לאישור ההצעה: היכנס/י למערכת → כרטיס הסטודנט/ית → סעיף "CV מעודכן ממתין" → אשר/דחה את ההצעה.
+          ${record.chosenOrg
+            ? 'הגשה רגילה — אפשר לאמץ אותה מכרטיס הסטודנט/ית כרגיל.'
+            : record.noOrg
+            ? 'אין כאן מה לאשר — זו הודעה שתדע, כדי שתוכל/י לחזור אליו/ה.'
+            : 'לאישור ההצעה: היכנס/י למערכת → כרטיס הסטודנט/ית → סעיף "CV מעודכן ממתין" → אשר/דחה את ההצעה.'}
         </div>
         <div style="margin-top:20px;padding-top:14px;border-top:1px solid #ddd;font-size:11px;color:#aaa;letter-spacing:.1em;text-transform:uppercase">
           פרקטיקום · אוניברסיטת אריאל · נשלח אוטומטית
@@ -101,7 +142,15 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: 'practicum@yarivitzkovich.org',
         to: adminRecipients,
-        subject: `הצעת ארגון מ${candidateName} — דרוש אישור`,
+        subject: record.chosenOrg
+          ? `${candidateName} בחר/ה ב${record.chosenOrg}`
+          : record.noOrg
+          ? `${candidateName} — אין ארגון כרגע`
+          : record.isRelease
+            ? `${candidateName} עדכן/ה: אפשר לפנות ל${o.name || 'ארגון'}`
+            : record.contactPermission && record.contactPermission !== 'now'
+              ? `הצעת ארגון מ${candidateName} — ${record.permissionLine || 'לא לפנות עדיין'}`
+              : `הצעת ארגון מ${candidateName} — אפשר לפנות`,
         html: adminHtml,
       }),
     });

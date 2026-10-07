@@ -25,8 +25,14 @@ test('a placed student is told the organization accepted them, by name', () => {
 });
 
 test('an approved proposal names WHO approved it — the same person the form named', () => {
-  expect(form).toContain('ד"ר יריב איצקוביץ יצור קשר עם הארגון');
-  expect(fn).toContain('ד"ר יריב איצקוביץ בחן את הארגון שהצעת');
+  // ONE NAME, both ends. Yariv 2026-10-07: "אם אתה רוצה מנחה התכנית במקום ד״ר איצקוביץ
+  // ולאחד את הנוסח של השם שלי זה סבבה" — the form had been calling him four things
+  // (רכז התכנית, מנחה התכנית, מנחה הפרקטיקום, ד״ר איצקוביץ), which reads as four people.
+  expect(form).toContain('מנחה התכנית יצור קשר עם הארגון');
+  expect(fn).toContain('מנחה התכנית בחן את הארגון שהצעת');
+  expect(form, 'the /ma form must name him one way only').not.toContain('ד"ר יריב איצקוביץ');
+  expect(form).not.toContain('ד״ר יריב איצקוביץ');
+  expect(form).not.toContain('רכז התכנית');
 });
 
 test('an approved proposal says the student may start, which is the whole point', () => {
