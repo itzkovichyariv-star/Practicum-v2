@@ -345,3 +345,97 @@ test('choosing "alone" raises no partner nudge at all', async ({ page }) => {
   await expect(page.locator('[data-ma-mutual-warning]')).toHaveCount(0);
   await expect(page.locator('[data-ma-mutual-ok]')).toHaveCount(0);
 });
+
+/* ── the mismatch case, in a real browser ───────────────────────────────────── */
+/**
+ * Yariv 2026-10-07: "המייל שלהן זה המייל שהם רשומים איתו לאוניברסיטה אז זה לא לתכנית". The
+ * address a student actually has is the one case the unit tests cannot show reaching the
+ * database, so it is driven here from an empty form to the captured row.
+ */
+
+test('THE MISMATCH, END TO END: a personal address, identified by name, filed under the card\'s address', async ({ page }) => {
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+
+  // The address the student is sitting in front of. Nobody's card carries it.
+  await page.locator('[data-ma-email]').fill('noa.cohen.private@gmail.com');
+  await expect(page.locator('[data-ma-unknown]')).toBeVisible();
+  await expect(page.locator('[data-ma-unknown]')).toContainText('הוסיפו את שמכם המלא');
+  // The organizations stay hidden until somebody is identified.
+  await expect(page.locator('[data-ma-org="פסגות"]')).toHaveCount(0);
+
+  await page.locator('[data-ma-name]').fill('לוי אבי');          // reversed on purpose
+  await expect(page.locator('[data-ma-identified]')).toContainText('אבי לוי');
+  // and it says which address the submission will land on, because that is not guessable.
+  await expect(page.locator('[data-ma-filed-under]')).toContainText('avi@ariel.ac.il');
+
+  await attachCv(page);
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await page.locator('[data-ma-mode="with"]').click();
+  await page.locator('[data-ma-partner1]').selectOption('נועה כהן');
+  await page.locator('[data-ma-submit]').click();
+
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  const row = cap.inserts[0];
+  // ONE identity: the card's address, not the typed one — otherwise the partner probe,
+  // which looks a classmate up BY that address, could never match the pair.
+  expect(row.email).toBe('avi@ariel.ac.il');
+  expect(row.name).toBe('אבי לוי');
+  expect(row.org_pref_1).toBe('פסגות');
+  expect(row.partner_names).toEqual(['נועה כהן']);
+  expect(row.cv_file_path).toContain('cv-updates/ma-avi-');
+});
+
+test('a name nobody carries is refused in the browser too, and no field opens up', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('someone@gmail.com');
+  await page.locator('[data-ma-name]').fill('מיכל ברקוביץ');
+  await expect(page.locator('[data-ma-unknown]')).toContainText('לא מצאנו');
+  await expect(page.locator('[data-ma-org="פסגות"]')).toHaveCount(0);
+});
+
+test('a recognised address never sees the name field at all', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await expect(page.locator('[data-ma-identified]')).toBeVisible();
+  await expect(page.locator('[data-ma-name]')).toHaveCount(0);
+  // Nothing about a second address, because there is only one.
+  await expect(page.locator('[data-ma-filed-under]')).toHaveCount(0);
+});
+
+test('THE COORDINATOR PREVIEW reaches the end of the form, partner picker included', async ({ page }) => {
+  // ?course= stands in for the real course row; the fixture's course is c-ma.
+  await stubSupabase(page);
+  await page.goto('/ma?course=c-ma');
+  await page.locator('[data-ma-email]').fill('yarivi@ariel.ac.il');
+  await expect(page.locator('[data-ma-identified]')).toContainText('תצוגה מקדימה');
+  // It says plainly that a submission from here is a real row.
+  await expect(page.locator('[data-ma-preview]')).toContainText('למחוק');
+  await expect(page.locator('[data-ma-org="פסגות"]')).toBeVisible();
+  await page.locator('[data-ma-mode="with"]').click();
+  // The whole cohort, and never the preview itself.
+  const names = await page.locator('[data-ma-partner1] option').allInnerTexts();
+  expect(names).toContain('נועה כהן');
+  expect(names).toContain('אבי לוי');
+  expect(names.join('|')).not.toContain('תצוגה מקדימה');
+});
+
+test('a HALF-TYPED address is not judged — no red box, no name field', async ({ page }) => {
+  // From Yariv's screenshot, 2026-10-07: "ya" in the field and the page already saying the
+  // address is not on the list. An unfinished address is not a wrong one.
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('ya');
+  await expect(page.locator('[data-ma-unknown]')).toHaveCount(0);
+  await expect(page.locator('[data-ma-name]')).toHaveCount(0);
+
+  await page.locator('[data-ma-email]').fill('ya@');
+  await expect(page.locator('[data-ma-unknown]')).toHaveCount(0);
+
+  // Finished, and genuinely unknown: now it speaks.
+  await page.locator('[data-ma-email]').fill('ya@gmail.com');
+  await expect(page.locator('[data-ma-unknown]')).toBeVisible();
+  await expect(page.locator('[data-ma-name]')).toBeVisible();
+});

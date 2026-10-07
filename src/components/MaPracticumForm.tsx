@@ -5,7 +5,7 @@ import { openCv } from '../lib/cvUrl';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, normEmail, mutualNotice, partnerEmails, buildProposal,
-  submissionEmail,
+  submissionEmail, emailLooksComplete,
   type MaContext, type PartnerMode, type MutualState,
 } from '../lib/maPracticum';
 
@@ -362,7 +362,7 @@ export default function MaPracticumForm() {
                 opacity: prefillEmail ? 0.7 : 1, cursor: prefillEmail ? 'default' : undefined,
               }} />
           </label>
-          {normEmail(email) && blob && (
+          {emailLooksComplete(email) && blob && (
             identified ? (
               <div className="mt-2 text-[13px] leading-[1.5] rounded-lg px-3 py-2" data-ma-identified
                 style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.3)', color: '#065f46' }}>
@@ -399,7 +399,7 @@ export default function MaPracticumForm() {
               that offered the cohort by name would let anyone holding the link read off who
               is in it. The partner picker may show those names, but only to someone the
               form has already identified. */}
-          {normEmail(email) && blob && !identified && (
+          {emailLooksComplete(email) && blob && !identified && (
             <label className="block mt-3">
               <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
                 השם המלא שלך, כפי שהוא רשום בתכנית *

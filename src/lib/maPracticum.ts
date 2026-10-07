@@ -287,6 +287,18 @@ export type MaContext = {
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /**
+ * Does this look like a FINISHED address?
+ *
+ * The form used to judge an address the moment the field was non-empty, so typing "ya"
+ * raised "הכתובת הזו אינה מופיעה..." in red under a half-typed word, and with the name
+ * fallback it would also have opened a second field mid-keystroke. An unfinished address is
+ * not a wrong one; feedback waits until there is something to be right or wrong about.
+ */
+export function emailLooksComplete(v?: string | null): boolean {
+  return EMAIL_RE.test(normEmail(v || ''));
+}
+
+/**
  * One gate, in the order a person fills the form, returning the FIRST thing that is wrong.
  *
  * Every rule here exists because its absence would cost the coordinator a phone call:
