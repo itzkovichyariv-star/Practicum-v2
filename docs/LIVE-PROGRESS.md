@@ -827,3 +827,21 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
   `contact_after`, both CHECK constraints, and carries the "whom may I call today" query.
 - **STILL OPEN:** his OK → run the SQL → deploy `notify-org-suggestion` → deploy the site → send the link. Plus the
   standing two: delete row `7b6c8fea-ad41-45fe-b7bd-c03851e0b649`, and `practicum_snapshots` holds no real restore point.
+
+## 2026-10-07 14:30 IL — the confirmation now makes a promise, so the form had to start keeping it
+- **Yariv:** "בכל מקרה צריך להיות כפתור שלח והודעה מסכמת לאחר שליחה שאומרת הפרטים נשמרו וד״ר איצקוביץ עודכן בסטטוס".
+  That sentence now appears on every confirmation (`[data-ma-summary]`) — **and it is a promise to fifteen students,
+  so the form MAILS HIM ON EVERY SUBMISSION**, not only on a proposal. A student who simply picked פסגות used to
+  generate no mail at all; saying "he was updated" would have been false. New `notifyChosen` + a `chosenOrg` shape in
+  the edge function, deliberately the quietest of the four ("הגשה רגילה — אפשר לאמץ אותה מכרטיס הסטודנט/ית כרגיל").
+- **אין לי ארגון**, in his words: "אנא פנו למנחה הפרקטיקום לתיאום. אפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון."
+  Said twice — inside the panel while they are still deciding, and again on the screen they are left looking at.
+- **ארגון משלי + לא לפנות עדיין:** "חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון. עד אז לא ניצור איתם קשר."
+  The second half is mine: a student who withholds permission needs to know nothing happens behind their back.
+- Both mails now carry the partner answer too, so his inbox says who the practicum is with.
+- **Green:** unit **287** · forms **38** (three of them a loop over the three answers, asserting the summary text AND
+  that a mail really went — the promise is only honest if it did) · tsc clean · build 8 pages · function parses.
+- Confirmation screens captured through the stubbed harness rather than a live submission (`test-results/confirm-*.png`),
+  per "אל תבדוק עם סטודנט אמיתי". Nothing submitted to the live project this round.
+- **STILL OPEN, unchanged:** his OK → SQL → deploy function + site → send the link. Plus delete row
+  `7b6c8fea-…`, and `practicum_snapshots` still holds no real restore point.

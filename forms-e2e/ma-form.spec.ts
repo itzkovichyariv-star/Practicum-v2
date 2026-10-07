@@ -598,8 +598,8 @@ test('STILL TALKING: contact details are requested, not demanded', async ({ page
   await expect(page.locator('[data-ma-done]')).toBeVisible();
   expect(cap.inserts[0].contact_permission).toBe('later');
   expect(cap.inserts[0].org_status).toBe('pending');
-  // And the student is told how to release him later, without redoing the form.
-  await expect(page.locator('[data-ma-next]')).toContainText('חזרו לקישור הזה');
+  // And the student is told what to do when it does become possible.
+  await expect(page.locator('[data-ma-next]')).toContainText('חזרו ועדכנו את הטופס');
 });
 
 test('but the same details, when given, must still be real', async ({ page }) => {
@@ -743,4 +743,75 @@ test('a student who never withheld permission is not nagged', async ({ page }) =
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
   await expect(page.locator('[data-ma-identified]')).toBeVisible();
   await expect(page.locator('[data-ma-release]')).toHaveCount(0);
+});
+
+/**
+ * Yariv 2026-10-07: "בכל מקרה צריך להיות כפתור שלח והודעה מסכמת לאחר שליחה שאומרת הפרטים
+ * נשמרו וד״ר איצקוביץ עודכן בסטטוס".
+ *
+ * The sentence is a PROMISE to fifteen students, so it has to be true for all three
+ * answers — which is why the form now mails him on every submission, not only a proposal.
+ */
+for (const [label, fill] of [
+  ['chose from the list', async (page: Page) => { await page.locator('[data-ma-org="פסגות"]').click(); }],
+  ['brought their own', async (page: Page) => { await fillOwnOrg(page, { name: 'מכון אביב' }); }],
+  ['has none yet', async (page: Page) => {
+    await page.locator('[data-ma-status="none"]').click();
+    await page.locator('[data-ma-why-not]').fill('מרחק נסיעה');
+  }],
+] as const) {
+  test(`SUMMARY: a student who ${label} is told he was updated — and he really was`, async ({ page }) => {
+    const cap = await stubSupabase(page);
+    await page.goto('/ma');
+    await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+    await attachCv(page);
+    await fill(page);
+    await page.locator('[data-ma-mode="alone"]').click();
+    await page.locator('[data-ma-submit]').click();
+
+    await expect(page.locator('[data-ma-summary]')).toContainText('הפרטים נשמרו');
+    await expect(page.locator('[data-ma-summary]')).toContainText('ד״ר יריב איצקוביץ עודכן בסטטוס');
+    // The promise is only honest if a mail actually went.
+    expect(cap.notifies, 'the confirmation claims he was updated').toHaveLength(1);
+    expect(cap.notifies[0].record.track).toBe('ma');
+  });
+}
+
+test('NO ORGANIZATION: sent to the supervisor, and told they may come back', async ({ page }) => {
+  // Yariv: "באין ארגון כרגע צריך להיות כתוב אנא פנה למנחה הפרקטיקום לתיאום ובתוספת אפשר
+  // לחזור בכל רגע נתון ולהוסיף ארגון".
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-status="none"]').click();
+  // Said before submitting, while they are still deciding...
+  await expect(page.locator('[data-ma-none-panel]')).toContainText('אנא פנו למנחה הפרקטיקום לתיאום');
+  await page.locator('[data-ma-why-not]').fill('מרחק נסיעה');
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  // ...and again on the screen they are left looking at.
+  const next = page.locator('[data-ma-next]');
+  await expect(next).toContainText('אנא פנו למנחה הפרקטיקום לתיאום');
+  await expect(next).toContainText('בכל רגע נתון ולהוסיף ארגון');
+  expect(cap.notifies[0].record.noOrg).toBe(true);
+  expect(cap.notifies[0].record.whyNotListed).toBe('מרחק נסיעה');
+});
+
+test('NOT YET: the student is told to come back and update when it is possible', async ({ page }) => {
+  // Yariv: "בקשר עם ארגון עוד לא לפנו הסטודנט צריך לראות חזור ועדכן את הטופס כאשר ניתן
+  // יהיה לפנות לארגון".
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await fillOwnOrg(page, { name: 'מכון אביב', permission: 'later', contact: false });
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  const next = page.locator('[data-ma-next]');
+  await expect(next).toContainText('חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון');
+  // And the reassurance that nothing happens behind their back in the meantime.
+  await expect(next).toContainText('לא ניצור איתם קשר');
 });

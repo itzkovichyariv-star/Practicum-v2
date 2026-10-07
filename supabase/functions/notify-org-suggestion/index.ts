@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     const { record } = await req.json();
     // "I have no organization" carries no organization by definition, and Yariv asked to
     // hear about those too — so it is a valid payload, not a malformed one.
-    if (!record?.suggestedOrg && !record?.noOrg) {
+    if (!record?.suggestedOrg && !record?.noOrg && !record?.chosenOrg) {
       return new Response(JSON.stringify({ ok: false, error: 'no suggestedOrg' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
     }
 
@@ -68,7 +68,8 @@ Deno.serve(async (req) => {
         <div style="border-bottom:2px solid #7a1e2b;padding-bottom:14px;margin-bottom:20px">
           <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#7a1e2b;margin-bottom:5px">פרקטיקום · הצעת ארגון — דרוש אישור</div>
           <h1 style="font-family:Georgia,serif;font-size:24px;margin:0;color:#3d0f14">${
-            record.noOrg ? `${candidateName} — אין ארגון כרגע`
+            record.chosenOrg ? `${candidateName} בחר/ה ב${record.chosenOrg}`
+            : record.noOrg ? `${candidateName} — אין ארגון כרגע`
             : record.isRelease ? `${candidateName} עדכן/ה: אפשר לפנות`
             : `${candidateName} הציע/ה ארגון`
           }</h1>
@@ -91,6 +92,8 @@ Deno.serve(async (req) => {
           <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">למה לא הארגון שברשימה</div>
           ${record.whyNotListed}
         </div>` : ''}
+        ${record.partnerSummary ? `
+        <div style="margin:14px 0;font-size:14px"><span style="color:#888;font-size:12px;text-transform:uppercase;letter-spacing:.08em">פרקטיקום</span> &nbsp;${record.partnerSummary}</div>` : ''}
         ${record.statusNote ? `
         <div style="margin:14px 0;padding:11px 14px;border-radius:8px;font-size:13px;background:#fff;border:1px solid #e8e0d5">
           <div style="color:#888;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px">הערת הסטודנט/ית</div>
@@ -109,7 +112,9 @@ Deno.serve(async (req) => {
         </table>
         ${o.notes ? `<div style="background:#fff;border-radius:8px;padding:12px 14px;font-size:13px;border:1px solid #e8e0d5"><div style="color:#888;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px">פרטים / הקשר</div>${o.notes}</div>` : ''}
         <div style="margin-top:22px;font-size:13px;color:#666;line-height:1.6">
-          ${record.noOrg
+          ${record.chosenOrg
+            ? 'הגשה רגילה — אפשר לאמץ אותה מכרטיס הסטודנט/ית כרגיל.'
+            : record.noOrg
             ? 'אין כאן מה לאשר — זו הודעה שתדע, כדי שתוכל/י לחזור אליו/ה.'
             : 'לאישור ההצעה: היכנס/י למערכת → כרטיס הסטודנט/ית → סעיף "CV מעודכן ממתין" → אשר/דחה את ההצעה.'}
         </div>
@@ -125,7 +130,9 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: 'practicum@yarivitzkovich.org',
         to: adminRecipients,
-        subject: record.noOrg
+        subject: record.chosenOrg
+          ? `${candidateName} בחר/ה ב${record.chosenOrg}`
+          : record.noOrg
           ? `${candidateName} — אין ארגון כרגע`
           : record.isRelease
             ? `${candidateName} עדכן/ה: אפשר לפנות ל${o.name || 'ארגון'}`

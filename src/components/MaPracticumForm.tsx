@@ -303,8 +303,12 @@ export default function MaPracticumForm() {
     }
     if (dbErr) { setStatus('error'); setErr('שמירת ההגשה נכשלה: ' + dbErr.message); return; }
 
+    // HE IS TOLD ABOUT EVERY SUBMISSION, because the confirmation now promises he was —
+    // "הפרטים נשמרו וד״ר איצקוביץ עודכן בסטטוס" (Yariv 2026-10-07). A promise the form
+    // makes to fifteen students has to be true for all three answers, not just a proposal.
     if (proposal) void notifyCoordinator(proposal, contactPermission, contactAfter, false);
-    if (orgStatus === 'none') void notifyNoOrg();
+    else if (orgStatus === 'none') void notifyNoOrg();
+    else void notifyChosen(orgChoice);
 
     draft.clear();
     // Asked AFTER the row is in, so the partner's own submission can already see this one —
@@ -338,10 +342,17 @@ export default function MaPracticumForm() {
         </h1>
         <p className="text-[15px] leading-[1.6] mb-2" style={{ color: 'var(--ink)', opacity: 0.85 }}>
           {orgStatus === 'none'
-            ? `${orgStatusHeadline('none')}. קורות החיים נשמרו · ${partnerSummary(partnerMode, partnerNames)}.`
+            ? `${orgStatusHeadline('none')} · ${partnerSummary(partnerMode, partnerNames)}.`
             : proposing
-              ? `קורות החיים ופרטי הארגון נשמרו${pName.trim() ? `: ${pName.trim()}` : ''}.`
-              : `קורות החיים נשמרו, והבחירה נרשמה: ${orgChoice || '—'} · ${partnerSummary(partnerMode, partnerNames)}.`}
+              ? `פרטי הארגון נשמרו${pName.trim() ? `: ${pName.trim()}` : ''} · ${partnerSummary(partnerMode, partnerNames)}.`
+              : `הבחירה נרשמה: ${orgChoice || '—'} · ${partnerSummary(partnerMode, partnerNames)}.`}
+        </p>
+        {/* THE SENTENCE HE ASKED FOR, said whatever was answered — Yariv 2026-10-07:
+            "בכל מקרה צריך להיות כפתור שלח והודעה מסכמת לאחר שליחה שאומרת הפרטים נשמרו
+            וד״ר איצקוביץ עודכן בסטטוס". It has to be TRUE in every case, which is why the
+            form now mails him on every submission and not only on a proposal. */}
+        <p className="text-[15px] leading-[1.6] font-semibold" data-ma-summary style={{ color: 'var(--ink)' }}>
+          הפרטים נשמרו, וד״ר יריב איצקוביץ עודכן בסטטוס.
         </p>
 
         {/* WHAT HAPPENS NEXT, and who does it. Yariv 2026-10-07: a student who chose an
@@ -352,13 +363,11 @@ export default function MaPracticumForm() {
         <p className="text-[14px] leading-[1.7] rounded-xl px-4 py-3 mt-3 text-right" data-ma-next
           style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', color: '#065f46' }}>
           {orgStatus === 'none'
-            ? 'ד"ר יריב איצקוביץ יחזור אליך כדי לחפש יחד ארגון מתאים. קורות החיים שלך כבר אצלנו, אין צורך לעשות דבר נוסף כרגע.'
+            ? 'אנא פנו למנחה הפרקטיקום לתיאום. אפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון.'
             : proposing
               ? (contactPermission === 'now'
                   ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון לשם אישורו. אין צורך לפנות אליהם בעצמך — ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
-                  : contactPermission === 'wait'
-                    ? `רשמנו לא לפנות לארגון לפני ${contactAfter ? `${contactAfter.slice(8, 10)}/${contactAfter.slice(5, 7)}` : 'המועד שציינת'}. אם יתאפשר קודם — חזרו לקישור הזה ועדכנו בלחיצה אחת.`
-                    : 'רשמנו שעדיין לא לפנות לארגון. כשתסכמו — חזרו לקישור הזה ולחצו «אפשר לפנות», וד"ר יריב איצקוביץ יצור איתם קשר.')
+                  : 'חזרו ועדכנו את הטופס כאשר ניתן יהיה לפנות לארגון. עד אז לא ניצור איתם קשר.')
               : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
         </p>
         {noteLost && (
@@ -467,6 +476,30 @@ export default function MaPracticumForm() {
     } catch { /* the row is already in cv_updates */ }
   }
 
+  /**
+   * A student who took an organization from the list. No decision is needed from him, so
+   * this is the quietest of the four mails — but it is still sent, because the
+   * confirmation screen tells the student it was.
+   */
+  async function notifyChosen(org: string) {
+    try {
+      const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+      await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON}`, 'apikey': ANON },
+        body: JSON.stringify({
+          record: {
+            track: 'ma', chosenOrg: org || '',
+            candidateName: me?.name || null,
+            candidateEmail: filedEmail,
+            partnerSummary: partnerSummary(partnerMode, partnerNames),
+            statusNote: statusNote.trim(),
+          },
+        }),
+      });
+    } catch { /* the row is already in cv_updates */ }
+  }
+
   /** "I have no organization" must not sit unseen — he asked to hear about these too. */
   async function notifyNoOrg() {
     try {
@@ -480,6 +513,7 @@ export default function MaPracticumForm() {
             candidateName: me?.name || null,
             candidateEmail: filedEmail,
             whyNotListed: whyNotListed.trim(),
+            partnerSummary: partnerSummary(partnerMode, partnerNames),
             statusNote: statusNote.trim(),
           },
         }),
@@ -816,8 +850,9 @@ export default function MaPracticumForm() {
                 <textarea value={whyNotListed} onChange={e => setWhyNotListed(e.target.value)} rows={3}
                   data-ma-why-not placeholder="למשל: מרחק נסיעה, תחום שלא מתאים לי, התחייבות בעבודה"
                   className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />
-                <div className="text-[12px] mt-1.5" style={{ color: 'var(--text-soft)' }}>
+                <div className="text-[12px] mt-1.5 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
                   זה לא מבחן — זה מה שמאפשר לרכז התכנית לחפש עבורך ארגון מתאים יותר.
+                  <br /><strong>אנא פנו למנחה הפרקטיקום לתיאום</strong>, ואפשר לחזור לקישור הזה בכל רגע נתון ולהוסיף ארגון.
                 </div>
               </div>
             </div>
