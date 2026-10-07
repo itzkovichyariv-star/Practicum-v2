@@ -66,3 +66,10 @@ test('/ma calls them a student, /cv-update still a candidate', () => {
   expect(sug).toContain("const person = isMa ? 'סטודנט/ית' : 'מועמד/ת'");
   expect(sug).toContain('מועמד/ת מהשלב השני הציע/ה ארגון מטעמו/ה');
 });
+
+test('the alert carries the address the row was FILED under, not the typed one', () => {
+  // A student identified by name files under the address on their card. Sending the
+  // typed address handed Yariv a key that opens no record.
+  expect(form).toContain('candidateEmail: filedEmail');
+  expect(form).not.toContain('candidateEmail: normEmail(email)');
+});
