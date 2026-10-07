@@ -723,3 +723,39 @@ build clean. The full gate was **not** run — its numbered cells write to the l
      student identified by name — is exactly what this form was built for, and the mail was quoting an address
      matching no row he could open.
 - **Green on the merged result:** unit **269** · forms **22** · `npx tsc --noEmit` clean · `npm run build` 8 pages.
+
+## 2026-10-07 13:45 IL — LIVE and verified in production; edge functions deployed; and I ran the gate I should not have
+- **Production is v1.43.1+build.140.288e041c**, deployed by the parallel session once PRs #60/#61 merged my
+  `668f09cd` into main. **Verified against the live site, not assumed:**
+  - `yarivi@ariel.ac.il` gets no coordinator box and the ordinary name field — **his address is out**. The deployed
+    bundle `/_astro/MaPracticumForm.DRuvIWls.js` contains **neither** of his addresses (grep: 0 and 0).
+  - **Name identification works in production:** "אוהד שטראוס" typed against a personal address resolves to his card
+    and states "ההגשה תירשם על הכתובת שרשומה אצלנו". This was the bug that refused all 15.
+  - פסגות offered with 8 places; partner picker shows 14 (the cohort minus self), no preview entry.
+  - Both "what happens next" strings are in the deployed bundle — "ד\"ר יריב איצקוביץ יצור קשר עם הארגון שהצעת"
+    for a proposal, and the organization-will-contact-you line for a chosen org. No schema warning.
+- **Edge functions deployed:** `notify-org-suggestion` (the student/second-stage wording) and `notify-placement`
+  (new on the branch, called by `emailApi.ts`, and it had never been deployed). A live probe with `track:'ma'`
+  returned a Resend id, so the corrected mail really sends.
+- **🟠 MY MISTAKE — I started the full gate against production.** It is the documented hazard from 2026-09-23 and I
+  ran it anyway, then killed it mid-run when I realised the deploy had already happened and the gate could no longer
+  gate anything. I had exported first, so nothing was unrecoverable.
+  - It wrote **13 test rows**, which evicted 13 rows from the 50-row cap. **No genuine data was lost: all 13 evicted
+    rows were themselves `יריב בדיקה` test rows** from earlier runs this morning.
+  - Leftover processes cleaned up; `practicum_data` re-checked afterwards and intact — 88 students · 28 employers ·
+    16 candidates · 43 lectures · 7 courses · 13 trainers, no leftover E2E records.
+- **🔴 THE REAL FINDING, bigger than my 13 rows: `practicum_snapshots` holds NO genuine rollback points at all.**
+  All 50 rows, before my run and after, are `יריב בדיקה` and synthetic `מעסיק — ארגון-תשובה …` rows created today
+  between 08:01 and 10:44 UTC. Test runs have consumed the entire history. **Yariv currently has no restore point
+  for real data.** The snapshot UI (ניהול → גרסאות) would offer him nothing but test states.
+- **Pre-run export kept OUTSIDE the repo** at `~/practicum-backups/practicum_snapshots-20261007-133232.json`
+  (50 rows, 19MB, full `data` column). It was first written to `backups/` inside the checkout, which is NOT
+  gitignored — 19MB of student data one `git add -A` away from being committed. Moved out; if anyone re-adds a
+  `backups/` dir here, gitignore it first.
+- **STILL OPEN for Yariv (SQL only — RLS refuses anon writes, silently returning 200/0 rows):**
+  1. Delete the walkthrough row: `delete from cv_updates where id = '7b6c8fea-ad41-45fe-b7bd-c03851e0b649';`
+     and its object `cv-updates/ma-yarivi-1791366330797.pdf` from Storage.
+  2. Decide what to do about having no real snapshots. Options: take a manual save in the app to create a genuine
+     restore point, or stop pointing test runs at production.
+- **RULE, restated because I broke it:** the full gate must not be run against production. Point it at a throwaway
+  project, or do not run it.
