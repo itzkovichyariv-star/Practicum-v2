@@ -563,12 +563,39 @@ function Stage2LinkCard({ courseId }: { courseId?: string }) {
  * separate question: these students are already entered, there is no candidacy stage, and
  * only this form asks whether the practicum is done alone or with a named classmate.
  */
-function MaLinkCard() {
+function MaLinkCard({ students, courseId }: { students: any[]; courseId?: string }) {
   const [base, setBase] = useState('');
+  const [showList, setShowList] = useState(false);
+  const [copiedAll, setCopiedAll] = useState(false);
   useEffect(() => {
     if (typeof window !== 'undefined') setBase(window.location.origin);
   }, []);
   const root = base ? base.replace(/\/$/, '') : 'https://practicum.yarivitzkovich.org';
+
+  // PERSONAL links. Yariv 2026-10-07: "סטודנט לא צריך להירשם עם מייל, הוא מקבל קישור
+  // ונכנס למלא קורות חיים" — so the link carries the identity and the student types
+  // nothing. A student with no address on record cannot have one, and is listed as such
+  // rather than silently missing from a list of 15.
+  const cohort = (students || [])
+    .filter(s => !courseId || s.courseId === courseId)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'he'));
+  const withEmail = cohort.filter(s => String(s.email || '').trim());
+  const withoutEmail = cohort.filter(s => !String(s.email || '').trim());
+  const personalLink = (s: any) => `${root}/ma/?email=${encodeURIComponent(String(s.email).trim())}`;
+
+  async function copyAll() {
+    const text = withEmail.map(s => `${s.name}\t${personalLink(s)}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedAll(true); setTimeout(() => setCopiedAll(false), 2000);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      if (document.execCommand('copy')) { setCopiedAll(true); setTimeout(() => setCopiedAll(false), 2000); }
+      ta.remove();
+    }
+  }
   return (
     <section className="mb-10 rounded-2xl border p-7" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
       <div className="flex items-start justify-between gap-6 mb-4">
@@ -588,7 +615,48 @@ function MaLinkCard() {
         <span className="serif text-[34px] leading-none shrink-0">🎓</span>
       </div>
       <div className="flex flex-col gap-5">
-        <CopyOpenRow label="טופס פרקטיקום תואר שני" url={`${root}/ma/`} />
+        <CopyOpenRow label="הקישור הכללי (הסטודנט מקליד מייל)" url={`${root}/ma/`} />
+      </div>
+
+      {/* The links that actually go out: one per student, identity included. */}
+      <div className="mt-6 pt-5" style={{ borderTop: '1px dashed var(--divider)' }}>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div className="small-caps" style={{ letterSpacing: '0.12em' }}>קישורים אישיים · {withEmail.length} סטודנטים</div>
+            <div className="text-[12.5px] mt-1" style={{ color: 'var(--text-soft)' }}>
+              עדיף לשלוח את אלה: הקישור נושא את הזיהוי, והסטודנט לא מקליד כלום.
+              {!courseId && ' (בחרו קורס בסרגל העליון כדי לצמצם לרשימה אחת.)'}
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button type="button" onClick={() => setShowList(s => !s)}
+              className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 py-2 rounded-lg"
+              style={{ border: '1px solid var(--divider)', background: 'transparent', color: 'var(--ink)', cursor: 'pointer' }}>
+              {showList ? 'הסתר' : 'הצג'}
+            </button>
+            <button type="button" onClick={copyAll} disabled={!withEmail.length}
+              className="mono text-[11px] uppercase tracking-[0.14em] font-semibold px-3 py-2 rounded-lg"
+              style={{ border: 'none', background: 'var(--accent)', color: 'white', cursor: withEmail.length ? 'pointer' : 'not-allowed', opacity: withEmail.length ? 1 : 0.5 }}>
+              {copiedAll ? '✓ הועתק' : 'העתק את כולם'}
+            </button>
+          </div>
+        </div>
+
+        {withoutEmail.length > 0 && (
+          <div className="mt-3 text-[12.5px] leading-[1.6] rounded-lg px-3 py-2"
+            style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
+            ללא מייל ברשומה, ולכן בלי קישור אישי: {withoutEmail.map(s => s.name).join(', ')} — השלימו מייל בכרטיס הסטודנט.
+          </div>
+        )}
+
+        {showList && (
+          <div className="mt-4 flex flex-col gap-3">
+            {withEmail.map(s => <CopyOpenRow key={s.id} label={s.name} url={personalLink(s)} />)}
+            {!withEmail.length && (
+              <div className="text-[13px]" style={{ color: 'var(--text-soft)' }}>אין סטודנטים עם מייל בקורס שנבחר.</div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -665,7 +733,7 @@ export default function FormsPage(props: PageProps) {
 
       <RegistrationLinkCard />
       <Stage2LinkCard courseId={scopedCourseId} />
-      <MaLinkCard />
+      <MaLinkCard students={students} courseId={scopedCourseId} />
 
       {/* ── Student picker ── */}
       <section className="mb-8 rounded-xl border p-5" style={{ borderColor: 'var(--divider)', background: 'rgba(255,255,255,0.35)' }}>
