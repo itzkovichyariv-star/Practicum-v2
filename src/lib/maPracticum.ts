@@ -323,15 +323,40 @@ export type PartnerMode = 'alone' | 'with';
  */
 export type OrgStatus = '' | 'pending' | 'none';
 
+/**
+ * MAY I CALL THEM, AND WHEN — the question the coordinator actually has.
+ *
+ * Yariv 2026-10-07: "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי אוכל
+ * לפנות". A status like "not final yet" describes the student; this describes what HE may
+ * do, which is the only part he can act on.
+ *
+ * It also removes an option rather than adding one: "I propose an organization" and "I am
+ * in touch with one" turned out to be the same answer with different timing, so they are
+ * now one choice carrying this question.
+ */
+export type ContactPermission = '' | 'now' | 'wait' | 'later';
+
 export type MaSubmission = {
   email: string;
   orgChoice: string;
+  /** The student brings their own organization — proposed outright, or still being settled. */
   proposing: boolean;
   proposal: { name: string; contactName: string; contactRole: string; email: string; phone: string };
-  /** Non-empty means the student answered "not yet", and orgChoice/proposing are unused. */
+  /**
+   * WHAT THE STUDENT KNOWS THAT THE COORDINATOR CANNOT GUESS, in his own ordering —
+   * "איך הגיע יותר חשוב מה הארגון מציע ומה סיכמת עם איש אשת הקשר ומה אופי הקשר (משפחה וכו)".
+   * A single "tell us about it" box returned one sentence; four questions return four
+   * answers, and he needs them before he picks up the phone.
+   */
+  orgOffer?: string;      // מה הארגון מציע
+  agreedWith?: string;    // מה סוכם עם איש/אשת הקשר
+  relationship?: string;  // אופי הקשר — משפחה, מכר, מעסיק קודם
+  howFound?: string;      // איך הגעת לארגון — the one he called least important
+  contactPermission?: ContactPermission;
+  /** Required with 'wait': the date from which he may approach them. */
+  contactAfter?: string;
+  /** Only 'none' now — "I have no organization". 'pending' is derived from the permission. */
   orgStatus?: OrgStatus;
-  /** Who they are talking to, when they know. Optional — a name they cannot give is not a blocker. */
-  pendingOrgName?: string;
   /** Required for 'none': why not the organization already on the list. */
   whyNotListed?: string;
   /** Free text, offered whatever the answer — "סטטוס כללי שלא מוגבל לאחת מאלה שהעלתי". */
@@ -385,28 +410,60 @@ export function validateMaSubmission(s: MaSubmission, ctx: MaContext): string | 
 
   if (!s.hasFile && !s.hasExistingCv) return 'יש לצרף קובץ קורות חיים (PDF או Word)';
 
-  // "Not yet" is a real answer, and it short-circuits the organization rules below: there
-  // is no name to check against the list and no proposal to complete.
-  if (s.orgStatus) {
-    if (s.orgStatus === 'none' && !String(s.whyNotListed || '').trim()) {
+  // "I have no organization" short-circuits the rules below: there is no name to check
+  // against the list and no contact to reach.
+  if (s.orgStatus === 'none') {
+    if (!String(s.whyNotListed || '').trim()) {
       const listed = ctx.orgs.map(o => o.name).join(', ');
       return listed
         ? `כדי שנוכל לעזור — כתבו למה ${listed} לא מתאים/ה לכם`
         : 'כתבו בבקשה מה מצב החיפוש שלכם';
     }
-    if (s.orgStatus !== 'pending' && s.orgStatus !== 'none') return 'בחירת הארגון אינה תקינה';
+  } else if (s.orgStatus) {
+    return 'בחירת הארגון אינה תקינה';
   } else if (s.proposing) {
-    const required: Array<[string, string]> = [
+    // The organization and the student's own account of it are required WHATEVER the
+    // timing: they are what the coordinator reads before deciding anything, and a student
+    // who cannot answer them does not really have an organization yet.
+    const always: Array<[string | undefined, string]> = [
       [s.proposal.name, 'שם הארגון'],
+      [s.orgOffer, 'מה הארגון מציע'],
+      [s.agreedWith, 'מה סוכם עם איש/אשת הקשר'],
+      [s.relationship, 'אופי הקשר שלך לארגון'],
+    ];
+    const missingAlways = always.find(([v]) => !String(v || '').trim());
+    if (missingAlways) return `כדי שנוכל לפנות לארגון יש למלא: ${missingAlways[1]}`;
+
+    if (!s.contactPermission) return 'יש לציין מתי אפשר לפנות לארגון';
+    if (!['now', 'wait', 'later'].includes(s.contactPermission)) return 'בחירת מועד הפנייה אינה תקינה';
+
+    if (s.contactPermission === 'wait') {
+      const d = String(s.contactAfter || '').trim();
+      if (!d) return 'יש לציין מאיזה תאריך אפשר לפנות לארגון';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return 'התאריך אינו תקין';
+    }
+
+    // CONTACT DETAILS ARE REQUIRED ONLY TO CALL TODAY.
+    //
+    // A student still in conversation often does not have the direct line yet, and
+    // demanding it produces an invented number — worse than an empty field, because an
+    // empty field is visible. So they are required when the answer is "call them now",
+    // and merely requested otherwise; whatever IS given must still be well formed, or it
+    // is not a contact detail at all.
+    const contact: Array<[string, string]> = [
       [s.proposal.contactName, 'שם איש/אשת הקשר'],
       [s.proposal.contactRole, 'תפקיד איש/אשת הקשר'],
       [s.proposal.email, 'אימייל איש/אשת הקשר'],
       [s.proposal.phone, 'טלפון איש/אשת הקשר'],
     ];
-    const missing = required.find(([v]) => !String(v || '').trim());
-    if (missing) return `להצעת ארגון יש למלא: ${missing[1]}`;
-    if (!EMAIL_RE.test(s.proposal.email.trim())) return 'אימייל איש/אשת הקשר אינו תקין';
-    if (s.proposal.phone.replace(/\D/g, '').length < 9) return 'טלפון איש/אשת הקשר אינו תקין';
+    if (s.contactPermission === 'now') {
+      const missing = contact.find(([v]) => !String(v || '').trim());
+      if (missing) return `כדי שנוכל לפנות עכשיו יש למלא: ${missing[1]}`;
+    }
+    const mail = String(s.proposal.email || '').trim();
+    if (mail && !EMAIL_RE.test(mail)) return 'אימייל איש/אשת הקשר אינו תקין';
+    const phone = String(s.proposal.phone || '').trim();
+    if (phone && phone.replace(/\D/g, '').length < 9) return 'טלפון איש/אשת הקשר אינו תקין';
   } else if (!s.orgChoice.trim()) {
     return 'יש לבחור ארגון מהרשימה, להציע ארגון, או לסמן שעדיין אין לכם ארגון סופי';
   } else if (!ctx.orgs.some(o => o.name === s.orgChoice)) {
@@ -510,23 +567,78 @@ export function partnerEmails(blob: Blob | null, student: any, names: string[]):
 }
 
 /**
- * The "not yet" answer as one line the coordinator can read in a list.
+ * THE DATE HE MAY CALL, as a sentence rather than a code.
  *
- * Three fields that may each be empty would otherwise reach his screen as three blanks; a
- * sentence either says something or is absent. Order matters — the status comes first,
- * because that is what he scans for.
+ * This is the line that decides whether he picks up the phone, so it says the permission
+ * first and the date second — "לא לפנות עד 15/11" is scanned in the order it is read.
+ */
+export function contactPermissionLine(p: ContactPermission, after?: string): string {
+  if (p === 'now') return 'אפשר לפנות לארגון עכשיו';
+  if (p === 'later') return 'עדיין בתהליך — הסטודנט/ית יעדכן/תעדכן מתי אפשר לפנות';
+  if (p === 'wait') {
+    const d = String(after || '').trim();
+    const nice = /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : d;
+    return nice ? `לא לפנות עד ${nice}` : 'לא לפנות עדיין';
+  }
+  return '';
+}
+
+/**
+ * The student's own account of the organization, as the labelled block that travels into
+ * the employer record's notes once the proposal is approved.
+ *
+ * Labelled rather than run together, because he reads these before a phone call and needs
+ * to find one of them fast. An unanswered optional question leaves no empty heading.
+ */
+export function proposalContext(f: {
+  orgOffer?: string; agreedWith?: string; relationship?: string; howFound?: string;
+}): string {
+  const t = (v?: string) => String(v || '').trim();
+  const rows: Array<[string, string]> = [
+    ['מה הארגון מציע', t(f.orgOffer)],
+    ['מה סוכם עם איש/אשת הקשר', t(f.agreedWith)],
+    ['אופי הקשר', t(f.relationship)],
+    ['איך הגיע/ה לארגון', t(f.howFound)],
+  ];
+  return rows.filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n');
+}
+
+/**
+ * What the row's org_status says, derived rather than asked.
+ *
+ * 'pending' is not a thing the student picks — it is what "I have an organization but do
+ * not call them yet" MEANS, and deriving it keeps the two from drifting apart.
+ */
+export function derivedOrgStatus(s: {
+  orgStatus?: OrgStatus; proposing?: boolean; contactPermission?: ContactPermission;
+}): 'pending' | 'none' | null {
+  if (s.orgStatus === 'none') return 'none';
+  if (s.proposing && s.contactPermission && s.contactPermission !== 'now') return 'pending';
+  return null;
+}
+
+/**
+ * THE ONE LINE in his inbox and on the student card.
+ *
+ * Several fields that may each be empty would otherwise reach his screen as a row of
+ * blanks; a sentence either says something or is absent. Order is what he scans for: the
+ * permission first, because it decides whether he acts today, then the organization, then
+ * whatever the student added.
  */
 export function orgStatusLine(s: {
-  orgStatus?: OrgStatus; pendingOrgName?: string; whyNotListed?: string; statusNote?: string;
+  orgStatus?: OrgStatus; proposing?: boolean; orgName?: string;
+  contactPermission?: ContactPermission; contactAfter?: string;
+  whyNotListed?: string; statusNote?: string;
 }): string {
   const t = (v?: string) => String(v || '').trim();
   const parts: string[] = [];
-  if (s.orgStatus === 'pending') {
-    const who = t(s.pendingOrgName);
-    parts.push(who ? `בקשר עם ${who} — טרם סופי` : 'בקשר עם ארגון — טרם סופי');
-  } else if (s.orgStatus === 'none') {
+  if (s.orgStatus === 'none') {
     parts.push('אין ארגון כרגע');
     if (t(s.whyNotListed)) parts.push(`למה לא מהרשימה: ${t(s.whyNotListed)}`);
+  } else if (s.proposing) {
+    const when = contactPermissionLine(s.contactPermission || '', s.contactAfter);
+    if (when) parts.push(when);
+    if (t(s.orgName)) parts.push(t(s.orgName));
   }
   if (t(s.statusNote)) parts.push(t(s.statusNote));
   return parts.join(' · ');

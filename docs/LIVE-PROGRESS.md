@@ -788,3 +788,42 @@ the look** ("תראה לי איך זה יראה בטופס — אני עדיין
 - **STILL OPEN:** not committed to main, not deployed, link not sent. Needs, in order: his OK on the look → run
   `cv_updates_ma_status.sql` → deploy. Also still open from earlier: delete the walkthrough row
   `7b6c8fea-ad41-45fe-b7bd-c03851e0b649`, and `practicum_snapshots` still holds no genuine rollback point.
+
+## 2026-10-07 14:25 IL — /ma: the question is not "what is your status", it is "WHEN MAY I CALL"
+Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding the link until he has seen it.
+
+- **The reframe that drove this round.** Yariv: "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי
+  אוכל לפנות". What I had built described the STUDENT ("not final yet"); what he needs described is what HE may do.
+  Once the question is "may I call, and when", **"אני מציע ארגון" and "אני בקשר עם ארגון" turn out to be the same
+  answer with different timing** — so they are now ONE option, `ארגון משלי`, and the form asks the timing inside it.
+  Three options instead of four, and the contact details are collected in both cases, which is what he asked for.
+- **`ContactPermission`** — `now` (he may call today) · `wait` + `contact_after` (a real date; "soon" cannot be
+  diarised, so a missing or malformed date is refused) · `later` (the student will come back and release him).
+- **Contact details required to call TODAY, requested otherwise.** A student mid-conversation often has no direct
+  line yet and demanding one produces an invented number — worse than a blank, because a blank is visible. The panel
+  heading says which of the two it currently is. Anything that IS given must still be well formed, whatever the timing.
+- **The four questions, in his ordering** ("איך הגיע יותר חשוב מה הארגון מציע ומה סיכמת עם איש אשת הקשר ומה אופי
+  הקשר"): מה הארגון מציע * · מה סוכם עם איש/אשת הקשר * · אופי הקשר * · איך הגעת (optional — the one he called least
+  important). Required whatever the timing: they are what he reads before phoning, and a student who cannot answer
+  them does not really have an organization yet. They travel as a LABELLED block into `suggested_org.notes`, so the
+  existing approve-and-promote path carries them into the employer record unchanged.
+- **THE RELEASE, which he asked for in so many words** ("שהסטודנט יכנס לקישור בפעם הבאה … יוכל לשנות לאפשר לפנות
+  לארגון ואני אקבל הודעה שאומרת סטודנט x עדכן שניתן לפנות לארגון"): a returning student whose last submission
+  withheld permission sees a prompt above everything else and **one button**. It writes a row carrying forward their
+  CV, organization and partner answer — no re-upload, no retyping — and mails him. **A release with no way to call
+  them is not a release:** if the contact details are missing the button opens the panel prefilled on "call now"
+  instead of writing "go ahead" over four empty fields.
+- **New mail shapes** in `notify-org-suggestion`: the permission is a coloured band at the top (green for "call now",
+  amber otherwise) because it is the thing he acts on; the subject says which of the four this is; and
+  **"אין לי ארגון" now mails him too**, with the why-not — it used to sit unseen.
+- **A bug I made and caught:** I first put the release's `useMemo` *after* the `status === 'done'` early return. React
+  then rendered fewer hooks on the done screen and the component died silently — insert succeeded, confirmation never
+  appeared, no console error. Moved above the return. Worth remembering: a hook behind an early return fails without
+  saying so.
+- **Green:** unit **287** · forms **33** (incl. three for the release) · `npx tsc --noEmit` clean · `npm run build`
+  8 pages · edge function parses under esbuild. Driven in a real browser against live Supabase — **nothing submitted**,
+  per "אל תבדוק עם סטודנט אמיתי".
+- **Migration grew:** `cv_updates_ma_status.sql` now adds `org_status`, `student_note`, `contact_permission`,
+  `contact_after`, both CHECK constraints, and carries the "whom may I call today" query.
+- **STILL OPEN:** his OK → run the SQL → deploy `notify-org-suggestion` → deploy the site → send the link. Plus the
+  standing two: delete row `7b6c8fea-ad41-45fe-b7bd-c03851e0b649`, and `practicum_snapshots` holds no real restore point.

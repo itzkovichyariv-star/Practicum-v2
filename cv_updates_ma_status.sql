@@ -13,20 +13,37 @@
 --                  'none'    — no organization, and the note says why not the listed one
 --                  NULL      — the student picked or proposed an organization, as before,
 --                              and every row written by the BA form
+--   contact_permission : 'now'   — he may approach the organization today
+--                        'wait'  — not before contact_after
+--                        'later' — still being settled; the student will come back and
+--                                  release him with one click
+--                        NULL    — no organization of the student's own on this row
+--   contact_after      : the date from which he may approach them, with 'wait' only
 --   student_note : one readable Hebrew line composed by the form (orgStatusLine) —
 --                  the status, the organization named if any, the reason, and whatever
 --                  the student wrote in the open box. Free text BY DESIGN: the open box
 --                  exists precisely for what the options above cannot anticipate.
 --
 -- Safe to run more than once. Nothing here touches existing rows or the BA flow.
-ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS org_status   text;
-ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS student_note text;
+ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS org_status         text;
+ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS student_note       text;
+ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS contact_permission text;
+ALTER TABLE cv_updates ADD COLUMN IF NOT EXISTS contact_after      date;
 
 -- A typo in the app must not become a third state nobody handles.
 ALTER TABLE cv_updates DROP CONSTRAINT IF EXISTS cv_updates_org_status_check;
 ALTER TABLE cv_updates ADD  CONSTRAINT cv_updates_org_status_check
   CHECK (org_status IS NULL OR org_status IN ('pending', 'none'));
 
--- Verify (expect two rows: org_status / student_note):
+ALTER TABLE cv_updates DROP CONSTRAINT IF EXISTS cv_updates_contact_permission_check;
+ALTER TABLE cv_updates ADD  CONSTRAINT cv_updates_contact_permission_check
+  CHECK (contact_permission IS NULL OR contact_permission IN ('now', 'wait', 'later'));
+
+-- Verify (expect four rows):
 --   select column_name, data_type from information_schema.columns
---   where table_name = 'cv_updates' and column_name in ('org_status', 'student_note');
+--   where table_name = 'cv_updates'
+--     and column_name in ('org_status', 'student_note', 'contact_permission', 'contact_after');
+--
+-- Whom may I approach today?
+--   select name, email, suggested_org->>'name' as org, contact_permission, contact_after, student_note
+--   from cv_updates where contact_permission = 'now' order by uploaded_at desc;

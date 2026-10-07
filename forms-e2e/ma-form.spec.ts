@@ -51,7 +51,7 @@ type PartnerRows = Record<string, string[]>;
  * migration has not been run — PostgREST's own answer, so the form's fallback is tested
  * against the shape it will really meet.
  */
-async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partnerRows?: PartnerRows } = {}): Promise<Captured> {
+async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partnerRows?: PartnerRows; history?: any[] } = {}): Promise<Captured> {
   const partnerColumns = opts.partnerColumns !== false;
   const partnerRows = opts.partnerRows || {};
   const captured: Captured = { inserts: [], uploads: [], notifies: [] };
@@ -68,6 +68,7 @@ async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partne
     const req = route.request();
     const url = req.url();
 
+    const q = new URL(url).searchParams;
     if (req.method() === 'POST') {
       const body = JSON.parse(req.postData() || '{}');
       const row = Array.isArray(body) ? body[0] : body;
@@ -88,7 +89,6 @@ async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partne
     // Read through searchParams, NOT decodeURIComponent: a space travels as `+` in a query
     // string and decodeURIComponent leaves it alone, so "נועה כהן" arrived as "נועה+כהן"
     // and every comparison was false. PostgREST itself decodes it as a space.
-    const q = new URL(url).searchParams;
     const contains = q.get('partner_names');
     const eqEmail = q.get('email');
     if (contains?.startsWith('cs.') && eqEmail?.startsWith('eq.')) {
@@ -101,6 +101,11 @@ async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partne
         status: 200, contentType: 'application/json',
         body: JSON.stringify(named ? [{ id: 'row-1' }] : []),
       });
+    }
+
+    // The student's own earlier submissions — what the release prompt is built from.
+    if (opts.history && /select=\*/.test(url) && q.get('email')?.startsWith('eq.')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.history) });
     }
 
     // The schema probe: select=partner_mode
@@ -134,6 +139,32 @@ function parseContainsList(raw: string): string[] {
     : t.startsWith('[') && t.endsWith(']') ? t.slice(1, -1) : t;
   if (!inner.trim()) return [];
   return inner.split(',').map(x => x.trim().replace(/^"(.*)"$/, '$1')).filter(Boolean);
+}
+
+/**
+ * The own-organization panel, filled.
+ *
+ * Every proposing test needs the same six answers now — the organization, the student's
+ * own account of it, and WHEN he may call — so they live here rather than being retyped
+ * and quietly diverging.
+ */
+async function fillOwnOrg(page: Page, opts: {
+  name?: string; permission?: 'now' | 'wait' | 'later'; after?: string; contact?: boolean;
+} = {}) {
+  const { name = 'חברת ביטוח כלשהי', permission = 'now', after = '', contact = true } = opts;
+  await page.locator('[data-ma-propose]').click();
+  await page.getByTestId('ma-p-name').fill(name);
+  await page.getByTestId('ma-p-offer').fill('ליווי תהליכי פיתוח ארגוני');
+  await page.getByTestId('ma-p-agreed').fill('דיברנו והם מעוניינים');
+  await page.getByTestId('ma-p-relationship').fill('מכר של המשפחה');
+  await page.locator(`[data-ma-permission-opt="${permission}"] input`).click();
+  if (permission === 'wait') await page.locator('[data-ma-contact-after]').fill(after || '2026-11-15');
+  if (contact) {
+    await page.getByTestId('ma-p-contact').fill('שרה כהן');
+    await page.getByTestId('ma-p-role').fill('מנהלת משאבי אנוש');
+    await page.getByTestId('ma-p-email').fill('sara@insure.co.il');
+    await page.getByTestId('ma-p-phone').fill('0501234567');
+  }
 }
 
 async function attachCv(page: Page) {
@@ -224,12 +255,7 @@ test('a proposed organization travels with its contact details and no org_pref',
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('avi@ariel.ac.il');
   await attachCv(page);
-  await page.locator('[data-ma-propose]').click();
-  await page.getByTestId('ma-p-name').fill('חברת ביטוח כלשהי');
-  await page.getByTestId('ma-p-contact').fill('שרה כהן');
-  await page.getByTestId('ma-p-role').fill('מנהלת משאבי אנוש');
-  await page.getByTestId('ma-p-email').fill('sara@insure.co.il');
-  await page.getByTestId('ma-p-phone').fill('0501234567');
+  await fillOwnOrg(page, { name: 'חברת ביטוח כלשהי' });
   await page.locator('[data-ma-mode="alone"]').click();
   await page.locator('[data-ma-submit]').click();
 
@@ -466,12 +492,7 @@ test('a PROPOSED organization: approved by Yariv BY NAME, and an update follows 
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
   await attachCv(page);
-  await page.locator('[data-ma-propose]').click();
-  await page.getByTestId('ma-p-name').fill('מעבדות אלפא');
-  await page.getByTestId('ma-p-contact').fill('רות אלון');
-  await page.getByTestId('ma-p-role').fill('מנהלת משאבי אנוש');
-  await page.getByTestId('ma-p-email').fill('ruth@alpha.example');
-  await page.getByTestId('ma-p-phone').fill('0501234567');
+  await fillOwnOrg(page, { name: 'מעבדות אלפא' });
   await page.locator('[data-ma-mode="alone"]').click();
   await page.locator('[data-ma-submit]').click();
 
@@ -499,12 +520,7 @@ test('the coordinator mail carries the FILED address, not the typed one', async 
   await page.locator('[data-ma-email]').fill('avi.personal@gmail.com');
   await page.locator('[data-ma-name]').fill('אבי לוי');
   await attachCv(page);
-  await page.locator('[data-ma-propose]').click();
-  await page.getByTestId('ma-p-name').fill('ארגון כלשהו');
-  await page.getByTestId('ma-p-contact').fill('שרה כהן');
-  await page.getByTestId('ma-p-role').fill('מנהלת');
-  await page.getByTestId('ma-p-email').fill('sara@insure.co.il');
-  await page.getByTestId('ma-p-phone').fill('0501234567');
+  await fillOwnOrg(page, { name: 'ארגון כלשהו' });
   await page.locator('[data-ma-mode="alone"]').click();
   await page.locator('[data-ma-submit]').click();
   await expect(page.locator('[data-ma-done]')).toBeVisible();
@@ -519,28 +535,96 @@ test('the coordinator mail carries the FILED address, not the typed one', async 
 });
 
 /**
- * "NOT YET" in the browser. Yariv 2026-10-07: "אני בקשר עם ארגון ועדיין זה לא סופי … אין לי
- * ארגון (אבל אז שיגיד מדוע לא בחר בפסגות) … ומקום לסטטוס כללי שלא מוגבל לאחת מאלה שהעלתי".
+ * "NOT YET" in the browser, and the question behind it: WHEN MAY HE CALL.
+ *
+ * Yariv 2026-10-07: "אם הארגון בתהליך בדיקה בין הסטודנט לארגון אני צריך לדעת מתי אוכל
+ * לפנות", and for an organization the student brings he needs "שם תפקיד טלפון ומייל וכמה
+ * מילות הסבר" — what it offers, what was agreed, and what the connection is.
  */
-test('IN TOUCH, NOT SETTLED: it submits, and the row carries no organization', async ({ page }) => {
+test('CALL THEM NOW: the row carries the organization and the permission', async ({ page }) => {
   const cap = await stubSupabase(page);
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
   await attachCv(page);
-  await page.locator('[data-ma-status="pending"]').click();
-  await page.getByTestId('ma-pending-org').fill('מכון אביב');
-  await page.locator('[data-ma-status-note]').fill('מחכה לתשובה בשבוע הבא');
+  await fillOwnOrg(page, { name: 'מכון אביב', permission: 'now' });
   await page.locator('[data-ma-mode="alone"]').click();
   await page.locator('[data-ma-submit]').click();
 
   await expect(page.locator('[data-ma-done]')).toBeVisible();
   const row = cap.inserts[0];
-  expect(row.org_status).toBe('pending');
+  expect(row.contact_permission).toBe('now');
+  expect(row.org_status).toBeNull();          // nothing is pending — he may act today
   expect(row.org_pref_1).toBeNull();
-  expect(row.suggested_org).toBeNull();
-  expect(row.student_note).toBe('בקשר עם מכון אביב — טרם סופי · מחכה לתשובה בשבוע הבא');
-  // And the student is told what to do when it does settle.
+  expect(row.suggested_org.name).toBe('מכון אביב');
+  // The student's own account travels with it, labelled, for him to read before phoning.
+  expect(row.suggested_org.notes).toContain('מה הארגון מציע: ליווי תהליכי פיתוח ארגוני');
+  expect(row.suggested_org.notes).toContain('אופי הקשר: מכר של המשפחה');
+  expect(row.student_note).toBe('אפשר לפנות לארגון עכשיו · מכון אביב');
+});
+
+test('WAIT UNTIL: the date is required, and it reaches the row', async ({ page }) => {
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await fillOwnOrg(page, { name: 'מכון אביב', permission: 'wait', after: '' });
+  await page.locator('[data-ma-mode="alone"]').click();
+  // A date is not optional here: he cannot diarise "soon".
+  await page.locator('[data-ma-contact-after]').fill('');
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-error]')).toContainText('תאריך');
+  expect(cap.inserts).toHaveLength(0);
+
+  await page.locator('[data-ma-contact-after]').fill('2026-11-15');
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  expect(cap.inserts[0].contact_permission).toBe('wait');
+  expect(cap.inserts[0].contact_after).toBe('2026-11-15');
+  expect(cap.inserts[0].org_status).toBe('pending');
+  expect(cap.inserts[0].student_note).toContain('לא לפנות עד 15/11/2026');
+});
+
+test('STILL TALKING: contact details are requested, not demanded', async ({ page }) => {
+  // A student mid-conversation often has no direct line yet; demanding it produces an
+  // invented number, which is worse than a blank because a blank is visible.
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await fillOwnOrg(page, { name: 'מכון אביב', permission: 'later', contact: false });
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+  expect(cap.inserts[0].contact_permission).toBe('later');
+  expect(cap.inserts[0].org_status).toBe('pending');
+  // And the student is told how to release him later, without redoing the form.
   await expect(page.locator('[data-ma-next]')).toContainText('חזרו לקישור הזה');
+});
+
+test('but the same details, when given, must still be real', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await fillOwnOrg(page, { permission: 'later', contact: false });
+  await page.getByTestId('ma-p-email').fill('not-an-address');
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-error]')).toContainText('אימייל');
+});
+
+test("THE STUDENT'S OWN ACCOUNT is required whatever the timing", async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-propose]').click();
+  await page.getByTestId('ma-p-name').fill('מכון אביב');
+  await page.locator('[data-ma-permission-opt="later"] input').click();
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-error]')).toContainText('מה הארגון מציע');
 });
 
 test('NO ORGANIZATION: the form will not submit until it knows why not פסגות', async ({ page }) => {
@@ -577,16 +661,86 @@ test('the open box reaches the coordinator even when an organization WAS chosen'
   expect(cap.inserts[0].student_note).toBe('אני בחופשת לידה עד דצמבר');
 });
 
-test('the four answers are exclusive — choosing one clears the others', async ({ page }) => {
+test('the three answers are exclusive — choosing one clears the others', async ({ page }) => {
   await stubSupabase(page);
   await page.goto('/ma');
   await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
   await page.locator('[data-ma-propose]').click();
   await expect(page.getByTestId('ma-p-name')).toBeVisible();
   await page.locator('[data-ma-status="none"]').click();
-  // The proposal panel must close, or the student is filling in two answers at once.
   await expect(page.getByTestId('ma-p-name')).toHaveCount(0);
   await expect(page.locator('[data-ma-none-panel]')).toBeVisible();
   await page.locator('[data-ma-org="פסגות"]').click();
   await expect(page.locator('[data-ma-none-panel]')).toHaveCount(0);
+});
+
+
+/**
+ * THE RELEASE — the thing Yariv asked for in so many words: "שהסטודנט יכנס לקישור בפעם
+ * הבאה … יוכל לשנות לאפשר לפנות לארגון ואני אקבל הודעה שאומרת סטודנט x עדכן שניתן לפנות
+ * לארגון".
+ *
+ * The student already said "not yet" once. Making them retype the whole form to take it
+ * back is how an organization sits untouched for a month.
+ */
+const HELD_BACK = [{
+  id: 'row-held', uploaded_at: '2026-10-01T09:00:00Z',
+  cv_file_path: 'cv-updates/ma-noa-1.pdf', org_pref_1: null,
+  partner_mode: 'alone', partner_names: [],
+  contact_permission: 'later', contact_after: null,
+  suggested_org: {
+    name: 'מכון אביב', contactName: 'שרה כהן', contactRole: 'מנהלת',
+    email: 'sara@aviv.co.il', phone: '0501234567', location: '', notes: 'מה הארגון מציע: ליווי',
+  },
+}];
+
+test('A RETURNING STUDENT is offered the release, and one click sends it', async ({ page }) => {
+  const cap = await stubSupabase(page, { history: HELD_BACK });
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+
+  const prompt = page.locator('[data-ma-release]');
+  await expect(prompt).toBeVisible();
+  await expect(prompt).toContainText('מכון אביב');
+
+  await page.locator('[data-ma-release-go]').click();
+  await expect(page.locator('[data-ma-released]')).toContainText('מכון אביב');
+
+  // The row says he may call now, and keeps everything the student already gave.
+  const row = cap.inserts[0];
+  expect(row.contact_permission).toBe('now');
+  expect(row.contact_after).toBeNull();
+  expect(row.org_status).toBeNull();
+  expect(row.suggested_org.name).toBe('מכון אביב');
+  expect(row.cv_file_path).toBe('cv-updates/ma-noa-1.pdf');   // no re-upload asked of them
+  expect(row.partner_mode).toBe('alone');                      // and the partner answer survives
+
+  // And the mail that reaches Yariv says exactly what he asked to be told.
+  const note = cap.notifies.find(n => n.record?.isRelease);
+  expect(note).toBeTruthy();
+  expect(note.record.candidateName).toBe('נועה כהן');
+  expect(note.record.contactPermission).toBe('now');
+  expect(note.record.permissionLine).toBe('אפשר לפנות לארגון עכשיו');
+});
+
+test('a release with no way to CALL them is not a release — it asks for the details', async ({ page }) => {
+  const noContact = [{ ...HELD_BACK[0], suggested_org: { ...HELD_BACK[0].suggested_org, contactName: '', phone: '', email: '' } }];
+  const cap = await stubSupabase(page, { history: noContact });
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await page.locator('[data-ma-release-go]').click();
+
+  await expect(page.locator('[data-ma-error]')).toContainText('פרטי איש/אשת הקשר');
+  expect(cap.inserts).toHaveLength(0);
+  // The panel is open on "call now", prefilled, so they finish rather than start again.
+  await expect(page.getByTestId('ma-p-name')).toHaveValue('מכון אביב');
+});
+
+test('a student who never withheld permission is not nagged', async ({ page }) => {
+  const settled = [{ ...HELD_BACK[0], contact_permission: 'now' }];
+  await stubSupabase(page, { history: settled });
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await expect(page.locator('[data-ma-identified]')).toBeVisible();
+  await expect(page.locator('[data-ma-release]')).toHaveCount(0);
 });

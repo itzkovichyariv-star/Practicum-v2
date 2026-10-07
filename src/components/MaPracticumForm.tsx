@@ -6,7 +6,8 @@ import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, normEmail, mutualNotice, partnerEmails, buildProposal,
   submissionEmail, emailLooksComplete, orgStatusLine, orgStatusHeadline,
-  type MaContext, type PartnerMode, type MutualState, type OrgStatus,
+  contactPermissionLine, proposalContext, derivedOrgStatus,
+  type MaContext, type PartnerMode, type MutualState, type OrgStatus, type ContactPermission,
 } from '../lib/maPracticum';
 
 /**
@@ -40,9 +41,16 @@ export default function MaPracticumForm() {
   const [proposing, setProposing] = useState(false);
   // The "not yet" answer — see OrgStatus. Empty means the student picked or proposed one.
   const [orgStatus, setOrgStatus] = useState<OrgStatus>('');
-  const [pendingOrgName, setPendingOrgName] = useState('');
   const [whyNotListed, setWhyNotListed] = useState('');
   const [statusNote, setStatusNote] = useState('');
+  // May he call them, and when — the question behind the whole "not final yet" case.
+  const [contactPermission, setContactPermission] = useState<ContactPermission>('');
+  const [contactAfter, setContactAfter] = useState('');
+  // What the student knows and he cannot guess, in his own ordering.
+  const [orgOffer, setOrgOffer] = useState('');
+  const [agreedWith, setAgreedWith] = useState('');
+  const [relationship, setRelationship] = useState('');
+  const [howFound, setHowFound] = useState('');
   const [pName, setPName] = useState('');
   const [pContact, setPContact] = useState('');
   const [pRole, setPRole] = useState('');
@@ -59,6 +67,8 @@ export default function MaPracticumForm() {
   /** Set when the row saved but the partner columns were not there to receive it. */
   const [partnerLost, setPartnerLost] = useState(false);
   const [noteLost, setNoteLost] = useState(false);
+  const [releasing, setReleasing] = useState(false);
+  const [releasedOrg, setReleasedOrg] = useState('');
   const errRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (err) errRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, [err]);
 
@@ -67,14 +77,19 @@ export default function MaPracticumForm() {
   const draft = useFormDraft(
     normEmail(email) ? `practicum_draft_ma_${normEmail(email)}` : null,
     'v1',
-    { orgChoice, proposing, orgStatus, pendingOrgName, whyNotListed, statusNote, pName, pContact, pRole, pEmail, pPhone, pLocation, pNotes, partnerMode, partner1, partner2, wantsSecond },
+    { orgChoice, proposing, orgStatus, whyNotListed, statusNote, contactPermission, contactAfter, orgOffer, agreedWith, relationship, howFound, pName, pContact, pRole, pEmail, pPhone, pLocation, pNotes, partnerMode, partner1, partner2, wantsSecond },
     (v) => {
       if (v.orgChoice) setOrgChoice(v.orgChoice as string);
       if (v.proposing) setProposing(v.proposing as boolean);
       if (v.orgStatus) setOrgStatus(v.orgStatus as OrgStatus);
-      if (v.pendingOrgName) setPendingOrgName(v.pendingOrgName as string);
       if (v.whyNotListed) setWhyNotListed(v.whyNotListed as string);
       if (v.statusNote) setStatusNote(v.statusNote as string);
+      if (v.contactPermission) setContactPermission(v.contactPermission as ContactPermission);
+      if (v.contactAfter) setContactAfter(v.contactAfter as string);
+      if (v.orgOffer) setOrgOffer(v.orgOffer as string);
+      if (v.agreedWith) setAgreedWith(v.agreedWith as string);
+      if (v.relationship) setRelationship(v.relationship as string);
+      if (v.howFound) setHowFound(v.howFound as string);
       if (v.pName) setPName(v.pName as string);
       if (v.pContact) setPContact(v.pContact as string);
       if (v.pRole) setPRole(v.pRole as string);
@@ -158,14 +173,15 @@ export default function MaPracticumForm() {
 
   // The student's own earlier submissions through this link — read-only, and the reason a
   // returning student can change one answer without redoing the rest.
-  const [myHistory, setMyHistory] = useState<Array<{ id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; partner_mode?: string | null; partner_names?: string[] | null }>>([]);
+  const [myHistory, setMyHistory] = useState<Array<{ id: string; uploaded_at: string; cv_file_path?: string | null; org_pref_1?: string | null; partner_mode?: string | null; partner_names?: string[] | null; suggested_org?: any; contact_permission?: string | null; contact_after?: string | null }>>([]);
   useEffect(() => {
     const em = filedEmail;
     if (!em || schema === 'checking') { setMyHistory([]); return; }
     let alive = true;
-    const cols = schema === 'ready'
-      ? 'id, uploaded_at, cv_file_path, org_pref_1, partner_mode, partner_names'
-      : 'id, uploaded_at, cv_file_path, org_pref_1';
+    // `*`, not a column list: contact_permission/contact_after arrive with a migration
+    // that may not have been run, and naming a missing column fails the whole query —
+    // which would hide the history and the release prompt together.
+    const cols = schema === 'ready' ? '*' : 'id, uploaded_at, cv_file_path, org_pref_1';
     supabase.from('cv_updates').select(cols).eq('email', em)
       .order('uploaded_at', { ascending: false }).limit(10)
       .then(({ data }) => { if (alive) setMyHistory((data || []) as any); });
@@ -208,7 +224,8 @@ export default function MaPracticumForm() {
     setPartnerLost(false);
 
     const problem = validateMaSubmission({
-      email, orgChoice, proposing, orgStatus, pendingOrgName, whyNotListed, statusNote,
+      email, orgChoice, proposing, orgStatus, whyNotListed, statusNote,
+      contactPermission, contactAfter, orgOffer, agreedWith, relationship, howFound,
       proposal: { name: pName, contactName: pContact, contactRole: pRole, email: pEmail, phone: pPhone },
       partnerMode, partnerNames, hasFile: !!file, hasExistingCv,
     }, ctx);
@@ -231,9 +248,13 @@ export default function MaPracticumForm() {
     // buildProposal, not a literal: these exact keys are what the coordinator's approve
     // path reads in order to create the employer and promote it to the student's FIRST
     // choice. A renamed key here would silently cost that promotion.
+    // notes carries the student's own account, labelled — it is what he reads before he
+    // picks up the phone, and it travels into the employer record when he approves.
+    const context = proposalContext({ orgOffer, agreedWith, relationship, howFound });
     const proposal = proposing ? buildProposal({
       name: pName, contactName: pContact, contactRole: pRole,
-      email: pEmail, phone: pPhone, location: pLocation, notes: pNotes,
+      email: pEmail, phone: pPhone, location: pLocation,
+      notes: [context, pNotes.trim()].filter(Boolean).join('\n'),
     }) : null;
 
     const core = {
@@ -251,13 +272,18 @@ export default function MaPracticumForm() {
       partner_mode: partnerMode || null,
       partner_names: partnerMode === 'with' ? partnerNames : [],
     };
-    // orgStatusLine folds the three "not yet" fields into the one sentence the coordinator
-    // reads; the raw status is kept beside it so his screens can filter on it.
-    const note = orgStatusLine({ orgStatus, pendingOrgName, whyNotListed, statusNote });
+    // orgStatusLine folds the answer into the one sentence the coordinator reads; the
+    // permission and its date are kept beside it as fields, so his screens can sort on
+    // "whom may I call today" rather than parsing a sentence.
+    const note = orgStatusLine({
+      orgStatus, proposing, orgName: pName, contactPermission, contactAfter, whyNotListed, statusNote,
+    });
     const full = {
       ...withPartner,
-      org_status: orgStatus || null,
+      org_status: derivedOrgStatus({ orgStatus, proposing, contactPermission }),
       student_note: note || null,
+      contact_permission: proposing ? (contactPermission || null) : null,
+      contact_after: proposing && contactPermission === 'wait' ? (contactAfter || null) : null,
     };
 
     // A LADDER, not a single fallback: the partner columns are migrated and the status
@@ -277,22 +303,8 @@ export default function MaPracticumForm() {
     }
     if (dbErr) { setStatus('error'); setErr('שמירת ההגשה נכשלה: ' + dbErr.message); return; }
 
-    if (proposal) {
-      // Best-effort alert to the coordinator; never block a saved submission on it.
-      try {
-        const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
-        await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON}`, 'apikey': ANON },
-          // track: 'ma' — this practicum has no second stage, so the mail must not
-          // call the sender "מועמד/ת מהשלב השני" (Yariv 2026-10-07).
-          // filedEmail, not the typed address: a student identified BY NAME files
-          // under the address on their card, so the typed one would hand the
-          // coordinator a key that opens no record.
-          body: JSON.stringify({ record: { candidateName: me?.name || null, candidateEmail: filedEmail, suggestedOrg: proposal, track: 'ma' } }),
-        });
-      } catch { /* the proposal is already saved in cv_updates */ }
-    }
+    if (proposal) void notifyCoordinator(proposal, contactPermission, contactAfter, false);
+    if (orgStatus === 'none') void notifyNoOrg();
 
     draft.clear();
     // Asked AFTER the row is in, so the partner's own submission can already see this one —
@@ -300,6 +312,22 @@ export default function MaPracticumForm() {
     setMutual(partnerMode === 'with' ? await checkMutual(partnerNames) : null);
     setStatus('done');
   }
+
+  /**
+   * THE RELEASE. Yariv 2026-10-07: "שהסטודנט יכנס לקישור בפעם הבאה … יוכל לשנות לאפשר
+   * לפנות לארגון ואני אקבל הודעה שאומרת סטודנט x עדכן שניתן לפנות לארגון".
+   *
+   * The student already said "not yet" once. Making them re-type the whole form to take
+   * that back is how an organization sits untouched for a month, so the last submission
+   * that withheld permission is offered back to them as one button.
+   */
+  const heldBack = useMemo(() => {
+    const last = myHistory[0];
+    if (!last) return null;
+    const perm = String(last.contact_permission || '');
+    if (perm !== 'wait' && perm !== 'later') return null;
+    return { id: last.id, org: String(last.suggested_org?.name || '').trim(), perm, after: last.contact_after || '' };
+  }, [myHistory]);
 
   if (status === 'done') {
     return (
@@ -309,10 +337,10 @@ export default function MaPracticumForm() {
           ההגשה נשמרה
         </h1>
         <p className="text-[15px] leading-[1.6] mb-2" style={{ color: 'var(--ink)', opacity: 0.85 }}>
-          {orgStatus
-            ? `${orgStatusHeadline(orgStatus)}. קורות החיים נשמרו · ${partnerSummary(partnerMode, partnerNames)}.`
+          {orgStatus === 'none'
+            ? `${orgStatusHeadline('none')}. קורות החיים נשמרו · ${partnerSummary(partnerMode, partnerNames)}.`
             : proposing
-              ? `קורות החיים והצעת הארגון נשמרו${pName.trim() ? `: ${pName.trim()}` : ''}.`
+              ? `קורות החיים ופרטי הארגון נשמרו${pName.trim() ? `: ${pName.trim()}` : ''}.`
               : `קורות החיים נשמרו, והבחירה נרשמה: ${orgChoice || '—'} · ${partnerSummary(partnerMode, partnerNames)}.`}
         </p>
 
@@ -323,13 +351,15 @@ export default function MaPracticumForm() {
             anything else is expected of them. */}
         <p className="text-[14px] leading-[1.7] rounded-xl px-4 py-3 mt-3 text-right" data-ma-next
           style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', color: '#065f46' }}>
-          {orgStatus === 'pending'
-            ? 'קורות החיים שלך שמורים אצלנו. כשהארגון יסוכם — חזרו לקישור הזה והגישו שוב עם פרטי איש/אשת הקשר, וד"ר יריב איצקוביץ ייצור איתם קשר לאישור.'
-            : orgStatus === 'none'
-              ? 'ד"ר יריב איצקוביץ יחזור אליך כדי לחפש יחד ארגון מתאים. קורות החיים שלך כבר אצלנו, אין צורך לעשות דבר נוסף כרגע.'
-              : proposing
-                ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון שהצעת לשם אישורו. ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
-                : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
+          {orgStatus === 'none'
+            ? 'ד"ר יריב איצקוביץ יחזור אליך כדי לחפש יחד ארגון מתאים. קורות החיים שלך כבר אצלנו, אין צורך לעשות דבר נוסף כרגע.'
+            : proposing
+              ? (contactPermission === 'now'
+                  ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון לשם אישורו. אין צורך לפנות אליהם בעצמך — ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
+                  : contactPermission === 'wait'
+                    ? `רשמנו לא לפנות לארגון לפני ${contactAfter ? `${contactAfter.slice(8, 10)}/${contactAfter.slice(5, 7)}` : 'המועד שציינת'}. אם יתאפשר קודם — חזרו לקישור הזה ועדכנו בלחיצה אחת.`
+                    : 'רשמנו שעדיין לא לפנות לארגון. כשתסכמו — חזרו לקישור הזה ולחצו «אפשר לפנות», וד"ר יריב איצקוביץ יצור איתם קשר.')
+              : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
         </p>
         {noteLost && (
           <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4" data-ma-note-lost
@@ -369,6 +399,94 @@ export default function MaPracticumForm() {
     );
   }
 
+
+  async function release() {
+    if (!heldBack || !lookup.ok) return;
+    const last = myHistory[0];
+    const org = last?.suggested_org || null;
+    // A release with no way to call them is not a release. Send them to the form instead
+    // of writing a row that says "go ahead" over four empty fields.
+    if (!org?.contactName?.trim() || !(org?.phone?.trim() || org?.email?.trim())) {
+      setProposing(true); setOrgStatus(''); setOrgChoice('');
+      setContactPermission('now');
+      setPName(org?.name || ''); setPContact(org?.contactName || ''); setPRole(org?.contactRole || '');
+      setPEmail(org?.email || ''); setPPhone(org?.phone || '');
+      setErr('כדי שנוכל לפנות לארגון חסרים לנו פרטי איש/אשת הקשר — השלימו אותם ושלחו.');
+      return;
+    }
+    setReleasing(true);
+    const row = {
+      email: filedEmail,
+      name: (me?.name || '').trim() || null,
+      cv_file_path: last?.cv_file_path || existingCvPath || null,
+      org_pref_1: null,
+      suggested_org: org,
+      partner_mode: last?.partner_mode || null,
+      partner_names: last?.partner_names || [],
+      org_status: null,
+      contact_permission: 'now',
+      contact_after: null,
+      student_note: orgStatusLine({ proposing: true, orgName: org?.name, contactPermission: 'now' }),
+    };
+    const { error } = await supabase.from('cv_updates').insert(row);
+    if (error) { setReleasing(false); setErr('העדכון נכשל: ' + error.message); return; }
+    void notifyCoordinator(org, 'now', '', true);
+    setReleasedOrg(org?.name || 'הארגון');
+    setReleasing(false);
+  }
+
+  /**
+   * The coordinator's mail. Best-effort by design — the row is already saved, and a
+   * failed mail must never look to the student like a failed submission.
+   *
+   * `contactPermission` travels with it because it is the thing he acts on: the same
+   * organization reaches him as "call them now" or "do not call until the 15th", and the
+   * difference is the whole message.
+   */
+  async function notifyCoordinator(org: any, perm: ContactPermission, after: string, isRelease: boolean) {
+    try {
+      const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+      await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON}`, 'apikey': ANON },
+        // track: 'ma' — this practicum has no second stage, so the mail must not call the
+        // sender "מועמד/ת מהשלב השני". filedEmail, not the typed address: a student
+        // identified BY NAME files under the address on their card.
+        body: JSON.stringify({
+          record: {
+            track: 'ma', isRelease,
+            candidateName: me?.name || null,
+            candidateEmail: filedEmail,
+            suggestedOrg: org,
+            contactPermission: perm || null,
+            contactAfter: perm === 'wait' ? (after || null) : null,
+            permissionLine: contactPermissionLine(perm || '', after),
+          },
+        }),
+      });
+    } catch { /* the row is already in cv_updates */ }
+  }
+
+  /** "I have no organization" must not sit unseen — he asked to hear about these too. */
+  async function notifyNoOrg() {
+    try {
+      const ANON = 'sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt';
+      await fetch('https://vpqgmcmavnszcnakhiat.supabase.co/functions/v1/notify-org-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ANON}`, 'apikey': ANON },
+        body: JSON.stringify({
+          record: {
+            track: 'ma', noOrg: true,
+            candidateName: me?.name || null,
+            candidateEmail: filedEmail,
+            whyNotListed: whyNotListed.trim(),
+            statusNote: statusNote.trim(),
+          },
+        }),
+      });
+    } catch { /* the row is already in cv_updates */ }
+  }
+
   const busy = status === 'uploading';
   const identified = lookup.ok;
 
@@ -389,6 +507,33 @@ export default function MaPracticumForm() {
           style={{ background: 'rgba(180,83,9,0.1)', border: '1px solid #b45309', color: '#92400e' }}>
           <strong>למנהל/ת המערכת:</strong> עמודות השותף/ה חסרות בטבלת <code>cv_updates</code>.
           יש להריץ את <code>cv_updates_ma_partner.sql</code> ב‑Supabase לפני שליחת הקישור לסטודנטים.
+        </div>
+      )}
+      {/* THE RELEASE PROMPT. The student already said "not yet" once; asking them to redo
+          the whole form to take it back is how an organization sits untouched for a month.
+          Shown before anything else, because for a returning student it is the only thing
+          on this page that has changed. */}
+      {heldBack && !releasedOrg && (
+        <div className="rounded-xl px-4 py-4 mb-6 text-[13.5px] leading-[1.65]" data-ma-release
+          style={{ background: 'rgba(180,83,9,0.09)', border: '1px solid #b45309', color: '#7c4a0b' }}>
+          <div className="mb-2.5">
+            בהגשה הקודמת ציינת ש{heldBack.perm === 'wait' ? 'עדיין לא' : 'עדיין בתהליך ולא'} ניתן לפנות
+            {heldBack.org ? <> ל<strong>{heldBack.org}</strong></> : ' לארגון'}
+            {heldBack.perm === 'wait' && heldBack.after ? ` (עד ${String(heldBack.after).slice(8, 10)}/${String(heldBack.after).slice(5, 7)})` : ''}.
+            <br />אם כבר אפשר — לחיצה אחת, ורכז התכנית יקבל על כך הודעה.
+          </div>
+          <button type="button" onClick={release} disabled={releasing} data-ma-release-go
+            className="rounded-lg px-4 py-2 text-[14px] font-semibold"
+            style={{ background: '#065f46', color: '#fff', border: 'none', cursor: releasing ? 'wait' : 'pointer', opacity: releasing ? 0.7 : 1 }}>
+            {releasing ? 'שולח…' : 'כן — אפשר לפנות לארגון עכשיו'}
+          </button>
+        </div>
+      )}
+      {releasedOrg && (
+        <div className="rounded-xl px-4 py-4 mb-6 text-[13.5px] leading-[1.65]" data-ma-released
+          style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.35)', color: '#065f46' }}>
+          ✓ עודכן. רכז התכנית קיבל הודעה שניתן לפנות ל<strong>{releasedOrg}</strong>, והוא ייצור איתם קשר.
+          אין צורך לשלוח את הטופס שוב.
         </div>
       )}
       {blobFailed && (
@@ -534,20 +679,16 @@ export default function MaPracticumForm() {
                     onChange={() => { setProposing(true); setOrgChoice(''); setOrgStatus(''); }}
                     style={{ accentColor: 'var(--accent)', width: 16, height: 16, marginTop: 3 }} />
                   <div className="flex-1">
-                    <div className="text-[15px] font-semibold" style={{ color: proposing ? 'var(--accent)' : 'var(--ink)' }}>אני מציע/ה ארגון אחר</div>
-                    <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>קשר אישי או ארגון שאינו ברשימה — כפוף לאישור מנחה התכנית</div>
+                    <div className="text-[15px] font-semibold" style={{ color: proposing ? 'var(--accent)' : 'var(--ink)' }}>ארגון משלי</div>
+                    <div className="text-[12.5px] mt-0.5" style={{ color: 'var(--text-soft)' }}>קשר אישי או ארגון שאינו ברשימה — גם אם עדיין לא סופי. כפוף לאישור מנחה התכנית</div>
                   </div>
                 </div>
               </label>
 
-              {/* THE THIRD AND FOURTH ANSWERS. Yariv 2026-10-07: "אני בקשר עם ארגון ועדיין זה לא
-                  סופי … אין לי ארגון (אבל אז שיגיד מדוע לא בחר בפסגות)". Before these, a
-                  student mid-conversation with a company had to either invent a proposal or
-                  abandon the form, and the coordinator learned nothing from either. */}
-              {([
-                ['pending', 'אני בקשר עם ארגון — עדיין לא סופי', 'כשהארגון יאושר אעלה כאן את הפרטים'],
-                ['none', 'אין לי ארגון כרגע', 'נבקש רק לדעת למה הארגון שברשימה לא מתאים'],
-              ] as const).map(([value, title, hint]) => {
+              {/* THE THIRD ANSWER. "מציע ארגון" and "בקשר עם ארגון" turned out to be the same
+                  answer with different timing — see ContactPermission — so they are one
+                  option now, and the timing is asked inside it. */}
+              {([['none', 'אין לי ארגון כרגע', 'נבקש רק לדעת למה הארגון שברשימה לא מתאים'] ] as const).map(([value, title, hint]) => {
                 const selected = orgStatus === value;
                 return (
                   <label key={value} data-ma-status={value}
@@ -579,23 +720,85 @@ export default function MaPracticumForm() {
           )}
 
           {proposing && (
-            <div className="mt-3 rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
+            <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-propose-panel
+              style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
               <p className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
-                ההצעה כפופה לאישור מנחה התכנית, ואם תאושר — הארגון יהפוך ל<strong>בחירה הראשונה שלך</strong>,
-                בדיוק כמו בפרקטיקום משאבי אנוש. יש למלא את פרטי איש/אשת הקשר במלואם, כדי שנוכל לפנות לארגון.
+                <strong>רכז התכנית ייצור קשר עם הארגון לצורך האישור</strong> — ואין צורך לפנות אליהם בעצמך.
+                אם ההצעה תאושר, הארגון יהפוך ל<strong>בחירה הראשונה שלך</strong>.
+                גם אם עדיין לא סוכם דבר — מלאו מה שידוע, ולמטה ציינו מתי אפשר לפנות.
               </p>
+
               <Field label="שם הארגון *" value={pName} onChange={setPName} testid="ma-p-name" />
-              <Field label="שם איש/אשת הקשר *" value={pContact} onChange={setPContact} testid="ma-p-contact" />
-              <Field label="תפקיד *" value={pRole} onChange={setPRole} placeholder="למשל: מנהלת משאבי אנוש" testid="ma-p-role" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="אימייל *" value={pEmail} onChange={setPEmail} type="email" testid="ma-p-email" />
-                <Field label="טלפון *" value={pPhone} onChange={setPPhone} type="tel" testid="ma-p-phone" />
+
+              {/* THE FOUR QUESTIONS, in Yariv's own ordering (2026-10-07): "איך הגיע יותר
+                  חשוב מה הארגון מציע ומה סיכמת עם איש אשת הקשר ומה אופי הקשר (משפחה וכו)".
+                  One "tell us about it" box returned one sentence; asking four things
+                  returns four answers, and he needs them before he picks up the phone. */}
+              <Area label="מה הארגון מציע? *" value={orgOffer} onChange={setOrgOffer} testid="ma-p-offer"
+                placeholder="התפקיד, המחלקה, היקף השעות, מה תעשה/י שם" />
+              <Area label="מה סוכם עם איש/אשת הקשר? *" value={agreedWith} onChange={setAgreedWith} testid="ma-p-agreed"
+                placeholder="למשל: דיברנו והם מעוניינים, מחכים לאישור מהאוניברסיטה" />
+              <Area label="מה אופי הקשר שלך לארגון? *" value={relationship} onChange={setRelationship} testid="ma-p-relationship"
+                placeholder="למשל: בן משפחה, מעסיק קודם, מכר, פנייה יזומה שלי" rows={2} />
+              <Area label="איך הגעת לארגון? (אופציונלי)" value={howFound} onChange={setHowFound} testid="ma-p-how" rows={2} />
+
+              {/* MAY HE CALL THEM, AND WHEN. The question he actually has, and the reason
+                  "I propose an organization" and "I am talking to one" are one option. */}
+              <div data-ma-permission>
+                <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>מתי אפשר לפנות לארגון? *</span>
+                <div className="flex flex-col gap-2">
+                  {([
+                    ['now', 'אפשר לפנות עכשיו', 'סוכם ביניכם שהרכז ייצור קשר'],
+                    ['wait', 'נא להמתין — אפשר לפנות החל מתאריך', 'אנחנו באמצע שיחה ואני צריך/ה עוד כמה ימים'],
+                    ['later', 'עדיין בתהליך — אעדכן כשאפשר', 'תוכלו לחזור לקישור הזה ולעדכן בלחיצה אחת'],
+                  ] as const).map(([value, title, hint]) => {
+                    const selected = contactPermission === value;
+                    return (
+                      <label key={value} data-ma-permission-opt={value}
+                        className="rounded-lg border px-3.5 py-3 cursor-pointer transition-colors"
+                        style={{
+                          borderColor: selected ? 'var(--accent)' : 'var(--divider)',
+                          background: selected ? 'rgba(122,30,43,0.06)' : 'var(--paper, transparent)',
+                        }}>
+                        <div className="flex items-start gap-2.5">
+                          <input type="radio" name="ma-permission" checked={selected}
+                            onChange={() => setContactPermission(value)}
+                            style={{ accentColor: 'var(--accent)', width: 15, height: 15, marginTop: 2 }} />
+                          <div className="flex-1">
+                            <div className="text-[14px] font-semibold" style={{ color: selected ? 'var(--accent)' : 'var(--ink)' }}>{title}</div>
+                            <div className="text-[12px] mt-0.5" style={{ color: 'var(--text-soft)' }}>{hint}</div>
+                            {value === 'wait' && selected && (
+                              <input type="date" value={contactAfter} onChange={e => setContactAfter(e.target.value)}
+                                data-ma-contact-after className="input mt-2"
+                                style={{ padding: '8px 12px', fontSize: '14px' }} />
+                            )}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-              <Field label="מיקום (אופציונלי)" value={pLocation} onChange={setPLocation} testid="ma-p-location" />
-              <div>
-                <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>הקשר שלך לארגון (אופציונלי)</span>
-                <textarea value={pNotes} onChange={e => setPNotes(e.target.value)} rows={3}
-                  className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />
+
+              {/* Contact details: required to call TODAY, requested otherwise. A student
+                  mid-conversation often does not have the direct line yet, and demanding
+                  it produces an invented number — worse than a blank, because a blank is
+                  visible. The heading says which of the two it is right now. */}
+              <div className="pt-1">
+                <div className="text-[12.5px] mb-2" style={{ color: 'var(--text-soft)' }}>
+                  {contactPermission === 'now'
+                    ? 'פרטי איש/אשת הקשר — חובה, כדי שנוכל לפנות אליהם'
+                    : 'פרטי איש/אשת הקשר — מלאו את מה שידוע לכם כבר עכשיו'}
+                </div>
+                <div className="space-y-3">
+                  <Field label={contactPermission === 'now' ? 'שם איש/אשת הקשר *' : 'שם איש/אשת הקשר'} value={pContact} onChange={setPContact} testid="ma-p-contact" />
+                  <Field label={contactPermission === 'now' ? 'תפקיד *' : 'תפקיד'} value={pRole} onChange={setPRole} placeholder="למשל: מנהלת משאבי אנוש" testid="ma-p-role" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label={contactPermission === 'now' ? 'אימייל *' : 'אימייל'} value={pEmail} onChange={setPEmail} type="email" testid="ma-p-email" />
+                    <Field label={contactPermission === 'now' ? 'טלפון *' : 'טלפון'} value={pPhone} onChange={setPPhone} type="tel" testid="ma-p-phone" />
+                  </div>
+                  <Field label="מיקום (אופציונלי)" value={pLocation} onChange={setPLocation} testid="ma-p-location" />
+                </div>
               </div>
             </div>
           )}
@@ -603,18 +806,6 @@ export default function MaPracticumForm() {
           {/* What "not yet" needs to say. 'pending' asks only for a name, and does not
               insist on one — a student who cannot name the company yet is still telling us
               something true. 'none' asks the one question Yariv wants answered. */}
-          {orgStatus === 'pending' && (
-            <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-pending-panel
-              style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
-              <p className="text-[12.5px] leading-[1.55]" style={{ color: 'var(--ink)', opacity: 0.85 }}>
-                רשמנו שאת/ה באמצע תהליך. <strong>אין צורך בפרטים מלאים עכשיו</strong> — כשהארגון יסוכם,
-                חזרו לקישור הזה והגישו שוב עם פרטי איש/אשת הקשר.
-              </p>
-              <Field label="שם הארגון שאת/ה בקשר איתו (אם ידוע)" value={pendingOrgName}
-                onChange={setPendingOrgName} testid="ma-pending-org" />
-            </div>
-          )}
-
           {orgStatus === 'none' && (
             <div className="mt-3 rounded-xl border p-4 space-y-3" data-ma-none-panel
               style={{ borderColor: 'var(--accent)', background: 'rgba(122,30,43,0.04)' }}>
@@ -778,5 +969,20 @@ function Field({ label, value, onChange, type = 'text', placeholder, testid }: {
         data-testid={testid}
         className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} />
     </label>
+  );
+}
+
+/** A labelled textarea — the same shape as Field, for answers that are sentences. */
+function Area({ label, value, onChange, placeholder, testid, rows = 3 }: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; testid?: string; rows?: number;
+}) {
+  return (
+    <div>
+      <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>{label}</span>
+      <textarea value={value} onChange={e => onChange(e.target.value)} rows={rows}
+        placeholder={placeholder} data-testid={testid}
+        className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical', lineHeight: 1.6 }} />
+    </div>
   );
 }
