@@ -439,3 +439,43 @@ test('a HALF-TYPED address is not judged — no red box, no name field', async (
   await expect(page.locator('[data-ma-unknown]')).toBeVisible();
   await expect(page.locator('[data-ma-name]')).toBeVisible();
 });
+
+/* ── what happens next ────────────────────────────────────────────────── */
+
+test('a CHOSEN organization: the student is told the organization will contact them', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-org="פסגות"]').click();
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  const next = page.locator('[data-ma-next]');
+  await expect(next).toBeVisible();
+  await expect(next).toContainText('פסגות');
+  await expect(next).toContainText('יצור איתך קשר להמשך תהליך המיון');
+  // Nothing about an approval — that is the other path, and saying both would be noise.
+  await expect(next).not.toContainText('יאושר');
+});
+
+test('a PROPOSED organization: approved by Yariv BY NAME, and an update follows by email', async ({ page }) => {
+  await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('noa@ariel.ac.il');
+  await attachCv(page);
+  await page.locator('[data-ma-propose]').click();
+  await page.getByTestId('ma-p-name').fill('מעבדות אלפא');
+  await page.getByTestId('ma-p-contact').fill('רות אלון');
+  await page.getByTestId('ma-p-role').fill('מנהלת משאבי אנוש');
+  await page.getByTestId('ma-p-email').fill('ruth@alpha.example');
+  await page.getByTestId('ma-p-phone').fill('0501234567');
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+
+  const next = page.locator('[data-ma-next]');
+  await expect(next).toBeVisible();
+  await expect(next).toContainText('ד"ר יריב איצקוביץ');
+  await expect(next).toContainText('עדכון במייל');
+  await expect(next).toContainText('להתחיל את הפרקטיקום');
+});
