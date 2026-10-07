@@ -41,7 +41,7 @@ const BLOB = {
   ],
 };
 
-type Captured = { inserts: any[]; uploads: string[] };
+type Captured = { inserts: any[]; uploads: string[]; notifies: any[] };
 
 /** What a classmate's own row says, for the mutual-confirmation probe. */
 type PartnerRows = Record<string, string[]>;
@@ -54,7 +54,7 @@ type PartnerRows = Record<string, string[]>;
 async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partnerRows?: PartnerRows } = {}): Promise<Captured> {
   const partnerColumns = opts.partnerColumns !== false;
   const partnerRows = opts.partnerRows || {};
-  const captured: Captured = { inserts: [], uploads: [] };
+  const captured: Captured = { inserts: [], uploads: [], notifies: [] };
 
   await page.route('**/rest/v1/practicum_data*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: BLOB }) }));
@@ -114,8 +114,11 @@ async function stubSupabase(page: Page, opts: { partnerColumns?: boolean; partne
   });
 
   // Never let the notification function reach the network from a test.
-  await page.route('**/functions/v1/**', (route: Route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.route('**/functions/v1/**', (route: Route) => {
+    // Kept, not merely blocked: what this mail SAYS is a thing Yariv reads.
+    try { captured.notifies.push(JSON.parse(route.request().postData() || '{}')); } catch { /* not json */ }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
 
   return captured;
 }
@@ -405,21 +408,20 @@ test('a recognised address never sees the name field at all', async ({ page }) =
   await expect(page.locator('[data-ma-filed-under]')).toHaveCount(0);
 });
 
-test('THE COORDINATOR PREVIEW reaches the end of the form, partner picker included', async ({ page }) => {
-  // ?course= stands in for the real course row; the fixture's course is c-ma.
+/**
+ * The preview was removed once Yariv had walked the form ("ואז תסיר את השם שלי ואשלח
+ * לסטודנטים"). Checked in the browser as well as in the unit suite, because this is the
+ * state the fifteen students will actually meet: his address must behave like any other
+ * unrecognised one — the name field, and no coordinator box.
+ */
+test('THE PREVIEW IS GONE: the coordinator address is treated like any other', async ({ page }) => {
   await stubSupabase(page);
   await page.goto('/ma?course=c-ma');
   await page.locator('[data-ma-email]').fill('yarivi@ariel.ac.il');
-  await expect(page.locator('[data-ma-identified]')).toContainText('תצוגה מקדימה');
-  // It says plainly that a submission from here is a real row.
-  await expect(page.locator('[data-ma-preview]')).toContainText('למחוק');
-  await expect(page.locator('[data-ma-org="פסגות"]')).toBeVisible();
-  await page.locator('[data-ma-mode="with"]').click();
-  // The whole cohort, and never the preview itself.
-  const names = await page.locator('[data-ma-partner1] option').allInnerTexts();
-  expect(names).toContain('נועה כהן');
-  expect(names).toContain('אבי לוי');
-  expect(names.join('|')).not.toContain('תצוגה מקדימה');
+  await expect(page.locator('[data-ma-preview]')).toHaveCount(0);
+  await expect(page.locator('[data-ma-identified]')).toHaveCount(0);
+  // Not a dead end — the ordinary "we do not know this address" path opens.
+  await expect(page.locator('[data-ma-name]')).toBeVisible();
 });
 
 test('a HALF-TYPED address is not judged — no red box, no name field', async ({ page }) => {
@@ -481,4 +483,37 @@ test('a PROPOSED organization: approved by Yariv BY NAME, and an update follows 
   await expect(next).toContainText('יצור קשר עם הארגון');
   await expect(next).toContainText('עדכון במייל');
   await expect(next).toContainText('להתחיל את הפרקטיקום');
+});
+
+/**
+ * The address in the coordinator's mail must be the one the ROW was filed under.
+ *
+ * A student identified by name is filed under the address on their card, so a mail
+ * quoting the personal address they happened to type would hand Yariv an address matching
+ * no row he can open — the one case where the two differ is exactly the one this form was
+ * built for.
+ */
+test('the coordinator mail carries the FILED address, not the typed one', async ({ page }) => {
+  const cap = await stubSupabase(page);
+  await page.goto('/ma');
+  await page.locator('[data-ma-email]').fill('avi.personal@gmail.com');
+  await page.locator('[data-ma-name]').fill('אבי לוי');
+  await attachCv(page);
+  await page.locator('[data-ma-propose]').click();
+  await page.getByTestId('ma-p-name').fill('ארגון כלשהו');
+  await page.getByTestId('ma-p-contact').fill('שרה כהן');
+  await page.getByTestId('ma-p-role').fill('מנהלת');
+  await page.getByTestId('ma-p-email').fill('sara@insure.co.il');
+  await page.getByTestId('ma-p-phone').fill('0501234567');
+  await page.locator('[data-ma-mode="alone"]').click();
+  await page.locator('[data-ma-submit]').click();
+  await expect(page.locator('[data-ma-done]')).toBeVisible();
+
+  expect(cap.notifies).toHaveLength(1);
+  const r = cap.notifies[0].record;
+  expect(r.candidateEmail).toBe('avi@ariel.ac.il');
+  expect(r.candidateName).toBe('אבי לוי');
+  // And the mail must still say which form this came from, or it reverts to "second stage".
+  expect(r.track).toBe('ma');
+  expect(cap.inserts[0].email).toBe('avi@ariel.ac.il');
 });

@@ -55,8 +55,15 @@ export type IdentifiedBy = 'email' | 'name' | 'preview';
  *
  * TEMPORARY, by his instruction ("אחר כך נסיר אותי"): emptying this array removes the
  * preview completely, and nothing else has to change.
+ *
+ * REMOVED 2026-10-07, once the walkthrough was done: "ואז תסיר את השם שלי ואשלח
+ * לסטודנטים". The form was driven end to end under yarivi@ariel.ac.il against the live
+ * project first — CV uploaded, organization proposed, row written, the coordinator's mail
+ * sent — and the addresses came out before the link goes to the cohort, because this file
+ * ships inside a public browser bundle and every address listed here is published with it.
+ * Putting one address back is all it takes to walk the form again.
  */
-export const PREVIEW_EMAILS = ['yarivi@ariel.ac.il', 'itzkovichyariv@gmail.com'];
+export const PREVIEW_EMAILS: string[] = [];
 
 /** The course row the /ma link was built for, and the one a preview stands in. */
 export const MA_COURSE_ID = 'counseling-practicum-tashpaz';

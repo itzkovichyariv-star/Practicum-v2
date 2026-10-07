@@ -706,3 +706,20 @@ build clean. The full gate was **not** run — its numbered cells write to the l
 - 2026-10-07 — ההתראה על הצעת ארגון נשאה את הכתובת ש**הוקלדה** ולא את זו שהשורה נשמרה תחתיה. אצל סטודנט שזוהה
   לפי שם אלה שתי כתובות שונות, כך שהרכז קיבל מפתח שלא פותח שום רשומה. עבר ל‑`filedEmail`, אותה כתובת שבה
   נשמרת השורה ב‑`cv_updates` ושם קובץ ה‑CV.
+
+## 2026-10-07 13:30 IL — two sessions did this branch at once; theirs kept, my two unique deltas re-applied
+- **What happened:** while I worked on Yariv's Mac, another session pushed five commits to the same branch covering
+  the same ground — the people-not-rows fix (`2e3ae2c0`), the "who approaches the organization" message
+  (`15f07bb3`, `18ff3269`), the mail wording (`4fc5adc1`) — **plus work I had not done at all**: the two emails the
+  form promises the student, `notify-placement`, `emailApi`, and the OrgHub/EmployersPage changes.
+- **Decision: reset to theirs rather than merge.** Two independent implementations of the same hunks would have
+  conflicted line-for-line and risked a half-of-each result. Their `identityKey`/`preferRow` is equivalent to my
+  `groupByPerson`/`preferCourse` (a row with no address still counts as its own person in both, so two namesakes are
+  still refused). My commits are kept on the local branch `backup/my-parallel-work-20261007` (`4e902e33`).
+- **Two things of mine theirs did NOT have, now re-applied on top:**
+  1. **`PREVIEW_EMAILS` emptied** — his explicit "ואז תסיר את השם שלי ואשלח לסטודנטים". The remote still shipped both
+     of his addresses in the public browser bundle. Unit + browser tests now pin the removal.
+  2. **The coordinator's mail carries `filedEmail`, not the typed address.** The one case where they differ — a
+     student identified by name — is exactly what this form was built for, and the mail was quoting an address
+     matching no row he could open.
+- **Green on the merged result:** unit **269** · forms **22** · `npx tsc --noEmit` clean · `npm run build` 8 pages.
