@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, mutualNotice, partnerEmails, buildProposal, sameYear,
-  submissionEmail, normName, PREVIEW_EMAILS,
+  submissionEmail, normName, PREVIEW_EMAILS, MA_COURSE_ID,
   type Blob, type MaContext, type MaSubmission,
 } from '../src/lib/maPracticum';
 import { promoteOrgToFirst, setCourseCapacity, countSlotsByStatus } from '../src/lib/placement';
@@ -402,4 +402,76 @@ test('A PROPOSAL BECOMES FIRST CHOICE — the same path as משאבי אנוש',
   expect(ranked[0]).toBe('חברת ביטוח כלשהי'); // FIRST
   expect(ranked).toContain('פסגות');          // and the earlier choice is not lost
   expect(countSlotsByStatus(withPlace, COURSE).available).toBe(1);
+});
+
+/* ── one person, several course rows ─────────────────────────────────────── */
+/**
+ * FOUND ON THE LIVE PROJECT, 2026-10-07, not by these tests.
+ *
+ * Name identification refused all fifteen students of פרקטיקום יעוץ ארגוני with "יש
+ * יותר מסטודנט/ית אחד/ת בשם הזה". They are each carried on THREE course rows —
+ * ariel-counseling-a, ariel-counseling-b and counseling-practicum-tashpaz are the same
+ * people — and the ambiguity guard counted rows. The fixtures above hold exactly one row
+ * per student, which is why nothing here caught it; this block models the real shape.
+ */
+
+const MULTI: Blob = {
+  courses: [
+    { id: MA_COURSE_ID,        name: 'פרקטיקום יעוץ ארגוני', year: 'תשפ״ז', type: 'practicum' },
+    { id: 'ariel-counseling-a', name: 'מיומנויות ייעוץ א',    year: 'תשפ״ז', type: 'practicum' },
+    { id: 'ariel-counseling-b', name: 'מיומנויות ייעוץ ב',    year: 'תשפ״ז', type: 'practicum' },
+  ],
+  students: [
+    // ONE person, three rows, one address — the live shape.
+    { id: 'r1', name: 'שירה אלון', email: 'shira@ariel.ac.il', courseId: 'ariel-counseling-a', year: 'תשפ״ז' },
+    { id: 'r2', name: 'שירה אלון', email: 'shira@ariel.ac.il', courseId: 'ariel-counseling-b', year: 'תשפ״ז' },
+    { id: 'r3', name: 'שירה אלון', email: 'shira@ariel.ac.il', courseId: MA_COURSE_ID,         year: 'תשפ״ז' },
+    { id: 'r4', name: 'תום ברק',   email: 'tom@ariel.ac.il',   courseId: MA_COURSE_ID,         year: 'תשפ״ז' },
+    // Two people who really do share a name: different addresses.
+    { id: 'x1', name: 'מאיה גל',  email: 'maya1@ariel.ac.il', courseId: MA_COURSE_ID,         year: 'תשפ״ז' },
+    { id: 'x2', name: 'מאיה גל',  email: 'maya2@ariel.ac.il', courseId: 'ariel-counseling-a', year: 'תשפ״ז' },
+  ],
+  employers: [{
+    id: 'p1', name: 'פסגות', courseIds: [MA_COURSE_ID], notes: 'קרן פנסיה',
+    approvalStatus: 'approved',
+    vacancySlots: [{ id: 'sl1', courseId: MA_COURSE_ID, status: 'available' }],
+  }],
+};
+
+test('THE LIVE BUG: one person on three course rows is one person, not an ambiguity', () => {
+  const r = resolveMaStudent(MULTI, 'shira.alon.private@gmail.com', 'שירה אלון');
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.identifiedBy).toBe('name');
+});
+
+test('and the row it picks is the one THIS LINK is about, so the right organizations show', () => {
+  // ariel-counseling-a comes first in the list and offers no organization at all; taking
+  // whichever row was found first would have shown the student an empty form.
+  const r = resolveMaStudent(MULTI, 'shira.alon.private@gmail.com', 'שירה אלון');
+  expect(r.ok).toBe(true);
+  if (!r.ok) return;
+  expect(r.courseId).toBe(MA_COURSE_ID);
+  expect(maOrgOptions(MULTI, r.courseId).map(o => o.name)).toEqual(['פסגות']);
+  expect(partnerOptions(MULTI, r.student).map(p => p.name)).toEqual(['מאיה גל', 'תום ברק']);
+});
+
+test('the ADDRESS path picks that row too — the common case, and the same trap', () => {
+  const r = resolveMaStudent(MULTI, 'shira@ariel.ac.il');
+  expect(r.ok).toBe(true);
+  if (!r.ok) return;
+  expect(r.identifiedBy).toBe('email');
+  expect(r.courseId).toBe(MA_COURSE_ID);
+  expect(r.student.id).toBe('r3');
+});
+
+test('two people who really share a name are still refused, duplicates or not', () => {
+  // The guard has to survive the fix: different addresses means different people.
+  const r = resolveMaStudent(MULTI, 'someone@gmail.com', 'מאיה גל');
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.reason).toBe('ambiguous-name');
+});
+
+test('a duplicated person is filed under their one address, once', () => {
+  const r = resolveMaStudent(MULTI, 'shira.alon.private@gmail.com', 'שירה אלון');
+  expect(submissionEmail(r, 'shira.alon.private@gmail.com')).toBe('shira@ariel.ac.il');
 });

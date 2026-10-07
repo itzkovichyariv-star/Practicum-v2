@@ -79,3 +79,39 @@ export async function sendBulkEmails(
   }
   return { sent, failed, skipped };
 }
+
+/**
+ * Tell a student their placement is settled. Two events, one function, because
+ * the student sees them as the same moment: "where am I doing my practicum".
+ *
+ *  'placed'       the organization they asked to be screened for accepted them
+ *                 and the coordinator moved the card to שובץ.
+ *  'org-approved' the organization THEY proposed was approved by the supervisor.
+ *
+ * Fire-and-forget safe: a failure here must never block the save that already
+ * happened, so callers log the result rather than aborting.
+ */
+export async function sendPlacementEmail(
+  student: { name?: string; email?: string | null },
+  orgName: string,
+  kind: 'placed' | 'org-approved',
+): Promise<{ ok: boolean; sent: boolean; error?: string }> {
+  const to = (student.email || '').trim();
+  if (!to) return { ok: false, sent: false, error: 'no email' };
+  try {
+    const token = await getToken();
+    const r = await fetch(`${EDGE}/notify-placement`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'apikey': ANON,
+      },
+      body: JSON.stringify({ student: { name: student.name, email: to }, orgName, kind }),
+    });
+    const result = await r.json();
+    return { ok: r.ok, sent: r.ok, ...result };
+  } catch (e: any) {
+    return { ok: false, sent: false, error: e.message };
+  }
+}

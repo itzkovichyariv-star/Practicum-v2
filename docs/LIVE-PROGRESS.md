@@ -689,3 +689,13 @@ build clean. The full gate was **not** run — its numbered cells write to the l
   - Open for Yariv: whether the Supabase plan has point-in-time recovery, which could restore those snapshots.
 - **RULE FROM NOW ON: export `practicum_snapshots` to a file BEFORE any full-gate run**, and restore the real rows after
   the cleanup. The gate must never again be run against production without that dump.
+- 2026-10-07 — **פרקטיקום ייעוץ ארגוני תשפ״ז — טופס `/ma` + המיילים.** פסגות נפתחה ל-8 מקומות בקורס
+  `counseling-practicum-tashpaz` (ארבעת התנאים ✓). נוספו: זיהוי סטודנט לפי **שם** בנוסף למייל (כי המייל שלהם הוא
+  של האוניברסיטה ולא של התכנית), כתובת תצוגה מקדימה לרכז, ומסך "מה קורה עכשיו" שאומר לסטודנט מי פונה למי.
+  🔴 תקלה שנמצאה על **נתונים חיים** בלבד: הזיהוי לפי שם דחה את כל 15 הסטודנטים ("יש יותר מסטודנט/ית אחד/ת בשם הזה"),
+  כי אותם 15 אנשים רשומים בשלוש שורות קורס (`ariel-counseling-a/-b/-tashpaz`) עם אותה כתובת — והקוד ספר *שורות*.
+  התיקון מאחד שורות לפי כתובת ואז סופר, ובוחר את שורת הקורס שהקישור נבנה בשבילו (ל-`ariel-counseling-a` אין
+  פסגות ברשימה, כך שגם מסלול המייל היה מציג טופס ריק). שני אנשים שונים בעלי אותו שם עדיין נדחים ולא מנוחשים.
+  נוספה פונקציית `notify-placement` עם שני המיילים לסטודנט: שיבוץ בארגון קיים (ממסך הסטודנט) ואישור ארגון
+  שהסטודנט הציע (ממסך הארגונים). PR #58 מוזג עם הקומיט הראשון בלבד, ולכן ארבעת התיקונים נפתחו מחדש ב-PR #59.
+  ⚠️ `PREVIEW_EMAILS` עדיין מכיל את כתובות יריב — לרוקן לפני שליחת הקישור לסטודנטים.

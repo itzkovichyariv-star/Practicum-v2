@@ -43,6 +43,7 @@ import { WhatsAppIcon, MailIcon, dispatchChip } from './icons';
 import { openMailto } from '../lib/openMailto';
 import { planDispatch, applyDispatch, unsendOrg, placeDirect, splitSendable } from '../lib/dispatch';
 import { SILENCE_DAYS } from '../lib/placementStatus';
+import { sendPlacementEmail } from '../lib/emailApi';
 
 export type OrgHubExtras = {
   allStudents: Student[];
@@ -337,6 +338,14 @@ export default function OrgHub({
     await extras.onDataChange({ students: nextStudents, employers: nextEmployers, dispatches: updatedDispatches as Dispatch[] });
     showToast(`✓ ${result === 'placed' ? 'שובץ!' : result === 'rejected' ? 'נדחה' : 'בוטל'}`, 'success');
     setConfirmDialog(null);
+    // The student was told, on the form, that they would hear by email once the
+    // organization decided. This is that moment — after the save, so a mail
+    // failure never costs the placement.
+    if (result === 'placed') {
+      const res = await sendPlacementEmail(student as any, empLive.name, 'placed');
+      if (!res.sent) showToast(`השיבוץ נשמר, אבל המייל לסטודנט/ית לא נשלח${res.error ? ` (${res.error})` : ''}`, 'error');
+      else showToast(`✉︎ נשלח עדכון שיבוץ ל${student.name || 'סטודנט/ית'}`, 'success');
+    }
   }
 
   async function markNeverSent(orgName: string) {

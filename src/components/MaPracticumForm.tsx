@@ -5,7 +5,7 @@ import { openCv } from '../lib/cvUrl';
 import {
   resolveMaStudent, partnerOptions, maOrgOptions, validateMaSubmission,
   partnerSummary, placesNote, normEmail, mutualNotice, partnerEmails, buildProposal,
-  submissionEmail,
+  submissionEmail, emailLooksComplete,
   type MaContext, type PartnerMode, type MutualState,
 } from '../lib/maPracticum';
 
@@ -281,8 +281,20 @@ export default function MaPracticumForm() {
         </h1>
         <p className="text-[15px] leading-[1.6] mb-2" style={{ color: 'var(--ink)', opacity: 0.85 }}>
           {proposing
-            ? 'קורות החיים והצעת הארגון נשמרו. ההצעה כפופה לאישור מנחה התכנית — נעדכן אותך.'
+            ? 'קורות החיים והצעת הארגון נשמרו.'
             : `קורות החיים נשמרו, והבחירה נרשמה: ${orgChoice || '—'} · ${partnerSummary(partnerMode, partnerNames)}.`}
+        </p>
+
+        {/* WHAT HAPPENS NEXT, and who does it. Yariv 2026-10-07: a student who chose an
+            organization "צריך לדעת שיצרו איתו קשר עם הארגון להמשך מיון", and one who proposed
+            one should be told it is approved by him BY NAME and that an update follows.
+            Without this the page ends on "נשמר" and the student is left guessing whether
+            anything else is expected of them. */}
+        <p className="text-[14px] leading-[1.7] rounded-xl px-4 py-3 mt-3 text-right" data-ma-next
+          style={{ background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', color: '#065f46' }}>
+          {proposing
+            ? 'ד"ר יריב איצקוביץ יצור קשר עם הארגון שהצעת לשם אישורו. ברגע שהארגון יאושר תקבל/י על כך עדכון במייל, ותוכל/י להתחיל את הפרקטיקום.'
+            : `קורות החיים שלך יועברו ל${orgChoice || 'ארגון'}, והארגון יצור איתך קשר להמשך תהליך המיון. בסיום התהליך תקבל/י עדכון במייל.`}
         </p>
         {partnerLost && (
           <p className="text-[13.5px] leading-[1.6] rounded-xl px-4 py-3 mt-4"
@@ -362,7 +374,7 @@ export default function MaPracticumForm() {
                 opacity: prefillEmail ? 0.7 : 1, cursor: prefillEmail ? 'default' : undefined,
               }} />
           </label>
-          {normEmail(email) && blob && (
+          {emailLooksComplete(email) && blob && (
             identified ? (
               <div className="mt-2 text-[13px] leading-[1.5] rounded-lg px-3 py-2" data-ma-identified
                 style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.3)', color: '#065f46' }}>
@@ -399,7 +411,7 @@ export default function MaPracticumForm() {
               that offered the cohort by name would let anyone holding the link read off who
               is in it. The partner picker may show those names, but only to someone the
               form has already identified. */}
-          {normEmail(email) && blob && !identified && (
+          {emailLooksComplete(email) && blob && !identified && (
             <label className="block mt-3">
               <span className="small-caps block mb-1.5" style={{ letterSpacing: '0.12em' }}>
                 השם המלא שלך, כפי שהוא רשום בתכנית *
