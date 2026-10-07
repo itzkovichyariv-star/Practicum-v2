@@ -1,0 +1,111 @@
+# Keep the Supabase project awake — and tell Yariv the moment it is not.
+#
+# WHY THIS EXISTS
+# ---------------
+#   Practicum stores everything in one Supabase project on the Free plan, and
+#   Supabase pauses a Free-plan project that sees no database activity for
+#   seven days. A paused project does not serve requests: /ma, /cv-update and
+#   the app itself all stop answering, and the first person to find out would
+#   be a student in the middle of uploading a CV.
+#
+#   During term the coordinator opens the app often enough that this never
+#   fires. The dangerous window is a holiday — exactly when a form link is
+#   sitting in fifteen students' inboxes and nobody is watching.
+#
+#   This is not a trick to dodge the pause. Supabase documents it:
+#   "generating a sufficient amount of activity by making API calls to your
+#   project" is one of the two ways it names to prevent pausing.
+#   https://supabase.com/docs/guides/platform/free-project-pausing
+#
+# WHAT IT DOES
+# ------------
+#   Three times a day it reads ONE number out of the database — the `version`
+#   column of the single practicum_data row. That is a real user query against
+#   PostgREST (the docs ask for database activity, not a ping to a health
+#   endpoint), it returns a couple of dozen bytes, and it writes nothing.
+#   Egress from a year of this is far under a megabyte.
+#
+#   Three runs rather than one because GitHub delays or silently drops
+#   scheduled runs when its queues are busy; two spares cost nothing.
+#
+# IT IS ALSO THE ALARM
+# --------------------
+#   A paused project, a revoked key or an outage makes the request fail, the
+#   run goes red, and GitHub emails the repository owner. So this file is the
+#   difference between "the form has been dead since Tuesday" and knowing the
+#   same day. It cannot restore a paused project on its own — that needs a
+#   dashboard click (Supabase Dashboard → the project → "Restore project"),
+#   and the failure message below says so.
+#
+# NO SECRETS
+# ----------
+#   The publishable (anon) key is public by design — it ships inside the
+#   browser bundle and is already in scripts/link-org-course.mjs. RLS is what
+#   guards the data, not the key's secrecy. So this workflow needs nothing
+#   configured to start working.
+#
+# ONE CAVEAT
+# ----------
+#   GitHub disables scheduled workflows in a repository with 60 days of no
+#   commits, and mails the owner when it does. If that mail ever arrives,
+#   re-enable it from the Actions tab — otherwise the guard is silently off.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+    - cron: '17 13 * * *'
+    - cron: '17 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-supabase-awake
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read one row from practicum_data
+        env:
+          SB_URL: https://vpqgmcmavnszcnakhiat.supabase.co
+          SB_KEY: sb_publishable_qzAiDZ6UTTaT-9xR_TxK0g_QKUIUsRt
+        run: |
+          set -uo pipefail
+          url="$SB_URL/rest/v1/practicum_data?org_id=eq.default&select=version"
+
+          # --max-time, not the default: a hung connection should fail the run
+          # rather than sit until the job timeout and bury the reason.
+          body=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+            -H "apikey: $SB_KEY" \
+            -H "Authorization: Bearer $SB_KEY" \
+            "$url") || {
+              echo "::error::Could not reach $SB_URL at all (network, DNS, or the project is gone)."
+              exit 1
+            }
+
+          code=$(printf '%s' "$body" | tail -n1)
+          json=$(printf '%s' "$body" | sed '$d')
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Supabase answered HTTP $code — $json"
+            echo ""
+            echo "If the project is PAUSED, no automatic ping can wake it. Open"
+            echo "  https://supabase.com/dashboard/project/vpqgmcmavnszcnakhiat"
+            echo "and press 'Restore project'. Data is kept and restorable for a"
+            echo "year; the restore takes a few minutes. Until then /ma and"
+            echo "/cv-update return errors to students."
+            exit 1
+          fi
+
+          # A 200 with an empty array means RLS or the row itself changed —
+          # the project is awake, but something else is wrong and worth saying.
+          if [ "$json" = "[]" ]; then
+            echo "::warning::Project is awake, but practicum_data has no org_id=default row."
+          fi
+
+          echo "awake — practicum_data says $json"
