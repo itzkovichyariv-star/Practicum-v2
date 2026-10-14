@@ -15,13 +15,31 @@ import type {
 
 // ── Default Hebrew templates ──────────────────────────────────────────────────
 
-const DEFAULT_WHATSAPP = `שלום {contactName},
-מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת {courseName}.
-קישור לקו"ח: {cvLink}
-לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}
-{contactBack}
-תודה,
-{adminName}`;
+/**
+ * The first WhatsApp to an employer, in the wording Yariv asked for on 2026-10-14:
+ * "מאוד מסורבל … רק שם פרטי, ומכיוון שזו היכרות מוקדמת שיהיה יותר חברי — היי מרב, אני
+ * מצרף קישור לקורות חיים לפרקטיקום של הסטודנטית, אנא זמנו בהקדם לראיון ועדכנו, המון
+ * תודה יריב".
+ *
+ * First names on both ends, no role/course boilerplate, and no "if the link doesn't
+ * open, call me" line: this IS a WhatsApp chat with him, so replying is the route back.
+ * The answer link stays — it is what "ועדכנו" means in the app — phrased as part of the
+ * ask. The student's name stays whole so the employer knows whose CV it is, and nothing
+ * is gendered because the data carries no gender.
+ */
+const DEFAULT_WHATSAPP = `היי {contactFirstName},
+מצרף קישור לקורות החיים של {studentName} לפרקטיקום:
+{cvLink}
+אשמח שתזמינו לראיון בהקדם ותעדכנו אותי כאן:
+{responseLink}
+המון תודה,
+{adminFirstName}`;
+
+/** The wording the default above replaced. A saved template that still opens with these
+ *  two lines is the stock one (the migrations only ever inserted lines below them), so it
+ *  is swapped; anything that opens differently is his own and is left alone. */
+const SUPERSEDED_WHATSAPP_OPENING = `שלום {contactName},
+מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת {courseName}.`;
 
 const DEFAULT_EMAIL_SUBJECT = `מועמדות {studentName} ל-{positionTitle}`;
 
@@ -43,7 +61,8 @@ const RESPONSE_LINK_LINES: Record<string, string> = {
  *  that was never confirmed — and when it fails the employer currently has nowhere
  *  to go. This line means a broken link costs a phone call, not a lost placement. */
 const CONTACT_BACK_LINES: Record<string, string> = {
-  whatsappTemplate: '{contactBack}',
+  // Not the first WhatsApp: it goes out as a chat with Yariv, so answering it IS the
+  // route back, and he asked for that message to be short (2026-10-14).
   emailBodyTemplate: '{contactBack}',
   reminderWhatsappTemplate: '{contactBack}',
   reminderEmailBodyTemplate: '{contactBack}',
@@ -375,6 +394,10 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       ps.reminderEmailBodyTemplate = DEFAULT_REMINDER_EMAIL_BODY;
       changed = true;
     }
+    if (typeof ps.whatsappTemplate === 'string' && ps.whatsappTemplate.startsWith(SUPERSEDED_WHATSAPP_OPENING)) {
+      ps.whatsappTemplate = DEFAULT_WHATSAPP;
+      changed = true;
+    }
 
     // Same treatment for the human route back, and for the same reason: a template
     // saved before this existed would otherwise offer the employer a link and nothing
@@ -516,7 +539,7 @@ export function migratePlacementData(data: PracticumData): PracticumData {
 // without the key would have put the literal "{contactBack}" in front of an employer,
 // exactly as v1.39 shipped "לפני {daysWaiting} ימים" to real people.
 const LEGACY_PLACEHOLDERS = ['contactName', 'studentName', 'positionTitle', 'adminName',
-  'courseName', 'cvLink', 'employerName', 'scope', 'contactBack'];
+  'courseName', 'cvLink', 'employerName', 'scope', 'contactBack', 'contactFirstName', 'adminFirstName'];
 
 /**
  * Substitute every {placeholder} the caller supplied.

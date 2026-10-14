@@ -42,7 +42,10 @@ const LONG_ORG = 'מערך הדיגיטל הלאומי';
 /* Rank 2, still open, so every row offers an action and pays for it in width. */
 const SPARE_ORG = 'TLVtech';
 
-const sentAt = '2026-08-24T09:00:00.000Z';   // 2 days before NOW below — plainly "sent"
+// Two days ago — plainly "sent". Relative, not a fixed date: the check is not clock-pinned,
+// and a fixed 2026-08-24 aged past the 45-day "no answer" line on 2026-10-08, turning the
+// row into an overdue headline that this check then could not find.
+const sentAt = new Date(Date.now() - 2 * 864e5).toISOString();
 
 const FIXTURE = {
   courses: [{ id: 'hr', name: 'פרקטיקום משאבי אנוש', year: 'תשפ״ז', type: 'practicum' }],

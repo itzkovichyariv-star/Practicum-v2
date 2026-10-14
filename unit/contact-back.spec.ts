@@ -40,7 +40,8 @@ test('WhatsApp falls back to the phone — it is normally the same number', () =
 
 test('every employer-facing template ships with the placeholder', () => {
   const d = getDefaultPlacementSettings();
-  for (const k of ['whatsappTemplate', 'emailBodyTemplate', 'reminderWhatsappTemplate', 'reminderEmailBodyTemplate'] as const) {
+  // Not the first WhatsApp: it is a chat with Yariv, and he asked it short (2026-10-14).
+  for (const k of ['emailBodyTemplate', 'reminderWhatsappTemplate', 'reminderEmailBodyTemplate'] as const) {
     expect((d as any)[k], k).toContain('{contactBack}');
   }
 });
