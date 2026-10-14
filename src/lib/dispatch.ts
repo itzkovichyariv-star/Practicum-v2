@@ -145,7 +145,7 @@ export function planDispatch(input: PlanInput): DispatchPlan {
       // template carrying it can never ship the literal "{contactFirstName}".
       contactFirstName: firstNameOf(emp.contactPerson) || emp.name,
       studentName: student.name,
-      positionTitle: emp.name, adminName: userName,
+      positionTitle: emp.name, adminName: userName, adminFirstName: firstNameOf(userName) || userName,
       courseName: input.courseName || '', cvLink, employerName: emp.name,
     } as Record<string, string>;
     const rem = input.reminder;

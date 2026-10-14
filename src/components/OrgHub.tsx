@@ -207,7 +207,8 @@ export default function OrgHub({
       contactName: emp.contactPerson || emp.name,
       contactFirstName: firstNameOf(emp.contactPerson) || emp.name,
       studentName: form.name,
-      positionTitle: emp.name, adminName: userName, courseName: course?.name || '',
+      positionTitle: emp.name, adminName: userName, adminFirstName: firstNameOf(userName) || userName,
+      courseName: course?.name || '',
       cvLink, employerName: emp.name,
     };
   }
