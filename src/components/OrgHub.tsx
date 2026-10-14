@@ -174,8 +174,9 @@ export default function OrgHub({
   }
   function addOrg(name: string) {
     const nm = normalizeOrgName(name).trim();
-    if (!nm) { setDraftOrg(null); return; }
-    if (cards.some(c => c.orgName.trim().toLowerCase() === nm.toLowerCase())) { setDraftOrg(null); return; }
+    // Both used to close the field without a word — a press that looked like nothing.
+    if (!nm) { showToast('כתוב/י או בחר/י שם ארגון', 'warn'); return; }
+    if (cards.some(c => c.orgName.trim().toLowerCase() === nm.toLowerCase())) { showToast('הארגון כבר קיים בדירוג', 'warn'); setDraftOrg(null); return; }
     writeList([...cards, { rank: cards.length + 1, orgName: nm, employerId: resolveEmployer(nm)?.id ?? null, interviewResult: 'pending', status: 'tentative', slotId: null }]);
     setDraftOrg(null);
   }

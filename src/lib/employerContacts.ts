@@ -143,6 +143,32 @@ export function applyContacts<T extends WithContacts>(emp: T, list: EmployerCont
 }
 
 /**
+ * The editor's version of applyContacts: the same mirror, but an EMPTY card stays.
+ *
+ * Yariv 2026-10-14: "הוספת מעסיק כדי שיהיה איש קשר ראשי או משני — לוחצים וכלום לא
+ * קורה". "＋ הוסף איש קשר" adds an empty card, and every other action on the form went
+ * through applyContacts, which drops empty cards: typing one letter into the first
+ * contact, or tapping "סמן/י כפעיל" on the new card, deleted the card that had just been
+ * added — and on a phone it had opened below the fold anyway, so all he saw was nothing.
+ * A card is a draft until save, where normalizeContacts drops what is still empty.
+ */
+export function applyContactsDraft<T extends WithContacts>(emp: T, list: EmployerContact[], wantedActiveId?: string | null): T {
+  const drafts = (list || [])
+    .map(c => ({ id: str(c.id), name: keep(c.name), role: keep(c.role), phone: keep(c.phone), email: keep(c.email), note: keep(c.note) }))
+    .filter(c => !!c.id);
+  const activeId = drafts.some(c => c.id === str(wantedActiveId)) ? str(wantedActiveId) : (drafts[0]?.id || '');
+  const active = drafts.find(c => c.id === activeId) || null;
+  return {
+    ...emp,
+    contacts: drafts,
+    activeContactId: activeId || null,
+    contactPerson: str(active?.name),
+    contactPhone: str(active?.phone),
+    contactEmail: str(active?.email),
+  };
+}
+
+/**
  * Route everything to a different person. The one stepping aside keeps their card, so
  * handing it back when they return is the same call with their id.
  */
