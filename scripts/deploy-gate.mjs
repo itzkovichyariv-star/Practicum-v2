@@ -102,6 +102,7 @@ const OFFLINE_CHECKS = [
   // A student the org already took can be marked placed from the card, with no CV sent
   // through the app (2026-10-04: "הכפתור לא לחיץ").
   'accept-direct-check.mjs',
+  'employer-contacts-check.mjs',
   // Every typed time (lectures, placement interview, interview slots) is saved as typed,
   // under a clock frozen at the midnight the damaged lectures were written (2026-09-22).
   'lecture-time-check.mjs',

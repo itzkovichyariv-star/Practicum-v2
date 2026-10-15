@@ -26,8 +26,11 @@ import { extname, join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = join(ROOT, 'dist');
-const PORT = 4333;
-const PAGES = process.argv.slice(2).length ? process.argv.slice(2)
+const PORT = process.argv.includes('--phone') ? 4334 : 4333;
+const ARGS = process.argv.slice(2);
+// --phone: 390px wide, touch — the width Yariv actually uses the app at.
+const PHONE = ARGS.includes('--phone');
+const PAGES = ARGS.filter((a) => !a.startsWith('--')).length ? ARGS.filter((a) => !a.startsWith('--'))
   : ['dashboard', 'lectures', 'students', 'employers', 'trainers', 'candidates', 'calendar', 'reports', 'forms', 'management', 'settings'];
 
 const FIXTURE = {
@@ -81,7 +84,7 @@ const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
 const browser = await chromium.launch(exe ? { executablePath: exe } : {});
 
 async function newCtx(page) {
-  const ctx = await browser.newContext({ viewport: { width: 1180, height: 900 }, acceptDownloads: true });
+  const ctx = await browser.newContext({ viewport: PHONE ? { width: 390, height: 844 } : { width: 1180, height: 900 }, hasTouch: PHONE, acceptDownloads: true });
   await ctx.route('**/*', async (route) => {
     const req = route.request();
     const url = req.url();
@@ -139,6 +142,18 @@ async function pressAndWatch(pg, ctx, scopeSel, btn) {
     window.__mo.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
     window.__fx = [];
   });
+  const snap = () => pg.evaluate(() => {
+    // What a person can SEE: visible text, field values, which element has focus, and
+    // where every scrolled box sits. An attribute flicker or a re-render that ends where
+    // it started is not a response — round one of this sweep counted those as one.
+    const vals = [...document.querySelectorAll('input,textarea,select')].map((e) => (e.type === 'checkbox' || e.type === 'radio') ? String(e.checked) : e.value).join('\u0001');
+    const scrolls = [...document.querySelectorAll('*')].filter((e) => e.scrollTop > 0).map((e) => e.scrollTop).join(',');
+    const ae = document.activeElement; const focus = ae && ae !== document.body ? (ae.tagName + (ae.getAttribute('name') || '') + (ae.closest('[data-contact-card]')?.getAttribute('data-contact-card') || '')) : '';
+    return document.body.innerText + '\u0002' + vals + '\u0002' + scrolls + '|' + scrollY + '\u0002' + focus
+      + '\u0002' + [...document.querySelectorAll('[aria-pressed],[aria-checked],[aria-expanded],[aria-selected],[open]')].map((e) => (e.getAttribute('aria-pressed') || '') + (e.getAttribute('aria-checked') || '') + (e.getAttribute('aria-expanded') || '') + (e.getAttribute('aria-selected') || '') + (e.hasAttribute('open') ? 'o' : '')).join('')
+      + '\u0002' + [...document.querySelectorAll('button,[style*=background]')].slice(0, 400).map((e) => getComputedStyle(e).backgroundColor).join('');
+  }).catch(() => '');
+  const shot0 = await snap();
   const before = { url: pg.url(), net: ctx.__net || 0, pages: ctx.pages().length };
   let download = false, dialog = '';
   const onDl = () => { download = true; };
@@ -161,7 +176,7 @@ async function pressAndWatch(pg, ctx, scopeSel, btn) {
   const after = await pg.evaluate(() => ({ mut: window.__mut, fx: window.__fx })).catch(() => ({ mut: -1, fx: [] }));
   const effects = [];
   if (!ok) effects.push('not-found');
-  if (after.mut > 0) effects.push(`dom:${after.mut}`);
+  if (after.mut > 0 && (await snap()) !== shot0) effects.push(`visible:${after.mut}`);
   if (after.fx.length) effects.push(...after.fx);
   if (download) effects.push('download');
   if (dialog) effects.push(dialog);
@@ -202,7 +217,7 @@ for (const name of PAGES) {
     }).catch(() => null);
     if (modalSel && !noop) {
       const inner = (await listButtons(pg, modalSel)).filter((x) => !x.disabled);
-      for (const ib of inner.slice(0, 40)) {
+      for (const ib of inner.slice(0, 80)) {
         await ctx.close();
         ({ ctx, pg } = await openPage(name));
         await pressAndWatch(pg, ctx, null, b);
@@ -224,7 +239,7 @@ server.close();
 const noops = report.filter((r) => r.effects.length === 0);
 const prints = report.filter((r) => r.effects.includes('print'));
 const opens = report.filter((r) => r.effects.some((e) => e.startsWith('open:')));
-await writeFile(join(ROOT, 'test-results', 'button-sweep.json'), JSON.stringify(report, null, 2)).catch(() => {});
+await writeFile(join(ROOT, 'test-results', PHONE ? 'button-sweep-phone.json' : 'button-sweep.json'), JSON.stringify(report, null, 2)).catch(() => {});
 console.log(`\n${report.length} presses · ${noops.length} with no effect · ${prints.length} call window.print() on the app page`);
 for (const p of prints) console.log(`   ⚠ window.print() on the app page (a no-op in the installed app): ${p.page} → "${p.label}"`);
 for (const o of opens) console.log(`   · window.open: ${o.page}${o.via ? ` › ${o.via}` : ''} → "${o.label}" ${o.effects.filter((e) => e.startsWith('open:')).join(' ')}`);
