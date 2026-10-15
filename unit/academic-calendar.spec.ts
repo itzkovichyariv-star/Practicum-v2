@@ -471,13 +471,24 @@ test('countTrainerMatches reports named-vs-matched, which is how the rule gets j
   expect(countTrainerMatches(lectures, TRAINERS)).toEqual({ named: 3, matched: 2 });
 });
 
-/* Yariv 2026-10-02: "תוסיף חופשה באילת בין התאריכים 18.11-21.11" */
-test('the Eilat vacation blocks 18–21.11.2026 and only those days', () => {
+/* Yariv 2026-10-15: "…וב18-21.11 תשנה לסדנה ברומניה בברשוב" + "בעצם החופשה באילת 11-14" */
+test('the Eilat vacation blocks 11–14.11.2026 and only those days', () => {
+  const dayMap = buildAcademicDayMap();
+  for (const iso of ['2026-11-11', '2026-11-12', '2026-11-13', '2026-11-14']) {
+    const items = dayMap.get(iso) ?? [];
+    expect(dayVerdict(items)).toBe('blocked');
+    expect(dayBlockers(items)[0].reason).toContain('חופשה באילת');
+  }
+  expect(dayVerdict(dayMap.get('2026-11-10') ?? [])).not.toBe('blocked');
+  expect(dayVerdict(dayMap.get('2026-11-15') ?? [])).not.toBe('blocked');
+});
+
+test('the Brașov workshop blocks 18–21.11.2026 and only those days', () => {
   const dayMap = buildAcademicDayMap();
   for (const iso of ['2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21']) {
     const items = dayMap.get(iso) ?? [];
     expect(dayVerdict(items)).toBe('blocked');
-    expect(dayBlockers(items)[0].reason).toContain('חופשה באילת');
+    expect(dayBlockers(items)[0].reason).toContain('סדנה בברשוב');
   }
   expect(dayVerdict(dayMap.get('2026-11-17') ?? [])).not.toBe('blocked');
   expect(dayVerdict(dayMap.get('2026-11-22') ?? [])).not.toBe('blocked');

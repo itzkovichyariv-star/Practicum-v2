@@ -39,11 +39,18 @@ test('a pending lecture says ממתין and raises a לתאם 14 days ahead, unt
   expect(done.some((x) => x.key === 'todo:lec:l1')).toBe(false);
 });
 
-test('his vacation is mirrored as one all-day span', () => {
-  const v = ev({}).find((x) => x.key.startsWith('away:'))!;
-  expect(v.summary).toContain('חופשה באילת');
-  expect(v.start).toEqual({ date: '2026-11-18' });
-  expect(v.end).toEqual({ date: '2026-11-22' });   // Google's end date is exclusive
+test('his days away are mirrored as one all-day span each', () => {
+  const away = ev({}).filter((x) => x.key.startsWith('away:'));
+  expect(away).toHaveLength(2);
+  const eilat = away.find((x) => x.summary.includes('חופשה באילת'))!;
+  expect(eilat.summary.startsWith('🏖')).toBe(true);
+  expect(eilat.start).toEqual({ date: '2026-11-11' });
+  expect(eilat.end).toEqual({ date: '2026-11-15' });   // Google's end date is exclusive
+  const brasov = away.find((x) => x.summary.includes('סדנה בברשוב'))!;
+  expect(brasov.summary.startsWith('✈️')).toBe(true);
+  expect(brasov.start).toEqual({ date: '2026-11-18' });
+  expect(brasov.end).toEqual({ date: '2026-11-22' });
+  expect(away.some((x) => JSON.stringify(x.start).includes('2026-11-18') && x.summary.includes('אילת'))).toBe(false);
 });
 
 test('the list is deterministic — same input, same order', () => {

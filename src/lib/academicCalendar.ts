@@ -197,9 +197,12 @@ const PERSONAL_CATEGORIES: Record<string, RawCategory> = {
   away: ['חופשה', '', '#76A5AF'],
 };
 const PERSONAL_EVENTS: AcademicRawEvent[] = [
-  // Yariv 2026-10-02: "תוסיף חופשה באילת בין התאריכים 18.11-21.11"
-  { kind: 'academic', title: 'חופשה באילת', start_date: '2026-11-18', end_date: '2026-11-21',
+  // Yariv 2026-10-15: "4-7.11 נסיעה לאילת וב18-21.11 תשנה לסדנה ברומניה בברשוב",
+  // then, the same day: "בעצם החופשה באילת 11-14". (18–21.11 was "חופשה באילת", added 2026-10-02.)
+  { kind: 'academic', title: 'חופשה באילת', start_date: '2026-11-11', end_date: '2026-11-14',
     all_day: true, category: 'away', category_label: 'חופשה', hex: '#76A5AF', note: '' },
+  { kind: 'academic', title: 'סדנה בברשוב, רומניה', start_date: '2026-11-18', end_date: '2026-11-21',
+    all_day: true, category: 'away', category_label: 'נסיעה', hex: '#76A5AF', note: '' },
 ];
 
 export const ACADEMIC_CATEGORIES: AcademicCategory[] = Object.entries({
@@ -478,7 +481,7 @@ export function dayBlockers(items: AcademicDayItem[]): DayBlocker[] {
         reason: it.category === 'off'
           ? `אין לימודים — ${it.title}`
           : it.category === 'away'
-            ? `אתה בחופשה — ${it.title}`
+            ? `אתה לא זמין — ${it.title}`
             : `תקופת בחינות — ${it.title}`,
       });
     } else if (CAUTION_CATEGORIES.has(it.category)) {
