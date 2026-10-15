@@ -31,7 +31,8 @@ test('a day off says WHICH day off — "חופשת בחירות, חופשת יו
   expect(offDayLabel('יום הבחירות — אין לימודים')).toBe('חופשת בחירות');
   expect(offDayLabel('יום הזיכרון ויום העצמאות — אין לימודים')).toBe('חופשת יום העצמאות');
   expect(cell('2026-12-10')).toMatchObject({ fill: 'off', label: 'חופשת חנוכה' });
-  expect(cell('2026-11-19')).toMatchObject({ fill: 'off', label: 'חופשה באילת' });
+  expect(cell('2026-11-19')).toMatchObject({ fill: 'off', label: 'סדנה בברשוב, רומניה' });
+  expect(cell('2026-11-12')).toMatchObject({ fill: 'off', label: 'חופשה באילת' });
 });
 
 test('exam windows say מועד א׳ / מועד ב׳ — the distinction Ariel prints', () => {

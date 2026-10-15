@@ -474,10 +474,11 @@ console.log('\nYEAR VIEW + CONFLICTS + LEGEND (430px)');
              top: Math.round(b.getBoundingClientRect().top) };
   });
   // two misplaced lectures, one pair in the same hours (10.11), plus the one CLASS of his on his own vacation
-  // (פרקטיקום ייעוץ, Friday 20.11, inside חופשה באילת 18–21.11).
+  // (פרקטיקום ייעוץ, Friday 20.11, inside the Brașov workshop 18–21.11 — and Friday 13.11,
+  // inside the Eilat vacation 11–14.11; 2026-10-15).
   check('CAL-conflict-banner — the misplaced lectures and the class to move are listed on arrival',
-    !!banner && banner.rows === 4 && banner.classRows === 1 && banner.text.includes('חופשת פסח')
-      && banner.text.includes('בחינות') && banner.text.includes('חופשה באילת'),
+    !!banner && banner.rows === 5 && banner.classRows === 2 && banner.text.includes('חופשת פסח')
+      && banner.text.includes('בחינות') && banner.text.includes('סדנה בברשוב') && banner.text.includes('חופשה באילת'),
     banner ? `${banner.rows} rows at y=${banner.top}: "${banner.text.slice(0, 100)}"` : 'no banner');
   check('CAL-overlap-banner — two live lectures in the same hours are listed with the things to move',
     !!banner && banner.overlapRows === 1 && banner.text.includes('שתי הרצאות באותן שעות')
@@ -532,7 +533,7 @@ console.log('\nYEAR VIEW + CONFLICTS + LEGEND (430px)');
              oldBars: document.querySelectorAll('[data-lecture-bars]').length };
   });
   check('CAL-poster-same-cell — the year view uses the new day: named, filled, ringed, no old bars',
-    yearCell.conflict === '1' && yearCell.fill === 'off' && yearCell.label === 'חופשה באילת'
+    yearCell.conflict === '1' && yearCell.fill === 'off' && yearCell.label === 'סדנה בברשוב, רומניה'
       && yearCell.simFill === 'course' && yearCell.simCourse === 'skills' && yearCell.oldBars === 0,
     JSON.stringify(yearCell));
 

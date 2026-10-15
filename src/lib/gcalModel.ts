@@ -189,12 +189,13 @@ export function desiredGoogleEvents(
     }
   }
 
-  // 3. His own days away (e.g. חופשה באילת) — one all-day span each.
+  // 3. His own days away (e.g. חופשה באילת, סדנה בברשוב) — one all-day span each.
+  //    A holiday gets the beach, a work trip abroad the plane.
   for (const e of ACADEMIC_EVENTS) {
     if (e.category !== 'away' || !e.start_date || !e.end_date) continue;
     out.push({
       key: `away:${e.start_date}:${e.title}`,
-      summary: `🏖 ${e.title}`,
+      summary: `${/חופשה|אילת/.test(e.title) ? '🏖' : '✈️'} ${e.title}`,
       description: 'לא לקבוע הרצאות בימים אלה.\n\n— מסונכרן מאפליקציית הפרקטיקום.',
       start: { date: e.start_date },
       end: { date: addDay(e.end_date) },
