@@ -41,14 +41,18 @@ const DEFAULT_WHATSAPP = `היי {contactFirstName},
 const SUPERSEDED_WHATSAPP_OPENING = `שלום {contactName},
 מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת {courseName}.`;
 
-const DEFAULT_EMAIL_SUBJECT = `מועמדות {studentName} ל-{positionTitle}`;
+const DEFAULT_EMAIL_SUBJECT = `קורות חיים לפרקטיקום – {studentName}`;
+
+/** The subject the one above replaced, so a stock saved one is swapped and an edited one kept. */
+const SUPERSEDED_EMAIL_SUBJECT = `מועמדות {studentName} ל-{positionTitle}`;
 
 // The one line that carries the employer's answer link, per template. Used both by the
 // defaults above and by the migration in normalizeData() that repairs templates saved
 // before the link existed — so the two can never drift apart.
 const RESPONSE_LINK_LINES: Record<string, string> = {
   whatsappTemplate: 'לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}',
-  emailBodyTemplate: 'לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}',
+  // Not the first mail: Yariv 2026-10-15, "לא צריך — בהרבה מקרים זה לא עובד". The
+  // employer answers by phone or WhatsApp, which the mail itself now offers.
   reminderWhatsappTemplate: 'לתשובה בלחיצה אחת: {responseLink}',
   reminderEmailBodyTemplate: 'לתשובה בלחיצה אחת: {responseLink}',
 };
@@ -62,11 +66,16 @@ const RESPONSE_LINK_LINES: Record<string, string> = {
  *  to go. This line means a broken link costs a phone call, not a lost placement. */
 const CONTACT_BACK_LINES: Record<string, string> = {
   // Not the first WhatsApp: it goes out as a chat with Yariv, so answering it IS the
-  // route back, and he asked for that message to be short (2026-10-14).
-  emailBodyTemplate: '{contactBack}',
+  // route back, and he asked for that message to be short (2026-10-14). Nor the first
+  // mail: it names his phone in its own words (2026-10-15).
   reminderWhatsappTemplate: '{contactBack}',
   reminderEmailBodyTemplate: '{contactBack}',
 };
+
+/** The number an employer is told to call or WhatsApp: the phone, else the WhatsApp. */
+export function myPhoneOf(settings: any): string {
+  return String(settings?.coordinatorPhone || settings?.coordinatorWhatsapp || '').trim();
+}
 
 /** Render the coordinator's contact details as one sentence, or '' when none are
  *  configured — an empty line is better than "reach me at: ". */
@@ -144,13 +153,24 @@ const SUPERSEDED_REMINDER_EMAIL_BODY = `שלום {contactName},
 תודה רבה,
 {adminName}`;
 
-const DEFAULT_EMAIL_BODY = `שלום {contactName},
-מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת קורס {courseName} באוניברסיטת אריאל.
+/**
+ * The first mail to an employer, in Yariv's own words (2026-10-15), replacing a
+ * formal one he found מסורבל: first names, no position/role line, no one-click answer
+ * link ("בהרבה מקרים זה לא עובד") — the employer is asked to call or WhatsApp instead.
+ * "לזמן לראיון" with no אותה/אותו: the data carries no gender.
+ */
+const DEFAULT_EMAIL_BODY = `היי {contactFirstName},
+מצורף קישור לקורות חיים של {studentName} במסגרת קורס {courseName} באוניברסיטת אריאל.
 קישור לקו"ח: {cvLink}
-לתשובה מהירה (הזמנה לראיון / לא מתאים): {responseLink}
-{contactBack}
-תודה,
-{adminName}`;
+
+אשמח אם תוכלו לזמן לראיון בהקדם. בכל דבר ועניין אפשר לחזור אליי בטלפון או בוואטסאפ {myPhone}.
+המון תודה,
+{adminFirstName}`;
+
+/** The stock opening of the mail above's predecessor. A saved template that still opens
+ *  with it is the stock one and is swapped; one that opens otherwise is his own. */
+const SUPERSEDED_EMAIL_OPENING = `שלום {contactName},
+מצורף קישור לקורות חיים של {studentName} עבור התפקיד {positionTitle} במסגרת קורס {courseName} באוניברסיטת אריאל.`;
 
 const DEFAULT_WHATSAPP_WITHDRAWAL = `שלום {contactName},
 ברצוננו לעדכן כי {studentName} שובץ/ה לתפקיד אחר, ועל כן אנו מבטלים את המועמדות לתפקיד {positionTitle}.
@@ -394,6 +414,14 @@ export function migratePlacementData(data: PracticumData): PracticumData {
       ps.reminderEmailBodyTemplate = DEFAULT_REMINDER_EMAIL_BODY;
       changed = true;
     }
+    if (typeof ps.emailBodyTemplate === 'string' && ps.emailBodyTemplate.startsWith(SUPERSEDED_EMAIL_OPENING)) {
+      ps.emailBodyTemplate = DEFAULT_EMAIL_BODY;
+      changed = true;
+    }
+    if (ps.emailSubjectTemplate === SUPERSEDED_EMAIL_SUBJECT) {
+      ps.emailSubjectTemplate = DEFAULT_EMAIL_SUBJECT;
+      changed = true;
+    }
     if (typeof ps.whatsappTemplate === 'string' && ps.whatsappTemplate.startsWith(SUPERSEDED_WHATSAPP_OPENING)) {
       ps.whatsappTemplate = DEFAULT_WHATSAPP;
       changed = true;
@@ -539,7 +567,7 @@ export function migratePlacementData(data: PracticumData): PracticumData {
 // without the key would have put the literal "{contactBack}" in front of an employer,
 // exactly as v1.39 shipped "לפני {daysWaiting} ימים" to real people.
 const LEGACY_PLACEHOLDERS = ['contactName', 'studentName', 'positionTitle', 'adminName',
-  'courseName', 'cvLink', 'employerName', 'scope', 'contactBack', 'contactFirstName', 'adminFirstName'];
+  'courseName', 'cvLink', 'employerName', 'scope', 'contactBack', 'contactFirstName', 'adminFirstName', 'myPhone'];
 
 /**
  * Substitute every {placeholder} the caller supplied.
@@ -610,7 +638,10 @@ export function firstEmailOf(s?: string | null): string {
 }
 
 export function buildWhatsAppUrl(rawPhone: string, message: string): string {
-  return `https://wa.me/${normalizeIsraeliPhone(rawPhone)}?text=${encodeURIComponent(message)}`;
+  // Every line opens right-to-left (rtlBody), so a line that starts with a link or a
+  // number does not jump to the left and turn the message into a puzzle to edit.
+  // Yariv 2026-10-15: "כפייה של יישור לימין, כי אחרת זה מייצר טקסט שקשה לערוך".
+  return `https://wa.me/${normalizeIsraeliPhone(rawPhone)}?text=${encodeURIComponent(rtlBody(message))}`;
 }
 
 // ── Student self-service: request an org → temporary hold ──────────────────────
