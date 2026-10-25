@@ -908,3 +908,38 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
 - **Functions deployed:** `notify-org-suggestion` (v10) and `notify-placement` (v4) deployed 2026-10-07 15:00 IL, after the last code change (14:51 IL).
 - **Site:** build 140 live (592db43f).
 - **Only remaining item:** sending the /ma link to students — Yariv's call. Not run: an end-to-end submit test (would write a real row + send a real mail).
+
+## 2026-10-25 — v1.44.0: "WhatsApp לקבוצה" — one message to every student's own WhatsApp (branch `group-whatsapp`)
+- Yariv asked for a button that picks everyone in the course and sends one message to each student's personal WhatsApp. He chose
+  option A, a send queue. A wa.me link opens only ONE chat and the browser blocks mass window opens, so this is a queue, not a broadcast.
+- **What's there:** a `WhatsApp לקבוצה` button next to `✉ מייל לקבוצה` (same division chips: כולם / שובצו / טרם שובצו …, scoped to the
+  course+year in the top bar), and a `WhatsApp (N)` button in the selection row for ticked students. One message with `{{שם}}` → first
+  name. Missing phones and malformed phones are listed apart before starting. The queue window shows "3 מתוך 28", a list with ✓, and the
+  buttons `פתח ל<שם> →` / `דלג` / `עצור`. Each click opens one personal chat with the text already typed; he presses Send in WhatsApp.
+- Logic in `src/lib/groupWhatsApp.ts` (pure), tests in `unit/group-whatsapp.spec.ts`.
+- Also committed the stray `build.142` stamp (version.ts/sw.js) left by a local predeploy run. Live was last logged as build 140, so
+  **a deploy may have happened that was never logged**. Check Cloudflare Pages before the next deploy.
+- **Green:** unit **311** · tsc clean · build 8 pages.
+- **NOT verified:** the UI in a real browser. The admin page needs Yariv's sign-in, which I may not enter. Needs a visual check signed in:
+  open the modal → pick a division → start → the first `פתח` opens the right chat with the right name. Deploy gate not run (not deploying).
+- **STILL OPEN:** visual check → merge PR → deploy (with the gate).
+
+## 2026-10-25 — v1.44.1: group modal — greeting typed in for him, and untick names before sending (PR #67)
+- Yariv: "היי {{שם}}, צריך להופיע באופן אוטומטי כשיש בחירה של יותר מסטודנט אחד" → for more than one recipient, the WhatsApp message box
+  opens with `היי {{שם}},` already in it (`groupGreeting()` in `src/lib/groupWhatsApp.ts`; editable).
+- "…לאפשר הסרה של חלק מהם … מצ׳ק בוקס לפני ההמשך" → the recipient list is now a checkbox per name, all ticked, with `☑ סמן הכל` /
+  `☐ נקה הכל` and "הוסרו N". Unticked names are left out of the count, the queue AND the Outlook BCC (the modal is shared by both channels).
+  The ticks reset when the modal opens or a division chip changes.
+- **Green:** unit **312** · tsc clean · build OK. **Still not checked visually while signed in**; that check is with Yariv.
+- **STILL OPEN:** his visual check → merge #67 → deploy (with the gate).
+
+## 2026-10-25 — v1.44.2: recipient checkboxes fixed + the group WhatsApp verified in the browser, signed in
+- Why Yariv saw no checkboxes: the dev server had been stopped by the app, and the service worker kept serving the cached v1.44.0
+  page. Restarted it and cleared the SW/cache in the pane. **Lesson: on "I don't see the change" locally, check `preview_list` first.**
+- Bug found while checking: the global 44px touch-target min-height on inputs made every checkbox a 44px row (one name per row, ~4
+  visible). The checkbox size is now inline (15px, minHeight 0) and the grid is two inline columns.
+- **Verified in the pane, signed in (real data, nothing sent):** WhatsApp לקבוצה → כולם = 21 names, all ticked; the box starts with
+  `היי {{שם}},\n` ✓. Unticking 2 gives "19 נמענים", "הוסרו 2" and "התחל שליחה (19)" ✓. In the queue: "1 מתוך 19", neither removed
+  name present ✓. `פתח` (window.open stubbed) gave the link `wa.me/97252…` with text "היי אלה,\nבדיקה" and moved on to "2 מתוך 19" ✓.
+  Stopped with עצור.
+- **STILL OPEN:** merge PR #67 → deploy gate → deploy.
