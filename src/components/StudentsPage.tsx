@@ -11,6 +11,7 @@ import StudentEditor from './StudentEditor';
 import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';
+import { planGroupWhatsApp, type GroupWhatsAppEntry } from '../lib/groupWhatsApp';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
 import { planDispatch, applyDispatch, unsendOrg, dropOrg, placeDirect, splitSendable } from '../lib/dispatch';
@@ -135,6 +136,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   // manually-ticked rows. mailBucket is the active division in bucket mode.
   const [mailMode, setMailMode] = useState<'selected' | 'bucket'>('selected');
   const [mailBucket, setMailBucket] = useState<MailBucketKey>('all');
+  // The same group tool, two channels: Outlook takes one BCC list; WhatsApp cannot, so it
+  // becomes a queue that opens one personal chat per click (see lib/groupWhatsApp).
+  const [mailChannel, setMailChannel] = useState<'email' | 'whatsapp'>('email');
+  const [waQueue, setWaQueue] = useState<{ entries: GroupWhatsAppEntry[]; index: number; opened: Set<string> } | null>(null);
 
   // Email confirmation state — mandatory before any API send
   type EmailConfirm = {
@@ -741,10 +746,24 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                 onClick={() => {
                   setMailMode('bucket');
                   setMailBucket(STAGE_TO_BUCKET[filters.stage]);
+                  setMailChannel('email');
                   setMailSubject(''); setMailBody('');
                   setShowMailModal(true);
                 }}
                 style={btnSecondary()}>✉ מייל לקבוצה</button>
+            )}
+            {counts.total > 0 && (
+              <button
+                data-group-whatsapp
+                title="הודעת WhatsApp אישית לכל סטודנט/ית בקבוצה — נפתחת שיחה אחת בכל לחיצה"
+                onClick={() => {
+                  setMailChannel('whatsapp');
+                  setMailMode('bucket');
+                  setMailBucket(STAGE_TO_BUCKET[filters.stage]);
+                  setMailSubject(''); setMailBody('');
+                  setShowMailModal(true);
+                }}
+                style={btnSecondary()}>WhatsApp לקבוצה</button>
             )}
             <div className="flex gap-2 flex-wrap justify-end">
               <button onClick={() => setShowImport(s => !s)}
@@ -952,7 +971,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <span className="mono text-[11px] font-semibold" style={{ color: 'var(--accent)' }}>{selectedIds.size} נבחרו</span>
           )}
           {selectedIds.size > 0 && (
-            <button onClick={() => { setMailMode('selected'); setMailSubject(''); setMailBody(''); setShowMailModal(true); }} style={btnSmall()}>📧 מייל Outlook</button>
+            <button onClick={() => { setMailChannel('email'); setMailMode('selected'); setMailSubject(''); setMailBody(''); setShowMailModal(true); }} style={btnSmall()}>📧 מייל Outlook</button>
+          )}
+          {selectedIds.size > 0 && (
+            <button data-selected-whatsapp onClick={() => { setMailChannel('whatsapp'); setMailMode('selected'); setMailSubject(''); setMailBody(''); setShowMailModal(true); }} style={btnSmall()}>WhatsApp ({selectedIds.size})</button>
           )}
           {selectedIds.size > 0 && (
             <button style={btnSmall()} onClick={() => {
@@ -1154,8 +1176,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
       {showMailModal && (() => {
         const isBucket = mailMode === 'bucket';
         const recipients = mailRecipients;
+        const isWa = mailChannel === 'whatsapp';
+        const waPlan = isWa ? planGroupWhatsApp(recipients, mailBody) : null;
         const withEmail = recipients.filter(s => s.email);
         const noEmail = recipients.filter(s => !s.email);
+        const reachable = isWa ? waPlan!.entries.length : withEmail.length;
+        const via = isWa ? 'WhatsApp אישי לכל אחד/ת' : 'נפתח ב‑Outlook שלך';
         const ctxCourse = context.courseId && context.courseId !== '__all__'
           ? (courses.find(c => c.id === context.courseId)?.name || 'קורס נבחר')
           : 'כל הקורסים';
@@ -1164,11 +1190,11 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.55)' }}>
           <div data-mail-modal className="rounded-2xl border p-8 max-w-[560px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div className="flex items-baseline justify-between mb-1">
-              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>{isBucket ? 'מייל לקבוצת סטודנטים' : 'מייל קבוצתי ב‑Outlook'}</div>
+              <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>{isWa ? 'WhatsApp לקבוצת סטודנטים' : isBucket ? 'מייל לקבוצת סטודנטים' : 'מייל קבוצתי ב‑Outlook'}</div>
               <button onClick={() => setShowMailModal(false)} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
             </div>
             <div className="mono text-[10.5px] uppercase tracking-[0.14em] mb-4" style={{ color: 'var(--text-soft)' }}>
-              {isBucket ? `${ctxCourse} · ${ctxYear} · נפתח ב‑Outlook שלך` : 'הנבחרים · נפתח ב‑Outlook שלך'}
+              {isBucket ? `${ctxCourse} · ${ctxYear} · ${via}` : `הנבחרים · ${via}`}
             </div>
 
             {/* Division selector (bucket mode only) */}
@@ -1195,27 +1221,52 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             {/* Recipient summary */}
             <div className="mb-4 p-3 rounded-lg" style={{ background: 'rgba(122,30,43,0.06)' }}>
               <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-1.5" style={{ color: 'var(--accent)' }}>
-                {withEmail.length} נמענים
+                {reachable} נמענים
               </div>
               <div data-mail-recipients className="text-[12.5px] leading-[1.7]" style={{ color: 'var(--ink)', maxHeight: 120, overflowY: 'auto' }}>
                 {recipients.length === 0 ? 'אין סטודנטים בקבוצה זו.' : recipients.map(s => s.name).filter(Boolean).join(' · ')}
               </div>
             </div>
-            {noEmail.length > 0 && (
+            {isWa && waPlan!.noPhone.length > 0 && (
+              <div data-wa-no-phone className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
+                ⚠ ללא טלפון (לא ייכללו): {waPlan!.noPhone.join(', ')}
+              </div>
+            )}
+            {isWa && waPlan!.badPhone.length > 0 && (
+              <div data-wa-bad-phone className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
+                ⚠ מספר טלפון לא תקין — תקנו בכרטיס הסטודנט/ית (לא ייכללו): {waPlan!.badPhone.join(', ')}
+              </div>
+            )}
+            {!isWa && noEmail.length > 0 && (
               <div className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>
                 ⚠ ללא מייל (לא ייכללו): {noEmail.map(s => s.name).join(', ')}
               </div>
             )}
-            <label className="block mb-3">
+            {!isWa && <label className="block mb-3">
               <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>נושא</span>
               <input value={mailSubject} onChange={e => setMailSubject(e.target.value)} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px' }} placeholder="נושא ההודעה..." />
-            </label>
-            <label className="block mb-5">
+            </label>}
+            <label className={isWa ? 'block mb-2' : 'block mb-5'}>
               <span className="mono text-[11px] uppercase tracking-[0.14em] mb-1 block" style={{ color: 'var(--text-soft)' }}>תוכן</span>
-              <textarea value={mailBody} onChange={e => setMailBody(e.target.value)} rows={5} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical' }} placeholder="תוכן ההודעה..." />
+              <textarea value={mailBody} onChange={e => setMailBody(e.target.value)} rows={5} className="input w-full" style={{ padding: '10px 14px', fontSize: '14px', resize: 'vertical' }} placeholder={isWa ? 'היי {{שם}}, ...' : 'תוכן ההודעה...'} />
             </label>
+            {isWa && (
+              <div className="mono text-[10.5px] mb-5 leading-[1.6]" style={{ color: 'var(--text-soft)' }}>
+                {'ⓘ {{שם}} יוחלף בשם הפרטי של כל סטודנט/ית. בכל לחיצה תיפתח שיחת WhatsApp אחת עם ההודעה מוכנה — לוחצים "שלח" ב‑WhatsApp וחוזרים לכאן לבא/ה בתור. אף אחד לא רואה את שאר הנמענים.'}
+              </div>
+            )}
             <div className="flex gap-3 justify-end">
               <button onClick={() => setShowMailModal(false)} className="btn">ביטול</button>
+              {isWa ? (
+                <button data-wa-start
+                  disabled={reachable === 0 || !mailBody.trim()}
+                  onClick={() => {
+                    setWaQueue({ entries: waPlan!.entries, index: 0, opened: new Set() });
+                    setShowMailModal(false);
+                  }}
+                  style={{ ...btnPrimary(), opacity: reachable === 0 || !mailBody.trim() ? 0.5 : 1, cursor: reachable === 0 || !mailBody.trim() ? 'not-allowed' : 'pointer' }}
+                >התחל שליחה ({reachable}) →</button>
+              ) : (
               <button
                 disabled={withEmail.length === 0}
                 onClick={() => {
@@ -1230,9 +1281,66 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                 }}
                 style={{ ...btnPrimary(), opacity: withEmail.length === 0 ? 0.5 : 1, cursor: withEmail.length === 0 ? 'not-allowed' : 'pointer' }}
               >📧 פתח ב‑Outlook →</button>
+              )}
             </div>
           </div>
         </div>
+        );
+      })()}
+
+      {/* WhatsApp group queue — one chat per click. Each click is its own user gesture,
+          so the popup blocker lets it through; the coordinator presses Send in WhatsApp. */}
+      {waQueue && (() => {
+        const { entries, index, opened } = waQueue;
+        const done = index >= entries.length;
+        const cur = entries[index];
+        const finish = () => {
+          showToast(`✓ נפתחו ${opened.size} שיחות WhatsApp`, 'success');
+          setWaQueue(null);
+          if (mailMode === 'selected') setSelectedIds(new Set());
+          setMailBody('');
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(26,22,18,0.55)' }}>
+            <div data-wa-queue className="rounded-2xl border p-8 max-w-[520px] w-full mx-4" style={{ background: 'var(--bg)', borderColor: 'var(--divider)', boxShadow: '0 20px 60px rgba(26,22,18,0.3)', maxHeight: '92vh', overflowY: 'auto' }}>
+              <div className="flex items-baseline justify-between mb-1">
+                <div className="serif text-[22px]" style={{ color: 'var(--ink)' }}>WhatsApp לקבוצה</div>
+                <button onClick={finish} className="mono text-[11px] uppercase tracking-[0.14em] opacity-60 hover:opacity-100" style={{ color: 'var(--ink)' }}>✕</button>
+              </div>
+              <div data-wa-progress className="mono text-[10.5px] uppercase tracking-[0.14em] mb-4" style={{ color: 'var(--text-soft)' }}>
+                {done ? `הסתיים · נפתחו ${opened.size} מתוך ${entries.length}` : `${index + 1} מתוך ${entries.length} · נפתחו ${opened.size}`}
+              </div>
+              {!done && (
+                <div className="mb-4 p-3 rounded-lg" style={{ background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.35)' }}>
+                  <div data-wa-current className="text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>{cur.name}</div>
+                  <div className="mono text-[12px]" dir="ltr" style={{ color: 'var(--text-soft)', textAlign: 'right' }}>{cur.phone}</div>
+                </div>
+              )}
+              <div className="mb-5 text-[12.5px] leading-[1.8]" style={{ maxHeight: 180, overflowY: 'auto' }}>
+                {entries.map((e, i) => (
+                  <div key={e.id} style={{ color: i === index ? 'var(--ink)' : 'var(--text-soft)', fontWeight: i === index ? 700 : 400 }}>
+                    {opened.has(e.id) ? '✓' : i < index ? '–' : '○'} {e.name}
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3 justify-between items-center flex-wrap">
+                <button onClick={finish} className="btn">{done ? 'סגירה' : 'עצור'}</button>
+                {!done && (
+                  <div className="flex gap-2">
+                    <button data-wa-skip onClick={() => setWaQueue({ ...waQueue, index: index + 1 })} style={btnSecondary()}>דלג</button>
+                    <button data-wa-open
+                      onClick={() => {
+                        window.open(cur.url, '_blank');
+                        setWaQueue({ entries, index: index + 1, opened: new Set(opened).add(cur.id) });
+                      }}
+                      style={btnPrimary()}>
+                      <span className="inline-flex items-center gap-1.5"><WhatsAppIcon size={15} /> פתח ל{cur.name.split(/\s+/)[0]} →</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         );
       })()}
 

@@ -908,3 +908,18 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
 - **Functions deployed:** `notify-org-suggestion` (v10) and `notify-placement` (v4) deployed 2026-10-07 15:00 IL, after the last code change (14:51 IL).
 - **Site:** build 140 live (592db43f).
 - **Only remaining item:** sending the /ma link to students — Yariv's call. Not run: an end-to-end submit test (would write a real row + send a real mail).
+
+## 2026-10-25 — v1.44.0: "WhatsApp לקבוצה" — one message to every student's own WhatsApp (branch `group-whatsapp`)
+- Yariv asked for a button that picks everyone in the course and sends one message to each student's personal WhatsApp. He chose
+  option A, a send queue. A wa.me link opens only ONE chat and the browser blocks mass window opens, so this is a queue, not a broadcast.
+- **What's there:** a `WhatsApp לקבוצה` button next to `✉ מייל לקבוצה` (same division chips: כולם / שובצו / טרם שובצו …, scoped to the
+  course+year in the top bar), and a `WhatsApp (N)` button in the selection row for ticked students. One message with `{{שם}}` → first
+  name. Missing phones and malformed phones are listed apart before starting. The queue window shows "3 מתוך 28", a list with ✓, and the
+  buttons `פתח ל<שם> →` / `דלג` / `עצור`. Each click opens one personal chat with the text already typed; he presses Send in WhatsApp.
+- Logic in `src/lib/groupWhatsApp.ts` (pure), tests in `unit/group-whatsapp.spec.ts`.
+- Also committed the stray `build.142` stamp (version.ts/sw.js) left by a local predeploy run. Live was last logged as build 140, so
+  **a deploy may have happened that was never logged**. Check Cloudflare Pages before the next deploy.
+- **Green:** unit **311** · tsc clean · build 8 pages.
+- **NOT verified:** the UI in a real browser. The admin page needs Yariv's sign-in, which I may not enter. Needs a visual check signed in:
+  open the modal → pick a division → start → the first `פתח` opens the right chat with the right name. Deploy gate not run (not deploying).
+- **STILL OPEN:** visual check → merge PR → deploy (with the gate).
