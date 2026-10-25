@@ -11,7 +11,7 @@ import StudentEditor from './StudentEditor';
 import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';
-import { planGroupWhatsApp, type GroupWhatsAppEntry } from '../lib/groupWhatsApp';
+import { planGroupWhatsApp, groupGreeting, type GroupWhatsAppEntry } from '../lib/groupWhatsApp';
 import { WhatsAppIcon, MailIcon, PhoneIcon } from './icons';
 import PlacementStrip from './PlacementStrip';
 import { planDispatch, applyDispatch, unsendOrg, dropOrg, placeDirect, splitSendable } from '../lib/dispatch';
@@ -139,6 +139,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
   // The same group tool, two channels: Outlook takes one BCC list; WhatsApp cannot, so it
   // becomes a queue that opens one personal chat per click (see lib/groupWhatsApp).
   const [mailChannel, setMailChannel] = useState<'email' | 'whatsapp'>('email');
+  // Names unticked in the group modal's recipient list — everyone starts ticked, and the
+  // coordinator removes the few who should not get this one (Yariv 2026-10-25).
+  const [mailExcluded, setMailExcluded] = useState<Set<string>>(new Set());
+  useEffect(() => { setMailExcluded(new Set()); }, [showMailModal, mailMode, mailBucket]);
   const [waQueue, setWaQueue] = useState<{ entries: GroupWhatsAppEntry[]; index: number; opened: Set<string> } | null>(null);
 
   // Email confirmation state — mandatory before any API send
@@ -757,10 +761,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                 data-group-whatsapp
                 title="הודעת WhatsApp אישית לכל סטודנט/ית בקבוצה — נפתחת שיחה אחת בכל לחיצה"
                 onClick={() => {
+                  const bucket = STAGE_TO_BUCKET[filters.stage];
                   setMailChannel('whatsapp');
                   setMailMode('bucket');
-                  setMailBucket(STAGE_TO_BUCKET[filters.stage]);
-                  setMailSubject(''); setMailBody('');
+                  setMailBucket(bucket);
+                  setMailSubject('');
+                  setMailBody(groupGreeting(scoped.filter((MAIL_BUCKETS.find(b => b.key === bucket) || MAIL_BUCKETS[0]).test).length));
                   setShowMailModal(true);
                 }}
                 style={btnSecondary()}>WhatsApp לקבוצה</button>
@@ -974,7 +980,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
             <button onClick={() => { setMailChannel('email'); setMailMode('selected'); setMailSubject(''); setMailBody(''); setShowMailModal(true); }} style={btnSmall()}>📧 מייל Outlook</button>
           )}
           {selectedIds.size > 0 && (
-            <button data-selected-whatsapp onClick={() => { setMailChannel('whatsapp'); setMailMode('selected'); setMailSubject(''); setMailBody(''); setShowMailModal(true); }} style={btnSmall()}>WhatsApp ({selectedIds.size})</button>
+            <button data-selected-whatsapp onClick={() => { setMailChannel('whatsapp'); setMailMode('selected'); setMailSubject(''); setMailBody(groupGreeting(selectedIds.size)); setShowMailModal(true); }} style={btnSmall()}>WhatsApp ({selectedIds.size})</button>
           )}
           {selectedIds.size > 0 && (
             <button style={btnSmall()} onClick={() => {
@@ -1175,7 +1181,12 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           • selected = the rows ticked via "בחר מספר" */}
       {showMailModal && (() => {
         const isBucket = mailMode === 'bucket';
-        const recipients = mailRecipients;
+        const recipients = mailRecipients.filter(s => !mailExcluded.has(s.id));
+        const toggleExcluded = (id: string) => setMailExcluded(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        });
         const isWa = mailChannel === 'whatsapp';
         const waPlan = isWa ? planGroupWhatsApp(recipients, mailBody) : null;
         const withEmail = recipients.filter(s => s.email);
@@ -1223,9 +1234,28 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <div className="mono text-[11px] uppercase tracking-[0.14em] font-semibold mb-1.5" style={{ color: 'var(--accent)' }}>
                 {reachable} נמענים
               </div>
-              <div data-mail-recipients className="text-[12.5px] leading-[1.7]" style={{ color: 'var(--ink)', maxHeight: 120, overflowY: 'auto' }}>
-                {recipients.length === 0 ? 'אין סטודנטים בקבוצה זו.' : recipients.map(s => s.name).filter(Boolean).join(' · ')}
-              </div>
+              {mailRecipients.length === 0 ? (
+                <div className="text-[12.5px]" style={{ color: 'var(--ink)' }}>אין סטודנטים בקבוצה זו.</div>
+              ) : (<>
+                <div className="flex gap-3 mb-1.5">
+                  <button type="button" onClick={() => setMailExcluded(new Set())}
+                    className="mono text-[10.5px] font-semibold hover:opacity-70" style={{ color: 'var(--accent)' }}>☑ סמן הכל</button>
+                  <button type="button" onClick={() => setMailExcluded(new Set(mailRecipients.map(s => s.id)))}
+                    className="mono text-[10.5px] font-semibold hover:opacity-70" style={{ color: 'var(--text-soft)' }}>☐ נקה הכל</button>
+                  {mailExcluded.size > 0 && (
+                    <span className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>הוסרו {mailExcluded.size}</span>
+                  )}
+                </div>
+                <div data-mail-recipients className="grid grid-cols-2 gap-x-3 text-[12.5px] leading-[1.9]" style={{ color: 'var(--ink)', maxHeight: 200, overflowY: 'auto' }}>
+                  {mailRecipients.map(s => (
+                    <label key={s.id} className="flex items-center gap-1.5 cursor-pointer"
+                      style={{ opacity: mailExcluded.has(s.id) ? 0.45 : 1 }}>
+                      <input type="checkbox" data-recipient-check checked={!mailExcluded.has(s.id)} onChange={() => toggleExcluded(s.id)} />
+                      <span style={{ textDecoration: mailExcluded.has(s.id) ? 'line-through' : 'none' }}>{s.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </>)}
             </div>
             {isWa && waPlan!.noPhone.length > 0 && (
               <div data-wa-no-phone className="mb-4 p-3 rounded-lg text-[12.5px]" style={{ background: 'rgba(180,60,60,0.08)', color: '#b03030', border: '1px solid rgba(180,60,60,0.2)' }}>

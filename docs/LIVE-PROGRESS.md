@@ -923,3 +923,12 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
 - **NOT verified:** the UI in a real browser. The admin page needs Yariv's sign-in, which I may not enter. Needs a visual check signed in:
   open the modal → pick a division → start → the first `פתח` opens the right chat with the right name. Deploy gate not run (not deploying).
 - **STILL OPEN:** visual check → merge PR → deploy (with the gate).
+
+## 2026-10-25 — v1.44.1: group modal — greeting typed in for him, and untick names before sending (PR #67)
+- Yariv: "היי {{שם}}, צריך להופיע באופן אוטומטי כשיש בחירה של יותר מסטודנט אחד" → for more than one recipient, the WhatsApp message box
+  opens with `היי {{שם}},` already in it (`groupGreeting()` in `src/lib/groupWhatsApp.ts`; editable).
+- "…לאפשר הסרה של חלק מהם … מצ׳ק בוקס לפני ההמשך" → the recipient list is now a checkbox per name, all ticked, with `☑ סמן הכל` /
+  `☐ נקה הכל` and "הוסרו N". Unticked names are left out of the count, the queue AND the Outlook BCC (the modal is shared by both channels).
+  The ticks reset when the modal opens or a division chip changes.
+- **Green:** unit **312** · tsc clean · build OK. **Still not checked visually while signed in**; that check is with Yariv.
+- **STILL OPEN:** his visual check → merge #67 → deploy (with the gate).

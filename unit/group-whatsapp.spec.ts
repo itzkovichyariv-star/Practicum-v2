@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { planGroupWhatsApp, personalizeGroupMessage } from '../src/lib/groupWhatsApp';
+import { planGroupWhatsApp, personalizeGroupMessage, groupGreeting } from '../src/lib/groupWhatsApp';
 
 // Yariv 2026-10-25: one message to every student in the course, to each one's own
 // WhatsApp. The queue opens one chat per click; these cells pin what each chat holds.
@@ -27,4 +27,13 @@ test('nobody is silently dropped: missing and broken numbers are named apart', (
   expect(plan.noPhone).toEqual(['דן לוי']);
   expect(plan.badPhone).toEqual(['מאיה כהן']);
   expect(plan.entries.length + plan.noPhone.length + plan.badPhone.length).toBe(students.length);
+});
+
+test('more than one student: the box opens with the greeting typed in; one student: empty', () => {
+  expect(groupGreeting(2)).toBe('היי {{שם}},\n');
+  expect(groupGreeting(28)).toBe('היי {{שם}},\n');
+  expect(groupGreeting(1)).toBe('');
+  expect(groupGreeting(0)).toBe('');
+  // and the greeting it types personalises like any other {{שם}}
+  expect(personalizeGroupMessage(groupGreeting(2) + 'מחר אין מפגש.', 'נועה ברק')).toBe('היי נועה,\nמחר אין מפגש.');
 });

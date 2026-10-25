@@ -26,6 +26,13 @@ export function personalizeGroupMessage(body: string, fullName: string): string 
   return String(body ?? '').replace(/\{\{שם\}\}/g, firstNameOf(fullName));
 }
 
+/** What the message box starts with. To more than one student the greeting is always the
+ *  same, so it is typed for him (Yariv 2026-10-25, "היי {{שם}}, צריך להופיע באופן אוטומטי
+ *  כשיש בחירה של יותר מסטודנט אחד"). */
+export function groupGreeting(recipientCount: number): string {
+  return recipientCount > 1 ? 'היי {{שם}},\n' : '';
+}
+
 export function planGroupWhatsApp(
   students: Array<{ id: string; name: string; phone?: string }>,
   body: string,
