@@ -943,3 +943,14 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
   name present ✓. `פתח` (window.open stubbed) gave the link `wa.me/97252…` with text "היי אלה,\nבדיקה" and moved on to "2 מתוך 19" ✓.
   Stopped with עצור.
 - **STILL OPEN:** merge PR #67 → deploy gate → deploy.
+
+## 2026-10-25 — PR #67 merged; deploy gate GREEN; deploy waiting on Yariv (blocked from Claude's side)
+- Yariv tried it for real: the in-app browser pane can't hand wa.me off to the WhatsApp app (it showed "you don't have WhatsApp
+  installed"). From his own Chrome it **worked**. His drafted message was recovered from the api.whatsapp.com URL in the pane's history.
+- New gate cell `scripts/audit/73-group-whatsapp.mjs` (3/3): greeting typed in, "נקה הכל" → 0 + start disabled, seeded three → 1
+  recipient with no-phone and bad-phone named apart, queue "1 מתוך 1" → exact wa.me link with the first name. window.open is stubbed,
+  so nothing is sent.
+- PR #67 merged → main `e5e40d48`. **Full gate `npm run ship -- --dry` on main: DEPLOY GATE PASSED** (73 cells, 369 ✅, 0 ❌).
+- Deploy NOT run: Claude Code's auto-mode classifier refused both `npm run ship` and the gated-deploy escape hatch. Yariv runs it.
+- **NEXT:** Yariv runs `npm run ship` → log the Cloudflare deploy id + live build number here → check live `sw.js` shows v1.44.2.
+- Still open from before: the build counter jumped 140→142 with no logged deploy; check Cloudflare Pages history.
