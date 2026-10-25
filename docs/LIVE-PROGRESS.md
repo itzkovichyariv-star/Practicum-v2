@@ -932,3 +932,14 @@ Branch `claude/ma-org-status` (PR #62). **Still not deployed** — he is holding
   The ticks reset when the modal opens or a division chip changes.
 - **Green:** unit **312** · tsc clean · build OK. **Still not checked visually while signed in**; that check is with Yariv.
 - **STILL OPEN:** his visual check → merge #67 → deploy (with the gate).
+
+## 2026-10-25 — v1.44.2: recipient checkboxes fixed + the group WhatsApp verified in the browser, signed in
+- Why Yariv saw no checkboxes: the dev server had been stopped by the app, and the service worker kept serving the cached v1.44.0
+  page. Restarted it and cleared the SW/cache in the pane. **Lesson: on "I don't see the change" locally, check `preview_list` first.**
+- Bug found while checking: the global 44px touch-target min-height on inputs made every checkbox a 44px row (one name per row, ~4
+  visible). The checkbox size is now inline (15px, minHeight 0) and the grid is two inline columns.
+- **Verified in the pane, signed in (real data, nothing sent):** WhatsApp לקבוצה → כולם = 21 names, all ticked; the box starts with
+  `היי {{שם}},\n` ✓. Unticking 2 gives "19 נמענים", "הוסרו 2" and "התחל שליחה (19)" ✓. In the queue: "1 מתוך 19", neither removed
+  name present ✓. `פתח` (window.open stubbed) gave the link `wa.me/97252…` with text "היי אלה,\nבדיקה" and moved on to "2 מתוך 19" ✓.
+  Stopped with עצור.
+- **STILL OPEN:** merge PR #67 → deploy gate → deploy.

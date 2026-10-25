@@ -1246,11 +1246,13 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
                     <span className="mono text-[10.5px]" style={{ color: 'var(--text-soft)' }}>הוסרו {mailExcluded.size}</span>
                   )}
                 </div>
-                <div data-mail-recipients className="grid grid-cols-2 gap-x-3 text-[12.5px] leading-[1.9]" style={{ color: 'var(--ink)', maxHeight: 200, overflowY: 'auto' }}>
+                <div data-mail-recipients className="text-[12.5px] leading-[1.9]" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 12, color: 'var(--ink)', maxHeight: 220, overflowY: 'auto' }}>
                   {mailRecipients.map(s => (
                     <label key={s.id} className="flex items-center gap-1.5 cursor-pointer"
                       style={{ opacity: mailExcluded.has(s.id) ? 0.45 : 1 }}>
-                      <input type="checkbox" data-recipient-check checked={!mailExcluded.has(s.id)} onChange={() => toggleExcluded(s.id)} />
+                      {/* inline size: the global 44px touch-target min-height would give every name its own tall row */}
+                      <input type="checkbox" data-recipient-check checked={!mailExcluded.has(s.id)} onChange={() => toggleExcluded(s.id)}
+                        style={{ width: 15, height: 15, minHeight: 0, flexShrink: 0, margin: 0, accentColor: 'var(--accent)' }} />
                       <span style={{ textDecoration: mailExcluded.has(s.id) ? 'line-through' : 'none' }}>{s.name}</span>
                     </label>
                   ))}
