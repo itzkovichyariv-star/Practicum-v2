@@ -41,7 +41,8 @@ test('WhatsApp falls back to the phone — it is normally the same number', () =
 test('every employer-facing template ships with the placeholder', () => {
   const d = getDefaultPlacementSettings();
   // Not the first WhatsApp: it is a chat with Yariv, and he asked it short (2026-10-14).
-  for (const k of ['emailBodyTemplate', 'reminderWhatsappTemplate', 'reminderEmailBodyTemplate'] as const) {
+  // Not the first WhatsApp or the first mail: each names his phone in its own words.
+  for (const k of ['reminderWhatsappTemplate', 'reminderEmailBodyTemplate'] as const) {
     expect((d as any)[k], k).toContain('{contactBack}');
   }
 });
@@ -50,9 +51,9 @@ test('a template saved before this existed gains the line, without losing its wo
   // Same migration the response link uses. The wording may have been edited by hand,
   // so only the missing line is ours to add.
   const custom = 'שלום {contactName},\nנוסח שיריב כתב בעצמו.\nתודה,\n{adminName}';
-  const data: any = { placementSettings: { ...getDefaultPlacementSettings(), emailBodyTemplate: custom } };
+  const data: any = { placementSettings: { ...getDefaultPlacementSettings(), reminderEmailBodyTemplate: custom } };
   const out: any = migratePlacementData(data);
-  const tpl: string = out.placementSettings.emailBodyTemplate;
+  const tpl: string = out.placementSettings.reminderEmailBodyTemplate;
   expect(tpl).toContain('{contactBack}');
   expect(tpl).toContain('נוסח שיריב כתב בעצמו.');
   // ...and it lands above the signature, so it reads as part of the ask.
@@ -64,7 +65,7 @@ test('the migration is idempotent — a second pass does not double the line', (
   const once: any = migratePlacementData(data);
   const twice: any = migratePlacementData(once);
   const count = (s: string) => s.split('{contactBack}').length - 1;
-  expect(count(twice.placementSettings.emailBodyTemplate)).toBe(1);
+  expect(count(twice.placementSettings.reminderEmailBodyTemplate)).toBe(1);
 });
 
 test('the email is taken from where the system already keeps it', () => {

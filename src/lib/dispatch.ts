@@ -22,7 +22,7 @@
 
 import {
   buildUnifiedOrgList, applyUnifiedList, reconcileEmployerCapacity, renderTemplate,
-  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, orgKey, resolveEmployerFor,
+  buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, myPhoneOf, orgKey, resolveEmployerFor,
   firstEmailOf, isDialablePhone, firstNameOf } from './placement';
 import type { Employer, VacancySlot, Dispatch } from './supabase';
 
@@ -162,7 +162,7 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     // never given. contactBack is the human route back when it fails.
     const ctxR = { ...ctx, daysWaiting: String(rem?.daysWaiting ?? ''),
       responseLink: origin ? `${origin}/r?t=${dispatchId}` : '',
-      contactBack: contactBackSentence(settings) };
+      contactBack: contactBackSentence(settings), myPhone: myPhoneOf(settings) };
     let url = '', messageSnapshot = '', missingContact = false;
     if (channel === 'whatsapp') {
       messageSnapshot = renderTemplate(

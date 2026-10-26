@@ -177,7 +177,7 @@ const TEMPLATE_FIELDS: { key: keyof PlacementSettings; label: string; rows?: num
 const TOKEN_HELP = [
   '{contactBack}',
   '{studentName}', '{contactName}', '{contactFirstName}', '{employerName}', '{positionTitle}',
-  '{courseName}', '{cvLink}', '{adminName}', '{adminFirstName}', '{scope}',
+  '{courseName}', '{cvLink}', '{adminName}', '{adminFirstName}', '{myPhone}', '{scope}',
 ];
 
 function PlacementSettingsCard({ data, userName, onRefresh }: { data: any; userName: string; onRefresh: () => void }) {
