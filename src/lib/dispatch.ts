@@ -23,7 +23,7 @@
 import {
   buildUnifiedOrgList, applyUnifiedList, reconcileEmployerCapacity, renderTemplate,
   buildWhatsAppUrl, buildMailtoUrl, contactBackSentence, orgKey, resolveEmployerFor,
-  firstEmailOf, isDialablePhone, firstNameOf } from './placement';
+  firstEmailOf, isDialablePhone, firstNameOf, waitedForPhrase } from './placement';
 import type { Employer, VacancySlot, Dispatch } from './supabase';
 
 export type DispatchChannel = 'whatsapp' | 'email';
@@ -160,7 +160,10 @@ export function planDispatch(input: PlanInput): DispatchPlan {
     // The link is a single point of failure — it can be stripped by a mail client,
     // wrapped by a plain-text renderer, or point at a dispatch whose confirmation was
     // never given. contactBack is the human route back when it fails.
+    // {waitedFor} says the same interval the way a person would ("לפני שבועיים"), and is
+    // supplied alongside the raw count so a template can use either.
     const ctxR = { ...ctx, daysWaiting: String(rem?.daysWaiting ?? ''),
+      waitedFor: waitedForPhrase(rem?.daysWaiting),
       responseLink: origin ? `${origin}/r?t=${dispatchId}` : '',
       contactBack: contactBackSentence(settings) };
     let url = '', messageSnapshot = '', missingContact = false;

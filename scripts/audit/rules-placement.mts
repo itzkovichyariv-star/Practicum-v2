@@ -8,7 +8,7 @@
  */
 import { placementStatus, actionsForChip, SILENCE_DAYS, DECISION_DAYS, MAX_REMINDERS, NO_RESPONSE_DAYS } from '../../src/lib/placementStatus.ts';
 import { responseStageOf, applyEmployerAnswer } from '../../src/lib/dispatch.ts';
-import { migratePlacementData, renderTemplate } from '../../src/lib/placement.ts';
+import { migratePlacementData, renderTemplate, waitedForPhrase } from '../../src/lib/placement.ts';
 
 const cells: any[] = [];
 const audit = { recordCell: (c: any) => cells.push(c) };
@@ -354,8 +354,9 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     contactName: 'אורטל חוברה', contactFirstName: 'אורטל',
     studentName: 'סטודנטית', positionTitle: 'ארגון', adminName: 'יריב',
     courseName: 'פרקטיקום', cvLink: 'https://x/cv.pdf', employerName: 'ארגון',
-    daysWaiting: '8', responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
-    // The real send path supplies this (dispatch.ts builds it from the settings), so
+    daysWaiting: '22', waitedFor: waitedForPhrase(22),
+    responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
+    // The real send path supplies these (dispatch.ts builds them from the settings), so
     // the assertion has to render the same shape the employer actually receives.
     contactBack: 'אם הקישור לא נפתח — אפשר פשוט לחזור אליי במייל x@y.',
   });
@@ -371,6 +372,7 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     contactName: 'איש קשר', contactFirstName: 'איש', studentName: 'סטודנטית',
     positionTitle: 'ארגון', adminName: 'יריב', courseName: 'פרקטיקום',
     cvLink: 'https://x/cv.pdf', employerName: 'ארגון', daysWaiting: '8',
+    waitedFor: waitedForPhrase(8),
     responseLink: 'https://practicum.yarivitzkovich.org/r?t=d1',
     contactBack: 'אם הקישור לא נפתח — אפשר פשוט לחזור אליי במייל x@y.',
   });
@@ -380,8 +382,15 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
     true, !/\{\w+\}/.test(composedWa));
   rule('RENDER-mail-greets-by-first-name', 'the mail opens "שלום אורטל, מה שלומך?" — first name, and it asks',
     true, composed.startsWith('שלום אורטל, מה שלומך?'));
-  rule('RENDER-mail-quotes-no-day-count', 'the mail says "לפני מספר שבועות", per 2026-09-15',
-    true, composed.includes('לפני מספר שבועות') && !composed.includes('{daysWaiting}'));
+  // 22 days is Yariv's own example, and it must read as three weeks — not as "22 ימים"
+  // and not as the fixed "מספר שבועות" the first pass shipped.
+  rule('RENDER-mail-phrases-the-wait', 'the mail says how long ago the way a person would',
+    true, composed.includes('לפני שלושה שבועות')
+      && !composed.includes('22') && !composed.includes('לפני מספר שבועות'));
+  rule('RENDER-wait-phrase-adapts', 'a shorter wait is not called weeks',
+    'לפני שבועיים', waitedForPhrase(15));
+  rule('RENDER-wait-phrase-unknown-invents-nothing', 'no number means no claimed interval',
+    'לאחרונה', waitedForPhrase(undefined));
   rule('RENDER-unknown-stays-visible', 'a typo in a template is visible, not silently blanked',
     '{notARealKey}', renderTemplate('{notARealKey}', { studentName: 'x' }));
   rule('RENDER-legacy-key-still-blanks', 'an omitted original key renders empty as before',
