@@ -1,0 +1,73 @@
+# The check that runs on every pull request and every commit on main.
+#
+# WHY THIS EXISTS
+# ---------------
+#   Until now nothing ran automatically. `deploy.yml` is manual-dispatch only, and
+#   the real gate (`npm run ship`) runs from Yariv's Mac — so a branch could be
+#   merged, and main could sit broken, with nobody told. The failure is quiet: the
+#   site keeps serving the last deploy, so main being red is invisible until the
+#   next deploy tries to go out.
+#
+#   This is the smallest check that would have caught that: the offline half of the
+#   gate. Lints, a real `astro build`, and the offline audit checks — which serve
+#   dist/ locally and answer every off-origin call from a fixture.
+#
+# WHAT IT DELIBERATELY DOES NOT DO
+# --------------------------------
+#   It does not run the numbered live suites. Those READ AND WRITE the live Supabase
+#   project, and they are serial on purpose because concurrent runs collide in the
+#   database (see deploy.yml). Running them per-PR would mean two contributors, or
+#   one contributor and one Mac, corrupting each other's test data. The live suites
+#   stay where they are: `npm run ship` before a real deploy.
+#
+#   So a green tick here means "this builds and the offline guarantees hold", not
+#   "this is safe to deploy". It is the floor, not the gate.
+#
+# TO MAKE IT BINDING
+# ------------------
+#   Settings → Branches → Add branch protection rule for `main` → Require status
+#   checks to pass → select "offline gate". Until that is set this workflow reports
+#   but cannot block.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # One run per branch or PR; a new push supersedes the one in flight, which is
+  # safe here precisely because nothing in this job touches live data.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  offline-gate:
+    name: offline gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Browser for the offline checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Lints, build, offline checks
+        run: node scripts/deploy-gate.mjs --offline
+
+      - name: What a green tick here means
+        if: success()
+        run: |
+          echo "Builds clean, lints pass, offline checks pass."
+          echo "The live suites are NOT part of this run — run 'npm run ship' before deploying."
