@@ -4,7 +4,7 @@ import type { Employer, Course } from '../lib/supabase';
 import { randomId } from '../lib/dataApi';
 import { openMailto } from '../lib/openMailto';
 import { setCourseCapacity, countSlotsByStatus, reconcileEmployerCapacity, openWhatsApp as waOpen } from '../lib/placement';
-import { employerContacts, activeContactId, applyContacts, removeContact, nextContactId, normalizeContacts,
+import { employerContacts, activeContactId, applyContacts, applyContactsDraft, nextContactId, normalizeContacts,
   contactIsEmpty, type EmployerContact } from '../lib/employerContacts';
 import { employerStatus, STATUS_COLORS, applyEmployerStatus } from '../lib/orgAvailability';
 import { normalizeYear } from './pageShared';
@@ -75,25 +75,38 @@ export default function EmployerEditor({
     // its name is still being typed and the card is momentarily "empty".
     setForm(f => {
       const list = employerContacts(f).map((c, idx) => (idx === i ? { ...c, [key]: v } : c));
-      return applyContacts(f, list, activeContactId(f));
+      return applyContactsDraft(f, list, activeContactId(f));
     });
   }
   function addContact() {
+    let newId = '';
     setForm(f => {
       const list = employerContacts(f);
-      // A new card starts empty, so it cannot be stored yet — it is held in state until
-      // it has a name, a phone or an address. Keeping it out of applyContacts is what
-      // stops an empty card from vanishing as it is typed into.
-      return { ...f, contacts: [...list, { id: nextContactId(list), name: '', role: '', phone: '', email: '', note: '' }] } as Employer;
+      newId = nextContactId(list);
+      // A new card starts empty and stays a draft until save (applyContactsDraft), so
+      // typing elsewhere or marking it active no longer makes it vanish.
+      return applyContactsDraft(f, [...list, { id: newId, name: '', role: '', phone: '', email: '', note: '' }], activeContactId(f));
     });
+    // On a phone the new card opens below the fold — bring it into view and put the
+    // cursor in its name, so the tap visibly does something.
+    setTimeout(() => {
+      const card = document.querySelector(`[data-contact-card="${newId}"]`);
+      card?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (card?.querySelector('input') as HTMLInputElement | null)?.focus({ preventScroll: true });
+    }, 60);
   }
   function chooseActive(id: string) {
-    setForm(f => applyContacts(f, employerContacts(f), id));
+    setForm(f => applyContactsDraft(f, employerContacts(f), id));
   }
   function dropContact(id: string) {
     const c = contacts.find(x => x.id === id);
     if (c && !contactIsEmpty(c) && !window.confirm(`להסיר את ${c.name || 'איש הקשר'} מהארגון?`)) return;
-    setForm(f => removeContact(f, id));
+    setForm(f => {
+      const list = employerContacts(f);
+      const next = list.filter(x => x.id !== id);
+      const wasActive = activeContactId(f) === id;
+      return applyContactsDraft(f, next, wasActive ? (next[0]?.id ?? null) : activeContactId(f));
+    });
   }
 
   const [showAllCourses, setShowAllCourses] = useState(false);

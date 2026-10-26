@@ -1,3 +1,4 @@
+import { showToast } from '../lib/toast';
 import { useState, useEffect } from 'react';
 import { saveFile } from '../lib/saveFile';
 import type { PageProps } from './pageShared';
@@ -708,7 +709,7 @@ export default function FormsPage(props: PageProps) {
   const filenameSuffix = selectedStudent ? `-${selectedStudent.name.replace(/\s+/g, '-')}` : '';
 
   function addCustomForm() {
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim()) { showToast('חסרה כותרת לטופס', 'warn'); return; }
     setCustomForms([...customForms, {
       key: 'custom-' + Date.now(),
       title: newTitle.trim(),
