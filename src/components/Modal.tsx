@@ -25,6 +25,8 @@ type Props = {
   maxWidth?: string;
   zIndex?: string;
   children: React.ReactNode;
+  dialogLabel?: string;
+  closeButtonRef?: React.RefObject<HTMLButtonElement>;
 };
 
 export default function Modal({
@@ -32,6 +34,8 @@ export default function Modal({
   maxWidth = 'max-w-[820px]',
   zIndex = 'z-[200]',
   children,
+  dialogLabel,
+  closeButtonRef,
 }: Props) {
 
   // When the modal opened. Used to ignore backdrop clicks that arrive in the
@@ -102,6 +106,9 @@ export default function Modal({
     // With body locked, overflow-y:auto on position:fixed works on iOS
     <div
       className={`fixed inset-0 ${zIndex}`}
+      role={dialogLabel ? 'dialog' : undefined}
+      aria-modal={dialogLabel ? true : undefined}
+      aria-label={dialogLabel}
       style={{
         background: 'rgba(26, 22, 18, 0.55)',
         backdropFilter: 'blur(4px)',
@@ -113,6 +120,7 @@ export default function Modal({
       {/* Always-visible close — fixed in the corner so you can exit at any scroll
           position (the open modal otherwise covers the top nav). Esc also closes. */}
       <button
+        ref={closeButtonRef}
         type="button"
         onClick={onClose}
         aria-label="סגור"

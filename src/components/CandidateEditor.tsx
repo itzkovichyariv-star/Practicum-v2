@@ -494,10 +494,12 @@ const Q_ITEMS: { key: string; question: string }[] = [
   { key: 'expectations',  question: 'מה הציפיות שלך מהפרקטיקום?' },
 ];
 
-export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import('../lib/supabase').Candidate['questionnaire']>; candidateName?: string }) {
-  const [open, setOpen] = useState(false);
+export function QuestionnaireView({ q, candidateName, displayOnly = false }: { q: NonNullable<import('../lib/supabase').Candidate['questionnaire']>; candidateName?: string; displayOnly?: boolean }) {
+  const [open, setOpen] = useState(displayOnly);
   const filled = Q_ITEMS.filter(item => (q as any)[item.key]?.trim());
-  if (filled.length === 0) return null;
+  if (filled.length === 0 && !q.gpa?.trim() && !q.studyTracks?.trim()) {
+    return displayOnly ? <p style={{ color: 'var(--text-soft)' }}>לא נשמרו תשובות לטופס הגשת המועמדות ברשומה זו.</p> : null;
+  }
 
   function buildHtml() {
     const rows = Q_ITEMS.map((item, idx) => {
@@ -533,7 +535,7 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
   return (
     <div className="mt-6" style={{ borderTop: '1px solid var(--divider)', paddingTop: '24px' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-1">
+      {!displayOnly && <div className="flex items-center justify-between mb-1">
         <button
           type="button"
           onClick={() => setOpen(o => !o)}
@@ -558,18 +560,18 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
             ↓ הורד
           </button>
         </div>
-      </div>
+      </div>}
 
       {open && (
         <div className="mt-4 rounded-xl overflow-hidden" style={{ border: '1px solid var(--divider)' }}>
           {/* Document header strip */}
-          <div className="px-6 py-4 flex items-center justify-between"
+          <div className="px-4 sm:px-6 py-4 flex flex-wrap gap-3 items-center justify-between"
             style={{ background: 'rgba(122,30,43,0.06)', borderBottom: '1px solid var(--divider)' }}>
             <div>
               <div className="serif text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>טופס הגשת מועמדות — פרקטיקום משאבי אנוש</div>
-              {q.studyTracks && (
+              {(q.studyTracks?.trim() || q.gpa?.trim()) && (
                 <div className="text-[15px] font-bold mt-0.5" style={{ color: 'var(--ink)' }}>
-                  חוג: {q.studyTracks}{q.gpa ? ` · ממוצע: ${q.gpa}` : ''}
+                  {[q.studyTracks?.trim() ? `חוג: ${q.studyTracks.trim()}` : '', q.gpa?.trim() ? `ממוצע: ${q.gpa.trim()}` : ''].filter(Boolean).join(' · ')}
                 </div>
               )}
             </div>
@@ -596,7 +598,7 @@ export function QuestionnaireView({ q, candidateName }: { q: NonNullable<import(
                   {/* Answer */}
                   {answer ? (
                     <div className="mr-8 px-4 py-3 rounded-lg text-[13.5px] leading-relaxed whitespace-pre-wrap"
-                      style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid rgba(122,30,43,0.12)', color: 'var(--ink)', direction: 'rtl' }}>
+                      style={{ background: 'rgba(122,30,43,0.04)', border: '1px solid rgba(122,30,43,0.12)', color: 'var(--ink)', direction: 'rtl', overflowWrap: 'anywhere' }}>
                       {answer}
                     </div>
                   ) : (

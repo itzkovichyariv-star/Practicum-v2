@@ -99,6 +99,7 @@ const OFFLINE_CHECKS = [
   'interview-cancel-check.mjs',
   'placement-headline-check.mjs',
   'cv-open-check.mjs',
+  'student-gpa-check.mjs',
   // A student the org already took can be marked placed from the card, with no CV sent
   // through the app (2026-10-04: "הכפתור לא לחיץ").
   'accept-direct-check.mjs',

@@ -8,6 +8,7 @@ import { saveSnapshot, randomId } from '../lib/dataApi';
 import { occupyAcceptedOrgSlot, releaseStudentSlots, setCourseCapacity } from '../lib/placement';
 import { showToast } from '../lib/toast';
 import StudentEditor from './StudentEditor';
+import StudentApplicationView from './StudentApplicationView';
 import ExcelImport from './ExcelImport';
 // email sending is via Outlook (mailto:) — no direct API imports needed
 import { openMailto } from '../lib/openMailto';
@@ -122,6 +123,7 @@ function PendingSuggestionsBanner({ dismissedIds }: { dismissedIds?: string[] })
 export default function StudentsPage({ data, context, userName, onRefresh }: PageProps & { data: any }) {
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [editing, setEditing] = useState<Student | null>(null);
+  const [viewingApplication, setViewingApplication] = useState<Student | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -1014,6 +1016,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
               <ul>
                 {group.items.map(s => (
                   <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
+                    onViewApplication={() => { setPinnedId(null); setViewingApplication(s); }}
                     status={statusById.get(s.id)} onAction={a => runPlacementAction(s, a)}
                     pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                     selected={selectedIds.has(s.id)}
@@ -1030,6 +1033,7 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           <ul>
             {filtered.map(s => (
               <StudentRow key={s.id} s={s} onEdit={() => setEditing(s)} employers={employers}
+                    onViewApplication={() => { setPinnedId(null); setViewingApplication(s); }}
                     status={statusById.get(s.id)} onAction={a => runPlacementAction(s, a)}
                 pinned={pinnedId === s.id} onTogglePin={() => setPinnedId(pinnedId === s.id ? null : s.id)}
                 selected={selectedIds.has(s.id)}
@@ -1042,6 +1046,10 @@ export default function StudentsPage({ data, context, userName, onRefresh }: Pag
           </ul>
         )}
       </section>
+
+      {viewingApplication && (
+        <StudentApplicationView student={viewingApplication} onClose={() => setViewingApplication(null)} />
+      )}
 
       {remindBar && (
         <div data-remind-bar
@@ -1567,8 +1575,8 @@ export function GroupHeader({ year, courseName, count, showYear }: { year: strin
 export const contactBtn = 'inline-grid place-items-center w-9 h-9 rounded-full shrink-0 transition-colors hover:bg-[rgba(122,30,43,0.06)]';
 export const contactStyle = { background: 'var(--bg)', border: '0.5px solid rgba(122,30,43,0.25)', color: 'var(--accent)' } as const;
 
-function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, employers = [], status, onAction }: {
-  s: Student; onEdit: () => void; pinned: boolean; onTogglePin: () => void;
+function StudentRow({ s, onEdit, onViewApplication, pinned, onTogglePin, selected, onToggleSelect, employers = [], status, onAction }: {
+  s: Student; onEdit: () => void; onViewApplication: () => void; pinned: boolean; onTogglePin: () => void;
   selected?: boolean; onToggleSelect?: () => void; employers?: Employer[];
   status?: PlacementStatus; onAction?: (a: PlacementAction) => void;
 }) {
@@ -1724,7 +1732,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
       </div>
 
       {/* Hover + pinned details popover */}
-      <Popover pinned={pinned} onRequestClose={onTogglePin}>
+      <Popover pinned={pinned} onRequestClose={onTogglePin} keepOnScreen>
         <div className="flex items-baseline justify-between gap-3 pb-3 mb-3 border-b" style={{ borderColor: 'var(--divider)' }}>
           <div>
             {/* A name is user data and can be long; without a break rule it pushed the
@@ -1750,6 +1758,7 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
           <DetailRow label="מייל" value={s.email} />
           <DetailRow label="עיר" value={s.city} />
           <DetailRow label="שנה" value={s.year} />
+          <DetailRow label="ממוצע ציונים" value={s.questionnaire?.gpa?.trim() || 'לא צוין'} />
           <DetailRow label="הכנה" value={prepPassed ? `עבר/ה ${s.preparation?.date ? '· ' + new Date(s.preparation.date).toLocaleDateString('he-IL') : ''}` : 'טרם'} />
           <DetailRow label="שובץ ב" value={s.acceptedOrg} accent />
           <DetailRow label="שעות" value={s.hoursApproved ? `${s.hoursApproved} מאושרות / ${s.hoursReported || 0} דיווח` : undefined} />
@@ -1757,6 +1766,11 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
           <DetailRow label="CV מעודכן" value={s.cvUpdatedUrl ? '✓ הוגש' : prepPassed ? '⚠ נדרש' : undefined} accent={!!s.cvUpdatedUrl} warn={!s.cvUpdatedUrl && prepPassed} />
           {s.notes && <DetailRow label="הערות" value={s.notes} />}
         </div>
+        <button type="button" onClick={onViewApplication}
+          className="mt-4 w-full rounded-lg border px-3 py-2 text-[13px] font-semibold"
+          style={{ borderColor: 'var(--divider)', color: 'var(--accent)', background: 'var(--accent-soft)' }}>
+          הצג טופס הגשת מועמדות
+        </button>
       </Popover>
     </li>
   );
@@ -1766,9 +1780,34 @@ function StudentRow({ s, onEdit, pinned, onTogglePin, selected, onToggleSelect, 
  * Shared popover wrapper that flips above the row when near viewport bottom
  * so details aren't cut off. Used by Students/Candidates/Employers rows.
  */
-export function Popover({ pinned, children, onRequestClose }: { pinned: boolean; children: any; onRequestClose?: () => void }) {
+export function Popover({ pinned, children, onRequestClose, keepOnScreen = false }: { pinned: boolean; children: any; onRequestClose?: () => void; keepOnScreen?: boolean }) {
   const [flipUp, setFlipUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  // Student details now include a form action. Keep the whole panel reachable,
+  // including its heading and close button, on short/mobile screens.
+  useEffect(() => {
+    if (!pinned || !keepOnScreen) return;
+    const place = () => {
+      const panel = ref.current;
+      const row = panel?.parentElement;
+      if (!panel || !row) return;
+      const box = panel.getBoundingClientRect();
+      const anchor = row.getBoundingClientRect();
+      setPosition({
+        top: Math.max(14, Math.min(anchor.bottom + 4, window.innerHeight - box.height - 14)),
+        left: Math.max(14, Math.min(anchor.right - box.width, document.body.clientWidth - box.width - 14)),
+      });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [pinned, keepOnScreen]);
 
   useEffect(() => {
     if (!pinned) return;
@@ -1816,6 +1855,8 @@ export function Popover({ pinned, children, onRequestClose }: { pinned: boolean;
         // Capped to the viewport — see InfoPopover: an `invisible` absolute box wider than
         // the screen still widens the PAGE, which is what made the list scroll sideways.
         minWidth: 'min(360px, calc(100vw - 28px))', maxWidth: 'min(440px, calc(100vw - 28px))',
+        ...(keepOnScreen && pinned ? { position: 'fixed', top: position?.top ?? 14, left: position?.left ?? 14, right: 'auto',
+          bottom: 'auto', margin: 0, zIndex: 60, width: 'min(440px, calc(100% - 28px))', minWidth: 'min(360px, calc(100% - 28px))', maxHeight: 'calc(100dvh - 28px)', overflowY: 'auto' } as const : {}),
       }}
       onClick={e => e.stopPropagation()}
     >
