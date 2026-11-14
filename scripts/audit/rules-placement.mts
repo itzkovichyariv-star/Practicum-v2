@@ -326,8 +326,10 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
   // migratePlacementData deep-clones and RETURNS — reading the input back shows nothing.
   const ps: any = migratePlacementData({ placementSettings: { ...saved } } as any).placementSettings;
 
-  rule('LINK-added-to-saved-email', 'a template saved without the link gets it',
-    true, ps.emailBodyTemplate.includes('{responseLink}'));
+  // The first MAIL is the exception: Yariv 2026-10-15 dropped the link from it ("בהרבה
+  // מקרים זה לא עובד"), so the repair must not push it back in.
+  rule('LINK-not-forced-into-first-mail', 'the first mail is left without it, as he asked',
+    false, ps.emailBodyTemplate.includes('{responseLink}'));
   rule('LINK-added-to-saved-whatsapp', 'both channels, not just mail',
     true, ps.whatsappTemplate.includes('{responseLink}'));
   rule('LINK-added-to-reminder', 'the reminder carries it too',
@@ -337,8 +339,8 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
   // NOTE the `>= 0`: without it this cell passes when the link is ABSENT (-1 < N), which
   // is exactly how it read green while the migration was doing nothing at all.
   rule('LINK-sits-above-signature', 'it reads as part of the ask, not after the sign-off',
-    true, ps.emailBodyTemplate.indexOf('{responseLink}') >= 0
-      && ps.emailBodyTemplate.indexOf('{responseLink}') < ps.emailBodyTemplate.indexOf('{adminName}'));
+    true, ps.whatsappTemplate.indexOf('{responseLink}') >= 0
+      && ps.whatsappTemplate.indexOf('{responseLink}') < ps.whatsappTemplate.indexOf('{adminName}'));
   rule('LINK-not-duplicated', 'a template that already has it is left alone',
     1, (ps.reminderEmailBodyTemplate.match(/\{responseLink\}/g) || []).length);
 
@@ -390,7 +392,7 @@ rule('STRIP-list-org-never-places', 'placement follows an interview, not a click
   // a second load must not append it again
   const twice: any = migratePlacementData({ placementSettings: ps } as any).placementSettings;
   rule('LINK-migration-is-idempotent', 'reloading adds nothing',
-    1, (twice.emailBodyTemplate.match(/\{responseLink\}/g) || []).length);
+    1, (twice.whatsappTemplate.match(/\{responseLink\}/g) || []).length);
 }
 
 // ── the two clocks, the right way round ───────────────────────────────────────
